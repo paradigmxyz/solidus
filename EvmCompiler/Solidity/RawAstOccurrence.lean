@@ -3446,6 +3446,89 @@ theorem localFunctionScope_retains_hoisted
       | «leave» =>
           exact ih hRun hMem
 
+theorem localFunctionScope_preserves_existing_clzHelperName
+    {rawStmts : List Raw.Stmt} {scope : List (Name × Name)}
+    {state state' : Elab.State} {helper : Name}
+    (hRun :
+      (Elab.Stmt.List.localFunctionScope rawStmts).run state =
+        .ok (scope, state'))
+    (hHelperName : state.clzHelperName? = some helper) :
+    state'.clzHelperName? = some helper := by
+  induction rawStmts generalizing scope state state' with
+  | nil =>
+      simp [Elab.Stmt.List.localFunctionScope] at hRun
+      rcases hRun with ⟨_hScope, rfl⟩
+      exact hHelperName
+  | cons head rest ih =>
+      unfold Elab.Stmt.List.localFunctionScope at hRun
+      cases head with
+      | functionDefinition name params returns body =>
+          cases hTail :
+              (Elab.Stmt.List.localFunctionScope rest).run state with
+          | error err =>
+              simp [hTail] at hRun
+          | ok tailResult =>
+              rcases tailResult with ⟨tail, stateAfterTail⟩
+              cases hDuplicate :
+                  tail.any (fun entry => entry.fst == name) with
+              | true =>
+                  unfold Elab.throw at hRun
+                  simp [hTail, hDuplicate] at hRun
+                  change Except.error
+                      (toString "duplicate Yul function " ++
+                        toString name ++ toString " in block") =
+                    Except.ok (scope, state') at hRun
+                  cases hRun
+              | false =>
+                  cases hDeclare :
+                      (Elab.declareIdentifiers [name] "function").run
+                        stateAfterTail with
+                  | error err =>
+                      simp [hTail, hDuplicate, hDeclare] at hRun
+                  | ok declareResult =>
+                      rcases declareResult with ⟨unitDecl, stateAfterDeclare⟩
+                      cases hFresh :
+                          (Elab.freshGeneratedFunctionName name).run
+                            stateAfterDeclare with
+                      | error err =>
+                          simp [hTail, hDuplicate, hDeclare, hFresh] at hRun
+                      | ok freshResult =>
+                          rcases freshResult with
+                            ⟨generated, stateAfterFresh⟩
+                          simp [hTail, hDuplicate, hDeclare, hFresh] at hRun
+                          rcases hRun with ⟨rfl, rfl⟩
+                          have hTailHelper :
+                              stateAfterTail.clzHelperName? = some helper :=
+                            ih hTail hHelperName
+                          have hDeclareHelper :
+                              stateAfterDeclare.clzHelperName? =
+                                some helper :=
+                            declareIdentifiers_preserves_existing_clzHelperName
+                              hDeclare hTailHelper
+                          exact
+                            freshGeneratedFunctionName_preserves_existing_clzHelperName
+                              hFresh hDeclareHelper
+      | block body =>
+          exact ih hRun hHelperName
+      | variableDeclaration names value? =>
+          exact ih hRun hHelperName
+      | assignment names value =>
+          exact ih hRun hHelperName
+      | expressionStatement expr =>
+          exact ih hRun hHelperName
+      | switch scrutinee cases defaultBody =>
+          exact ih hRun hHelperName
+      | forLoop pre condition post body =>
+          exact ih hRun hHelperName
+      | ifThen condition body =>
+          exact ih hRun hHelperName
+      | «break» =>
+          exact ih hRun hHelperName
+      | «continue» =>
+          exact ih hRun hHelperName
+      | «leave» =>
+          exact ih hRun hHelperName
+
 theorem localFunctionScope_lookup_of_mem
     {rawStmts : List Raw.Stmt} {scope : List (Name × Name)}
     {state state' : Elab.State}
@@ -3616,6 +3699,42 @@ theorem requireIdentifiersVisible_retains_hoisted
                   entry ∈ stateAfterHead.hoistedFunctions :=
                 requireIdentifierVisible_retains_hoisted hHead hMem
               exact ih hTail hHeadMem
+
+theorem requireIdentifiersVisible_preserves_existing_clzHelperName
+    {names : List Name} {what : String} {state state' : Elab.State}
+    {helper : Name}
+    (hRun :
+      (Elab.requireIdentifiersVisible names what).run state =
+        .ok ((), state'))
+    (hHelperName : state.clzHelperName? = some helper) :
+    state'.clzHelperName? = some helper := by
+  induction names generalizing state state' with
+  | nil =>
+      simp [Elab.requireIdentifiersVisible] at hRun
+      rcases hRun with ⟨_hUnit, rfl⟩
+      exact hHelperName
+  | cons name rest ih =>
+      unfold Elab.requireIdentifiersVisible at hRun
+      cases hHead :
+          (Elab.requireIdentifierVisible name what).run state with
+      | error err =>
+          simp [hHead] at hRun
+      | ok headResult =>
+          rcases headResult with ⟨unitHead, stateAfterHead⟩
+          cases hTail :
+              (Elab.requireIdentifiersVisible rest what).run
+                stateAfterHead with
+          | error err =>
+              simp [hHead, hTail] at hRun
+          | ok tailResult =>
+              rcases tailResult with ⟨unitTail, stateAfterTail⟩
+              simp [hHead, hTail] at hRun
+              rcases hRun with ⟨_hUnit, rfl⟩
+              have hHeadHelper :
+                  stateAfterHead.clzHelperName? = some helper :=
+                requireIdentifierVisible_preserves_existing_clzHelperName
+                  hHead hHelperName
+              exact ih hTail hHeadHelper
 
 theorem resolveFunction_retains_hoisted
     {name resolved : Name} {state state' : Elab.State}
@@ -5733,6 +5852,1033 @@ theorem hoistLocalFunctions_retains_hoisted
     entry ∈ state'.hoistedFunctions := by
   have hBelow := retainsHoistedBelow (rawStmtListSize rawStmts + 1)
   exact hBelow.hoist (Nat.lt_succ_self _) hRun hMem
+
+structure PreservesExistingClzHelperNameBelow (fuel : Nat) : Prop where
+  function :
+    ∀ {params returns : List Name} {body : List Raw.Stmt}
+      {fn : Frontend.FunctionDef} {state state' : Elab.State}
+      {helper : Name},
+      rawStmtListSize body < fuel →
+      (Elab.FunctionDef.elaborate params returns body).run state =
+        .ok (fn, state') →
+      state.clzHelperName? = some helper →
+        state'.clzHelperName? = some helper
+  stmtList :
+    ∀ {rawStmts : List Raw.Stmt} {frontendStmts : List Frontend.Stmt}
+      {state state' : Elab.State} {helper : Name},
+      rawStmtListSize rawStmts < fuel →
+      (Elab.Stmt.List.elaborate rawStmts).run state =
+        .ok (frontendStmts, state') →
+      state.clzHelperName? = some helper →
+        state'.clzHelperName? = some helper
+  stmt :
+    ∀ {rawStmt : Raw.Stmt} {frontendStmt : Frontend.Stmt}
+      {state state' : Elab.State} {helper : Name},
+      rawStmtSize rawStmt < fuel →
+      (Elab.Stmt.elaborate rawStmt).run state =
+        .ok (frontendStmt, state') →
+      state.clzHelperName? = some helper →
+        state'.clzHelperName? = some helper
+  caseList :
+    ∀ {rawCases : List (Raw.SwitchCaseValue × List Raw.Stmt)}
+      {frontendCases : List (Frontend.SwitchCaseValue × List Frontend.Stmt)}
+      {state state' : Elab.State} {helper : Name},
+      rawCaseListSize rawCases < fuel →
+      (Elab.Stmt.CaseList.elaborate rawCases).run state =
+        .ok (frontendCases, state') →
+      state.clzHelperName? = some helper →
+        state'.clzHelperName? = some helper
+  block :
+    ∀ {rawStmts : List Raw.Stmt} {createsScope : Bool}
+      {frontendStmts : List Frontend.Stmt} {state state' : Elab.State}
+      {helper : Name},
+      rawStmtListSize rawStmts < fuel →
+      (Elab.Stmt.List.elaborateBlock rawStmts createsScope).run state =
+        .ok (frontendStmts, state') →
+      state.clzHelperName? = some helper →
+        state'.clzHelperName? = some helper
+  forInit :
+    ∀ {rawStmts : List Raw.Stmt} {frontendStmts : List Frontend.Stmt}
+      {state state' : Elab.State} {helper : Name},
+      rawStmtListSize rawStmts < fuel →
+      (Elab.Stmt.List.elaborateForInitBlockWithScope rawStmts).run state =
+        .ok (frontendStmts, state') →
+      state.clzHelperName? = some helper →
+        state'.clzHelperName? = some helper
+  hoist :
+    ∀ {rawStmts : List Raw.Stmt} {scope : List (Name × Name)}
+      {state state' : Elab.State} {helper : Name},
+      rawStmtListSize rawStmts < fuel →
+      (Elab.Stmt.List.hoistLocalFunctions rawStmts scope).run state =
+        .ok ((), state') →
+      state.clzHelperName? = some helper →
+        state'.clzHelperName? = some helper
+
+theorem preservesExistingClzHelperNameBelow :
+    (fuel : Nat) → PreservesExistingClzHelperNameBelow fuel
+  | 0 => by
+      exact
+        { function := by
+            intro params returns body fn state state' helper hSize hRun
+              hHelper
+            omega
+          stmtList := by
+            intro rawStmts frontendStmts state state' helper hSize hRun
+              hHelper
+            omega
+          stmt := by
+            intro rawStmt frontendStmt state state' helper hSize hRun
+              hHelper
+            omega
+          caseList := by
+            intro rawCases frontendCases state state' helper hSize hRun
+              hHelper
+            omega
+          block := by
+            intro rawStmts createsScope frontendStmts state state' helper
+              hSize hRun hHelper
+            omega
+          forInit := by
+            intro rawStmts frontendStmts state state' helper hSize hRun
+              hHelper
+            omega
+          hoist := by
+            intro rawStmts scope state state' helper hSize hRun hHelper
+            omega }
+  | fuel + 1 => by
+      let ih := preservesExistingClzHelperNameBelow fuel
+      let hHoist :
+          ∀ {rawStmts : List Raw.Stmt} {scope : List (Name × Name)}
+            {state state' : Elab.State} {helper : Name},
+            rawStmtListSize rawStmts < fuel + 1 →
+            (Elab.Stmt.List.hoistLocalFunctions rawStmts scope).run state =
+              .ok ((), state') →
+            state.clzHelperName? = some helper →
+              state'.clzHelperName? = some helper := by
+        intro rawStmts scope state state' helper hSize hRun hHelper
+        cases rawStmts with
+        | nil =>
+            simp [Elab.Stmt.List.hoistLocalFunctions] at hRun
+            rcases hRun with ⟨_hUnit, rfl⟩
+            exact hHelper
+        | cons head rest =>
+            have hRestSize : rawStmtListSize rest < fuel := by
+              simp [rawStmtListSize] at hSize
+              omega
+            unfold Elab.Stmt.List.hoistLocalFunctions at hRun
+            cases head with
+            | functionDefinition name params returns body =>
+                have hBodySize : rawStmtListSize body < fuel := by
+                  simp [rawStmtListSize, rawStmtSize] at hSize
+                  omega
+                cases hLookup : Elab.lookupFunctionInScope name scope with
+                | none =>
+                    simp [hLookup] at hRun
+                    unfold Elab.throw at hRun
+                    cases hRun
+                | some generated =>
+                    cases hFn :
+                        (Elab.FunctionDef.elaborate params returns body).run
+                          state with
+                    | error err =>
+                        simp [hLookup, hFn] at hRun
+                    | ok fnResult =>
+                        rcases fnResult with ⟨fn, stateAfterFn⟩
+                        let stateAfterStore : Elab.State :=
+                          { stateAfterFn with
+                            hoistedFunctions :=
+                              (generated, fn) ::
+                                stateAfterFn.hoistedFunctions }
+                        cases hTail :
+                            (Elab.Stmt.List.hoistLocalFunctions rest scope).run
+                              stateAfterStore with
+                        | error err =>
+                            simp [hLookup, hFn, stateAfterStore, hTail]
+                              at hRun
+                        | ok tailResult =>
+                            rcases tailResult with
+                              ⟨unitTail, stateAfterTail⟩
+                            simp [hLookup, hFn, stateAfterStore, hTail]
+                              at hRun
+                            rcases hRun with ⟨_hUnit, rfl⟩
+                            have hFnHelper :
+                                stateAfterFn.clzHelperName? = some helper :=
+                              ih.function hBodySize hFn hHelper
+                            have hStoreHelper :
+                                stateAfterStore.clzHelperName? =
+                                  some helper := hFnHelper
+                            exact ih.hoist hRestSize hTail hStoreHelper
+            | block body =>
+                exact ih.hoist hRestSize hRun hHelper
+            | variableDeclaration names value? =>
+                exact ih.hoist hRestSize hRun hHelper
+            | assignment names value =>
+                exact ih.hoist hRestSize hRun hHelper
+            | expressionStatement value =>
+                exact ih.hoist hRestSize hRun hHelper
+            | switch scrutinee cases defaultBody =>
+                exact ih.hoist hRestSize hRun hHelper
+            | forLoop pre condition post body =>
+                exact ih.hoist hRestSize hRun hHelper
+            | ifThen condition body =>
+                exact ih.hoist hRestSize hRun hHelper
+            | «break» =>
+                exact ih.hoist hRestSize hRun hHelper
+            | «continue» =>
+                exact ih.hoist hRestSize hRun hHelper
+            | «leave» =>
+                exact ih.hoist hRestSize hRun hHelper
+      let hStmtList :
+          ∀ {rawStmts : List Raw.Stmt} {frontendStmts : List Frontend.Stmt}
+            {state state' : Elab.State} {helper : Name},
+            rawStmtListSize rawStmts < fuel + 1 →
+            (Elab.Stmt.List.elaborate rawStmts).run state =
+              .ok (frontendStmts, state') →
+            state.clzHelperName? = some helper →
+              state'.clzHelperName? = some helper := by
+        intro rawStmts frontendStmts state state' helper hSize hRun hHelper
+        cases rawStmts with
+        | nil =>
+            simp [Elab.Stmt.List.elaborate] at hRun
+            rcases hRun with ⟨rfl, rfl⟩
+            exact hHelper
+        | cons head rest =>
+            have hHeadSize : rawStmtSize head < fuel := by
+              simp [rawStmtListSize] at hSize
+              omega
+            have hRestSize : rawStmtListSize rest < fuel := by
+              simp [rawStmtListSize] at hSize
+              omega
+            simp only [Elab.Stmt.List.elaborate] at hRun
+            cases hHead : (Elab.Stmt.elaborate head).run state with
+            | error err =>
+                simp [hHead] at hRun
+            | ok headResult =>
+                rcases headResult with ⟨frontendHead, stateAfterHead⟩
+                cases hTail :
+                    (Elab.Stmt.List.elaborate rest).run stateAfterHead with
+                | error err =>
+                    simp [hHead, hTail] at hRun
+                | ok tailResult =>
+                    rcases tailResult with
+                      ⟨frontendTail, stateAfterTail⟩
+                    simp [hHead, hTail] at hRun
+                    rcases hRun with ⟨rfl, rfl⟩
+                    have hHeadHelper :
+                        stateAfterHead.clzHelperName? = some helper :=
+                      ih.stmt hHeadSize hHead hHelper
+                    exact ih.stmtList hRestSize hTail hHeadHelper
+      let hCaseList :
+          ∀ {rawCases : List (Raw.SwitchCaseValue × List Raw.Stmt)}
+            {frontendCases :
+              List (Frontend.SwitchCaseValue × List Frontend.Stmt)}
+            {state state' : Elab.State} {helper : Name},
+            rawCaseListSize rawCases < fuel + 1 →
+            (Elab.Stmt.CaseList.elaborate rawCases).run state =
+              .ok (frontendCases, state') →
+            state.clzHelperName? = some helper →
+              state'.clzHelperName? = some helper := by
+        intro rawCases frontendCases state state' helper hSize hRun hHelper
+        cases rawCases with
+        | nil =>
+            simp [Elab.Stmt.CaseList.elaborate] at hRun
+            rcases hRun with ⟨rfl, rfl⟩
+            exact hHelper
+        | cons head rest =>
+            rcases head with ⟨value, body⟩
+            have hBodySize : rawStmtListSize body < fuel := by
+              simp [rawCaseListSize] at hSize
+              omega
+            have hRestSize : rawCaseListSize rest < fuel := by
+              simp [rawCaseListSize] at hSize
+              omega
+            simp only [Elab.Stmt.CaseList.elaborate] at hRun
+            cases hValue : Elab.SwitchCaseValue.elaborate value with
+            | error err =>
+                simp [hValue] at hRun
+                unfold Elab.throw at hRun
+                cases hRun
+            | ok frontendValue =>
+                cases hBody :
+                    (Elab.Stmt.List.elaborateBlock body true).run state with
+                | error err =>
+                    simp [hValue, hBody] at hRun
+                | ok bodyResult =>
+                    rcases bodyResult with
+                      ⟨frontendBody, stateAfterBody⟩
+                    cases hTail :
+                        (Elab.Stmt.CaseList.elaborate rest).run
+                          stateAfterBody with
+                    | error err =>
+                        simp [hValue, hBody, hTail] at hRun
+                    | ok tailResult =>
+                        rcases tailResult with
+                          ⟨frontendTail, stateAfterTail⟩
+                        simp [hValue, hBody, hTail] at hRun
+                        rcases hRun with ⟨rfl, rfl⟩
+                        have hBodyHelper :
+                            stateAfterBody.clzHelperName? = some helper :=
+                          ih.block hBodySize hBody hHelper
+                        exact ih.caseList hRestSize hTail hBodyHelper
+      let hStmt :
+          ∀ {rawStmt : Raw.Stmt} {frontendStmt : Frontend.Stmt}
+            {state state' : Elab.State} {helper : Name},
+            rawStmtSize rawStmt < fuel + 1 →
+            (Elab.Stmt.elaborate rawStmt).run state =
+              .ok (frontendStmt, state') →
+            state.clzHelperName? = some helper →
+              state'.clzHelperName? = some helper := by
+        intro rawStmt frontendStmt state state' helper hSize hRun hHelper
+        cases rawStmt with
+        | block body =>
+            have hBodySize : rawStmtListSize body < fuel := by
+              simp [rawStmtSize] at hSize
+              omega
+            cases hBody :
+                (Elab.Stmt.List.elaborateBlock body true).run state with
+            | error err =>
+                simp [Elab.Stmt.elaborate, hBody] at hRun
+            | ok bodyResult =>
+                rcases bodyResult with ⟨frontendBody, stateAfterBody⟩
+                simp [Elab.Stmt.elaborate, hBody] at hRun
+                rcases hRun with ⟨rfl, rfl⟩
+                exact ih.block hBodySize hBody hHelper
+        | variableDeclaration names value? =>
+            cases value? with
+            | none =>
+                cases hDeclare :
+                    (Elab.declareIdentifiers names "variable").run state with
+                | error err =>
+                    simp [Elab.Stmt.elaborate, hDeclare] at hRun
+                | ok declareResult =>
+                    rcases declareResult with
+                      ⟨unitDeclare, stateAfterDeclare⟩
+                    simp [Elab.Stmt.elaborate, hDeclare] at hRun
+                    rcases hRun with ⟨rfl, rfl⟩
+                    exact
+                      declareIdentifiers_preserves_existing_clzHelperName
+                        hDeclare hHelper
+            | some value =>
+                cases hValue : (Elab.Expr.elaborate value).run state with
+                | error err =>
+                    simp [Elab.Stmt.elaborate, hValue] at hRun
+                | ok valueResult =>
+                    rcases valueResult with ⟨frontendValue, stateAfterValue⟩
+                    cases hDeclare :
+                        (Elab.declareIdentifiers names "variable").run
+                          stateAfterValue with
+                    | error err =>
+                        simp [Elab.Stmt.elaborate, hValue, hDeclare] at hRun
+                    | ok declareResult =>
+                        rcases declareResult with
+                          ⟨unitDeclare, stateAfterDeclare⟩
+                        simp [Elab.Stmt.elaborate, hValue, hDeclare] at hRun
+                        rcases hRun with ⟨rfl, rfl⟩
+                        have hValueHelper :
+                            stateAfterValue.clzHelperName? = some helper :=
+                          Expr.elaborate_preserves_existing_clzHelperName
+                            hValue hHelper
+                        exact
+                          declareIdentifiers_preserves_existing_clzHelperName
+                            hDeclare hValueHelper
+        | assignment names value =>
+            cases hRequire :
+                (Elab.requireIdentifiersVisible names "assignment").run
+                  state with
+            | error err =>
+                simp [Elab.Stmt.elaborate, hRequire] at hRun
+            | ok requireResult =>
+                rcases requireResult with
+                  ⟨unitRequire, stateAfterRequire⟩
+                cases hValue :
+                    (Elab.Expr.elaborate value).run stateAfterRequire with
+                | error err =>
+                    simp [Elab.Stmt.elaborate, hRequire, hValue] at hRun
+                | ok valueResult =>
+                    rcases valueResult with ⟨frontendValue, stateAfterValue⟩
+                    simp [Elab.Stmt.elaborate, hRequire, hValue] at hRun
+                    rcases hRun with ⟨rfl, rfl⟩
+                    have hRequireHelper :
+                        stateAfterRequire.clzHelperName? = some helper :=
+                      requireIdentifiersVisible_preserves_existing_clzHelperName
+                        hRequire hHelper
+                    exact
+                      Expr.elaborate_preserves_existing_clzHelperName
+                        hValue hRequireHelper
+        | expressionStatement value =>
+            cases hValue : (Elab.Expr.elaborate value).run state with
+            | error err =>
+                simp [Elab.Stmt.elaborate, hValue] at hRun
+            | ok valueResult =>
+                rcases valueResult with ⟨frontendValue, stateAfterValue⟩
+                simp [Elab.Stmt.elaborate, hValue] at hRun
+                rcases hRun with ⟨rfl, rfl⟩
+                exact
+                  Expr.elaborate_preserves_existing_clzHelperName
+                    hValue hHelper
+        | functionDefinition name params returns body =>
+            have hBodySize : rawStmtListSize body < fuel := by
+              simp [rawStmtSize] at hSize
+              omega
+            cases hFn :
+                (Elab.FunctionDef.elaborate params returns body).run
+                  state with
+            | error err =>
+                simp [Elab.Stmt.elaborate, hFn] at hRun
+            | ok fnResult =>
+                rcases fnResult with ⟨fn, stateAfterFn⟩
+                simp [Elab.Stmt.elaborate, hFn] at hRun
+                rcases hRun with ⟨rfl, rfl⟩
+                exact ih.function hBodySize hFn hHelper
+        | switch scrutinee cases defaultBody =>
+            have hCasesSize : rawCaseListSize cases < fuel := by
+              simp [rawStmtSize] at hSize
+              omega
+            have hDefaultSize : rawStmtListSize defaultBody < fuel := by
+              simp [rawStmtSize] at hSize
+              omega
+            cases hScrutinee : (Elab.Expr.elaborate scrutinee).run state with
+            | error err =>
+                simp [Elab.Stmt.elaborate, hScrutinee] at hRun
+            | ok scrutineeResult =>
+                rcases scrutineeResult with
+                  ⟨frontendScrutinee, stateAfterScrutinee⟩
+                cases hCases :
+                    (Elab.Stmt.CaseList.elaborate cases).run
+                      stateAfterScrutinee with
+                | error err =>
+                    simp [Elab.Stmt.elaborate, hScrutinee, hCases] at hRun
+                | ok casesResult =>
+                    rcases casesResult with
+                      ⟨frontendCases, stateAfterCases⟩
+                    cases hDefault :
+                        (Elab.Stmt.List.elaborateBlock defaultBody true).run
+                          stateAfterCases with
+                    | error err =>
+                        simp [Elab.Stmt.elaborate, hScrutinee, hCases,
+                          hDefault] at hRun
+                    | ok defaultResult =>
+                        rcases defaultResult with
+                          ⟨frontendDefault, stateAfterDefault⟩
+                        simp [Elab.Stmt.elaborate, hScrutinee, hCases,
+                          hDefault] at hRun
+                        rcases hRun with ⟨rfl, rfl⟩
+                        have hScrutineeHelper :
+                            stateAfterScrutinee.clzHelperName? =
+                              some helper :=
+                          Expr.elaborate_preserves_existing_clzHelperName
+                            hScrutinee hHelper
+                        have hCasesHelper :
+                            stateAfterCases.clzHelperName? = some helper :=
+                          ih.caseList hCasesSize hCases hScrutineeHelper
+                        exact ih.block hDefaultSize hDefault hCasesHelper
+        | forLoop pre condition post body =>
+            have hPreSize : rawStmtListSize pre < fuel := by
+              simp [rawStmtSize] at hSize
+              omega
+            have hPostSize : rawStmtListSize post < fuel := by
+              simp [rawStmtSize] at hSize
+              omega
+            have hBodySize : rawStmtListSize body < fuel := by
+              simp [rawStmtSize] at hSize
+              omega
+            cases hPush : Elab.pushIdentifierScope.run state with
+            | error err =>
+                simp [Elab.Stmt.elaborate, hPush] at hRun
+            | ok pushResult =>
+                rcases pushResult with ⟨unitPush, stateAfterPush⟩
+                cases hPreHas :
+                    Elab.Stmt.List.hasImmediateFunctionDefinition pre with
+                | false =>
+                    cases hPre :
+                        (Elab.Stmt.List.elaborateBlock pre false).run
+                          stateAfterPush with
+                    | error err =>
+                        simp [Elab.Stmt.elaborate, hPush, hPreHas, hPre]
+                          at hRun
+                    | ok preResult =>
+                        rcases preResult with
+                          ⟨frontendPre, stateAfterPre⟩
+                        cases hCondition :
+                            (Elab.Expr.elaborate condition).run
+                              stateAfterPre with
+                        | error err =>
+                            simp [Elab.Stmt.elaborate, hPush, hPreHas, hPre,
+                              hCondition] at hRun
+                        | ok conditionResult =>
+                            rcases conditionResult with
+                              ⟨frontendCondition, stateAfterCondition⟩
+                            cases hPost :
+                                (Elab.Stmt.List.elaborateBlock post true).run
+                                  stateAfterCondition with
+                            | error err =>
+                                simp [Elab.Stmt.elaborate, hPush, hPreHas,
+                                  hPre, hCondition, hPost] at hRun
+                            | ok postResult =>
+                                rcases postResult with
+                                  ⟨frontendPost, stateAfterPost⟩
+                                cases hBody :
+                                    (Elab.Stmt.List.elaborateBlock body true).run
+                                      stateAfterPost with
+                                | error err =>
+                                    simp [Elab.Stmt.elaborate, hPush, hPreHas,
+                                      hPre, hCondition, hPost, hBody] at hRun
+                                | ok bodyResult =>
+                                    rcases bodyResult with
+                                      ⟨frontendBody, stateAfterBody⟩
+                                    cases hPop :
+                                        Elab.popIdentifierScope.run
+                                          stateAfterBody with
+                                    | error err =>
+                                        simp [Elab.Stmt.elaborate, hPush,
+                                          hPreHas, hPre, hCondition, hPost,
+                                          hBody, hPop] at hRun
+                                    | ok popResult =>
+                                        rcases popResult with
+                                          ⟨unitPop, stateAfterPop⟩
+                                        simp [Elab.Stmt.elaborate, hPush,
+                                          hPreHas, hPre, hCondition, hPost,
+                                          hBody, hPop] at hRun
+                                        rcases hRun with ⟨rfl, rfl⟩
+                                        have hPushHelper :
+                                            stateAfterPush.clzHelperName? =
+                                              some helper :=
+                                          pushIdentifierScope_preserves_existing_clzHelperName
+                                            hPush hHelper
+                                        have hPreHelper :
+                                            stateAfterPre.clzHelperName? =
+                                              some helper :=
+                                          ih.block hPreSize hPre hPushHelper
+                                        have hConditionHelper :
+                                            stateAfterCondition.clzHelperName? =
+                                              some helper :=
+                                          Expr.elaborate_preserves_existing_clzHelperName
+                                            hCondition hPreHelper
+                                        have hPostHelper :
+                                            stateAfterPost.clzHelperName? =
+                                              some helper :=
+                                          ih.block hPostSize hPost
+                                            hConditionHelper
+                                        have hBodyHelper :
+                                            stateAfterBody.clzHelperName? =
+                                              some helper :=
+                                          ih.block hBodySize hBody hPostHelper
+                                        exact
+                                          popIdentifierScope_preserves_existing_clzHelperName
+                                            hPop hBodyHelper
+                | true =>
+                    cases hPre :
+                        (Elab.Stmt.List.elaborateForInitBlockWithScope pre).run
+                          stateAfterPush with
+                    | error err =>
+                        simp [Elab.Stmt.elaborate, hPush, hPreHas, hPre]
+                          at hRun
+                    | ok preResult =>
+                        rcases preResult with
+                          ⟨frontendPre, stateAfterPre⟩
+                        cases hCondition :
+                            (Elab.Expr.elaborate condition).run
+                              stateAfterPre with
+                        | error err =>
+                            simp [Elab.Stmt.elaborate, hPush, hPreHas, hPre,
+                              hCondition] at hRun
+                        | ok conditionResult =>
+                            rcases conditionResult with
+                              ⟨frontendCondition, stateAfterCondition⟩
+                            cases hPost :
+                                (Elab.Stmt.List.elaborateBlock post true).run
+                                  stateAfterCondition with
+                            | error err =>
+                                simp [Elab.Stmt.elaborate, hPush, hPreHas,
+                                  hPre, hCondition, hPost] at hRun
+                            | ok postResult =>
+                                rcases postResult with
+                                  ⟨frontendPost, stateAfterPost⟩
+                                cases hBody :
+                                    (Elab.Stmt.List.elaborateBlock body true).run
+                                      stateAfterPost with
+                                | error err =>
+                                    simp [Elab.Stmt.elaborate, hPush, hPreHas,
+                                      hPre, hCondition, hPost, hBody] at hRun
+                                | ok bodyResult =>
+                                    rcases bodyResult with
+                                      ⟨frontendBody, stateAfterBody⟩
+                                    cases hPopFunction :
+                                        Elab.popFunctionScope.run
+                                          stateAfterBody with
+                                    | error err =>
+                                        simp [Elab.Stmt.elaborate, hPush,
+                                          hPreHas, hPre, hCondition, hPost,
+                                          hBody, hPopFunction] at hRun
+                                    | ok popFunctionResult =>
+                                        rcases popFunctionResult with
+                                          ⟨unitPopFunction,
+                                            stateAfterPopFunction⟩
+                                        cases hPopIdentifier :
+                                            Elab.popIdentifierScope.run
+                                              stateAfterPopFunction with
+                                        | error err =>
+                                            simp [Elab.Stmt.elaborate, hPush,
+                                              hPreHas, hPre, hCondition,
+                                              hPost, hBody, hPopFunction,
+                                              hPopIdentifier] at hRun
+                                        | ok popIdentifierResult =>
+                                            rcases popIdentifierResult with
+                                              ⟨unitPopIdentifier,
+                                                stateAfterPopIdentifier⟩
+                                            simp [Elab.Stmt.elaborate, hPush,
+                                              hPreHas, hPre, hCondition,
+                                              hPost, hBody, hPopFunction,
+                                              hPopIdentifier] at hRun
+                                            rcases hRun with ⟨rfl, rfl⟩
+                                            have hPushHelper :
+                                                stateAfterPush.clzHelperName? =
+                                                  some helper :=
+                                              pushIdentifierScope_preserves_existing_clzHelperName
+                                                hPush hHelper
+                                            have hPreHelper :
+                                                stateAfterPre.clzHelperName? =
+                                                  some helper :=
+                                              ih.forInit hPreSize hPre
+                                                hPushHelper
+                                            have hConditionHelper :
+                                                stateAfterCondition.clzHelperName? =
+                                                  some helper :=
+                                              Expr.elaborate_preserves_existing_clzHelperName
+                                                hCondition hPreHelper
+                                            have hPostHelper :
+                                                stateAfterPost.clzHelperName? =
+                                                  some helper :=
+                                              ih.block hPostSize hPost
+                                                hConditionHelper
+                                            have hBodyHelper :
+                                                stateAfterBody.clzHelperName? =
+                                                  some helper :=
+                                              ih.block hBodySize hBody
+                                                hPostHelper
+                                            have hPopFunctionHelper :
+                                                stateAfterPopFunction.clzHelperName? =
+                                                  some helper :=
+                                              popFunctionScope_preserves_existing_clzHelperName
+                                                hPopFunction hBodyHelper
+                                            exact
+                                              popIdentifierScope_preserves_existing_clzHelperName
+                                                hPopIdentifier
+                                                hPopFunctionHelper
+        | ifThen condition body =>
+            have hBodySize : rawStmtListSize body < fuel := by
+              simp [rawStmtSize] at hSize
+              omega
+            cases hCondition :
+                (Elab.Expr.elaborate condition).run state with
+            | error err =>
+                simp [Elab.Stmt.elaborate, hCondition] at hRun
+            | ok conditionResult =>
+                rcases conditionResult with
+                  ⟨frontendCondition, stateAfterCondition⟩
+                cases hBody :
+                    (Elab.Stmt.List.elaborateBlock body true).run
+                      stateAfterCondition with
+                | error err =>
+                    simp [Elab.Stmt.elaborate, hCondition, hBody] at hRun
+                | ok bodyResult =>
+                    rcases bodyResult with
+                      ⟨frontendBody, stateAfterBody⟩
+                    simp [Elab.Stmt.elaborate, hCondition, hBody] at hRun
+                    rcases hRun with ⟨rfl, rfl⟩
+                    have hConditionHelper :
+                        stateAfterCondition.clzHelperName? = some helper :=
+                      Expr.elaborate_preserves_existing_clzHelperName
+                        hCondition hHelper
+                    exact ih.block hBodySize hBody hConditionHelper
+        | «break» =>
+            simp [Elab.Stmt.elaborate] at hRun
+            rcases hRun with ⟨rfl, rfl⟩
+            exact hHelper
+        | «continue» =>
+            simp [Elab.Stmt.elaborate] at hRun
+            rcases hRun with ⟨rfl, rfl⟩
+            exact hHelper
+        | «leave» =>
+            simp [Elab.Stmt.elaborate] at hRun
+            rcases hRun with ⟨rfl, rfl⟩
+            exact hHelper
+      let hBlock :
+          ∀ {rawStmts : List Raw.Stmt} {createsScope : Bool}
+            {frontendStmts : List Frontend.Stmt} {state state' : Elab.State}
+            {helper : Name},
+            rawStmtListSize rawStmts < fuel + 1 →
+            (Elab.Stmt.List.elaborateBlock rawStmts createsScope).run state =
+              .ok (frontendStmts, state') →
+            state.clzHelperName? = some helper →
+              state'.clzHelperName? = some helper := by
+        intro rawStmts createsScope frontendStmts state state' helper hSize
+          hRun hHelper
+        unfold Elab.Stmt.List.elaborateBlock at hRun
+        cases hCreate : createsScope
+        · simp [hCreate] at hRun
+          cases hScope :
+              (Elab.Stmt.List.localFunctionScope rawStmts).run state with
+          | error err =>
+              simp [hScope] at hRun
+          | ok scopeResult =>
+              rcases scopeResult with ⟨scope, stateAfterScope⟩
+              cases hPush :
+                  (Elab.pushFunctionScope scope).run stateAfterScope with
+              | error err =>
+                  simp [hScope, hPush] at hRun
+              | ok pushResult =>
+                  rcases pushResult with ⟨unitPush, stateAfterPush⟩
+                  cases hHoistRun :
+                      (Elab.Stmt.List.hoistLocalFunctions rawStmts scope).run
+                        stateAfterPush with
+                  | error err =>
+                      simp [hScope, hPush, hHoistRun] at hRun
+                  | ok hoistResult =>
+                      rcases hoistResult with ⟨unitHoist, stateAfterHoist⟩
+                      cases hListRun :
+                          (Elab.Stmt.List.elaborate rawStmts).run
+                            stateAfterHoist with
+                      | error err =>
+                          simp [hScope, hPush, hHoistRun, hListRun] at hRun
+                      | ok listResult =>
+                          rcases listResult with
+                            ⟨frontendStmts', stateAfterList⟩
+                          cases hPop :
+                              Elab.popFunctionScope.run stateAfterList with
+                          | error err =>
+                              simp [hScope, hPush, hHoistRun, hListRun, hPop]
+                                at hRun
+                          | ok popResult =>
+                              rcases popResult with
+                                ⟨unitPop, stateAfterPop⟩
+                              simp [hScope, hPush, hHoistRun, hListRun, hPop]
+                                at hRun
+                              rcases hRun with ⟨rfl, rfl⟩
+                              have hScopeHelper :
+                                  stateAfterScope.clzHelperName? =
+                                    some helper :=
+                                localFunctionScope_preserves_existing_clzHelperName
+                                  hScope hHelper
+                              have hPushHelper :
+                                  stateAfterPush.clzHelperName? =
+                                    some helper :=
+                                pushFunctionScope_preserves_existing_clzHelperName
+                                  hPush hScopeHelper
+                              have hHoistHelper :
+                                  stateAfterHoist.clzHelperName? =
+                                    some helper :=
+                                hHoist hSize hHoistRun hPushHelper
+                              have hListHelper :
+                                  stateAfterList.clzHelperName? =
+                                    some helper :=
+                                hStmtList hSize hListRun hHoistHelper
+                              exact
+                                popFunctionScope_preserves_existing_clzHelperName
+                                  hPop hListHelper
+        · simp [hCreate] at hRun
+          cases hIdent :
+              Elab.pushIdentifierScope.run state with
+          | error err =>
+              simp [hIdent] at hRun
+          | ok identResult =>
+              rcases identResult with ⟨unitIdent, stateAfterIdent⟩
+              cases hScope :
+                  (Elab.Stmt.List.localFunctionScope rawStmts).run
+                    stateAfterIdent with
+              | error err =>
+                  simp [hIdent, hScope] at hRun
+              | ok scopeResult =>
+                  rcases scopeResult with ⟨scope, stateAfterScope⟩
+                  cases hPush :
+                      (Elab.pushFunctionScope scope).run stateAfterScope with
+                  | error err =>
+                      simp [hIdent, hScope, hPush] at hRun
+                  | ok pushResult =>
+                      rcases pushResult with ⟨unitPush, stateAfterPush⟩
+                      cases hHoistRun :
+                          (Elab.Stmt.List.hoistLocalFunctions rawStmts scope).run
+                            stateAfterPush with
+                      | error err =>
+                          simp [hIdent, hScope, hPush, hHoistRun] at hRun
+                      | ok hoistResult =>
+                          rcases hoistResult with
+                            ⟨unitHoist, stateAfterHoist⟩
+                          cases hListRun :
+                              (Elab.Stmt.List.elaborate rawStmts).run
+                                stateAfterHoist with
+                          | error err =>
+                              simp [hIdent, hScope, hPush, hHoistRun,
+                                hListRun] at hRun
+                          | ok listResult =>
+                              rcases listResult with
+                                ⟨frontendStmts', stateAfterList⟩
+                              cases hPop :
+                                  Elab.popFunctionScope.run
+                                    stateAfterList with
+                              | error err =>
+                                  simp [hIdent, hScope, hPush, hHoistRun,
+                                    hListRun, hPop] at hRun
+                              | ok popResult =>
+                                  rcases popResult with
+                                    ⟨unitPop, stateAfterPop⟩
+                                  cases hPopIdent :
+                                      Elab.popIdentifierScope.run
+                                        stateAfterPop with
+                                  | error err =>
+                                      simp [hIdent, hScope, hPush, hHoistRun,
+                                        hListRun, hPop, hPopIdent] at hRun
+                                  | ok identPopResult =>
+                                      rcases identPopResult with
+                                        ⟨unitIdentPop,
+                                          stateAfterIdentPop⟩
+                                      simp [hIdent, hScope, hPush, hHoistRun,
+                                        hListRun, hPop, hPopIdent] at hRun
+                                      rcases hRun with ⟨rfl, rfl⟩
+                                      have hIdentHelper :
+                                          stateAfterIdent.clzHelperName? =
+                                            some helper :=
+                                        pushIdentifierScope_preserves_existing_clzHelperName
+                                          hIdent hHelper
+                                      have hScopeHelper :
+                                          stateAfterScope.clzHelperName? =
+                                            some helper :=
+                                        localFunctionScope_preserves_existing_clzHelperName
+                                          hScope hIdentHelper
+                                      have hPushHelper :
+                                          stateAfterPush.clzHelperName? =
+                                            some helper :=
+                                        pushFunctionScope_preserves_existing_clzHelperName
+                                          hPush hScopeHelper
+                                      have hHoistHelper :
+                                          stateAfterHoist.clzHelperName? =
+                                            some helper :=
+                                        hHoist hSize hHoistRun hPushHelper
+                                      have hListHelper :
+                                          stateAfterList.clzHelperName? =
+                                            some helper :=
+                                        hStmtList hSize hListRun hHoistHelper
+                                      have hPopHelper :
+                                          stateAfterPop.clzHelperName? =
+                                            some helper :=
+                                        popFunctionScope_preserves_existing_clzHelperName
+                                          hPop hListHelper
+                                      exact
+                                        popIdentifierScope_preserves_existing_clzHelperName
+                                          hPopIdent hPopHelper
+      let hForInit :
+          ∀ {rawStmts : List Raw.Stmt} {frontendStmts : List Frontend.Stmt}
+            {state state' : Elab.State} {helper : Name},
+            rawStmtListSize rawStmts < fuel + 1 →
+            (Elab.Stmt.List.elaborateForInitBlockWithScope rawStmts).run
+              state = .ok (frontendStmts, state') →
+            state.clzHelperName? = some helper →
+              state'.clzHelperName? = some helper := by
+        intro rawStmts frontendStmts state state' helper hSize hRun hHelper
+        unfold Elab.Stmt.List.elaborateForInitBlockWithScope at hRun
+        cases hScope :
+            (Elab.Stmt.List.localFunctionScope rawStmts).run state with
+        | error err =>
+            simp [hScope] at hRun
+        | ok scopeResult =>
+            rcases scopeResult with ⟨scope, stateAfterScope⟩
+            cases hPush :
+                (Elab.pushFunctionScope scope).run stateAfterScope with
+            | error err =>
+                simp [hScope, hPush] at hRun
+            | ok pushResult =>
+                rcases pushResult with ⟨unitPush, stateAfterPush⟩
+                cases hHoistRun :
+                    (Elab.Stmt.List.hoistLocalFunctions rawStmts scope).run
+                      stateAfterPush with
+                | error err =>
+                    simp [hScope, hPush, hHoistRun] at hRun
+                | ok hoistResult =>
+                    rcases hoistResult with ⟨unitHoist, stateAfterHoist⟩
+                    cases hListRun :
+                        (Elab.Stmt.List.elaborate rawStmts).run
+                          stateAfterHoist with
+                    | error err =>
+                        simp [hScope, hPush, hHoistRun, hListRun] at hRun
+                    | ok listResult =>
+                        rcases listResult with
+                          ⟨frontendStmts', stateAfterList⟩
+                        simp [hScope, hPush, hHoistRun, hListRun] at hRun
+                        rcases hRun with ⟨rfl, rfl⟩
+                        have hScopeHelper :
+                            stateAfterScope.clzHelperName? = some helper :=
+                          localFunctionScope_preserves_existing_clzHelperName
+                            hScope hHelper
+                        have hPushHelper :
+                            stateAfterPush.clzHelperName? = some helper :=
+                          pushFunctionScope_preserves_existing_clzHelperName
+                            hPush hScopeHelper
+                        have hHoistHelper :
+                            stateAfterHoist.clzHelperName? = some helper :=
+                          hHoist hSize hHoistRun hPushHelper
+                        exact hStmtList hSize hListRun hHoistHelper
+      let hFunction :
+          ∀ {params returns : List Name} {body : List Raw.Stmt}
+            {fn : Frontend.FunctionDef} {state state' : Elab.State}
+            {helper : Name},
+            rawStmtListSize body < fuel + 1 →
+            (Elab.FunctionDef.elaborate params returns body).run state =
+              .ok (fn, state') →
+            state.clzHelperName? = some helper →
+              state'.clzHelperName? = some helper := by
+        intro params returns body fn state state' helper hSize hRun hHelper
+        unfold Elab.FunctionDef.elaborate at hRun
+        cases hPush : Elab.pushIdentifierScope.run state with
+        | error err =>
+            simp [hPush] at hRun
+        | ok pushResult =>
+            rcases pushResult with ⟨unitPush, stateAfterPush⟩
+            cases hDeclare :
+                (Elab.declareIdentifiers (params ++ returns)
+                  "function parameter/result").run stateAfterPush with
+            | error err =>
+                simp [hPush, hDeclare] at hRun
+            | ok declareResult =>
+                rcases declareResult with ⟨unitDeclare, stateAfterDeclare⟩
+                cases hBody :
+                    (Elab.Stmt.List.elaborateBlock body true).run
+                      stateAfterDeclare with
+                | error err =>
+                    simp [hPush, hDeclare, hBody] at hRun
+                | ok bodyResult =>
+                    rcases bodyResult with ⟨frontendBody, stateAfterBody⟩
+                    cases hPop :
+                        Elab.popIdentifierScope.run stateAfterBody with
+                    | error err =>
+                        simp [hPush, hDeclare, hBody, hPop] at hRun
+                    | ok popResult =>
+                        rcases popResult with ⟨unitPop, stateAfterPop⟩
+                        simp [hPush, hDeclare, hBody, hPop] at hRun
+                        rcases hRun with ⟨rfl, rfl⟩
+                        have hPushHelper :
+                            stateAfterPush.clzHelperName? = some helper :=
+                          pushIdentifierScope_preserves_existing_clzHelperName
+                            hPush hHelper
+                        have hDeclareHelper :
+                            stateAfterDeclare.clzHelperName? = some helper :=
+                          declareIdentifiers_preserves_existing_clzHelperName
+                            hDeclare hPushHelper
+                        have hBodyHelper :
+                            stateAfterBody.clzHelperName? = some helper :=
+                          hBlock hSize hBody hDeclareHelper
+                        exact
+                          popIdentifierScope_preserves_existing_clzHelperName
+                            hPop hBodyHelper
+      exact
+        { function := hFunction
+          stmtList := hStmtList
+          stmt := hStmt
+          caseList := hCaseList
+          block := hBlock
+          forInit := hForInit
+          hoist := hHoist }
+
+theorem hoistLocalFunctions_preserves_existing_clzHelperName
+    {rawStmts : List Raw.Stmt} {scope : List (Name × Name)}
+    {state state' : Elab.State} {helper : Name}
+    (hRun :
+      (Elab.Stmt.List.hoistLocalFunctions rawStmts scope).run state =
+        .ok ((), state'))
+    (hHelperName : state.clzHelperName? = some helper) :
+    state'.clzHelperName? = some helper := by
+  have hBelow :=
+    preservesExistingClzHelperNameBelow (rawStmtListSize rawStmts + 1)
+  exact hBelow.hoist (Nat.lt_succ_self _) hRun hHelperName
+
+namespace FunctionDef
+
+theorem elaborate_preserves_existing_clzHelperName
+    {params returns : List Name} {body : List Raw.Stmt}
+    {fn : Frontend.FunctionDef} {state state' : Elab.State}
+    {helper : Name}
+    (hRun :
+      (Elab.FunctionDef.elaborate params returns body).run state =
+        .ok (fn, state'))
+    (hHelperName : state.clzHelperName? = some helper) :
+    state'.clzHelperName? = some helper := by
+  have hBelow :=
+    preservesExistingClzHelperNameBelow (rawStmtListSize body + 1)
+  exact hBelow.function (Nat.lt_succ_self _) hRun hHelperName
+
+end FunctionDef
+
+namespace Stmt
+
+theorem elaborate_preserves_existing_clzHelperName
+    {rawStmt : Raw.Stmt} {frontendStmt : Frontend.Stmt}
+    {state state' : Elab.State} {helper : Name}
+    (hRun :
+      (Elab.Stmt.elaborate rawStmt).run state =
+        .ok (frontendStmt, state'))
+    (hHelperName : state.clzHelperName? = some helper) :
+    state'.clzHelperName? = some helper := by
+  have hBelow :=
+    preservesExistingClzHelperNameBelow (rawStmtSize rawStmt + 1)
+  exact hBelow.stmt (Nat.lt_succ_self _) hRun hHelperName
+
+namespace List
+
+theorem elaborate_preserves_existing_clzHelperName
+    {rawStmts : List Raw.Stmt} {frontendStmts : List Frontend.Stmt}
+    {state state' : Elab.State} {helper : Name}
+    (hRun :
+      (Elab.Stmt.List.elaborate rawStmts).run state =
+        .ok (frontendStmts, state'))
+    (hHelperName : state.clzHelperName? = some helper) :
+    state'.clzHelperName? = some helper := by
+  have hBelow :=
+    preservesExistingClzHelperNameBelow (rawStmtListSize rawStmts + 1)
+  exact hBelow.stmtList (Nat.lt_succ_self _) hRun hHelperName
+
+theorem elaborateBlock_preserves_existing_clzHelperName
+    {rawStmts : List Raw.Stmt} {createsScope : Bool}
+    {frontendStmts : List Frontend.Stmt} {state state' : Elab.State}
+    {helper : Name}
+    (hRun :
+      (Elab.Stmt.List.elaborateBlock rawStmts createsScope).run state =
+        .ok (frontendStmts, state'))
+    (hHelperName : state.clzHelperName? = some helper) :
+    state'.clzHelperName? = some helper := by
+  have hBelow :=
+    preservesExistingClzHelperNameBelow (rawStmtListSize rawStmts + 1)
+  exact hBelow.block (Nat.lt_succ_self _) hRun hHelperName
+
+theorem elaborateForInitBlockWithScope_preserves_existing_clzHelperName
+    {rawStmts : List Raw.Stmt} {frontendStmts : List Frontend.Stmt}
+    {state state' : Elab.State} {helper : Name}
+    (hRun :
+      (Elab.Stmt.List.elaborateForInitBlockWithScope rawStmts).run state =
+        .ok (frontendStmts, state'))
+    (hHelperName : state.clzHelperName? = some helper) :
+    state'.clzHelperName? = some helper := by
+  have hBelow :=
+    preservesExistingClzHelperNameBelow (rawStmtListSize rawStmts + 1)
+  exact hBelow.forInit (Nat.lt_succ_self _) hRun hHelperName
+
+end List
+
+namespace CaseList
+
+theorem elaborate_preserves_existing_clzHelperName
+    {rawCases : List (Raw.SwitchCaseValue × List Raw.Stmt)}
+    {frontendCases : List (Frontend.SwitchCaseValue × List Frontend.Stmt)}
+    {state state' : Elab.State} {helper : Name}
+    (hRun :
+      (Elab.Stmt.CaseList.elaborate rawCases).run state =
+        .ok (frontendCases, state'))
+    (hHelperName : state.clzHelperName? = some helper) :
+    state'.clzHelperName? = some helper := by
+  have hBelow :=
+    preservesExistingClzHelperNameBelow (rawCaseListSize rawCases + 1)
+  exact hBelow.caseList (Nat.lt_succ_self _) hRun hHelperName
+
+end CaseList
+end Stmt
 
 theorem hoistLocalFunctions_lookup_of_function_mem
     {rawStmts : List Raw.Stmt} {scope : List (Name × Name)}

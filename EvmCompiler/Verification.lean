@@ -82,6 +82,17 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.freshNonFunctionBindingNameFrom_preserves_existing_clzHelperName
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.freshNonFunctionBindingName_preserves_existing_clzHelperName
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.ensureClzHelper_preserves_existing_clzHelperName
+#check EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.localFunctionScope_preserves_existing_clzHelperName
+#check EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.requireIdentifiersVisible_preserves_existing_clzHelperName
+#check EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.PreservesExistingClzHelperNameBelow
+#check EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.preservesExistingClzHelperNameBelow
+#check EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.hoistLocalFunctions_preserves_existing_clzHelperName
+#check EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.FunctionDef.elaborate_preserves_existing_clzHelperName
+#check EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.Stmt.elaborate_preserves_existing_clzHelperName
+#check EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.Stmt.List.elaborate_preserves_existing_clzHelperName
+#check EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.Stmt.List.elaborateBlock_preserves_existing_clzHelperName
+#check EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.Stmt.List.elaborateForInitBlockWithScope_preserves_existing_clzHelperName
+#check EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.Stmt.CaseList.elaborate_preserves_existing_clzHelperName
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.ExprClzCall
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.ExprListClzCall
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.StmtClzCall
@@ -425,6 +436,16 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.freshNonFunctionBindingNameFrom_preserves_existing_clzHelperName
 #print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.freshNonFunctionBindingName_preserves_existing_clzHelperName
 #print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.ensureClzHelper_preserves_existing_clzHelperName
+#print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.localFunctionScope_preserves_existing_clzHelperName
+#print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.requireIdentifiersVisible_preserves_existing_clzHelperName
+#print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.preservesExistingClzHelperNameBelow
+#print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.hoistLocalFunctions_preserves_existing_clzHelperName
+#print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.FunctionDef.elaborate_preserves_existing_clzHelperName
+#print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.Stmt.elaborate_preserves_existing_clzHelperName
+#print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.Stmt.List.elaborate_preserves_existing_clzHelperName
+#print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.Stmt.List.elaborateBlock_preserves_existing_clzHelperName
+#print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.Stmt.List.elaborateForInitBlockWithScope_preserves_existing_clzHelperName
+#print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.Stmt.CaseList.elaborate_preserves_existing_clzHelperName
 #print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.Expr.elaborate_preserves_existing_clzHelperName
 #print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.Expr.List.elaborate_preserves_existing_clzHelperName
 #print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.Expr.elaborate_clz_direct
