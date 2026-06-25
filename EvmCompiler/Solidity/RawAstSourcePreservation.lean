@@ -394,6 +394,68 @@ theorem identifier_ordered
       subst resolved
       simpa [Frontend.Expr.toYul?] using hToYul.symm
 
+theorem primitive_call_parts
+    {context : Frontend.ObjectBuiltinContext}
+    {callee : Name} {args : List Frontend.Expr}
+    {ordered : Frontend.AstExpr}
+    (hNormalized :
+      ExprNormalized context (.call .primitive callee args) ordered) :
+    ∃ op orderedArgs,
+      Frontend.Primitive.ofName? callee = some op ∧
+        ordered = .Call (.inl op) orderedArgs ∧
+        Nonempty (ExprListNormalized context args orderedArgs) := by
+  rcases hNormalized with ⟨resolved, hResolve, hToYul⟩
+  unfold Frontend.Expr.resolveObjectBuiltinsIn? at hResolve
+  cases hArgsResolve :
+      Frontend.Expr.List.resolveObjectBuiltinsIn? args context with
+  | none => simp [hArgsResolve] at hResolve
+  | some resolvedArgs =>
+      simp [hArgsResolve] at hResolve
+      subst resolved
+      unfold Frontend.Expr.toYul? at hToYul
+      cases hOp : Frontend.Primitive.ofName? callee with
+      | none => simp [hOp] at hToYul
+      | some op =>
+          cases hArgsToYul : Frontend.Expr.List.toYul? resolvedArgs with
+          | none => simp [hOp, hArgsToYul] at hToYul
+          | some orderedArgs =>
+              simp [hOp, hArgsToYul] at hToYul
+              exact
+                ⟨op, orderedArgs, rfl, hToYul.symm,
+                  ⟨{
+                    resolved := resolvedArgs
+                    resolve := hArgsResolve
+                    toYul := hArgsToYul }⟩⟩
+
+theorem user_call_parts
+    {context : Frontend.ObjectBuiltinContext}
+    {callee : Name} {args : List Frontend.Expr}
+    {ordered : Frontend.AstExpr}
+    (hNormalized :
+      ExprNormalized context (.call .user callee args) ordered) :
+    ∃ orderedArgs,
+      ordered = .Call (.inr callee) orderedArgs ∧
+        Nonempty (ExprListNormalized context args orderedArgs) := by
+  rcases hNormalized with ⟨resolved, hResolve, hToYul⟩
+  unfold Frontend.Expr.resolveObjectBuiltinsIn? at hResolve
+  cases hArgsResolve :
+      Frontend.Expr.List.resolveObjectBuiltinsIn? args context with
+  | none => simp [hArgsResolve] at hResolve
+  | some resolvedArgs =>
+      simp [hArgsResolve] at hResolve
+      subst resolved
+      unfold Frontend.Expr.toYul? at hToYul
+      cases hArgsToYul : Frontend.Expr.List.toYul? resolvedArgs with
+      | none => simp [hArgsToYul] at hToYul
+      | some orderedArgs =>
+          simp [hArgsToYul] at hToYul
+          exact
+            ⟨orderedArgs, hToYul.symm,
+              ⟨{
+                resolved := resolvedArgs
+                resolve := hArgsResolve
+                toYul := hArgsToYul }⟩⟩
+
 end ExprNormalized
 
 namespace StmtNormalized
@@ -756,6 +818,97 @@ def ExprElaborationRunForward
         ExprValuesRunForward rawFuel orderedFuel
           rawContext rawExpr ordered contract state
 
+/-- Pointwise checked expression compilation, independent of the order in
+which runtime argument evaluation visits the list. -/
+inductive ExprListCompiled (builtinContext : Frontend.ObjectBuiltinContext) :
+    List Raw.Expr → List Frontend.AstExpr → Prop where
+  | nil : ExprListCompiled builtinContext [] []
+  | cons
+      {rawHead : Raw.Expr} {orderedHead : Frontend.AstExpr}
+      {rawTail : List Raw.Expr} {orderedTail : List Frontend.AstExpr}
+      {frontHead : Frontend.Expr}
+      {elabState finalElabState : Elab.State}
+      (headElaborates :
+        (Elab.Expr.elaborate rawHead).run elabState =
+          .ok (frontHead, finalElabState))
+      (headNormalized :
+        ExprNormalized builtinContext frontHead orderedHead)
+      (tail : ExprListCompiled builtinContext rawTail orderedTail) :
+      ExprListCompiled builtinContext
+        (rawHead :: rawTail) (orderedHead :: orderedTail)
+
+namespace ExprListCompiled
+
+theorem of_elaboration
+    {builtinContext : Frontend.ObjectBuiltinContext} :
+    ∀ {rawExprs : List Raw.Expr} {fronts : List Frontend.Expr}
+      {ordered : List Frontend.AstExpr}
+      {elabState finalElabState : Elab.State},
+      (Elab.Expr.List.elaborate rawExprs).run elabState =
+          .ok (fronts, finalElabState) →
+        ExprListNormalized builtinContext fronts ordered →
+          ExprListCompiled builtinContext rawExprs ordered := by
+  intro rawExprs
+  induction rawExprs with
+  | nil =>
+      intro fronts ordered elabState finalElabState hElab hNormalized
+      simp [Elab.Expr.List.elaborate] at hElab
+      rcases hElab with ⟨rfl, rfl⟩
+      have hOrdered := ExprListNormalized.nil_ordered hNormalized
+      subst ordered
+      exact .nil
+  | cons rawHead rawTail ih =>
+      intro fronts ordered elabState finalElabState hElab hNormalized
+      unfold Elab.Expr.List.elaborate at hElab
+      simp [StateT.run_bind] at hElab
+      cases hHead : (Elab.Expr.elaborate rawHead).run elabState with
+      | error err => simp [hHead] at hElab
+      | ok headResult =>
+          rcases headResult with ⟨frontHead, headElabState⟩
+          simp [hHead] at hElab
+          cases hTail :
+              (Elab.Expr.List.elaborate rawTail).run headElabState with
+          | error err => simp [hTail] at hElab
+          | ok tailResult =>
+              rcases tailResult with ⟨frontTail, tailElabState⟩
+              simp [hTail] at hElab
+              rcases hElab with ⟨rfl, rfl⟩
+              rcases ExprListNormalized.cons_parts hNormalized with
+                ⟨orderedHead, orderedTail, rfl,
+                  ⟨hHeadNormalized⟩, ⟨hTailNormalized⟩⟩
+              exact
+                .cons hHead hHeadNormalized
+                  (ih hTail hTailNormalized)
+
+theorem append
+    {builtinContext : Frontend.ObjectBuiltinContext}
+    {rawLeft rawRight : List Raw.Expr}
+    {orderedLeft orderedRight : List Frontend.AstExpr}
+    (hLeft : ExprListCompiled builtinContext rawLeft orderedLeft)
+    (hRight : ExprListCompiled builtinContext rawRight orderedRight) :
+    ExprListCompiled builtinContext
+      (rawLeft ++ rawRight) (orderedLeft ++ orderedRight) := by
+  induction hLeft with
+  | nil => exact hRight
+  | cons hElab hNormalized hTail ih =>
+      exact .cons hElab hNormalized ih
+
+theorem reverse
+    {builtinContext : Frontend.ObjectBuiltinContext}
+    {rawExprs : List Raw.Expr} {ordered : List Frontend.AstExpr}
+    (hCompiled : ExprListCompiled builtinContext rawExprs ordered) :
+    ExprListCompiled builtinContext rawExprs.reverse ordered.reverse := by
+  induction hCompiled with
+  | nil => exact .nil
+  | @cons rawHead orderedHead rawTail orderedTail frontHead
+      elabState finalElabState hElab hNormalized hTail ih =>
+      simpa using
+        append ih
+          (.cons hElab hNormalized
+            (.nil : ExprListCompiled builtinContext [] []))
+
+end ExprListCompiled
+
 theorem argsRunForward_cons
     {rawFuel orderedFuel : Nat}
     {context : Raw.SourceSemantics.Context}
@@ -797,6 +950,73 @@ theorem argsRunForward_cons
           exact Simulation.Interaction.ForwardRel.done rfl
       | ok tailResult =>
           exact Simulation.Interaction.ForwardRel.done rfl
+
+theorem argsRunForward_of_compiled
+    {rawContext : Raw.SourceSemantics.Context}
+    {builtinContext : Frontend.ObjectBuiltinContext}
+    {contract : Frontend.AstContract}
+    (hExpr :
+      ExprElaborationRunForward rawContext builtinContext contract) :
+    ∀ {rawExprs : List Raw.Expr} {ordered : List Frontend.AstExpr},
+      ExprListCompiled builtinContext rawExprs ordered →
+        ∀ (rawBase orderedBase : Nat) (state : State),
+          ArgsRunForward
+            (rawBase + 2 * rawExprs.length + 1)
+            (orderedBase + 2 * rawExprs.length + 1)
+            rawContext rawExprs ordered contract state := by
+  intro rawExprs ordered hCompiled
+  induction hCompiled with
+  | nil =>
+      intro rawBase orderedBase state
+      simpa using
+        (argsRunForward_nil_succ
+          (rawFuel := rawBase) (orderedFuel := orderedBase)
+          (context := rawContext) (contract := contract) (state := state))
+  | @cons rawHead orderedHead rawTail orderedTail frontHead
+      elabState finalElabState hElab hNormalized hTail ih =>
+      intro rawBase orderedBase state
+      let rawTailFuel := rawBase + 2 * rawTail.length + 1
+      let orderedTailFuel := orderedBase + 2 * rawTail.length + 1
+      have hHeadValues :=
+        hExpr (rawTailFuel + 1) (orderedTailFuel + 1)
+          (state := state) hElab hNormalized
+      have hHeadRun := exprRunForward_of_values hHeadValues
+      have hCons :=
+        argsRunForward_cons
+          (rawFuel := rawTailFuel) (orderedFuel := orderedTailFuel)
+          (context := rawContext) (rawArg := rawHead)
+          (rawRest := rawTail) (orderedArg := orderedHead)
+          (orderedRest := orderedTail) (contract := contract)
+          (state := state) hHeadRun
+          (fun stateAfterHead =>
+            ih rawBase orderedBase stateAfterHead)
+      simpa [rawTailFuel, orderedTailFuel, Nat.mul_add,
+        Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using hCons
+
+theorem argsRunForward_reverse_of_elaboration
+    {rawContext : Raw.SourceSemantics.Context}
+    {builtinContext : Frontend.ObjectBuiltinContext}
+    {contract : Frontend.AstContract}
+    (hExpr :
+      ExprElaborationRunForward rawContext builtinContext contract)
+    {rawExprs : List Raw.Expr} {fronts : List Frontend.Expr}
+    {ordered : List Frontend.AstExpr}
+    {elabState finalElabState : Elab.State}
+    (hElab :
+      (Elab.Expr.List.elaborate rawExprs).run elabState =
+        .ok (fronts, finalElabState))
+    (hNormalized : ExprListNormalized builtinContext fronts ordered)
+    (rawBase orderedBase : Nat) (state : State) :
+    ArgsRunForward
+      (rawBase + 2 * rawExprs.length + 1)
+      (orderedBase + 2 * rawExprs.length + 1)
+      rawContext rawExprs.reverse ordered.reverse contract state := by
+  have hCompiled :=
+    ExprListCompiled.of_elaboration hElab hNormalized
+  have hReversed := ExprListCompiled.reverse hCompiled
+  simpa using
+    (argsRunForward_of_compiled hExpr hReversed
+      rawBase orderedBase state)
 
 theorem argsRunForward_of_elaboration
     {rawContext : Raw.SourceSemantics.Context}
@@ -926,6 +1146,64 @@ theorem exprValuesRunForward_primitiveCall_succ
       forward_refl Yul.FunctionsInteractionPrimitive.Truncated
         (Yul.InteractionSemantics.primitiveSemantics.eval
           fuel stateAfterArgs op values.reverse))
+
+theorem exprValuesRunForward_of_elaborated_primitiveCall
+    {rawBase orderedBase : Nat}
+    {rawContext : Raw.SourceSemantics.Context}
+    {builtinContext : Frontend.ObjectBuiltinContext}
+    {name : Name} {rawArgs : List Raw.Expr}
+    {elabState finalElabState : Elab.State}
+    {front : Frontend.Expr} {ordered : Frontend.AstExpr}
+    {contract : Frontend.AstContract} {state : State}
+    (hExpr :
+      ExprElaborationRunForward rawContext builtinContext contract)
+    (hNotMemoryguard : name ≠ "memoryguard")
+    (hNotClz : name ≠ "clz")
+    (hClass : CallClass.classifyCall name = .primitive)
+    (hElab :
+      (Elab.Expr.elaborate (.functionCall name rawArgs)).run elabState =
+        .ok (front, finalElabState))
+    (hNormalized : ExprNormalized builtinContext front ordered)
+    (hPrimitive :
+      ∀ (op : EvmYul.Operation .Yul),
+        Frontend.Primitive.ofName? name = some op →
+          ∀ (stateAfterArgs : State) (values : List Frontend.Word),
+            PrimitiveRunForward
+              (rawBase + 2 * rawArgs.length + 1)
+              (orderedBase + 2 * rawArgs.length + 1)
+              stateAfterArgs op values.reverse) :
+    ExprValuesRunForward
+      (rawBase + 2 * rawArgs.length + 2)
+      (orderedBase + 2 * rawArgs.length + 2)
+      rawContext (.functionCall name rawArgs) ordered contract state := by
+  unfold Elab.Expr.elaborate at hElab
+  simp at hElab
+  cases hArgs : (Elab.Expr.List.elaborate rawArgs).run elabState with
+  | error err => simp [hArgs] at hElab
+  | ok argsResult =>
+      rcases argsResult with ⟨frontArgs, argsState⟩
+      simp [hArgs, hClass] at hElab
+      rcases hElab with ⟨rfl, rfl⟩
+      rcases ExprNormalized.primitive_call_parts hNormalized with
+        ⟨op, orderedArgs, hOp, rfl, ⟨hArgsNormalized⟩⟩
+      let rawArgsFuel := rawBase + 2 * rawArgs.length + 1
+      let orderedArgsFuel := orderedBase + 2 * rawArgs.length + 1
+      have hArgsRun :=
+        argsRunForward_reverse_of_elaboration hExpr hArgs hArgsNormalized
+          rawBase orderedBase state
+      have hCall :=
+        exprValuesRunForward_primitiveCall_of_runs
+          hNotClz hClass hOp hArgsRun (hPrimitive op hOp)
+      have hRawFuel :
+          rawBase + 2 * rawArgs.length + 2 =
+            (rawBase + 2 * rawArgs.length + 1) + 1 := by
+        omega
+      have hOrderedFuel :
+          orderedBase + 2 * rawArgs.length + 2 =
+            (orderedBase + 2 * rawArgs.length + 1) + 1 := by
+        omega
+      rw [hRawFuel, hOrderedFuel]
+      exact hCall
 
 theorem exprValuesRunForward_userCall_succ
     {rawFuel orderedFuel : Nat}
