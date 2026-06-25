@@ -4274,6 +4274,98 @@ theorem generatedNormalizationEvidence_prefixOfRawOccurrence
         ⟨generated, frontendArgs,
           fun {fuel shared vars} => hPrefixRoute hRoute⟩
 
+theorem generatedNormalizationEvidence_clzPrefixOfRawOccurrence
+    {raw : Raw.Object} {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    (hEvidence : Raw.Object.GeneratedNormalizationEvidence raw object)
+    (hConvert : object.toSolcYulOrderedProgram? = some ordered) :
+    match raw.code? with
+    | none => True
+    | some code =>
+        ∃ (coreDispatcher : List Frontend.Stmt) (state : State)
+            (helper? arg? ret? : Option Name),
+          elaborateCodeCore code = .ok (coreDispatcher, state) ∧
+            elaborateCode code =
+              .ok (object.dispatcher, object.functions,
+                helper?, arg?, ret?) ∧
+              ∀ {rawArg : Raw.Expr},
+                RawOccurrence.StmtListClzCall rawArg code →
+                  ∃ (helper : Name) (frontendArg : Frontend.Expr),
+                    ∀ {fuel : Nat}
+                        {shared : EvmYul.SharedState .Yul}
+                        {vars : EvmYul.Yul.VarStore},
+                      ∃ (params returns : List Name)
+                        (body : List Yul.AstStmt)
+                        (yulArgs : List Yul.AstExpr)
+                        (stmts : List Yul.AstStmt),
+                        FocusedGeneratedCallPrefixEvidence ordered helper
+                          params returns body yulArgs stmts fuel
+                          (some ordered.program.contract) shared vars := by
+  cases hRawCode : raw.code? with
+  | none =>
+      simp [hRawCode]
+  | some code =>
+      have hCodeEvidence :
+          Raw.Object.CodeGeneratedNormalizationEvidence code object := by
+        simpa [Raw.Object.GeneratedNormalizationEvidence, hRawCode]
+          using hEvidence.2.2.2
+      have hPrefix :
+          ∃ (coreDispatcher : List Frontend.Stmt) (state : State)
+              (helper? arg? ret? : Option Name),
+            elaborateCodeCore code = .ok (coreDispatcher, state) ∧
+              elaborateCode code =
+                .ok (object.dispatcher, object.functions,
+                  helper?, arg?, ret?) ∧
+                ∀ {generated : Name} {frontendArgs : List Frontend.Expr}
+                    {fuel : Nat} {shared : EvmYul.SharedState .Yul}
+                    {vars : EvmYul.Yul.VarStore},
+                  RawOccurrence.CodeElaborationRoute state generated
+                    frontendArgs object.dispatcher →
+                    ∃ (params returns : List Name)
+                      (body : List Yul.AstStmt)
+                      (yulArgs : List Yul.AstExpr)
+                      (stmts : List Yul.AstStmt),
+                      FocusedGeneratedCallPrefixEvidence ordered generated
+                        params returns body yulArgs stmts fuel
+                        (some ordered.program.contract) shared vars := by
+        exact
+          codeGeneratedNormalizationEvidence_prefixEvidenceOfCodeRoute
+            hCodeEvidence hConvert
+      have hRoute :
+          ∃ (coreDispatcher : List Frontend.Stmt) (state : State)
+              (helper? arg? ret? : Option Name),
+            elaborateCodeCore code = .ok (coreDispatcher, state) ∧
+              elaborateCode code =
+                .ok (object.dispatcher, object.functions,
+                  helper?, arg?, ret?) ∧
+                ∀ {rawArg : Raw.Expr},
+                  RawOccurrence.StmtListClzCall rawArg code →
+                    ∃ (helper : Name) (frontendArg : Frontend.Expr),
+                      RawOccurrence.CodeElaborationRoute state helper
+                        [frontendArg] object.dispatcher := by
+        simpa [hRawCode] using
+          generatedNormalizationEvidence_clzCodeRouteOfRawOccurrence
+            hEvidence
+      rcases hPrefix with
+        ⟨coreDispatcher, state, helper?, arg?, ret?, hCore, hPrefixRest⟩
+      rcases hPrefixRest with ⟨hElab, hPrefixRoute⟩
+      rcases hRoute with
+        ⟨coreDispatcherRoute, stateRoute, helperRoute?, argRoute?,
+          retRoute?, hCoreRoute, hRouteRest⟩
+      rcases hRouteRest with ⟨hElabRoute, hRouteOfRaw⟩
+      rw [hCore] at hCoreRoute
+      simp at hCoreRoute
+      rcases hCoreRoute with ⟨hDispatcherEq, hStateEq⟩
+      subst coreDispatcherRoute
+      subst stateRoute
+      refine ⟨coreDispatcher, state, helper?, arg?, ret?, hCore, hElab, ?_⟩
+      intro rawArg hOccurrence
+      rcases hRouteOfRaw hOccurrence with
+        ⟨helper, frontendArg, hRoute⟩
+      exact
+        ⟨helper, frontendArg,
+          fun {fuel shared vars} => hPrefixRoute hRoute⟩
+
 theorem decodeAndElaborateSolcIr?_prefixOfRawOccurrence
     {rawJson : String} {selection : Selection}
     {program : Frontend.Program} {ordered : Yul.OrderedProgram}
@@ -4475,6 +4567,193 @@ theorem decodeAndElaborateSolcIr?_recursiveExecutionOfRawOccurrence
       rcases hOccurrenceSemantic hOccurrence hNotMemoryguard hNotClz hKind with
         ⟨generated, frontendArgs, hGenerated⟩
       refine ⟨generated, frontendArgs, ?_⟩
+      intro fuel shared vars
+      rcases hGenerated with
+        ⟨params, returns, body, yulArgs, stmts, hInterface⟩
+      exact
+        ⟨params, returns, body, yulArgs, stmts,
+          FocusedGeneratedCallSemanticInterface.recursiveExecution_of_interface
+            hInterface⟩
+
+theorem decodeAndElaborateSolcIr?_clzPrefixOfRawOccurrence
+    {rawJson : String} {selection : Selection}
+    {program : Frontend.Program} {ordered : Yul.OrderedProgram}
+    (hDecode :
+      decodeAndElaborateSolcIr? rawJson selection = some program)
+    (hConvert : program.object.toSolcYulOrderedProgram? = some ordered) :
+    ∃ (json : Lean.Json) (selected : SelectedIr)
+        (object : Frontend.Object),
+      Lean.Json.parse rawJson = .ok json ∧
+        decodeSelectedIr json selection = .ok selected ∧
+          selected.root.elaborate? selected.evmVersion = .ok object ∧
+            program =
+              { source := selected.source
+                contract := selected.contract
+                object := object } ∧
+              match selected.root.code? with
+              | none => True
+              | some code =>
+                  ∃ (coreDispatcher : List Frontend.Stmt) (state : State)
+                      (helper? arg? ret? : Option Name),
+                    elaborateCodeCore code = .ok (coreDispatcher, state) ∧
+                      elaborateCode code =
+                        .ok (object.dispatcher, object.functions,
+                          helper?, arg?, ret?) ∧
+                        ∀ {rawArg : Raw.Expr},
+                          RawOccurrence.StmtListClzCall rawArg code →
+                            ∃ (helper : Name)
+                              (frontendArg : Frontend.Expr),
+                              ∀ {fuel : Nat}
+                                  {shared : EvmYul.SharedState .Yul}
+                                  {vars : EvmYul.Yul.VarStore},
+                                ∃ (params returns : List Name)
+                                  (body : List Yul.AstStmt)
+                                  (yulArgs : List Yul.AstExpr)
+                                  (stmts : List Yul.AstStmt),
+                                  FocusedGeneratedCallPrefixEvidence
+                                    ordered helper params returns body
+                                    yulArgs stmts fuel
+                                    (some ordered.program.contract)
+                                    shared vars := by
+  rcases decodeAndElaborateSolcIr?_generatedNormalizationEvidence
+      hDecode with
+    ⟨json, selected, object, hParse, hSelected, hObject, hEvidence,
+      hProgram⟩
+  have hObjectConvert :
+      object.toSolcYulOrderedProgram? = some ordered := by
+    simpa [hProgram] using hConvert
+  exact
+    ⟨json, selected, object, hParse, hSelected, hObject, hProgram,
+      generatedNormalizationEvidence_clzPrefixOfRawOccurrence hEvidence
+        hObjectConvert⟩
+
+theorem decodeAndElaborateSolcIr?_clzSemanticInterfaceOfRawOccurrence
+    {rawJson : String} {selection : Selection}
+    {program : Frontend.Program} {ordered : Yul.OrderedProgram}
+    (hDecode :
+      decodeAndElaborateSolcIr? rawJson selection = some program)
+    (hConvert : program.object.toSolcYulOrderedProgram? = some ordered) :
+    ∃ (json : Lean.Json) (selected : SelectedIr)
+        (object : Frontend.Object),
+      Lean.Json.parse rawJson = .ok json ∧
+        decodeSelectedIr json selection = .ok selected ∧
+          selected.root.elaborate? selected.evmVersion = .ok object ∧
+            program =
+              { source := selected.source
+                contract := selected.contract
+                object := object } ∧
+              match selected.root.code? with
+              | none => True
+              | some code =>
+                  ∃ (coreDispatcher : List Frontend.Stmt) (state : State)
+                      (helper? arg? ret? : Option Name),
+                    elaborateCodeCore code = .ok (coreDispatcher, state) ∧
+                      elaborateCode code =
+                        .ok (object.dispatcher, object.functions,
+                          helper?, arg?, ret?) ∧
+                        ∀ {rawArg : Raw.Expr},
+                          RawOccurrence.StmtListClzCall rawArg code →
+                            ∃ (helper : Name)
+                              (frontendArg : Frontend.Expr),
+                              ∀ {fuel : Nat}
+                                  {shared : EvmYul.SharedState .Yul}
+                                  {vars : EvmYul.Yul.VarStore},
+                                ∃ (params returns : List Name)
+                                  (body : List Yul.AstStmt)
+                                  (yulArgs : List Yul.AstExpr)
+                                  (stmts : List Yul.AstStmt),
+                                  FocusedGeneratedCallSemanticInterface
+                                    ordered helper params returns body
+                                    yulArgs stmts fuel
+                                    (some ordered.program.contract)
+                                    shared vars := by
+  rcases decodeAndElaborateSolcIr?_clzPrefixOfRawOccurrence
+      hDecode hConvert with
+    ⟨json, selected, object, hParse, hSelected, hObject, hProgram,
+      hPrefix⟩
+  refine ⟨json, selected, object, hParse, hSelected, hObject, hProgram, ?_⟩
+  cases hRawCode : selected.root.code? with
+  | none =>
+      simp [hRawCode]
+  | some code =>
+      rw [hRawCode] at hPrefix
+      rcases hPrefix with
+        ⟨coreDispatcher, state, helper?, arg?, ret?, hCore, hElab,
+          hOccurrencePrefix⟩
+      refine
+        ⟨coreDispatcher, state, helper?, arg?, ret?, hCore, hElab, ?_⟩
+      intro rawArg hOccurrence
+      rcases hOccurrencePrefix hOccurrence with
+        ⟨helper, frontendArg, hGenerated⟩
+      refine ⟨helper, frontendArg, ?_⟩
+      intro fuel shared vars
+      rcases hGenerated with
+        ⟨params, returns, body, yulArgs, stmts, hEvidence⟩
+      exact
+        ⟨params, returns, body, yulArgs, stmts,
+          FocusedGeneratedCallSemanticInterface.of_prefixEvidence
+            hEvidence⟩
+
+theorem decodeAndElaborateSolcIr?_clzRecursiveExecutionOfRawOccurrence
+    {rawJson : String} {selection : Selection}
+    {program : Frontend.Program} {ordered : Yul.OrderedProgram}
+    (hDecode :
+      decodeAndElaborateSolcIr? rawJson selection = some program)
+    (hConvert : program.object.toSolcYulOrderedProgram? = some ordered) :
+    ∃ (json : Lean.Json) (selected : SelectedIr)
+        (object : Frontend.Object),
+      Lean.Json.parse rawJson = .ok json ∧
+        decodeSelectedIr json selection = .ok selected ∧
+          selected.root.elaborate? selected.evmVersion = .ok object ∧
+            program =
+              { source := selected.source
+                contract := selected.contract
+                object := object } ∧
+              match selected.root.code? with
+              | none => True
+              | some code =>
+                  ∃ (coreDispatcher : List Frontend.Stmt) (state : State)
+                      (helper? arg? ret? : Option Name),
+                    elaborateCodeCore code = .ok (coreDispatcher, state) ∧
+                      elaborateCode code =
+                        .ok (object.dispatcher, object.functions,
+                          helper?, arg?, ret?) ∧
+                        ∀ {rawArg : Raw.Expr},
+                          RawOccurrence.StmtListClzCall rawArg code →
+                            ∃ (helper : Name)
+                              (frontendArg : Frontend.Expr),
+                              ∀ {fuel : Nat}
+                                  {shared : EvmYul.SharedState .Yul}
+                                  {vars : EvmYul.Yul.VarStore},
+                                ∃ (params returns : List Name)
+                                  (body : List Yul.AstStmt)
+                                  (yulArgs : List Yul.AstExpr)
+                                  (stmts : List Yul.AstStmt),
+                                  FocusedGeneratedCallSemanticInterface.RecursiveExecution
+                                    ordered helper params returns body
+                                    yulArgs stmts fuel
+                                    (some ordered.program.contract)
+                                    shared vars := by
+  rcases
+      decodeAndElaborateSolcIr?_clzSemanticInterfaceOfRawOccurrence
+        hDecode hConvert with
+    ⟨json, selected, object, hParse, hSelected, hObject, hProgram,
+      hSemantic⟩
+  refine ⟨json, selected, object, hParse, hSelected, hObject, hProgram, ?_⟩
+  cases hRawCode : selected.root.code? with
+  | none =>
+      simp [hRawCode]
+  | some code =>
+      rw [hRawCode] at hSemantic
+      rcases hSemantic with
+        ⟨coreDispatcher, state, helper?, arg?, ret?, hCore, hElab,
+          hOccurrenceSemantic⟩
+      refine
+        ⟨coreDispatcher, state, helper?, arg?, ret?, hCore, hElab, ?_⟩
+      intro rawArg hOccurrence
+      rcases hOccurrenceSemantic hOccurrence with
+        ⟨helper, frontendArg, hGenerated⟩
+      refine ⟨helper, frontendArg, ?_⟩
       intro fuel shared vars
       rcases hGenerated with
         ⟨params, returns, body, yulArgs, stmts, hInterface⟩
