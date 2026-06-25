@@ -173,6 +173,8 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.FrontendOccurrence.StmtUserCall.toYul?
 #print axioms EvmCompiler.Solidity.FrontendOccurrence.StmtListUserCall.toYul?
 #print axioms EvmCompiler.Solidity.FrontendOccurrence.CaseListUserCall.toYul?
+#print axioms EvmCompiler.Solidity.FrontendOccurrence.FunctionDef.bodyOccurrence_toYul?
+#print axioms EvmCompiler.Solidity.FrontendOccurrence.Object.dispatcherOccurrence_toOrdered?
 #print axioms EvmCompiler.Solidity.RawAst.Elab.elaborateCode_hoistedFunction_mem
 #print axioms EvmCompiler.Solidity.RawAst.Raw.Object.elaborate?_clzExpansionOk
 #print axioms EvmCompiler.Solidity.RawAst.Raw.Object.elaborate?_hoistedFunctionsRetained

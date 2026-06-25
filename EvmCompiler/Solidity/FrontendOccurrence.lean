@@ -454,6 +454,67 @@ mutual
             (CaseListUserCall.toYul? hTail hRestConvert hArgs)
 end
 
+namespace FunctionDef
+
+theorem bodyOccurrence_toYul?
+    {functionName : Frontend.Name} {args : List Frontend.Expr}
+    {fn : Frontend.FunctionDef} {params returns : List Frontend.Name}
+    {body : List Yul.AstStmt} {yulArgs : List Yul.AstExpr}
+    (hOccurrence : StmtListUserCall functionName args fn.body)
+    (hFn : Frontend.FunctionDef.toYul? fn =
+      some (.Def params returns body))
+    (hArgs : Frontend.Expr.List.toYul? args = some yulArgs) :
+    Yul.YulOccurrence.StmtListUserCall functionName yulArgs body := by
+  simp [Frontend.FunctionDef.toYul?, Option.bind_eq_some_iff] at hFn
+  rcases hFn with ⟨hBody, _hParams, _hReturns⟩
+  exact StmtListUserCall.toYul? hOccurrence hBody hArgs
+
+end FunctionDef
+
+namespace Object
+
+theorem dispatcherOccurrence_toOrdered?
+    {functionName : Frontend.Name} {args : List Frontend.Expr}
+    {object : Frontend.Object} {ordered : Yul.OrderedProgram}
+    {yulArgs : List Yul.AstExpr}
+    (hOccurrence :
+      StmtListUserCall functionName args object.dispatcher)
+    (hConvert : object.toSolcYulOrderedProgram? = some ordered)
+    (hArgs : Frontend.Expr.List.toYul? args = some yulArgs) :
+    Yul.YulOccurrence.StmtListUserCall functionName yulArgs
+      [ordered.program.contract.dispatcher] := by
+  unfold Frontend.Object.toSolcYulOrderedProgram? at hConvert
+  cases hContract : object.toYulContractWithFunctionEntries? with
+  | none =>
+      simp [hContract] at hConvert
+  | some result =>
+      rcases result with ⟨contract, functions⟩
+      cases hValid :
+          Yul.SolcValidation.ContractOkWithEntries?
+            object.dialectProfile contract functions <;>
+        simp [hContract, hValid] at hConvert
+      rcases hConvert with ⟨_hSpelling, hConvert⟩
+      subst ordered
+      unfold Frontend.Object.toYulContractWithFunctionEntries? at hContract
+      cases hDispatcher :
+          Frontend.Stmt.toYul? (.block object.dispatcher) with
+      | none =>
+          simp [hDispatcher] at hContract
+      | some dispatcher =>
+          cases hFunctions :
+              Frontend.FunctionDef.List.toYul? object.functions with
+          | none =>
+              simp [hDispatcher, hFunctions] at hContract
+          | some entries =>
+              simp [hDispatcher, hFunctions] at hContract
+              rcases hContract with ⟨rfl, rfl⟩
+              exact
+                Yul.YulOccurrence.StmtListUserCall.head
+                  (StmtUserCall.toYul?
+                    (StmtUserCall.block hOccurrence) hDispatcher hArgs)
+
+end Object
+
 end FrontendOccurrence
 end Solidity
 end EvmCompiler
