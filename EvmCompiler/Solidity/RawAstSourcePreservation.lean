@@ -35,6 +35,16 @@ def PendingBlockDoneRel (entryStore : EvmYul.Yul.VarStore) :
   Simulation.Interaction.ExceptRel Eq
     (fun raw ordered => ordered = raw.restrictStoreTo entryStore)
 
+theorem forward_refl {α : Type}
+    (truncated : Failure → Prop)
+    (run : Open α) :
+    Simulation.Interaction.ForwardRel truncated SameDoneRel run run := by
+  induction run with
+  | done result =>
+      exact .done rfl
+  | request query resume ih =>
+      exact .request ih
+
 def rawObjectRun (fuel : Nat) (context : Frontend.ObjectBuiltinContext)
     (object : Raw.Object) (state : State) : Open State :=
   Raw.SourceSemantics.execObjectCode fuel
@@ -57,6 +67,313 @@ def BlockRunForward (rawFuel orderedFuel : Nat)
       (Raw.SourceSemantics.contextForObject context) code state)
     (orderedRun orderedFuel ordered state)
 
+/-- Exact preservation for raw multi-value expression evaluation before any
+enclosing statement applies declaration/assignment writeback. -/
+def ExprValuesRunForward (rawFuel orderedFuel : Nat)
+    (context : Raw.SourceSemantics.Context)
+    (rawExpr : Raw.Expr) (orderedExpr : Frontend.AstExpr)
+    (contract : Frontend.AstContract) (state : State) : Prop :=
+  Simulation.Interaction.ForwardRel
+    Yul.FunctionsInteractionPrimitive.Truncated
+    SameDoneRel
+    (Raw.SourceSemantics.evalValues rawFuel context rawExpr state)
+    (Yul.InteractionSemantics.evalValues orderedFuel orderedExpr
+      (some contract) state)
+
+/-- Exact preservation for scalar expression evaluation. -/
+def ExprRunForward (rawFuel orderedFuel : Nat)
+    (context : Raw.SourceSemantics.Context)
+    (rawExpr : Raw.Expr) (orderedExpr : Frontend.AstExpr)
+    (contract : Frontend.AstContract) (state : State) : Prop :=
+  Simulation.Interaction.ForwardRel
+    Yul.FunctionsInteractionPrimitive.Truncated
+    SameDoneRel
+    (Raw.SourceSemantics.eval rawFuel context rawExpr state)
+    (Yul.InteractionSemantics.eval orderedFuel orderedExpr
+      (some contract) state)
+
+/-- Exact preservation for left-to-right argument-list evaluation. Call sites
+pass reversed source lists on both sides, matching canonical Yul semantics. -/
+def ArgsRunForward (rawFuel orderedFuel : Nat)
+    (context : Raw.SourceSemantics.Context)
+    (rawArgs : List Raw.Expr) (orderedArgs : List Frontend.AstExpr)
+    (contract : Frontend.AstContract) (state : State) : Prop :=
+  Simulation.Interaction.ForwardRel
+    Yul.FunctionsInteractionPrimitive.Truncated
+    SameDoneRel
+    (Raw.SourceSemantics.evalArgs rawFuel context rawArgs state)
+    (Yul.InteractionSemantics.evalArgs orderedFuel orderedArgs
+      (some contract) state)
+
+theorem exprValuesRunForward_zero
+    {orderedFuel : Nat} {context : Raw.SourceSemantics.Context}
+    {rawExpr : Raw.Expr} {orderedExpr : Frontend.AstExpr}
+    {contract : Frontend.AstContract} {state : State} :
+    ExprValuesRunForward 0 orderedFuel
+      context rawExpr orderedExpr contract state := by
+  unfold ExprValuesRunForward Raw.SourceSemantics.evalValues
+  exact
+    Simulation.Interaction.ForwardRel.truncated
+      (by simp [Yul.FunctionsInteractionPrimitive.Truncated])
+
+theorem argsRunForward_zero
+    {orderedFuel : Nat} {context : Raw.SourceSemantics.Context}
+    {rawArgs : List Raw.Expr} {orderedArgs : List Frontend.AstExpr}
+    {contract : Frontend.AstContract} {state : State} :
+    ArgsRunForward 0 orderedFuel
+      context rawArgs orderedArgs contract state := by
+  unfold ArgsRunForward
+  rw [Raw.SourceSemantics.evalArgs_zero]
+  exact
+    Simulation.Interaction.ForwardRel.truncated
+      (by simp [Yul.FunctionsInteractionPrimitive.Truncated])
+
+theorem argsRunForward_nil_succ
+    {rawFuel orderedFuel : Nat}
+    {context : Raw.SourceSemantics.Context}
+    {contract : Frontend.AstContract} {state : State} :
+    ArgsRunForward (rawFuel + 1) (orderedFuel + 1)
+      context [] [] contract state := by
+  unfold ArgsRunForward
+  rw [Raw.SourceSemantics.EvalArgs.nil_succ]
+  rw [Yul.InteractionSemantics.EvalArgs.nil_succ]
+  exact Simulation.Interaction.ForwardRel.done rfl
+
+theorem exprValuesRunForward_literal_succ
+    {rawFuel orderedFuel : Nat}
+    {context : Raw.SourceSemantics.Context}
+    {literal : Raw.Literal} {value : Frontend.Word}
+    {contract : Frontend.AstContract} {state : State}
+    (hLiteral : Raw.SourceSemantics.literalWord? literal = some value) :
+    ExprValuesRunForward (rawFuel + 1) (orderedFuel + 1)
+      context (.literal literal) (.Lit value) contract state := by
+  unfold ExprValuesRunForward
+  rw [Raw.SourceSemantics.EvalValues.literal_succ
+    rawFuel context literal state value hLiteral]
+  simp only [Yul.InteractionSemantics.evalValues,
+    Yul.Source.Canonical.evalValues, Yul.Source.Effectful.evalValues]
+  exact Simulation.Interaction.ForwardRel.done rfl
+
+theorem exprValuesRunForward_identifier_succ
+    {rawFuel orderedFuel : Nat}
+    {context : Raw.SourceSemantics.Context}
+    {name : Name} {value : Frontend.Word}
+    {contract : Frontend.AstContract} {state : State}
+    (hLookup : state.lookup? name = some value) :
+    ExprValuesRunForward (rawFuel + 1) (orderedFuel + 1)
+      context (.identifier name) (.Var name) contract state := by
+  unfold ExprValuesRunForward
+  rw [Raw.SourceSemantics.EvalValues.identifier_succ
+    rawFuel context name state value hLookup]
+  simp only [Yul.InteractionSemantics.evalValues,
+    Yul.Source.Canonical.evalValues, Yul.Source.Effectful.evalValues,
+    Yul.InteractionSemantics.stateModel, id_eq, hLookup]
+  exact Simulation.Interaction.ForwardRel.done rfl
+
+theorem exprRunForward_of_values
+    {rawFuel orderedFuel : Nat}
+    {context : Raw.SourceSemantics.Context}
+    {rawExpr : Raw.Expr} {orderedExpr : Frontend.AstExpr}
+    {contract : Frontend.AstContract} {state : State}
+    (hValues :
+      ExprValuesRunForward rawFuel orderedFuel
+        context rawExpr orderedExpr contract state) :
+    ExprRunForward rawFuel orderedFuel
+      context rawExpr orderedExpr contract state := by
+  unfold ExprRunForward ExprValuesRunForward at *
+  rw [Raw.SourceSemantics.Eval.eval_eq_bind]
+  rw [Yul.InteractionSemantics.eval_eq_bind]
+  refine Simulation.Interaction.ForwardRel.bind_custom hValues ?_
+  intro rawDone orderedDone hDone
+  unfold SameDoneRel at hDone
+  subst orderedDone
+  cases rawDone with
+  | error error => exact Simulation.Interaction.ForwardRel.done rfl
+  | ok result => exact Simulation.Interaction.ForwardRel.done rfl
+
+theorem argsRunForward_cons
+    {rawFuel orderedFuel : Nat}
+    {context : Raw.SourceSemantics.Context}
+    {rawArg : Raw.Expr} {rawRest : List Raw.Expr}
+    {orderedArg : Frontend.AstExpr}
+    {orderedRest : List Frontend.AstExpr}
+    {contract : Frontend.AstContract} {state : State}
+    (hHead :
+      ExprRunForward (rawFuel + 1) (orderedFuel + 1)
+        context rawArg orderedArg contract state)
+    (hTail :
+      ∀ (stateAfterArg : State),
+        ArgsRunForward rawFuel orderedFuel
+          context rawRest orderedRest contract stateAfterArg) :
+    ArgsRunForward (rawFuel + 2) (orderedFuel + 2)
+      context (rawArg :: rawRest) (orderedArg :: orderedRest)
+      contract state := by
+  unfold ArgsRunForward ExprRunForward at *
+  simp only [Raw.SourceSemantics.evalArgs, Raw.SourceSemantics.evalTail,
+    Yul.InteractionSemantics.evalArgs, Yul.Source.Canonical.evalArgs,
+    Yul.Source.Effectful.evalArgs, Yul.Source.Effectful.evalTail]
+  refine Simulation.Interaction.ForwardRel.bind_custom hHead ?_
+  intro rawHeadDone orderedHeadDone hHeadDone
+  unfold SameDoneRel at hHeadDone
+  subst orderedHeadDone
+  cases rawHeadDone with
+  | error error =>
+      exact Simulation.Interaction.ForwardRel.done rfl
+  | ok headResult =>
+      rcases headResult with ⟨stateAfterArg, value⟩
+      refine
+        Simulation.Interaction.ForwardRel.bind_custom
+          (hTail stateAfterArg) ?_
+      intro rawTailDone orderedTailDone hTailDone
+      unfold SameDoneRel at hTailDone
+      subst orderedTailDone
+      cases rawTailDone with
+      | error error =>
+          exact Simulation.Interaction.ForwardRel.done rfl
+      | ok tailResult =>
+          exact Simulation.Interaction.ForwardRel.done rfl
+
+theorem exprValuesRunForward_primitiveCall_succ
+    {fuel : Nat} {context : Raw.SourceSemantics.Context}
+    {name : Name} {rawArgs : List Raw.Expr}
+    {orderedArgs : List Frontend.AstExpr}
+    {op : EvmYul.Operation .Yul}
+    {contract : Frontend.AstContract} {state : State}
+    (hClz : name ≠ "clz")
+    (hClass : CallClass.classifyCall name = .primitive)
+    (hOp : Frontend.Primitive.ofName? name = some op)
+    (hArgs :
+      ArgsRunForward fuel fuel context rawArgs.reverse orderedArgs.reverse
+        contract state) :
+    ExprValuesRunForward (fuel + 1) (fuel + 1)
+      context (.functionCall name rawArgs) (.Call (.inl op) orderedArgs)
+      contract state := by
+  unfold ExprValuesRunForward ArgsRunForward at *
+  rw [Raw.SourceSemantics.EvalValues.functionCall_succ_of_ne_clz
+    fuel context name rawArgs state hClz]
+  simp only [hClass, hOp]
+  simp only [Yul.InteractionSemantics.evalValues,
+    Yul.Source.Canonical.evalValues, Yul.Source.Effectful.evalValues]
+  refine Simulation.Interaction.ForwardRel.bind_custom hArgs ?_
+  intro rawDone orderedDone hDone
+  unfold SameDoneRel at hDone
+  subst orderedDone
+  cases rawDone with
+  | error error =>
+      exact Simulation.Interaction.ForwardRel.done rfl
+  | ok result =>
+      exact
+        forward_refl Yul.FunctionsInteractionPrimitive.Truncated
+          (Yul.InteractionSemantics.primitiveSemantics.eval
+            fuel result.1 op result.2.reverse)
+
+theorem exprValuesRunForward_datasize_succ
+    {rawFuel orderedFuel : Nat}
+    {context : Raw.SourceSemantics.Context}
+    {nameArg : Raw.Expr} {dataName : Name} {size : Frontend.Word}
+    {contract : Frontend.AstContract} {state : State}
+    (hName : Raw.SourceSemantics.objectBuiltinNameArg? nameArg = some dataName)
+    (hSize : context.objectBuiltins.size? dataName = some size) :
+    ExprValuesRunForward (rawFuel + 2) (orderedFuel + 1)
+      context (.functionCall "datasize" [nameArg]) (.Lit size)
+      contract state := by
+  unfold ExprValuesRunForward
+  rw [Raw.SourceSemantics.EvalValues.functionCall_succ_of_ne_clz
+    (rawFuel + 1) context "datasize" [nameArg] state (by decide)]
+  change
+    Simulation.Interaction.ForwardRel
+      Yul.FunctionsInteractionPrimitive.Truncated SameDoneRel
+      (Raw.SourceSemantics.evalObjectBuiltin
+        (rawFuel + 1) context "datasize" [nameArg] state)
+      (Yul.InteractionSemantics.evalValues (orderedFuel + 1)
+        (.Lit size) (some contract) state)
+  rw [Raw.SourceSemantics.EvalObjectBuiltin.datasize_succ
+    rawFuel context nameArg state dataName size hName hSize]
+  simp only [Yul.InteractionSemantics.evalValues,
+    Yul.Source.Canonical.evalValues, Yul.Source.Effectful.evalValues]
+  exact Simulation.Interaction.ForwardRel.done rfl
+
+theorem exprValuesRunForward_dataoffset_succ
+    {rawFuel orderedFuel : Nat}
+    {context : Raw.SourceSemantics.Context}
+    {nameArg : Raw.Expr} {dataName : Name} {offset : Frontend.Word}
+    {contract : Frontend.AstContract} {state : State}
+    (hName : Raw.SourceSemantics.objectBuiltinNameArg? nameArg = some dataName)
+    (hOffset : context.objectBuiltins.offset? dataName = some offset) :
+    ExprValuesRunForward (rawFuel + 2) (orderedFuel + 1)
+      context (.functionCall "dataoffset" [nameArg]) (.Lit offset)
+      contract state := by
+  unfold ExprValuesRunForward
+  rw [Raw.SourceSemantics.EvalValues.functionCall_succ_of_ne_clz
+    (rawFuel + 1) context "dataoffset" [nameArg] state (by decide)]
+  change
+    Simulation.Interaction.ForwardRel
+      Yul.FunctionsInteractionPrimitive.Truncated SameDoneRel
+      (Raw.SourceSemantics.evalObjectBuiltin
+        (rawFuel + 1) context "dataoffset" [nameArg] state)
+      (Yul.InteractionSemantics.evalValues (orderedFuel + 1)
+        (.Lit offset) (some contract) state)
+  rw [Raw.SourceSemantics.EvalObjectBuiltin.dataoffset_succ
+    rawFuel context nameArg state dataName offset hName hOffset]
+  simp only [Yul.InteractionSemantics.evalValues,
+    Yul.Source.Canonical.evalValues, Yul.Source.Effectful.evalValues]
+  exact Simulation.Interaction.ForwardRel.done rfl
+
+theorem exprValuesRunForward_linkersymbol_succ
+    {rawFuel orderedFuel : Nat}
+    {context : Raw.SourceSemantics.Context}
+    {nameArg : Raw.Expr} {linkerName : Name} {value : Frontend.Word}
+    {contract : Frontend.AstContract} {state : State}
+    (hName : Raw.SourceSemantics.objectBuiltinNameArg? nameArg = some linkerName)
+    (hValue :
+      context.objectBuiltins.findLinkerSymbol? linkerName = some value) :
+    ExprValuesRunForward (rawFuel + 2) (orderedFuel + 1)
+      context (.functionCall "linkersymbol" [nameArg]) (.Lit value)
+      contract state := by
+  unfold ExprValuesRunForward
+  rw [Raw.SourceSemantics.EvalValues.functionCall_succ_of_ne_clz
+    (rawFuel + 1) context "linkersymbol" [nameArg] state (by decide)]
+  change
+    Simulation.Interaction.ForwardRel
+      Yul.FunctionsInteractionPrimitive.Truncated SameDoneRel
+      (Raw.SourceSemantics.evalObjectBuiltin
+        (rawFuel + 1) context "linkersymbol" [nameArg] state)
+      (Yul.InteractionSemantics.evalValues (orderedFuel + 1)
+        (.Lit value) (some contract) state)
+  rw [Raw.SourceSemantics.EvalObjectBuiltin.linkersymbol_succ
+    rawFuel context nameArg state linkerName value hName hValue]
+  simp only [Yul.InteractionSemantics.evalValues,
+    Yul.Source.Canonical.evalValues, Yul.Source.Effectful.evalValues]
+  exact Simulation.Interaction.ForwardRel.done rfl
+
+theorem exprValuesRunForward_loadimmutable_succ
+    {rawFuel orderedFuel : Nat}
+    {context : Raw.SourceSemantics.Context}
+    {nameArg : Raw.Expr} {immutableName : Name} {value : Frontend.Word}
+    {contract : Frontend.AstContract} {state : State}
+    (hName :
+      Raw.SourceSemantics.objectBuiltinNameArg? nameArg = some immutableName)
+    (hValue :
+      context.objectBuiltins.findImmutableValue? immutableName = some value) :
+    ExprValuesRunForward (rawFuel + 2) (orderedFuel + 1)
+      context (.functionCall "loadimmutable" [nameArg]) (.Lit value)
+      contract state := by
+  unfold ExprValuesRunForward
+  rw [Raw.SourceSemantics.EvalValues.functionCall_succ_of_ne_clz
+    (rawFuel + 1) context "loadimmutable" [nameArg] state (by decide)]
+  change
+    Simulation.Interaction.ForwardRel
+      Yul.FunctionsInteractionPrimitive.Truncated SameDoneRel
+      (Raw.SourceSemantics.evalObjectBuiltin
+        (rawFuel + 1) context "loadimmutable" [nameArg] state)
+      (Yul.InteractionSemantics.evalValues (orderedFuel + 1)
+        (.Lit value) (some contract) state)
+  rw [Raw.SourceSemantics.EvalObjectBuiltin.loadimmutable_succ
+    rawFuel context nameArg state immutableName value hName hValue]
+  simp only [Yul.InteractionSemantics.evalValues,
+    Yul.Source.Canonical.evalValues, Yul.Source.Effectful.evalValues]
+  exact Simulation.Interaction.ForwardRel.done rfl
+
 /-- Exact pre-block statement preservation used by the recursive frontend
 proof. Lexical-store restriction is handled only by block constructors. -/
 def StmtRunForward (rawFuel orderedFuel : Nat)
@@ -69,6 +386,103 @@ def StmtRunForward (rawFuel orderedFuel : Nat)
     (Raw.SourceSemantics.exec rawFuel context rawStmt state)
     (Yul.InteractionSemantics.exec orderedFuel orderedStmt
       (some contract) state)
+
+theorem stmtRunForward_variableDeclaration_none_succ
+    {rawFuel orderedFuel : Nat}
+    {context : Raw.SourceSemantics.Context}
+    {names : List Name}
+    {contract : Frontend.AstContract} {state : State} :
+    StmtRunForward (rawFuel + 1) (orderedFuel + 1)
+      context (.variableDeclaration names none) (.Let names none)
+      contract state := by
+  unfold StmtRunForward
+  rw [Raw.SourceSemantics.Exec.variableDeclaration_none_succ]
+  cases hCheck : EvmYul.Yul.checkDeclaration state names with
+  | error error =>
+      unfold Yul.InteractionSemantics.exec Yul.Source.Canonical.exec
+        Yul.Source.Effectful.exec
+      simp only [Yul.InteractionSemantics.stateModel, id_eq, hCheck]
+      unfold Raw.SourceSemantics.fail
+        Yul.Source.Effectful.Control.fail
+        Yul.InteractionSemantics.Primitive.fail
+      exact Simulation.Interaction.ForwardRel.done rfl
+  | ok result =>
+      cases result
+      rw [Yul.InteractionSemantics.Exec.let_none_succ
+        orderedFuel names (some contract) state hCheck]
+      exact Simulation.Interaction.ForwardRel.done rfl
+
+theorem stmtRunForward_variableDeclaration_some_succ
+    {rawFuel orderedFuel : Nat}
+    {context : Raw.SourceSemantics.Context}
+    {names : List Name} {rawExpr : Raw.Expr}
+    {orderedExpr : Frontend.AstExpr}
+    {contract : Frontend.AstContract} {state : State}
+    (hValues :
+      ExprValuesRunForward rawFuel orderedFuel
+        context rawExpr orderedExpr contract state) :
+    StmtRunForward (rawFuel + 1) (orderedFuel + 1)
+      context (.variableDeclaration names (some rawExpr))
+      (.Let names (some orderedExpr)) contract state := by
+  unfold StmtRunForward
+  rw [Raw.SourceSemantics.Exec.variableDeclaration_some_succ]
+  cases hCheck : EvmYul.Yul.checkDeclaration state names with
+  | error error =>
+      unfold Yul.InteractionSemantics.exec Yul.Source.Canonical.exec
+        Yul.Source.Effectful.exec
+      simp only [Yul.InteractionSemantics.stateModel, id_eq, hCheck]
+      unfold Raw.SourceSemantics.fail
+        Yul.Source.Effectful.Control.fail
+        Yul.InteractionSemantics.Primitive.fail
+      exact Simulation.Interaction.ForwardRel.done rfl
+  | ok result =>
+      cases result
+      rw [Yul.InteractionSemantics.Exec.let_some_succ
+        orderedFuel names orderedExpr (some contract) state hCheck]
+      unfold ExprValuesRunForward at hValues
+      refine Simulation.Interaction.ForwardRel.bind_custom hValues ?_
+      intro rawDone orderedDone hDone
+      unfold SameDoneRel at hDone
+      subst orderedDone
+      cases rawDone with
+      | error error => exact Simulation.Interaction.ForwardRel.done rfl
+      | ok result => exact Simulation.Interaction.ForwardRel.done rfl
+
+theorem stmtRunForward_assignment_succ
+    {rawFuel orderedFuel : Nat}
+    {context : Raw.SourceSemantics.Context}
+    {names : List Name} {rawExpr : Raw.Expr}
+    {orderedExpr : Frontend.AstExpr}
+    {contract : Frontend.AstContract} {state : State}
+    (hValues :
+      ExprValuesRunForward rawFuel orderedFuel
+        context rawExpr orderedExpr contract state) :
+    StmtRunForward (rawFuel + 1) (orderedFuel + 1)
+      context (.assignment names rawExpr)
+      (.Assign names orderedExpr) contract state := by
+  unfold StmtRunForward
+  rw [Raw.SourceSemantics.Exec.assignment_succ]
+  cases hCheck : EvmYul.Yul.checkAssignment state names with
+  | error error =>
+      unfold Yul.InteractionSemantics.exec Yul.Source.Canonical.exec
+        Yul.Source.Effectful.exec
+      simp only [Yul.InteractionSemantics.stateModel, id_eq, hCheck]
+      unfold Raw.SourceSemantics.fail
+        Yul.Source.Effectful.Control.fail
+        Yul.InteractionSemantics.Primitive.fail
+      exact Simulation.Interaction.ForwardRel.done rfl
+  | ok result =>
+      cases result
+      rw [Yul.InteractionSemantics.Exec.assign_succ
+        orderedFuel names orderedExpr (some contract) state hCheck]
+      unfold ExprValuesRunForward at hValues
+      refine Simulation.Interaction.ForwardRel.bind_custom hValues ?_
+      intro rawDone orderedDone hDone
+      unfold SameDoneRel at hDone
+      subst orderedDone
+      cases rawDone with
+      | error error => exact Simulation.Interaction.ForwardRel.done rfl
+      | ok result => exact Simulation.Interaction.ForwardRel.done rfl
 
 /-- Exact pre-block statement-list preservation. Both sides still carry the
 same lexical store; the dispatcher adapter below accounts for the ordered
@@ -392,16 +806,6 @@ structure ObjectPreserved
   forward :
     ∀ (rawFuel : Nat) (state : State),
       ∃ orderedFuel, RunForward rawFuel orderedFuel context object ordered state
-
-theorem forward_refl {α : Type}
-    (truncated : Failure → Prop)
-    (run : Open α) :
-    Simulation.Interaction.ForwardRel truncated SameDoneRel run run := by
-  induction run with
-  | done result =>
-      exact .done rfl
-  | request query resume ih =>
-      exact .request ih
 
 theorem runForward_of_eq
     {rawFuel orderedFuel : Nat}
