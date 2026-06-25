@@ -1477,6 +1477,68 @@ theorem clzHelperYulInterface_call_succ
       fuel args helper ordered.program.contract
       [arg] [ret] (clzHelperAstBody arg ret) state hLookupDef
 
+theorem clzHelperYulInterface_call_value_succ
+    {object : Frontend.Object} {ordered : Yul.OrderedProgram}
+    {helper arg ret : Name}
+    (hInterface :
+      ClzHelperYulInterface object.functions (some helper) (some arg)
+        (some ret))
+    (hConvert : object.toSolcYulOrderedProgram? = some ordered)
+    (hArgRet : arg ≠ ret)
+    (fuel : Nat) (argValue : Word)
+    (shared : EvmYul.SharedState .Yul)
+    (vars : EvmYul.Yul.VarStore) :
+    ∃ finalState,
+      Yul.InteractionSemantics.call
+          (fuel + clzHelperStepSchedule.length + 51)
+          [argValue] (some helper) (some ordered.program.contract)
+          (.Ok shared vars) =
+        pure (finalState, [clzHelperValue argValue]) := by
+  let zero := EvmYul.UInt256.ofNat 0
+  let entryVars : EvmYul.Yul.VarStore :=
+    ((default : EvmYul.Yul.VarStore).insert ret zero).insert arg argValue
+  have hEntry :
+      EvmYul.Yul.State.mkOk
+          ((EvmYul.Yul.State.Ok shared vars).initcall
+            [arg] [ret] [argValue]) =
+        (EvmYul.Yul.State.Ok shared entryVars) := by
+    simp [entryVars, zero, EvmYul.Yul.State.initcall,
+      EvmYul.Yul.State.setStore, EvmYul.Yul.State.zeroFill,
+      EvmYul.Yul.State.multifill, EvmYul.Yul.State.mkOk,
+      EvmYul.Yul.State.insert, EvmYul.UInt256.ofNat, Id.run]
+  have hEntryFrame :
+      ClzHelperFrame arg ret argValue zero shared entryVars := by
+    constructor
+    · simp [entryVars, EvmYul.Yul.State.lookup?]
+    · have hRetArg : ret ≠ arg := fun h => hArgRet h.symm
+      simp [entryVars, EvmYul.Yul.State.lookup?,
+        Finmap.lookup_insert_of_ne
+          ((default : EvmYul.Yul.VarStore).insert ret zero) hRetArg]
+  rcases clzHelperAstBody_block_exec_succ
+      fuel arg ret hArgRet argValue zero
+      (some ordered.program.contract) shared entryVars hEntryFrame with
+    ⟨finalArg, bodyVars, hBody, hFinalFrame⟩
+  let finalState :=
+    ((EvmYul.Yul.State.Ok shared bodyVars).reviveJump.overwrite?
+      (EvmYul.Yul.State.Ok shared vars)).setStore
+        (EvmYul.Yul.State.Ok shared vars)
+  refine ⟨finalState, ?_⟩
+  rw [show fuel + clzHelperStepSchedule.length + 51 =
+    (fuel + clzHelperStepSchedule.length + 50) + 1 by omega]
+  rw [clzHelperYulInterface_call_succ
+    (object := object) (ordered := ordered)
+    (helper? := some helper) (arg? := some arg) (ret? := some ret)
+    hInterface hConvert (fuel + clzHelperStepSchedule.length + 50)
+    [argValue] (.Ok shared vars)]
+  rw [hEntry]
+  rw [hBody]
+  rw [open_bind_pure_left]
+  have hLookupRet :
+      (EvmYul.Yul.State.Ok shared bodyVars).lookup! ret =
+        clzHelperValue argValue := by
+    simp [EvmYul.Yul.State.lookup!, hFinalFrame.2]
+  simp [finalState, hLookupRet]
+
 end Elab
 end RawAst
 end Solidity

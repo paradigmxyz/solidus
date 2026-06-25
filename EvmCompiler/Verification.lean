@@ -147,6 +147,7 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.RawAst.Elab.clzHelperYulInterface_orderedLookup
 #print axioms EvmCompiler.Solidity.RawAst.Elab.clzHelperAstBody_zero_exec
 #print axioms EvmCompiler.Solidity.RawAst.Elab.clzHelperYulInterface_call_succ
+#print axioms EvmCompiler.Solidity.RawAst.Elab.clzHelperYulInterface_call_value_succ
 #print axioms EvmCompiler.Solidity.RawAst.Elab.elaborateCode_hoistedFunction_mem
 #print axioms EvmCompiler.Solidity.RawAst.Raw.Object.elaborate?_clzExpansionOk
 #print axioms EvmCompiler.Solidity.RawAst.Raw.Object.elaborate?_hoistedFunctionsRetained
