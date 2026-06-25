@@ -1,4 +1,5 @@
 import EvmCompiler.Solidity.RawAstPublic
+import EvmCompiler.Solidity.RawAstSourceSemantics
 import EvmCompiler.Yul.EndToEnd
 import EvmCompiler.Yul.FunctionsInteractionPrimitive
 
@@ -35,6 +36,27 @@ def orderedRun (fuel : Nat) (ordered : Yul.OrderedProgram)
   Yul.InteractionSemantics.exec fuel
     (.Block [ordered.program.contract.dispatcher])
     (some ordered.program.contract) state
+
+theorem rawObjectRun_none_code
+    {fuel : Nat} {context : Frontend.ObjectBuiltinContext}
+    {object : Raw.Object} {state : State}
+    (hCode : object.code? = none) :
+    rawObjectRun fuel context object state = pure state := by
+  unfold rawObjectRun
+  exact Raw.SourceSemantics.ExecObjectCode.code_none
+    fuel (Raw.SourceSemantics.contextForObject context) object state hCode
+
+theorem rawObjectRun_some_code
+    {fuel : Nat} {context : Frontend.ObjectBuiltinContext}
+    {object : Raw.Object} {state : State}
+    {code : List Raw.Stmt}
+    (hCode : object.code? = some code) :
+    rawObjectRun fuel context object state =
+      Raw.SourceSemantics.execCode fuel
+        (Raw.SourceSemantics.contextForObject context) code state := by
+  unfold rawObjectRun
+  exact Raw.SourceSemantics.ExecObjectCode.code_some
+    fuel (Raw.SourceSemantics.contextForObject context) object state hCode
 
 /-- Finite-prefix preservation from raw solc Yul execution to ordered Yul
 execution for one selected object/context/fuel pair. -/

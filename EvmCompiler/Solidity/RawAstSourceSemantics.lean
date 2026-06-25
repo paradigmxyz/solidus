@@ -411,6 +411,42 @@ def execObjectCode (fuel : Nat) (ctx : Context) (object : Object)
 def contextForObject (context : Frontend.ObjectBuiltinContext) : Context :=
   { objectBuiltins := context }
 
+namespace ExecCode
+
+theorem eq_execBlock
+    (fuel : Nat) (ctx : Context) (code : List Stmt) (state : State) :
+    execCode fuel ctx code state =
+      execBlock fuel ctx code state := by
+  rfl
+
+end ExecCode
+
+namespace ExecObjectCode
+
+theorem code_none
+    (fuel : Nat) (ctx : Context) (object : Object) (state : State)
+    (hCode : object.code? = none) :
+    execObjectCode fuel ctx object state = pure state := by
+  simp [execObjectCode, hCode]
+
+theorem code_some
+    (fuel : Nat) (ctx : Context) (object : Object) (state : State)
+    {code : List Stmt}
+    (hCode : object.code? = some code) :
+    execObjectCode fuel ctx object state = execCode fuel ctx code state := by
+  simp [execObjectCode, hCode]
+
+theorem code_some_succ
+    (fuel : Nat) (ctx : Context) (object : Object) (state : State)
+    {code : List Stmt}
+    (hCode : object.code? = some code) :
+    execObjectCode (fuel + 1) ctx object state =
+      execBlock (fuel + 1) ctx code state := by
+  rw [code_some (fuel + 1) ctx object state hCode]
+  rfl
+
+end ExecObjectCode
+
 @[simp] theorem evalArgs_zero
     (ctx : Context) (args : List Expr) (state : State) :
     evalArgs 0 ctx args state = fail state .OutOfFuel := by
