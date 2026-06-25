@@ -113,7 +113,7 @@ Next raw frontend layer:
   production because of the exact pragma. The legacy
   solc-0.8.17/Python-normalized bridge path remains regression coverage, not
   production raw-theorem coverage.
-- [ ] Differentially compare raw Lean elaboration against the old bridge over
+- [x] Differentially compare raw Lean elaboration against the old bridge over
   both pinned solc versions and the full corpus: Aave frontend shape now
   compares raw Standard JSON against the legacy bridge for creation/runtime on
   both pins, and PoolManager frontend shape now compares raw Standard JSON
@@ -121,8 +121,9 @@ Next raw frontend layer:
   solc 0.8.26 pin. Safe and EntryPoint frontend shapes now compare raw
   Standard JSON against the legacy bridge for creation/runtime on both pins.
   Permit2 remains fail-closed legacy coverage because solc 0.8.17 emits no
-  structured `irOptimizedAst`. All real suites and adversarial fixtures remain
-  to be widened.
+  structured `irOptimizedAst`. Current validation passes the raw frontend
+  smoke/adversarial fixture gate, 36-case raw-vs-bridge differential gate,
+  Aave, PoolManager, Safe/EntryPoint, and Permit2 version-boundary gates.
 - [x] Add a raw-bridge transition path: `evm-compiler-backend raw-*` consumes
   raw solc Standard JSON directly through `RawAstPublic`, and the transition
   smoke proves normalized-bridge mutations cannot affect raw input compilation.
@@ -312,8 +313,9 @@ stack-only correctness boundary.
   validation, scoped variable lookup, and compiler-success inversions discharge
   missing contracts/functions, invalid expressions, unknown identifiers,
   duplicate declarations, and obsolete unsupported failures internally.
-- [ ] Keep exact Permit2, Aave Pool, PoolManager, adversarial pressure, broad
-  corpus, Lean, architecture, trust, frontend, and diff gates green.
+- [x] Current release sweep keeps exact Permit2, Aave Pool, PoolManager,
+  adversarial pressure, broad corpus, Lean, architecture, frontend, and diff
+  gates green. Final trust/production-assumptions audit remains separate.
 
 Pinned solc 0.8.26 rejects explicit `msize()` whenever its Yul optimizer is
 enabled. This is an honest trusted-frontend limitation, not a backend semantic
