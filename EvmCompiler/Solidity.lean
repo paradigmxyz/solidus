@@ -4,3 +4,4 @@ import EvmCompiler.Solidity.BridgeJson
 import EvmCompiler.Solidity.RawAst
 import EvmCompiler.Solidity.RawAstSourceSemantics
 import EvmCompiler.Solidity.RawAstPublic
+import EvmCompiler.Solidity.RawAstSourcePreservation
