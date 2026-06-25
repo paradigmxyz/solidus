@@ -2725,6 +2725,42 @@ theorem exists_split_stmt_execSeq_prefix
 
 end StmtListContext
 
+namespace CaseListContext
+
+theorem exists_split_case
+    {ordered : Yul.OrderedProgram}
+    {generated : Name}
+    {params returns : List Name} {body : List Yul.AstStmt}
+    {args : List Yul.AstExpr} {stmts : List Yul.AstStmt}
+    {prefixFuel : Nat} {code : Option Yul.AstContract}
+    {shared : EvmYul.SharedState .Yul}
+    {vars : EvmYul.Yul.VarStore}
+    {cases : List (Word × List Yul.AstStmt)}
+    {hInterface :
+      FocusedGeneratedCallSemanticInterface ordered generated params returns
+        body args stmts prefixFuel code shared vars}
+    (hContext : CaseListContext hInterface cases) :
+    ∃ (pre : List (Word × List Yul.AstStmt)) (value : Word)
+        (caseBody : List Yul.AstStmt)
+        (suffix : List (Word × List Yul.AstStmt)),
+      cases = pre ++ (value, caseBody) :: suffix ∧
+        StmtListContext hInterface caseBody := by
+  induction cases with
+  | nil =>
+      cases hContext
+  | cons head rest ih =>
+      cases hContext with
+      | @head value caseBody _ hBody =>
+          exact ⟨[], value, caseBody, rest, rfl, hBody⟩
+      | tail hTail =>
+          rcases ih hTail with
+            ⟨pre, value, caseBody, suffix, hSplit, hBody⟩
+          exact
+            ⟨head :: pre, value, caseBody, suffix,
+              by simp [hSplit], hBody⟩
+
+end CaseListContext
+
 theorem stmtListContext
     {ordered : Yul.OrderedProgram}
     {generated : Name}
