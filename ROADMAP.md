@@ -140,6 +140,11 @@ Gasful EVM bridge checkpoint:
   `runRefinesOpen_call_external_success_actual` existentially supplies the
   concrete response, parent gas credit, return data, and post-call world
   without a caller-provided response-relation premise.
+- [x] Derive the CREATE/CREATE2 response relation from actual `EVM.step` and
+  child-`Lambda` results: `runRefinesOpen_create_external_success_actual`
+  existentially supplies the concrete address/status, return data, post-create
+  world, EIP-150 withholding, and returned child gas without a
+  caller-provided response-relation premise.
 - [x] Add the matching terminal `RETURN`/`REVERT` compositions:
   stack-pop-aware actual `EVM.step` lemmas, gas/control-erased output-state
   relations, open raw-bytecode halt execution with concrete return bytes, and
@@ -148,8 +153,9 @@ Gasful EVM bridge checkpoint:
 - [x] Compose the existing Yul-to-open-raw-bytecode theorem with the named
   gasful target bridge premise in
   `Yul.EndToEnd.optimizedSolcYulToGasfulRawBytecodeOfOpenRunBridge`.
-- [ ] Prove the full `EVM.X` simulation that discharges the bridge premise for
-  CALL/CREATE open-strategy responses with EIP-150/returned gas.
+- [ ] Assemble the complete recursive `EVM.X` simulation from the checked
+  ordinary, exceptional, OOG, terminal, and actual CALL/CREATE step theorems,
+  then discharge the public gasful end-to-end bridge premise.
 
 `Compiler.StackArtifact` is the sole code-body artifact and
 `Solidity.Frontend.VerifiedStackObjectArtifact` is the sole recursive object

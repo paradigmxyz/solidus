@@ -4779,6 +4779,81 @@ theorem raw_call_external_executes_after_charges
       Simulation.Interaction.bind_done_ok,
       Assembly.PrimOp.haltKind?, Compact.Instr.haltKind?] using hMapped
 
+theorem stack_eq_of_pop3
+    {α : Type} {stack rest : EvmYul.Stack α}
+    {a b c : α}
+    (hPop : stack.pop3 = some (rest, a, b, c)) :
+    stack = a :: b :: c :: rest := by
+  cases stack with
+  | nil => simp [EvmYul.Stack.pop3] at hPop
+  | cons x xs =>
+      cases xs with
+      | nil => simp [EvmYul.Stack.pop3] at hPop
+      | cons y ys =>
+          cases ys with
+          | nil => simp [EvmYul.Stack.pop3] at hPop
+          | cons z zs =>
+              simp [EvmYul.Stack.pop3] at hPop
+              rcases hPop with ⟨rfl, rfl, rfl, rfl⟩
+              rfl
+
+theorem stack_eq_of_pop4
+    {α : Type} {stack rest : EvmYul.Stack α}
+    {a b c d : α}
+    (hPop : stack.pop4 = some (rest, a, b, c, d)) :
+    stack = a :: b :: c :: d :: rest := by
+  cases stack with
+  | nil => simp [EvmYul.Stack.pop4] at hPop
+  | cons x xs =>
+      cases xs with
+      | nil => simp [EvmYul.Stack.pop4] at hPop
+      | cons y ys =>
+          cases ys with
+          | nil => simp [EvmYul.Stack.pop4] at hPop
+          | cons z zs =>
+              cases zs with
+              | nil => simp [EvmYul.Stack.pop4] at hPop
+              | cons w ws =>
+                  simp [EvmYul.Stack.pop4] at hPop
+                  rcases hPop with ⟨rfl, rfl, rfl, rfl, rfl⟩
+                  rfl
+
+theorem CreateKind.stack_eq_args_append_of_evmOperands
+    {kind : CreateKind} {stack rest : EvmYul.Stack EvmYul.UInt256}
+    {operands : CreateOperands}
+    (hOperands : kind.evmOperands? stack = some (rest, operands)) :
+    stack = kind.args operands ++ rest := by
+  cases kind with
+  | create =>
+      unfold CreateKind.evmOperands? at hOperands
+      cases hPop : stack.pop3 with
+      | none => simp [hPop] at hOperands
+      | some popped =>
+          rcases popped with ⟨parsedRest, value, initOffset, initSize⟩
+          simp [hPop] at hOperands
+          rcases hOperands with ⟨rfl, rfl⟩
+          simpa [CreateKind.args] using stack_eq_of_pop3 hPop
+  | create2 =>
+      unfold CreateKind.evmOperands? at hOperands
+      cases hPop : stack.pop4 with
+      | none => simp [hPop] at hOperands
+      | some popped =>
+          rcases popped with
+            ⟨parsedRest, value, initOffset, initSize, salt⟩
+          simp [hPop] at hOperands
+          rcases hOperands with ⟨rfl, rfl⟩
+          simpa [CreateKind.args] using stack_eq_of_pop4 hPop
+
+theorem CreateKind.canonicalOperands_eq_of_evmOperands
+    {kind : CreateKind} {stack rest : EvmYul.Stack EvmYul.UInt256}
+    {operands : CreateOperands}
+    (hOperands : kind.evmOperands? stack = some (rest, operands)) :
+    kind.canonicalOperands operands = operands := by
+  have hStack :=
+    CreateKind.stack_eq_args_append_of_evmOperands hOperands
+  rw [hStack] at hOperands
+  simpa using hOperands
+
 def createParentGasCost (kind : CreateKind)
     (operands : CreateOperands) : Nat :=
   match kind with
@@ -4921,6 +4996,468 @@ theorem createResponseStateRel_of_sameData
   exact
     createResponseStateRel_of_openSameData
       (OpenSameData.of_sameData hSame) hGas
+
+abbrev ConcreteCreateResult :=
+  EvmYul.AccountAddress × EVMState × EvmYul.UInt256 × Bool ×
+    ByteArray
+
+abbrev CreateLambdaResult :=
+  EvmYul.AccountAddress ×
+    Batteries.RBSet EvmYul.AccountAddress compare × EvmYul.AccountMap .EVM ×
+      EvmYul.UInt256 × EvmYul.Substate × Bool × ByteArray
+
+/-- The child-frame invocation used by concrete CREATE/CREATE2. Naming this
+boundary keeps the parent-step proof explicit about child success or failure. -/
+def createLambda
+    (kind : CreateKind) (fuel : Nat) (state : EVMState)
+    (operands : CreateOperands) : Except EVMException CreateLambdaResult :=
+  let initCode :=
+    state.memory.readWithPadding
+      operands.initOffset.toNat operands.initSize.toNat
+  let salt : Option ByteArray :=
+    match kind with
+    | .create => none
+    | .create2 => some (EvmYul.UInt256.toByteArray operands.saltArg)
+  let env := state.executionEnv
+  let creator := env.codeOwner
+  let creatorAccount : EvmYul.Account .EVM :=
+    state.accountMap.find? creator |>.getD default
+  let incrementedAccounts :=
+    state.accountMap.insert creator
+      { creatorAccount with nonce := creatorAccount.nonce + ⟨1⟩ }
+  EvmYul.EVM.Lambda fuel env.blobVersionedHashes
+    state.createdAccounts state.genesisBlockHeader state.blocks
+    incrementedAccounts state.σ₀
+    { totalGasUsedInBlock := state.totalGasUsedInBlock
+      transactionReceipts := state.transactionReceipts }
+    state.substate creator env.sender
+    (.ofNat (EvmYul.EVM.L state.gasAvailable.toNat))
+    (.ofNat env.gasPrice) operands.value initCode
+    (.ofNat (env.depth + 1)) salt env.header env.perm
+
+/-- The concrete child result and parent-world update before CREATE's final
+memory, return-data, gas, PC, and stack updates. -/
+def concreteCreate
+    (kind : CreateKind) (fuel gasCost : Nat)
+    (state : EVMState) (operands : CreateOperands) : ConcreteCreateResult :=
+  let charged := chargeGas state gasCost
+  let initCode :=
+    charged.memory.readWithPadding
+      operands.initOffset.toNat operands.initSize.toNat
+  let env := charged.executionEnv
+  let creator := env.codeOwner
+  let depth := env.depth
+  let accounts := charged.accountMap
+  let creatorAccount : EvmYul.Account .EVM :=
+    accounts.find? creator |>.getD default
+  if creatorAccount.nonce.toNat ≥ 2 ^ 64 - 1 then
+    (default, charged,
+      .ofNat (EvmYul.EVM.L charged.gasAvailable.toNat), false, .empty)
+  else if
+      operands.value ≤
+          (accounts.find? creator |>.option ⟨0⟩ (·.balance)) ∧
+        depth < 1024 ∧ initCode.size ≤ 49152 then
+    match createLambda kind fuel charged operands with
+    | .ok (address, createdAccounts, accountMap, returnedGas,
+        substate, success, returnData) =>
+        (address,
+          { charged with
+            accountMap := accountMap
+            substate := substate
+            createdAccounts := createdAccounts },
+          returnedGas, success, returnData)
+    | .error _ =>
+        (default, { charged with accountMap := ∅ },
+          EvmYul.UInt256.ofNat 0, false, .empty)
+  else
+    (default, charged,
+      .ofNat (EvmYul.EVM.L charged.gasAvailable.toNat), false, .empty)
+
+def createResultAddress
+    (state : EVMState) (operands : CreateOperands)
+    (address : EvmYul.AccountAddress) (success : Bool) : EvmYul.UInt256 :=
+  let balance :=
+    state.accountMap.find? state.executionEnv.codeOwner
+      |>.option ⟨0⟩ (·.balance)
+  let initCode :=
+    state.memory.readWithPadding
+      operands.initOffset.toNat operands.initSize.toNat
+  if success = false ∨ state.executionEnv.depth = 1024 ∨
+      operands.value > balance ∨ initCode.size > 49152 then
+    EvmYul.UInt256.ofNat 0
+  else
+    EvmYul.UInt256.ofNat address
+
+def createResponseFromConcrete
+    (charged result : EVMState) (operands : CreateOperands)
+    (address : EvmYul.AccountAddress) (returnedGas : EvmYul.UInt256)
+    (success : Bool) (returnData : ByteArray) : CreateResponse where
+  address := createResultAddress charged operands address success
+  returnData := if success then .empty else returnData
+  postWorld := OpenWorld.ofEVMShared result.toSharedState
+  returnedGas := returnedGas
+
+def finishConcreteCreate
+    (charged result : EVMState) (rest : EvmYul.Stack EvmYul.UInt256)
+    (operands : CreateOperands) (address : EvmYul.AccountAddress)
+    (returnedGas : EvmYul.UInt256) (success : Bool)
+    (returnData : ByteArray) : EVMState :=
+  let status := createResultAddress charged operands address success
+  let newReturnData := if success then .empty else returnData
+  let result :=
+    { result with
+      activeWords :=
+        .ofNat
+          (EvmYul.MachineState.M charged.activeWords.toNat
+            operands.initOffset.toNat operands.initSize.toNat)
+      returnData := newReturnData
+      H_return := ByteArray.empty
+      gasAvailable :=
+        .ofNat
+          (charged.gasAvailable.toNat -
+            EvmYul.EVM.L charged.gasAvailable.toNat +
+            returnedGas.toNat) }
+  result.replaceStackAndIncrPC (rest.push status)
+
+/-- One concrete CREATE/CREATE2 step after stack parsing, including the
+parent-frame OOG check on returned child gas. -/
+def concreteCreateStep
+    (kind : CreateKind) (fuel gasCost : Nat)
+    (state : EVMState) (rest : EvmYul.Stack EvmYul.UInt256)
+    (operands : CreateOperands) : Except EVMException EVMState :=
+  match fuel with
+  | 0 => .error .OutOfFuel
+  | childFuel + 1 =>
+      let input := callInputState state
+      let charged := chargeGas input gasCost
+      let (address, result, returnedGas, success, returnData) :=
+        concreteCreate kind childFuel gasCost input operands
+      if (charged.gasAvailable + returnedGas).toNat <
+          EvmYul.EVM.L charged.gasAvailable.toNat then
+        .error .OutOfGass
+      else
+        .ok
+          (finishConcreteCreate charged result rest operands address
+            returnedGas success returnData)
+
+/-- EVMYulLean's imported gasful CREATE/CREATE2 dispatcher is exactly the
+named concrete parent/child decomposition above. -/
+theorem evm_step_create_eq_concreteCreateStep
+    (kind : CreateKind) (fuel gasCost : Nat)
+    (state : EVMState) (rest : EvmYul.Stack EvmYul.UInt256)
+    (operands : CreateOperands) (arg : Option (EvmYul.UInt256 × Nat))
+    (hStack : state.stack = kind.args operands ++ rest) :
+    EvmYul.EVM.step fuel gasCost (some (kind.toEVMOperation, arg)) state =
+      concreteCreateStep kind fuel gasCost state rest operands := by
+  cases fuel with
+  | zero =>
+      cases kind <;>
+        simp [EvmYul.EVM.step, concreteCreateStep,
+          CreateKind.toEVMOperation]
+  | succ childFuel =>
+      let charged := chargeGas (callInputState state) gasCost
+      generalize hLambda :
+        createLambda kind childFuel charged operands = lambdaResult
+      cases lambdaResult with
+      | error error =>
+          dsimp [charged, chargeGas, callInputState] at hLambda
+          cases kind <;>
+            simp [EvmYul.EVM.step, concreteCreateStep, concreteCreate,
+              finishConcreteCreate,
+              createLambda, createResultAddress, callInputState, chargeGas,
+              CreateKind.args, CreateKind.toEVMOperation, hStack,
+              EvmYul.Stack.pop3, EvmYul.Stack.pop4, EvmYul.Stack.push,
+              EvmYul.UInt256.ofNat, Id.run] at hLambda ⊢
+          all_goals rw [hLambda] <;> simp_all
+      | ok value =>
+          rcases value with ⟨address, createdAccounts, accountMap,
+            returnedGas, substate, success, returnData⟩
+          dsimp [charged, chargeGas, callInputState] at hLambda
+          cases kind <;>
+            simp [EvmYul.EVM.step, concreteCreateStep, concreteCreate,
+              finishConcreteCreate,
+              createLambda, createResultAddress, callInputState, chargeGas,
+              CreateKind.args, CreateKind.toEVMOperation, hStack,
+              EvmYul.Stack.pop3, EvmYul.Stack.pop4, EvmYul.Stack.push,
+              EvmYul.UInt256.ofNat, Id.run] at hLambda ⊢
+          all_goals rw [hLambda] <;> simp_all
+
+theorem finishConcreteCreate_world
+    (charged result : EVMState) (rest : EvmYul.Stack EvmYul.UInt256)
+    (operands : CreateOperands) (address : EvmYul.AccountAddress)
+    (returnedGas : EvmYul.UInt256) (success : Bool)
+    (returnData : ByteArray) :
+    OpenWorld.ofEVMShared
+        (finishConcreteCreate charged result rest operands address
+          returnedGas success returnData).toSharedState =
+      OpenWorld.ofEVMShared
+        (InteractionSemantics.EVMState.finishCreate charged rest
+          operands.createLocal
+          (createResponseFromConcrete charged result operands address
+            returnedGas success returnData)).toSharedState := by
+  change OpenWorld.ofEVMShared result.toSharedState =
+    OpenWorld.ofEVMShared
+      (OpenWorld.installEVMShared charged.toSharedState
+        (OpenWorld.ofEVMShared result.toSharedState))
+  exact
+    (OpenWorld.ofEVMShared_installEVMShared charged.toSharedState
+      (OpenWorld.ofEVMShared result.toSharedState)).symm
+
+theorem concreteCreate_result_openSameData
+    {kind : CreateKind} {fuel gasCost : Nat}
+    {state result : EVMState} {operands : CreateOperands}
+    {address : EvmYul.AccountAddress} {returnedGas : EvmYul.UInt256}
+    {success : Bool} {returnData : ByteArray}
+    {rest : EvmYul.Stack EvmYul.UInt256}
+    (hCreate :
+      concreteCreate kind fuel gasCost state operands =
+        (address, result, returnedGas, success, returnData)) :
+    OpenSameData
+      (finishConcreteCreate (chargeGas state gasCost) result rest operands
+        address returnedGas success returnData)
+      (InteractionSemantics.EVMState.finishCreate
+        (chargeGas state gasCost) rest operands.createLocal
+        (createResponseFromConcrete (chargeGas state gasCost) result operands
+          address returnedGas success returnData)) := by
+  unfold concreteCreate at hCreate
+  dsimp only at hCreate
+  split at hCreate
+  · simp at hCreate
+    rcases hCreate with ⟨rfl, rfl, rfl, rfl, rfl⟩
+    constructor
+    · exact finishConcreteCreate_world _ _ _ _ _ _ _ _
+    · simp [eraseOpenWorldData, finishConcreteCreate,
+        createResponseFromConcrete,
+        InteractionSemantics.EVMState.finishCreate,
+        InteractionSemantics.EVMState.installWorld,
+        CreateLocal.finishMachine, eraseControl, eraseGas,
+        CreateOperands.createLocal, EvmYul.MachineState.finishExternalCall,
+        EvmYul.MachineState.M, EvmYul.writeBytes,
+        EvmYul.UInt256.ofNat, EvmYul.UInt256.toNat, ByteArray.write, Id.run,
+        EvmYul.EVM.State.replaceStackAndIncrPC,
+        EvmYul.EVM.State.incrPC, OpenWorld.installEVMShared,
+        OpenWorld.installEVM, EvmYul.Stack.push]
+  · split at hCreate
+    · generalize hLambda :
+        createLambda kind fuel (chargeGas state gasCost) operands = lambdaResult
+          at hCreate
+      cases lambdaResult with
+      | error error =>
+          simp at hCreate
+          rcases hCreate with ⟨rfl, rfl, rfl, rfl, rfl⟩
+          constructor
+          · exact finishConcreteCreate_world _ _ _ _ _ _ _ _
+          · simp [finishConcreteCreate, createResponseFromConcrete,
+              InteractionSemantics.EVMState.finishCreate,
+              InteractionSemantics.EVMState.installWorld,
+              CreateLocal.finishMachine, CreateOperands.createLocal,
+              eraseOpenWorldData, eraseControl, eraseGas,
+              EvmYul.MachineState.finishExternalCall,
+              EvmYul.MachineState.M, EvmYul.writeBytes,
+              EvmYul.UInt256.ofNat, EvmYul.UInt256.toNat, ByteArray.write,
+              Id.run, EvmYul.EVM.State.replaceStackAndIncrPC,
+              EvmYul.EVM.State.incrPC, OpenWorld.ofEVMShared,
+              OpenWorld.installEVMShared, OpenWorld.installEVM,
+              EvmYul.Stack.push]
+      | ok value =>
+          rcases value with ⟨childAddress, createdAccounts, accountMap,
+            childReturnedGas, substate, childSuccess, childReturnData⟩
+          simp at hCreate
+          rcases hCreate with ⟨rfl, rfl, rfl, rfl, rfl⟩
+          constructor
+          · exact finishConcreteCreate_world _ _ _ _ _ _ _ _
+          · simp [finishConcreteCreate, createResponseFromConcrete,
+              InteractionSemantics.EVMState.finishCreate,
+              InteractionSemantics.EVMState.installWorld,
+              CreateLocal.finishMachine, CreateOperands.createLocal,
+              eraseOpenWorldData, eraseControl, eraseGas,
+              EvmYul.MachineState.finishExternalCall,
+              EvmYul.MachineState.M, EvmYul.writeBytes,
+              EvmYul.UInt256.ofNat, EvmYul.UInt256.toNat, ByteArray.write,
+              Id.run, EvmYul.EVM.State.replaceStackAndIncrPC,
+              EvmYul.EVM.State.incrPC, OpenWorld.ofEVMShared,
+              OpenWorld.installEVMShared, OpenWorld.installEVM,
+              EvmYul.Stack.push]
+    · simp at hCreate
+      rcases hCreate with ⟨rfl, rfl, rfl, rfl, rfl⟩
+      constructor
+      · exact finishConcreteCreate_world _ _ _ _ _ _ _ _
+      · simp [finishConcreteCreate, createResponseFromConcrete,
+          InteractionSemantics.EVMState.finishCreate,
+          InteractionSemantics.EVMState.installWorld,
+          CreateLocal.finishMachine, CreateOperands.createLocal,
+          eraseOpenWorldData, eraseControl, eraseGas,
+          EvmYul.MachineState.finishExternalCall,
+          EvmYul.MachineState.M, EvmYul.writeBytes,
+          EvmYul.UInt256.ofNat, EvmYul.UInt256.toNat, ByteArray.write,
+          Id.run, EvmYul.EVM.State.replaceStackAndIncrPC,
+          EvmYul.EVM.State.incrPC, OpenWorld.ofEVMShared,
+          OpenWorld.installEVMShared, OpenWorld.installEVM,
+          EvmYul.Stack.push]
+
+theorem createResponseFromConcrete_finalGas
+    (kind : CreateKind) (state result : EVMState)
+    (operands : CreateOperands) (gasCost : Nat)
+    (address : EvmYul.AccountAddress) (returnedGas : EvmYul.UInt256)
+    (success : Bool) (returnData : ByteArray)
+    (rest : EvmYul.Stack EvmYul.UInt256)
+    (hParentCost : gasCost = createParentGasCost kind operands) :
+    createResponseFinalGas kind state operands
+        (createResponseFromConcrete (chargeGas state gasCost) result operands
+          address returnedGas success returnData) =
+      (finishConcreteCreate (chargeGas state gasCost) result rest operands
+        address returnedGas success returnData).gasAvailable := by
+  simp [createResponseFinalGas, createResponseFromConcrete, createFinalGas,
+    finishConcreteCreate, chargeGas, hParentCost,
+    EvmYul.EVM.State.replaceStackAndIncrPC, EvmYul.EVM.State.incrPC]
+
+theorem finishCreate_callInputState_openSameData
+    (state : EVMState) (cost : Nat)
+    (rest : EvmYul.Stack EvmYul.UInt256)
+    (createLocal : CreateLocal) (response : CreateResponse) :
+    OpenSameData
+      (InteractionSemantics.EVMState.finishCreate
+        (chargeGas (callInputState state) cost) rest createLocal response)
+      (InteractionSemantics.EVMState.finishCreate
+        (chargeGas state cost) rest createLocal response) := by
+  constructor
+  · simp [InteractionSemantics.EVMState.finishCreate,
+      InteractionSemantics.EVMState.installWorld,
+      EvmYul.EVM.State.incrPC, chargeGas, callInputState,
+      OpenWorld.ofEVMShared, OpenWorld.installEVMShared]
+  · simp [eraseOpenWorldData,
+      InteractionSemantics.EVMState.finishCreate,
+      InteractionSemantics.EVMState.installWorld,
+      chargeGas, callInputState, eraseControl, eraseGas,
+      EvmYul.EVM.State.incrPC, OpenWorld.installEVMShared,
+      OpenWorld.installEVM, EvmYul.Stack.push]
+
+theorem concreteCreate_responseStateRel
+    {kind : CreateKind} {fuel gasCost : Nat}
+    {state result : EVMState} {operands : CreateOperands}
+    {address : EvmYul.AccountAddress} {returnedGas : EvmYul.UInt256}
+    {success : Bool} {returnData : ByteArray}
+    {rest : EvmYul.Stack EvmYul.UInt256}
+    (hParentCost : gasCost = createParentGasCost kind operands)
+    (hCreate :
+      concreteCreate kind fuel gasCost state operands =
+        (address, result, returnedGas, success, returnData)) :
+    CreateResponseStateRel kind state operands
+      (createResponseFromConcrete (chargeGas state gasCost) result operands
+        address returnedGas success returnData)
+      (finishConcreteCreate (chargeGas state gasCost) result rest operands
+        address returnedGas success returnData)
+      (InteractionSemantics.EVMState.finishCreate
+        (chargeGas state (createParentGasCost kind operands)) rest
+        operands.createLocal
+        (createResponseFromConcrete (chargeGas state gasCost) result operands
+          address returnedGas success returnData)) := by
+  apply createResponseStateRel_of_openSameData
+  · simpa [hParentCost] using concreteCreate_result_openSameData hCreate
+  · exact
+      (createResponseFromConcrete_finalGas kind state result operands gasCost
+        address returnedGas success returnData rest hParentCost).symm
+
+theorem evm_step_create_responseStateRel
+    {kind : CreateKind} {fuel gasCost : Nat}
+    {state gasfulNext : EVMState} {operands : CreateOperands}
+    {rest : EvmYul.Stack EvmYul.UInt256}
+    {arg : Option (EvmYul.UInt256 × Nat)}
+    (hStack : state.stack = kind.args operands ++ rest)
+    (hParentCost : gasCost = createParentGasCost kind operands)
+    (hStep :
+      EvmYul.EVM.step fuel gasCost
+        (some (kind.toEVMOperation, arg)) state = .ok gasfulNext) :
+    ∃ response : CreateResponse,
+      CreateResponseStateRel kind (callInputState state) operands response
+        gasfulNext
+        (InteractionSemantics.EVMState.finishCreate
+          (chargeGas (callInputState state)
+            (createParentGasCost kind operands))
+          rest operands.createLocal response) := by
+  rw [evm_step_create_eq_concreteCreateStep
+    kind fuel gasCost state rest operands arg hStack] at hStep
+  cases fuel with
+  | zero =>
+      simp [concreteCreateStep] at hStep
+  | succ childFuel =>
+      simp only [concreteCreateStep] at hStep
+      generalize hCreate :
+        concreteCreate kind childFuel gasCost (callInputState state) operands =
+          createResult at hStep
+      rcases createResult with
+        ⟨address, result, returnedGas, success, returnData⟩
+      split at hStep
+      · simp at hStep
+      · simp at hStep
+        subst gasfulNext
+        let response :=
+          createResponseFromConcrete
+            (chargeGas (callInputState state) gasCost) result operands
+            address returnedGas success returnData
+        refine ⟨response, ?_⟩
+        exact concreteCreate_responseStateRel hParentCost hCreate
+
+theorem evm_step_create_responseStateRel_at
+    {fuel : Nat} {state gasfulNext : EVMState}
+    {rest : EvmYul.Stack EvmYul.UInt256}
+    {operands : CreateOperands}
+    {arg : Option (EvmYul.UInt256 × Nat)}
+    (kind : CreateKind)
+    (hOp : decodedOperationAt state = kind.toEVMOperation)
+    (hOperands :
+      kind.evmOperands? state.stack = some (rest, operands))
+    (hStep :
+      EvmYul.EVM.step fuel (dynamicGasCostAt state)
+        (some (kind.toEVMOperation, arg)) (afterMemoryChargeAt state) =
+          .ok gasfulNext) :
+    ∃ response : CreateResponse,
+      CreateResponseStateRel kind (afterMemoryChargeAt state) operands response
+        gasfulNext
+        (InteractionSemantics.EVMState.finishCreate
+          (afterDynamicChargeAt state) rest operands.createLocal response) := by
+  have hStack :=
+    CreateKind.stack_eq_args_append_of_evmOperands hOperands
+  have hCanonical :=
+    CreateKind.canonicalOperands_eq_of_evmOperands hOperands
+  have hParentBase :=
+    dynamicGasCostAt_create_args_eq_parentGasCost
+      kind state operands rest hOp hStack
+  have hStackMemory :
+      (afterMemoryChargeAt state).stack = kind.args operands ++ rest := by
+    simpa [afterMemoryChargeAt, chargeGas] using hStack
+  have hParentCost :
+      dynamicGasCostAt state = createParentGasCost kind operands := by
+    simpa [hCanonical] using hParentBase
+  obtain ⟨response, hResponse⟩ :=
+    evm_step_create_responseStateRel
+      hStackMemory hParentCost hStep
+  have hOpenResponse :
+      OpenSameData gasfulNext
+        (InteractionSemantics.EVMState.finishCreate
+          (chargeGas (callInputState (afterMemoryChargeAt state))
+            (dynamicGasCostAt state))
+          rest operands.createLocal response) := by
+    simpa [hParentCost] using hResponse.openData
+  have hOpenControl :=
+    finishCreate_callInputState_openSameData
+      (afterMemoryChargeAt state) (dynamicGasCostAt state)
+      rest operands.createLocal response
+  have hOpen :
+      OpenSameData gasfulNext
+        (InteractionSemantics.EVMState.finishCreate
+          (afterDynamicChargeAt state) rest operands.createLocal response) := by
+    simpa [afterDynamicChargeAt] using
+      hOpenResponse.trans hOpenControl
+  have hGasInput :=
+    createResponseGasAccounting_finalGas_eq hResponse.gasAccounting
+  have hGas :
+      gasfulNext.gasAvailable =
+        createResponseFinalGas kind (afterMemoryChargeAt state)
+          operands response := by
+    simpa [createResponseFinalGas, callInputState] using hGasInput
+  exact
+    ⟨response, createResponseStateRel_of_openSameData hOpen hGas⟩
 
 def createPrimOp : CreateKind → PrimOp
   | .create => .create
@@ -6426,6 +6963,64 @@ theorem runRefinesOpen_create_external_success
       (fuel := fuel) (validJumps := validJumps) (state := state)
       (stepResult := .ok gasfulNext)
       hPrefix hCreateOk hStepActual hPostBridge
+
+theorem runRefinesOpen_create_external_success_actual
+    {fuel : Nat} {validJumps : Array Word}
+    {bytes : ByteArray} {pc : Nat} {state gasfulNext : EVMState}
+    {rest : EvmYul.Stack Word} {operands : CreateOperands}
+    {arg : Option (Word × Nat)}
+    (kind : CreateKind)
+    (tailTranscript : CreateResponse → Interaction.Transcript)
+    (hPrefix : XSstoreStipendChecksPass validJumps state)
+    (hCreateOk :
+      ¬ (EvmYul.Operation.isCreate (decodedOperationAt state) = true ∧
+        (EvmYul.UInt256.ofNat 49152) <
+          state.stack[2]?.getD (EvmYul.UInt256.ofNat 0)))
+    (hDecodedPair :
+      ((EvmYul.EVM.decode state.executionEnv.code state.pc).getD
+        (EvmYul.Operation.STOP, none)) = (kind.toEVMOperation, arg))
+    (hOperands :
+      kind.evmOperands? state.stack = some (rest, operands))
+    (hPermission :
+      (ExternalFrame.ofShared
+        (afterDynamicChargeAt state).toSharedState).permission = true)
+    (hDecode : Compact.decodeAt bytes pc (.prim (createPrimOp kind)))
+    (hPc : (afterDynamicChargeAt state).pc = EvmYul.UInt256.ofNat pc)
+    (hGasful :
+      EvmYul.EVM.step fuel (dynamicGasCostAt state)
+        (some (kind.toEVMOperation, arg)) (afterMemoryChargeAt state) =
+          .ok gasfulNext)
+    (hCont :
+      ∀ response,
+        CreateResponseStateRel kind (afterMemoryChargeAt state) operands
+            response gasfulNext
+            (InteractionSemantics.EVMState.finishCreate
+              (afterDynamicChargeAt state) rest operands.createLocal response) →
+          RunRefinesOpen
+            (EvmYul.EVM.X fuel validJumps gasfulNext)
+            (Compact.InteractionSemantics.openRunNResult
+              bytes fuel
+              (InteractionSemantics.EVMState.finishCreate
+                (afterDynamicChargeAt state) rest operands.createLocal
+                response))
+            (tailTranscript response)) :
+    ∃ response,
+      RunRefinesOpen
+        (EvmYul.EVM.X (fuel + 1) validJumps state)
+        (Compact.InteractionSemantics.openRunNResult
+          bytes (fuel + 1) (afterDynamicChargeAt state))
+        (createExternalExchange kind (afterDynamicChargeAt state)
+          operands response :: tailTranscript response) := by
+  have hDecodedOp : decodedOperationAt state = kind.toEVMOperation := by
+    simpa [decodedOperationAt, hDecodedPair]
+  obtain ⟨response, hResponse⟩ :=
+    evm_step_create_responseStateRel_at
+      kind hDecodedOp hOperands hGasful
+  refine ⟨response, ?_⟩
+  exact
+    runRefinesOpen_create_external_success
+      kind hPrefix hCreateOk hDecodedPair hOperands hPermission hDecode hPc
+      hGasful hResponse (hCont response)
 
 theorem runRefinesOpen_outOfGas_prefix
     {openRun : Interaction EVMException StepResult}
