@@ -3506,6 +3506,47 @@ theorem stmtListRecursiveSemanticStep
     ⟨pre, stmt, suffix, hSplit, hStep,
       hPrefix prefixFuel code shared vars⟩
 
+def RecursiveStepEvidence
+    (ordered : Yul.OrderedProgram)
+    (generated : Name)
+    (params returns : List Name) (body : List Yul.AstStmt)
+    (args : List Yul.AstExpr) (stmts : List Yul.AstStmt)
+    (prefixFuel : Nat) (code : Option Yul.AstContract)
+    (shared : EvmYul.SharedState .Yul)
+    (vars : EvmYul.Yul.VarStore) : Prop :=
+  ∃ (hInterface :
+      FocusedGeneratedCallSemanticInterface ordered generated params returns
+        body args stmts prefixFuel code shared vars)
+    (pre : List Yul.AstStmt) (stmt : Yul.AstStmt)
+    (suffix : List Yul.AstStmt),
+    stmts = pre ++ stmt :: suffix ∧
+      StmtContext.RecursiveSemanticStep hInterface stmt ∧
+        Yul.InteractionSemantics.execSeq
+          (prefixFuel + pre.length + 1) stmts code (.Ok shared vars) =
+          Simulation.Interaction.bind
+            (Yul.InteractionSemantics.execSeq
+              (prefixFuel + pre.length + 1) pre code (.Ok shared vars))
+            (fun stateAfterPre =>
+              Yul.YulOccurrence.StmtListUserCall.continueAfterPrefix
+                (prefixFuel + 1) (stmt :: suffix) code stateAfterPre)
+
+theorem recursiveStepEvidence_of_interface
+    {ordered : Yul.OrderedProgram}
+    {generated : Name}
+    {params returns : List Name} {body : List Yul.AstStmt}
+    {args : List Yul.AstExpr} {stmts : List Yul.AstStmt}
+    {prefixFuel : Nat} {code : Option Yul.AstContract}
+    {shared : EvmYul.SharedState .Yul}
+    {vars : EvmYul.Yul.VarStore}
+    (hInterface :
+      FocusedGeneratedCallSemanticInterface ordered generated params returns
+        body args stmts prefixFuel code shared vars) :
+    RecursiveStepEvidence ordered generated params returns body args stmts
+      prefixFuel code shared vars := by
+  rcases stmtListRecursiveSemanticStep hInterface with
+    ⟨pre, stmt, suffix, hSplit, hStep, hPrefix⟩
+  exact ⟨hInterface, pre, stmt, suffix, hSplit, hStep, hPrefix⟩
+
 end FocusedGeneratedCallSemanticInterface
 
 def FocusedGeneratedStmtListCallPrefix
@@ -5305,6 +5346,83 @@ theorem decodeAndElaborateSolcIr?_semanticInterfaceOfRawOccurrence
         ⟨params, returns, body, yulArgs, stmts,
           FocusedGeneratedCallSemanticInterface.of_prefixEvidence
             hEvidence⟩
+
+theorem decodeAndElaborateSolcIr?_recursiveStepEvidenceOfRawOccurrence
+    {rawJson : String} {selection : Selection}
+    {program : Frontend.Program} {ordered : Yul.OrderedProgram}
+    (hDecode :
+      decodeAndElaborateSolcIr? rawJson selection = some program)
+    (hConvert : program.object.toSolcYulOrderedProgram? = some ordered) :
+    ∃ (json : Lean.Json) (selected : SelectedIr)
+        (object : Frontend.Object),
+      Lean.Json.parse rawJson = .ok json ∧
+        decodeSelectedIr json selection = .ok selected ∧
+          selected.root.elaborate? selected.evmVersion = .ok object ∧
+            program =
+              { source := selected.source
+                contract := selected.contract
+                object := object } ∧
+              match selected.root.code? with
+              | none => True
+              | some code =>
+                  ∃ (coreDispatcher : List Frontend.Stmt) (state : State)
+                      (helper? arg? ret? : Option Name),
+                    elaborateCodeCore code = .ok (coreDispatcher, state) ∧
+                      elaborateCode code =
+                        .ok (object.dispatcher, object.functions,
+                          helper?, arg?, ret?) ∧
+                        ∀ {functionName : Name}
+                            {rawArgs : List Raw.Expr},
+                          RawOccurrence.StmtListUserCall functionName
+                            rawArgs code →
+                            functionName ≠ "memoryguard" →
+                              functionName ≠ "clz" →
+                                CallClass.classifyCall functionName =
+                                  .user →
+                                  ∃ (generated : Name)
+                                    (frontendArgs : List Frontend.Expr),
+                                    ∀ {fuel : Nat}
+                                        {shared : EvmYul.SharedState .Yul}
+                                        {vars : EvmYul.Yul.VarStore},
+                                      ∃ (params returns : List Name)
+                                        (body : List Yul.AstStmt)
+                                        (yulArgs : List Yul.AstExpr)
+                                        (stmts : List Yul.AstStmt),
+                                        FocusedGeneratedCallSemanticInterface.RecursiveStepEvidence
+                                          ordered generated params returns
+                                          body yulArgs stmts fuel
+                                          (some
+                                            ordered.program.contract)
+                                          shared vars := by
+  rcases
+      decodeAndElaborateSolcIr?_semanticInterfaceOfRawOccurrence
+        hDecode hConvert with
+    ⟨json, selected, object, hParse, hSelected, hObject, hProgram,
+      hSemantic⟩
+  refine ⟨json, selected, object, hParse, hSelected, hObject, hProgram, ?_⟩
+  cases hRawCode : selected.root.code? with
+  | none =>
+      simp [hRawCode]
+  | some code =>
+      rw [hRawCode] at hSemantic
+      rcases hSemantic with
+        ⟨coreDispatcher, state, helper?, arg?, ret?, hCore, hElab,
+          hOccurrenceSemantic⟩
+      refine
+        ⟨coreDispatcher, state, helper?, arg?, ret?, hCore, hElab, ?_⟩
+      intro functionName rawArgs hOccurrence hNotMemoryguard hNotClz
+        hKind
+      rcases hOccurrenceSemantic hOccurrence hNotMemoryguard hNotClz
+          hKind with
+        ⟨generated, frontendArgs, hGenerated⟩
+      refine ⟨generated, frontendArgs, ?_⟩
+      intro fuel shared vars
+      rcases hGenerated with
+        ⟨params, returns, body, yulArgs, stmts, hInterface⟩
+      exact
+        ⟨params, returns, body, yulArgs, stmts,
+          FocusedGeneratedCallSemanticInterface.recursiveStepEvidence_of_interface
+            hInterface⟩
 
 theorem decodeAndElaborateSolcIr?_codeRouteOfRawOccurrence
     {rawJson : String} {selection : Selection}
