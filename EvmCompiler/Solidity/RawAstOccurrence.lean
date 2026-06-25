@@ -2339,6 +2339,279 @@ theorem requireIdentifierVisible_preserves_existing_clzHelperName
       rcases hRun with ⟨rfl, rfl⟩
       exact hHelperName
 
+theorem pushIdentifierScope_preserves_existing_clzHelperName
+    {state state' : Elab.State} {helper : Name}
+    (hRun : Elab.pushIdentifierScope.run state = .ok ((), state'))
+    (hHelperName : state.clzHelperName? = some helper) :
+    state'.clzHelperName? = some helper := by
+  simp [Elab.pushIdentifierScope] at hRun
+  rcases hRun with ⟨_hUnit, rfl⟩
+  exact hHelperName
+
+theorem popIdentifierScope_preserves_existing_clzHelperName
+    {state state' : Elab.State} {helper : Name}
+    (hRun : Elab.popIdentifierScope.run state = .ok ((), state'))
+    (hHelperName : state.clzHelperName? = some helper) :
+    state'.clzHelperName? = some helper := by
+  rcases state with
+    ⟨functionScopes, identifierScopes, hoistedFunctions, usedFunctionNames,
+      nextGeneratedFunctionId, clzHelperName?, clzArgName?, clzReturnName?⟩
+  unfold Elab.popIdentifierScope at hRun
+  cases identifierScopes with
+  | nil =>
+      unfold Elab.throw at hRun
+      simp at hRun
+      change Except.error "internal frontend error: no identifier scope to pop" =
+        Except.ok ((), state') at hRun
+      cases hRun
+  | cons scope rest =>
+      simp at hRun
+      rcases hRun with ⟨_hUnit, rfl⟩
+      exact hHelperName
+
+theorem pushFunctionScope_preserves_existing_clzHelperName
+    {scope : List (Name × Name)}
+    {state state' : Elab.State} {helper : Name}
+    (hRun : (Elab.pushFunctionScope scope).run state = .ok ((), state'))
+    (hHelperName : state.clzHelperName? = some helper) :
+    state'.clzHelperName? = some helper := by
+  simp [Elab.pushFunctionScope] at hRun
+  rcases hRun with ⟨_hUnit, rfl⟩
+  exact hHelperName
+
+theorem popFunctionScope_preserves_existing_clzHelperName
+    {state state' : Elab.State} {helper : Name}
+    (hRun : Elab.popFunctionScope.run state = .ok ((), state'))
+    (hHelperName : state.clzHelperName? = some helper) :
+    state'.clzHelperName? = some helper := by
+  rcases state with
+    ⟨functionScopes, identifierScopes, hoistedFunctions, usedFunctionNames,
+      nextGeneratedFunctionId, clzHelperName?, clzArgName?, clzReturnName?⟩
+  unfold Elab.popFunctionScope at hRun
+  cases functionScopes with
+  | nil =>
+      unfold Elab.throw at hRun
+      simp at hRun
+      change Except.error "internal frontend error: no function scope to pop" =
+        Except.ok ((), state') at hRun
+      cases hRun
+  | cons scope rest =>
+      simp at hRun
+      rcases hRun with ⟨_hUnit, rfl⟩
+      exact hHelperName
+
+theorem declareIdentifiersLoop_preserves_existing_clzHelperName
+    {description : String} {names seen seenOut : List Name}
+    {state state' : Elab.State} {helper : Name}
+    (hRun :
+      (Elab.declareIdentifiersLoop description names seen).run state =
+        .ok (seenOut, state'))
+    (hHelperName : state.clzHelperName? = some helper) :
+    state'.clzHelperName? = some helper := by
+  induction names generalizing seen seenOut state state' with
+  | nil =>
+      simp [Elab.declareIdentifiersLoop] at hRun
+      rcases hRun with ⟨_hSeen, rfl⟩
+      exact hHelperName
+  | cons name rest ih =>
+      unfold Elab.declareIdentifiersLoop at hRun
+      cases hBinding : Elab.bindingNameOk? name with
+      | false =>
+          unfold Elab.throw at hRun
+          simp [hBinding] at hRun
+          change Except.error
+              (toString "invalid Yul " ++ toString description ++
+                toString " name " ++ toString name) =
+            Except.ok (seenOut, state') at hRun
+          cases hRun
+      | true =>
+          cases hSeen : seen.contains name with
+          | true =>
+              have hSeenMem : name ∈ seen := by
+                simpa using hSeen
+              unfold Elab.throw at hRun
+              simp [hBinding, hSeenMem] at hRun
+              change Except.error
+                  (toString "duplicate Yul " ++ toString description ++
+                    toString " name " ++ toString name) =
+                Except.ok (seenOut, state') at hRun
+              cases hRun
+          | false =>
+              have hSeenNot : name ∉ seen := by
+                simpa using hSeen
+              cases hVisible :
+                  Elab.identifierVisibleIn name state.identifierScopes with
+              | true =>
+                  unfold Elab.throw at hRun
+                  simp [hBinding, hSeenNot, hVisible] at hRun
+                  change Except.error
+                      (toString "Yul " ++ toString description ++
+                        toString " name " ++ toString name ++
+                          toString " already taken in this scope") =
+                    Except.ok (seenOut, state') at hRun
+                  cases hRun
+              | false =>
+                  simp [hBinding, hSeenNot, hVisible] at hRun
+                  exact ih hRun hHelperName
+
+theorem declareIdentifiers_preserves_existing_clzHelperName
+    {names : List Name} {description : String}
+    {state state' : Elab.State} {helper : Name}
+    (hRun :
+      (Elab.declareIdentifiers names description).run state =
+        .ok ((), state'))
+    (hHelperName : state.clzHelperName? = some helper) :
+    state'.clzHelperName? = some helper := by
+  rcases state with
+    ⟨functionScopes, identifierScopes, hoistedFunctions, usedFunctionNames,
+      nextGeneratedFunctionId, clzHelperName?, clzArgName?, clzReturnName?⟩
+  unfold Elab.declareIdentifiers at hRun
+  cases identifierScopes with
+  | nil =>
+      cases hLoop :
+          (Elab.declareIdentifiersLoop description names []).run
+            { functionScopes := functionScopes
+              identifierScopes := [[]]
+              hoistedFunctions := hoistedFunctions
+              usedFunctionNames := usedFunctionNames
+              nextGeneratedFunctionId := nextGeneratedFunctionId
+              clzHelperName? := clzHelperName?
+              clzArgName? := clzArgName?
+              clzReturnName? := clzReturnName? } with
+      | error err =>
+          simp [hLoop] at hRun
+      | ok loopResult =>
+          rcases loopResult with ⟨seen, stateAfterLoop⟩
+          have hLoopHelper :
+              stateAfterLoop.clzHelperName? = some helper :=
+            declareIdentifiersLoop_preserves_existing_clzHelperName
+              hLoop hHelperName
+          cases hScopes : stateAfterLoop.identifierScopes with
+          | nil =>
+              simp [hLoop, hScopes] at hRun
+              rcases hRun with ⟨_hUnit, rfl⟩
+              exact hLoopHelper
+          | cons scope rest =>
+              simp [hLoop, hScopes] at hRun
+              rcases hRun with ⟨_hUnit, rfl⟩
+              exact hLoopHelper
+  | cons initialScope initialRest =>
+      cases hLoop :
+          (Elab.declareIdentifiersLoop description names []).run
+            { functionScopes := functionScopes
+              identifierScopes := initialScope :: initialRest
+              hoistedFunctions := hoistedFunctions
+              usedFunctionNames := usedFunctionNames
+              nextGeneratedFunctionId := nextGeneratedFunctionId
+              clzHelperName? := clzHelperName?
+              clzArgName? := clzArgName?
+              clzReturnName? := clzReturnName? } with
+      | error err =>
+          simp [hLoop] at hRun
+      | ok loopResult =>
+          rcases loopResult with ⟨seen, stateAfterLoop⟩
+          have hLoopHelper :
+              stateAfterLoop.clzHelperName? = some helper :=
+            declareIdentifiersLoop_preserves_existing_clzHelperName
+              hLoop hHelperName
+          cases hScopes : stateAfterLoop.identifierScopes with
+          | nil =>
+              simp [hLoop, hScopes] at hRun
+              rcases hRun with ⟨_hUnit, rfl⟩
+              exact hLoopHelper
+          | cons scope rest =>
+              simp [hLoop, hScopes] at hRun
+              rcases hRun with ⟨_hUnit, rfl⟩
+              exact hLoopHelper
+
+theorem freshGeneratedFunctionNameFrom_preserves_existing_clzHelperName
+    {stem : Name} {fuel : Nat} {name : Name}
+    {state state' : Elab.State} {helper : Name}
+    (hRun :
+      (Elab.freshGeneratedFunctionNameFrom stem fuel).run state =
+        .ok (name, state'))
+    (hHelperName : state.clzHelperName? = some helper) :
+    state'.clzHelperName? = some helper := by
+  induction fuel generalizing name state state' with
+  | zero =>
+      unfold Elab.freshGeneratedFunctionNameFrom at hRun
+      unfold Elab.throw at hRun
+      change Except.error
+          "could not allocate fresh generated Yul function name" =
+        Except.ok (name, state') at hRun
+      cases hRun
+  | succ fuel ih =>
+      unfold Elab.freshGeneratedFunctionNameFrom at hRun
+      let candidate :=
+        "__yul_gen_" ++ toString state.nextGeneratedFunctionId ++
+          "_" ++ stem
+      by_cases hUsed : candidate ∈ state.usedFunctionNames
+      · simp [candidate, hUsed] at hRun
+        exact ih hRun hHelperName
+      · simp [candidate, hUsed] at hRun
+        rcases hRun with ⟨rfl, rfl⟩
+        exact hHelperName
+
+theorem freshGeneratedFunctionName_preserves_existing_clzHelperName
+    {base name : Name} {state state' : Elab.State} {helper : Name}
+    (hRun :
+      (Elab.freshGeneratedFunctionName base).run state =
+        .ok (name, state'))
+    (hHelperName : state.clzHelperName? = some helper) :
+    state'.clzHelperName? = some helper := by
+  unfold Elab.freshGeneratedFunctionName at hRun
+  exact
+    freshGeneratedFunctionNameFrom_preserves_existing_clzHelperName
+      hRun hHelperName
+
+theorem freshNonFunctionBindingNameFrom_preserves_existing_clzHelperName
+    {stem : Name} {index fuel : Nat} {name : Name}
+    {state state' : Elab.State} {helper : Name}
+    (hRun :
+      (Elab.freshNonFunctionBindingNameFrom stem index fuel).run state =
+        .ok (name, state'))
+    (hHelperName : state.clzHelperName? = some helper) :
+    state'.clzHelperName? = some helper := by
+  induction fuel generalizing index name state state' with
+  | zero =>
+      unfold Elab.freshNonFunctionBindingNameFrom at hRun
+      unfold Elab.throw at hRun
+      change Except.error
+          "could not allocate fresh generated Yul binding name" =
+        Except.ok (name, state') at hRun
+      cases hRun
+  | succ fuel ih =>
+      unfold Elab.freshNonFunctionBindingNameFrom at hRun
+      let candidate :=
+        if index = 0 then "__yul_" ++ stem else
+          "__yul_" ++ stem ++ "_" ++ toString index
+      by_cases hUsed : candidate ∈ state.usedFunctionNames
+      · simp [candidate, hUsed] at hRun
+        exact ih hRun hHelperName
+      · simp [candidate, hUsed] at hRun
+        rcases hRun with ⟨rfl, rfl⟩
+        exact hHelperName
+
+theorem freshNonFunctionBindingName_preserves_existing_clzHelperName
+    {base name : Name} {state state' : Elab.State} {helper : Name}
+    (hRun :
+      (Elab.freshNonFunctionBindingName base).run state =
+        .ok (name, state'))
+    (hHelperName : state.clzHelperName? = some helper) :
+    state'.clzHelperName? = some helper := by
+  unfold Elab.freshNonFunctionBindingName at hRun
+  exact
+    freshNonFunctionBindingNameFrom_preserves_existing_clzHelperName
+      hRun hHelperName
+
+theorem ensureClzHelper_preserves_existing_clzHelperName
+    {helper helper' : Name} {state state' : Elab.State}
+    (hHelperName : state.clzHelperName? = some helper)
+    (hRun : Elab.ensureClzHelper.run state = .ok (helper', state')) :
+    state'.clzHelperName? = some helper := by
+  rcases ensureClzHelper_existing hHelperName hRun with ⟨_hHelper, rfl⟩
+  exact hHelperName
+
 mutual
   theorem Expr.elaborate_preserves_existing_clzHelperName
       {rawExpr : Raw.Expr} {frontendExpr : Frontend.Expr}
