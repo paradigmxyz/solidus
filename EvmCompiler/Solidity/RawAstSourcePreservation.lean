@@ -118,6 +118,25 @@ def BlockCodeRunForward (rawFuel orderedFuel : Nat)
     (Yul.InteractionSemantics.exec orderedFuel (.Block orderedCode)
       (some contract) state)
 
+/-- Selection and recursive body preservation for a lowered switch. Successful
+frontend elaboration will construct this relation from the raw/ordered case
+lists, so statement simulation never receives a case-specific replay premise. -/
+def SwitchCasesRunForward (rawFuel orderedFuel : Nat)
+    (context : Raw.SourceSemantics.Context)
+    (rawCases : List (Raw.SwitchCaseValue × List Raw.Stmt))
+    (rawDefault : List Raw.Stmt)
+    (orderedCases : List (Frontend.Word × List Frontend.AstStmt))
+    (orderedDefault : List Frontend.AstStmt)
+    (contract : Frontend.AstContract) : Prop :=
+  ∀ (stateAfterCondition : State) (value : Frontend.Word),
+    ∃ rawBody orderedBody,
+      Raw.SourceSemantics.selectSwitchCase value rawDefault rawCases =
+          some rawBody ∧
+        EvmYul.Yul.selectSwitchCase value orderedDefault orderedCases =
+          orderedBody ∧
+        BlockCodeRunForward rawFuel orderedFuel
+          context rawBody orderedBody contract stateAfterCondition
+
 /-- Bundled semantic evidence for one elaborated raw user call. The frontend
 derivation supplies the generated callee lookup; recursive preservation
 supplies the callee body for every argument result. -/
@@ -599,6 +618,148 @@ theorem stmtRunForward_block_succ
   unfold StmtRunForward BlockCodeRunForward at *
   rw [Raw.SourceSemantics.Exec.block_succ]
   exact hBlock
+
+theorem stmtRunForward_ifThen_succ
+    {rawFuel orderedFuel : Nat}
+    {context : Raw.SourceSemantics.Context}
+    {rawCondition : Raw.Expr} {orderedCondition : Frontend.AstExpr}
+    {rawBody : List Raw.Stmt} {orderedBody : List Frontend.AstStmt}
+    {contract : Frontend.AstContract} {state : State}
+    (hCondition :
+      ExprRunForward rawFuel orderedFuel
+        context rawCondition orderedCondition contract state)
+    (hBody :
+      ∀ (stateAfterCondition : State) (value : Frontend.Word),
+        value ≠ EvmYul.UInt256.ofNat 0 →
+          BlockCodeRunForward rawFuel orderedFuel
+            context rawBody orderedBody contract stateAfterCondition) :
+    StmtRunForward (rawFuel + 1) (orderedFuel + 1)
+      context (.ifThen rawCondition rawBody)
+      (.If orderedCondition orderedBody) contract state := by
+  unfold StmtRunForward
+  rw [Raw.SourceSemantics.Exec.ifThen_succ]
+  rw [Yul.InteractionSemantics.Exec.if_succ]
+  unfold ExprRunForward at hCondition
+  refine Simulation.Interaction.ForwardRel.bind_custom hCondition ?_
+  intro rawDone orderedDone hDone
+  unfold SameDoneRel at hDone
+  subst orderedDone
+  cases rawDone with
+  | error error =>
+      exact Simulation.Interaction.ForwardRel.done rfl
+  | ok conditionResult =>
+      rcases conditionResult with ⟨stateAfterCondition, value⟩
+      change
+        Simulation.Interaction.ForwardRel
+          Yul.FunctionsInteractionPrimitive.Truncated SameDoneRel
+          (if value ≠ EvmYul.UInt256.ofNat 0 then
+            Raw.SourceSemantics.execBlock rawFuel context rawBody
+              stateAfterCondition
+          else
+            pure stateAfterCondition)
+          (if value ≠ EvmYul.UInt256.ofNat 0 then
+            Yul.InteractionSemantics.exec orderedFuel (.Block orderedBody)
+              (some contract) stateAfterCondition
+          else
+            pure stateAfterCondition)
+      split
+      case isTrue hRawTruthy =>
+        exact hBody stateAfterCondition value hRawTruthy
+      case isFalse hRawFalse =>
+        exact Simulation.Interaction.ForwardRel.done rfl
+
+theorem stmtRunForward_switch_succ
+    {rawFuel orderedFuel : Nat}
+    {context : Raw.SourceSemantics.Context}
+    {rawCondition : Raw.Expr} {orderedCondition : Frontend.AstExpr}
+    {rawCases : List (Raw.SwitchCaseValue × List Raw.Stmt)}
+    {rawDefault : List Raw.Stmt}
+    {orderedCases : List (Frontend.Word × List Frontend.AstStmt)}
+    {orderedDefault : List Frontend.AstStmt}
+    {contract : Frontend.AstContract} {state : State}
+    (hCondition :
+      ExprRunForward rawFuel orderedFuel
+        context rawCondition orderedCondition contract state)
+    (hCases :
+      SwitchCasesRunForward rawFuel orderedFuel context
+        rawCases rawDefault orderedCases orderedDefault contract) :
+    StmtRunForward (rawFuel + 1) (orderedFuel + 1)
+      context (.switch rawCondition rawCases rawDefault)
+      (.Switch orderedCondition orderedCases orderedDefault)
+      contract state := by
+  unfold StmtRunForward
+  rw [Raw.SourceSemantics.Exec.switch_succ]
+  rw [Yul.InteractionSemantics.Exec.switch_succ]
+  unfold ExprRunForward at hCondition
+  refine Simulation.Interaction.ForwardRel.bind_custom hCondition ?_
+  intro rawDone orderedDone hDone
+  unfold SameDoneRel at hDone
+  subst orderedDone
+  cases rawDone with
+  | error error =>
+      exact Simulation.Interaction.ForwardRel.done rfl
+  | ok conditionResult =>
+      rcases conditionResult with ⟨stateAfterCondition, value⟩
+      rcases hCases stateAfterCondition value with
+        ⟨rawBody, orderedBody, hRawSelected, hOrderedSelected, hBody⟩
+      simp only [hRawSelected, hOrderedSelected]
+      exact hBody
+
+theorem stmtRunForward_break_succ
+    {rawFuel orderedFuel : Nat}
+    {context : Raw.SourceSemantics.Context}
+    {contract : Frontend.AstContract} {state : State} :
+    StmtRunForward (rawFuel + 1) (orderedFuel + 1)
+      context .break .Break contract state := by
+  unfold StmtRunForward
+  rw [Raw.SourceSemantics.Exec.break_succ]
+  rw [Yul.InteractionSemantics.Exec.brk_succ]
+  exact Simulation.Interaction.ForwardRel.done rfl
+
+theorem stmtRunForward_continue_succ
+    {rawFuel orderedFuel : Nat}
+    {context : Raw.SourceSemantics.Context}
+    {contract : Frontend.AstContract} {state : State} :
+    StmtRunForward (rawFuel + 1) (orderedFuel + 1)
+      context .continue .Continue contract state := by
+  unfold StmtRunForward
+  rw [Raw.SourceSemantics.Exec.continue_succ]
+  rw [Yul.InteractionSemantics.Exec.cont_succ]
+  exact Simulation.Interaction.ForwardRel.done rfl
+
+theorem stmtRunForward_leave_succ
+    {rawFuel orderedFuel : Nat}
+    {context : Raw.SourceSemantics.Context}
+    {contract : Frontend.AstContract} {state : State} :
+    StmtRunForward (rawFuel + 1) (orderedFuel + 1)
+      context .leave .Leave contract state := by
+  unfold StmtRunForward
+  rw [Raw.SourceSemantics.Exec.leave_succ]
+  rw [Yul.InteractionSemantics.Exec.leave_succ]
+  exact Simulation.Interaction.ForwardRel.done rfl
+
+theorem stmtRunForward_functionDefinition_stub_succ
+    {rawFuel orderedFuel : Nat}
+    {context : Raw.SourceSemantics.Context}
+    {name : Name} {params returns : List Name} {body : List Raw.Stmt}
+    {contract : Frontend.AstContract}
+    {shared : EvmYul.SharedState .Yul} {store : EvmYul.Yul.VarStore} :
+    StmtRunForward (rawFuel + 1) (orderedFuel + 2)
+      context (.functionDefinition name params returns body)
+      (.Block []) contract (.Ok shared store) := by
+  unfold StmtRunForward
+  rw [Raw.SourceSemantics.Exec.functionDefinition_succ]
+  rw [show orderedFuel + 2 = (orderedFuel + 1) + 1 by omega]
+  rw [Yul.InteractionSemantics.Exec.block_succ]
+  rw [Yul.InteractionSemantics.ExecSeq.nil_succ]
+  change
+    Simulation.Interaction.ForwardRel
+      Yul.FunctionsInteractionPrimitive.Truncated SameDoneRel
+      (pure (EvmYul.Yul.State.Ok shared store))
+      (pure (EvmYul.Yul.State.Ok shared
+        (EvmYul.Yul.State.restrictVarStore store store)))
+  rw [Yul.VarStoreRestriction.restrict_self]
+  exact Simulation.Interaction.ForwardRel.done rfl
 
 /-- Exact pre-block statement-list preservation. Both sides still carry the
 same lexical store; the dispatcher adapter below accounts for the ordered
