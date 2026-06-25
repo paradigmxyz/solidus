@@ -1692,6 +1692,69 @@ theorem elaborate_codeRoute_of_body
                             rcases hPop with ⟨_hUnit, rfl⟩
                             exact hMem)
 
+theorem elaborate_codeRoute_exists_of_body
+    {params returns : List Name} {rawBody : List Raw.Stmt}
+    {fn : Frontend.FunctionDef} {state state' : Elab.State}
+    (hElab :
+      (Elab.FunctionDef.elaborate params returns rawBody).run state =
+        .ok (fn, state'))
+    (hBodyRoute :
+      ∀ {frontendBody : List Frontend.Stmt}
+        {stateBeforeBody stateAfterBody : Elab.State},
+        (Elab.Stmt.List.elaborateBlock rawBody true).run
+          stateBeforeBody =
+          .ok (frontendBody, stateAfterBody) →
+        fn.body = frontendBody →
+          ∃ (generated : Name) (frontendArgs : List Frontend.Expr),
+            CodeElaborationRoute stateAfterBody generated frontendArgs
+              frontendBody) :
+    ∃ (generated : Name) (frontendArgs : List Frontend.Expr),
+      CodeElaborationRoute state' generated frontendArgs fn.body := by
+  unfold Elab.FunctionDef.elaborate at hElab
+  cases hPush : Elab.pushIdentifierScope.run state with
+  | error err =>
+      simp [hPush] at hElab
+  | ok pushResult =>
+      rcases pushResult with ⟨unitPush, stateAfterPush⟩
+      cases hDeclare :
+          (Elab.declareIdentifiers (params ++ returns)
+            "function parameter/result").run stateAfterPush with
+      | error err =>
+          simp [hPush, hDeclare] at hElab
+      | ok declareResult =>
+          rcases declareResult with ⟨unitDeclare, stateAfterDeclare⟩
+          cases hBody :
+              (Elab.Stmt.List.elaborateBlock rawBody true).run
+                stateAfterDeclare with
+          | error err =>
+              simp [hPush, hDeclare, hBody] at hElab
+          | ok bodyResult =>
+              rcases bodyResult with ⟨frontendBody, stateAfterBody⟩
+              cases hPop :
+                  Elab.popIdentifierScope.run stateAfterBody with
+              | error err =>
+                  simp [hPush, hDeclare, hBody, hPop] at hElab
+              | ok popResult =>
+                  rcases popResult with ⟨unitPop, stateAfterPop⟩
+                  simp [hPush, hDeclare, hBody, hPop] at hElab
+                  rcases hElab with ⟨rfl, rfl⟩
+                  rcases hBodyRoute hBody rfl with
+                    ⟨generated, frontendArgs, hRoute⟩
+                  exact
+                    ⟨generated, frontendArgs,
+                      CodeElaborationRoute.retain hRoute
+                        (fun {entry} hMem => by
+                          cases hScopes :
+                              stateAfterBody.identifierScopes with
+                          | nil =>
+                              simp [Elab.popIdentifierScope, hScopes] at hPop
+                              unfold Elab.throw at hPop
+                              cases hPop
+                          | cons head rest =>
+                              simp [Elab.popIdentifierScope, hScopes] at hPop
+                              rcases hPop with ⟨_hUnit, rfl⟩
+                              exact hMem)⟩
+
 end FunctionDef
 
 namespace Elab
@@ -2335,6 +2398,17 @@ mutual
     | (_, body) :: rest =>
         rawStmtListSize body + rawCaseListSize rest + 1
 end
+
+theorem rawStmtListSize_append
+    (left right : List Raw.Stmt) :
+    rawStmtListSize (left ++ right) =
+      rawStmtListSize left + rawStmtListSize right := by
+  induction left with
+  | nil =>
+      simp [rawStmtListSize]
+  | cons head rest ih =>
+      simp [rawStmtListSize, ih]
+      omega
 
 def RawStmtNotFunctionDefinition (stmt : Raw.Stmt) : Prop :=
   ∀ {name : Name} {params returns : List Name} {body : List Raw.Stmt},
@@ -4297,6 +4371,97 @@ theorem hoistLocalFunctions_retains_hoisted
   have hBelow := retainsHoistedBelow (rawStmtListSize rawStmts + 1)
   exact hBelow.hoist (Nat.lt_succ_self _) hRun hMem
 
+theorem hoistLocalFunctions_lookup_of_function_mem
+    {rawStmts : List Raw.Stmt} {scope : List (Name × Name)}
+    {state state' : Elab.State}
+    (hRun :
+      (Elab.Stmt.List.hoistLocalFunctions rawStmts scope).run state =
+        .ok ((), state'))
+    {name : Name} {params returns : List Name} {body : List Raw.Stmt}
+    (hMem :
+      Raw.Stmt.functionDefinition name params returns body ∈ rawStmts) :
+    ∃ generated, Elab.lookupFunctionInScope name scope = some generated := by
+  induction rawStmts generalizing state state' with
+  | nil =>
+      simp at hMem
+  | cons head rest ih =>
+      unfold Elab.Stmt.List.hoistLocalFunctions at hRun
+      simp only [List.mem_cons] at hMem
+      cases head with
+      | functionDefinition headName headParams headReturns headBody =>
+          cases hLookup :
+              Elab.lookupFunctionInScope headName scope with
+          | none =>
+              simp [hLookup] at hRun
+              unfold Elab.throw at hRun
+              cases hRun
+          | some headGenerated =>
+              cases hFn :
+                  (Elab.FunctionDef.elaborate headParams headReturns
+                    headBody).run state with
+              | error err =>
+                  simp [hLookup, hFn] at hRun
+              | ok fnResult =>
+                  rcases fnResult with ⟨headFn, stateAfterFn⟩
+                  let stateAfterStore : Elab.State :=
+                    { stateAfterFn with
+                      hoistedFunctions :=
+                        (headGenerated, headFn) ::
+                          stateAfterFn.hoistedFunctions }
+                  cases hTail :
+                      (Elab.Stmt.List.hoistLocalFunctions rest scope).run
+                        stateAfterStore with
+                  | error err =>
+                      simp [hLookup, hFn, stateAfterStore, hTail] at hRun
+                  | ok tailResult =>
+                      rcases tailResult with ⟨unitTail, stateAfterTail⟩
+                      simp [hLookup, hFn, stateAfterStore, hTail] at hRun
+                      rcases hRun with ⟨_hUnit, rfl⟩
+                      rcases hMem with hHere | hRest
+                      · cases hHere
+                        exact ⟨headGenerated, hLookup⟩
+                      · exact ih hTail hRest
+      | block blockBody =>
+          rcases hMem with hHere | hRest
+          · cases hHere
+          · exact ih hRun hRest
+      | variableDeclaration names value? =>
+          rcases hMem with hHere | hRest
+          · cases hHere
+          · exact ih hRun hRest
+      | assignment names value =>
+          rcases hMem with hHere | hRest
+          · cases hHere
+          · exact ih hRun hRest
+      | expressionStatement value =>
+          rcases hMem with hHere | hRest
+          · cases hHere
+          · exact ih hRun hRest
+      | switch scrutinee cases defaultBody =>
+          rcases hMem with hHere | hRest
+          · cases hHere
+          · exact ih hRun hRest
+      | forLoop pre condition post body =>
+          rcases hMem with hHere | hRest
+          · cases hHere
+          · exact ih hRun hRest
+      | ifThen condition body =>
+          rcases hMem with hHere | hRest
+          · cases hHere
+          · exact ih hRun hRest
+      | «break» =>
+          rcases hMem with hHere | hRest
+          · cases hHere
+          · exact ih hRun hRest
+      | «continue» =>
+          rcases hMem with hHere | hRest
+          · cases hHere
+          · exact ih hRun hRest
+      | «leave» =>
+          rcases hMem with hHere | hRest
+          · cases hHere
+          · exact ih hRun hRest
+
 theorem hoistLocalFunctions_function_mem
     {rawStmts : List Raw.Stmt} {scope : List (Name × Name)}
     {state state' : Elab.State}
@@ -4689,6 +4854,40 @@ theorem elaborate_codeRoute_of_split_context
   rw [hFrontend]
   exact StmtCodeElaborationRoute.toCodeRoute_of_split hRouteAtEnd
 
+theorem elaborate_codeRoute_exists_of_split
+    {pre suffix : List Raw.Stmt} {stmt : Raw.Stmt}
+    {frontendStmts : List Frontend.Stmt}
+    {state state' : Elab.State}
+    (hRun :
+      (Elab.Stmt.List.elaborate (pre ++ stmt :: suffix)).run state =
+        .ok (frontendStmts, state'))
+    (hStmtRoute :
+      ∀ {frontendStmt : Frontend.Stmt}
+        {stateBeforeStmt stateAfterStmt : Elab.State},
+        (Elab.Stmt.elaborate stmt).run stateBeforeStmt =
+          .ok (frontendStmt, stateAfterStmt) →
+        ∃ (generated : Name) (frontendArgs : List Frontend.Expr),
+          StmtCodeElaborationRoute stateAfterStmt generated frontendArgs
+            frontendStmt) :
+    ∃ (generated : Name) (frontendArgs : List Frontend.Expr),
+      CodeElaborationRoute state' generated frontendArgs frontendStmts := by
+  rcases
+      _root_.EvmCompiler.Solidity.RawAst.RawOccurrence.Stmt.List.elaborate_split
+        hRun with
+    ⟨frontendPre, frontendStmt, frontendSuffix, stateBeforeStmt,
+      stateAfterStmt, hPre, hStmt, hSuffix, hFrontend⟩
+  rcases hStmtRoute hStmt with
+    ⟨generated, frontendArgs, hRouteAtStmt⟩
+  have hRouteAtEnd :
+      StmtCodeElaborationRoute state' generated frontendArgs frontendStmt :=
+    StmtCodeElaborationRoute.retain hRouteAtStmt
+      (fun {entry} hMem =>
+        elaborate_retains_hoisted hSuffix hMem)
+  rw [hFrontend]
+  exact
+    ⟨generated, frontendArgs,
+      StmtCodeElaborationRoute.toCodeRoute_of_split hRouteAtEnd⟩
+
 theorem elaborate_codeRoute_of_functionDefinition_split
     {pre suffix : List Raw.Stmt}
     {name generated : Name} {params returns : List Name}
@@ -4728,6 +4927,87 @@ theorem elaborate_codeRoute_of_functionDefinition_split
       (fun {entry} hMem =>
         elaborate_retains_hoisted hPre hMem)
       hBodyRoute
+
+theorem elaborate_codeRoute_exists_of_functionDefinition_split
+    {pre suffix : List Raw.Stmt}
+    {name generated : Name} {params returns : List Name}
+    {body : List Raw.Stmt}
+    {scope : List (Name × Name)}
+    {stateBeforeHoist stateAfterHoist state' : Elab.State}
+    {frontendStmts : List Frontend.Stmt}
+    (hHoist :
+      (Elab.Stmt.List.hoistLocalFunctions
+          (pre ++
+            Raw.Stmt.functionDefinition name params returns body ::
+              suffix)
+          scope).run stateBeforeHoist =
+        .ok ((), stateAfterHoist))
+    (hLookup : Elab.lookupFunctionInScope name scope = some generated)
+    (hList :
+      (Elab.Stmt.List.elaborate
+          (pre ++
+            Raw.Stmt.functionDefinition name params returns body ::
+              suffix)).run stateAfterHoist =
+        .ok (frontendStmts, state'))
+    (hBodyRoute :
+      ∀ {fn : Frontend.FunctionDef}
+        {stateBeforeFn stateAfterFn : Elab.State},
+        (Elab.FunctionDef.elaborate params returns body).run
+          stateBeforeFn =
+          .ok (fn, stateAfterFn) →
+        ∃ (innerGenerated : Name) (frontendArgs : List Frontend.Expr),
+          CodeElaborationRoute stateAfterFn innerGenerated frontendArgs
+            fn.body) :
+    ∃ (innerGenerated : Name) (frontendArgs : List Frontend.Expr),
+      CodeElaborationRoute state' innerGenerated frontendArgs
+        frontendStmts := by
+  rcases
+      _root_.EvmCompiler.Solidity.RawAst.RawOccurrence.Stmt.List.elaborate_split
+        hList with
+    ⟨frontendPre, frontendStmt, frontendSuffix, stateBeforeStmt,
+      stateAfterStmt, hPre, hStmt, hSuffix, hFrontend⟩
+  have hFunctionMem :
+      Raw.Stmt.functionDefinition name params returns body ∈
+        pre ++ Raw.Stmt.functionDefinition name params returns body :: suffix := by
+    simp
+  rcases
+      RawOccurrence.Elab.hoistLocalFunctions_function_route_mem
+        hHoist hFunctionMem hLookup with
+    ⟨fn, stateBeforeFn, stateAfterFn, hFn, hContextHoist,
+      hRetainFnToHoist⟩
+  rcases hBodyRoute hFn with
+    ⟨innerGenerated, frontendArgs, hBodyCodeRoute⟩
+  have hContextBefore :
+      (generated, fn) ∈ stateBeforeStmt.hoistedFunctions :=
+    elaborate_retains_hoisted hPre hContextHoist
+  have hContextAfter :
+      (generated, fn) ∈ stateAfterStmt.hoistedFunctions :=
+    _root_.EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.Stmt.elaborate_retains_hoisted
+      hStmt hContextBefore
+  have hRetainFnToStmt :
+      ∀ {entry : Name × Frontend.FunctionDef},
+        entry ∈ stateAfterFn.hoistedFunctions →
+          entry ∈ stateAfterStmt.hoistedFunctions := by
+    intro entry hEntry
+    exact
+      _root_.EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.Stmt.elaborate_retains_hoisted
+        hStmt
+        (elaborate_retains_hoisted hPre (hRetainFnToHoist hEntry))
+  have hRouteAtStmt :
+      StmtCodeElaborationRoute stateAfterStmt innerGenerated frontendArgs
+        frontendStmt :=
+    CodeElaborationRoute.liftFunctionBodyStmt hContextAfter
+      hRetainFnToStmt hBodyCodeRoute
+  have hRouteAtEnd :
+      StmtCodeElaborationRoute state' innerGenerated frontendArgs
+        frontendStmt :=
+    StmtCodeElaborationRoute.retain hRouteAtStmt
+      (fun {entry} hMem =>
+        elaborate_retains_hoisted hSuffix hMem)
+  rw [hFrontend]
+  exact
+    ⟨innerGenerated, frontendArgs,
+      StmtCodeElaborationRoute.toCodeRoute_of_split hRouteAtEnd⟩
 
 theorem elaborateBlock_retains_hoisted
     {rawStmts : List Raw.Stmt} {createsScope : Bool}
@@ -5169,6 +5449,131 @@ theorem codeRouteBelow_caseList_succ
               (fun {frontendRest stateAfterBody} hTailRun =>
                 ih.caseList hRestSize hTailOccurrence hNotMemoryguard
                   hNotClz hKind hTailRun)
+
+theorem codeRouteBelow_stmtListAfterHoist_succ
+    {fuel : Nat} (ih : CodeRouteBelow fuel) :
+    ∀ {functionName : Name} {rawArgs : List Raw.Expr}
+      {rawStmts : List Raw.Stmt} {scope : List (Name × Name)}
+      {stateBeforeHoist stateAfterHoist state' : Elab.State}
+      {frontendStmts : List Frontend.Stmt},
+      rawStmtListSize rawStmts < fuel + 1 →
+      StmtListUserCall functionName rawArgs rawStmts →
+      functionName ≠ "memoryguard" →
+      functionName ≠ "clz" →
+      CallClass.classifyCall functionName = .user →
+      (Elab.Stmt.List.hoistLocalFunctions rawStmts scope).run
+        stateBeforeHoist =
+        .ok ((), stateAfterHoist) →
+      (Elab.Stmt.List.elaborate rawStmts).run stateAfterHoist =
+        .ok (frontendStmts, state') →
+      ∃ (generated : Name) (frontendArgs : List Frontend.Expr),
+        CodeElaborationRoute state' generated frontendArgs frontendStmts := by
+  intro functionName rawArgs rawStmts scope stateBeforeHoist
+    stateAfterHoist state' frontendStmts hSize hOccurrence
+    hNotMemoryguard hNotClz hKind hHoist hRun
+  rcases StmtListUserCall.exists_split_stmt hOccurrence with
+    ⟨pre, stmt, suffix, hSplit, hStmtOccurrence⟩
+  subst rawStmts
+  have hFocusedSize : rawStmtSize stmt < fuel := by
+    rw [rawStmtListSize_append] at hSize
+    simp [rawStmtListSize] at hSize
+    omega
+  have hNonFunctionRoute :
+      RawStmtNotFunctionDefinition stmt →
+        StmtUserCall functionName rawArgs stmt →
+        ∃ (generated : Name) (frontendArgs : List Frontend.Expr),
+          CodeElaborationRoute state' generated frontendArgs
+            frontendStmts := by
+    intro hNotFunction hStmtOccurrence'
+    exact
+      Stmt.List.elaborate_codeRoute_exists_of_split hRun
+        (fun {frontendStmt stateBeforeStmt stateAfterStmt} hStmtRun =>
+          ih.stmt hFocusedSize hNotFunction hStmtOccurrence'
+            hNotMemoryguard hNotClz hKind hStmtRun)
+  cases stmt with
+  | block body =>
+      exact
+        hNonFunctionRoute
+          (by
+            intro name params returns fnBody hEq
+            cases hEq)
+          hStmtOccurrence
+  | variableDeclaration names value? =>
+      cases value? with
+      | none =>
+          cases hStmtOccurrence
+      | some value =>
+          exact
+            hNonFunctionRoute
+              (by
+                intro name params returns fnBody hEq
+                cases hEq)
+              hStmtOccurrence
+  | assignment names value =>
+      exact
+        hNonFunctionRoute
+          (by
+            intro name params returns fnBody hEq
+            cases hEq)
+          hStmtOccurrence
+  | expressionStatement value =>
+      exact
+        hNonFunctionRoute
+          (by
+            intro name params returns fnBody hEq
+            cases hEq)
+          hStmtOccurrence
+  | functionDefinition name params returns body =>
+      have hBodySize : rawStmtListSize body < fuel := by
+        rw [rawStmtListSize_append] at hSize
+        simp [rawStmtListSize, rawStmtSize] at hSize
+        omega
+      have hFunctionMem :
+          Raw.Stmt.functionDefinition name params returns body ∈
+            pre ++ Raw.Stmt.functionDefinition name params returns body ::
+              suffix := by
+        simp
+      rcases hoistLocalFunctions_lookup_of_function_mem hHoist
+          hFunctionMem with
+        ⟨generated, hLookup⟩
+      cases hStmtOccurrence with
+      | functionBody hBodyOccurrence =>
+          exact
+            Stmt.List.elaborate_codeRoute_exists_of_functionDefinition_split
+              hHoist hLookup hRun
+              (fun {fn stateBeforeFn stateAfterFn} hFn =>
+                FunctionDef.elaborate_codeRoute_exists_of_body hFn
+                  (fun {frontendBody stateBeforeBody stateAfterBody}
+                    hBodyRun hBodyEq =>
+                    ih.block hBodySize hBodyOccurrence hNotMemoryguard
+                      hNotClz hKind hBodyRun))
+  | switch scrutinee cases defaultBody =>
+      exact
+        hNonFunctionRoute
+          (by
+            intro name params returns fnBody hEq
+            cases hEq)
+          hStmtOccurrence
+  | forLoop preLoop condition post body =>
+      exact
+        hNonFunctionRoute
+          (by
+            intro name params returns fnBody hEq
+            cases hEq)
+          hStmtOccurrence
+  | ifThen condition body =>
+      exact
+        hNonFunctionRoute
+          (by
+            intro name params returns fnBody hEq
+            cases hEq)
+          hStmtOccurrence
+  | «break» =>
+      cases hStmtOccurrence
+  | «continue» =>
+      cases hStmtOccurrence
+  | «leave» =>
+      cases hStmtOccurrence
 
 namespace FunctionDef
 
