@@ -78,8 +78,8 @@ Gasful EVM bridge checkpoint:
   gasful target bridge premise in
   `Yul.EndToEnd.optimizedSolcYulToGasfulRawBytecodeOfOpenRunBridge`.
 - [ ] Prove the full `EVM.X` simulation that discharges the bridge premise for
-  remaining special `EVM.step` helpers (`POP`, `MLOAD`, `RETURNDATACOPY`,
-  `LOG0..4`) and CALL/CREATE open-strategy responses with EIP-150/returned gas.
+  remaining special `EVM.step` helpers (`LOG0..4`) and CALL/CREATE
+  open-strategy responses with EIP-150/returned gas.
 
 `Compiler.StackArtifact` is the sole code-body artifact and
 `Solidity.Frontend.VerifiedStackObjectArtifact` is the sole recursive object

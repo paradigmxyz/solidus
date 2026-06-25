@@ -1434,14 +1434,55 @@ def continuingPrimStaticPermits (state : EVMState) (op : PrimOp) : Prop :=
   continuingPrimStaticSensitive op → state.executionEnv.perm = true
 
 /-- Continuing primitives whose imported `EvmYul.step` helper can currently be
-related exactly from this module.  The excluded opcodes go through special
-concrete branches (`POP`, `MLOAD`, `RETURNDATACOPY`) or EVMYulLean's private
-`evmLogOp` helper (`LOG0..4`); they need small upstream/public helper equalities
-before joining this exact-delegation theorem. -/
+related exactly from this module.  `LOG0..4` go through EVMYulLean's private
+`evmLogOp` helper, so they need upstream/public helper equalities before joining
+this exact-delegation theorem. -/
 def continuingPrimEVMStepTransparent : PrimOp → Prop
-  | .returndatacopy | .pop | .mload => False
   | .log0 | .log1 | .log2 | .log3 | .log4 => False
   | _ => True
+
+theorem evm_step_pop_eq_primStep_run
+    (state : EVMState) (arg : Option (Word × Nat)) :
+    EvmYul.step (τ := .EVM) .POP arg state = PrimStep.pop.run state := by
+  unfold EvmYul.step
+  change
+    (match state.stack.pop with
+      | some ⟨s, _⟩ => .ok <| state.replaceStackAndIncrPC s
+      | _ => .error .StackUnderflow) =
+      PrimStep.pop.run state
+  cases hPop : state.stack.pop <;> simp [PrimStep.run, hPop]
+
+theorem evm_step_mload_eq_primStep_run
+    (state : EVMState) (arg : Option (Word × Nat)) :
+    EvmYul.step (τ := .EVM) .MLOAD arg state = PrimStep.mload.run state := by
+  unfold EvmYul.step
+  change
+    (match state.stack.pop with
+      | some ⟨s, μ₀⟩ =>
+          let (v, mState') := state.toMachineState.mload μ₀
+          let state' := { state with toMachineState := mState' }
+          .ok <| state'.replaceStackAndIncrPC (s.push v)
+      | _ => .error .StackUnderflow) =
+      PrimStep.mload.run state
+  cases hPop : state.stack.pop <;> simp [PrimStep.run, hPop]
+
+theorem evm_step_returndatacopy_eq_primStep_run
+    (state : EVMState) (arg : Option (Word × Nat)) :
+    EvmYul.step (τ := .EVM) .RETURNDATACOPY arg state =
+      PrimStep.returndatacopy.run state := by
+  unfold EvmYul.step
+  change
+    (match state.stack.pop3 with
+      | some ⟨stack', μ₀, μ₁, μ₂⟩ =>
+          if state.returnData.size < μ₁.toNat + μ₂.toNat then
+            .error .InvalidMemoryAccess
+          else
+            let mState' := state.toMachineState.returndatacopy μ₀ μ₁ μ₂
+            let state' := { state with toMachineState := mState' }
+            .ok <| state'.replaceStackAndIncrPC stack'
+      | _ => .error .StackUnderflow) =
+      PrimStep.returndatacopy.run state
+  cases hPop : state.stack.pop3 <;> simp [PrimStep.run, hPop]
 
 theorem continuingPrimStaticPermits_of_static_check
     {validJumps : Array Word} {state : EVMState} {op : PrimOp}
@@ -1470,11 +1511,45 @@ theorem evm_step_continuing_prim_after_charges
   cases op <;>
     simp [PrimOp.continuingStep?] at hStep
   case returndatacopy =>
-    cases hTransparent
+    cases hStep
+    simp only [EvmYul.EVM.step, PrimOp.toEVM,
+      afterEVMInstructionChargeAt, afterMemoryChargeAt, dynamicGasCostAt,
+      chargeGas]
+    change
+      EvmYul.step (τ := .EVM) .RETURNDATACOPY arg
+          (afterEVMInstructionChargeAt state) =
+        PrimOp.returndatacopy.step (afterEVMInstructionChargeAt state)
+    rw [PrimOp.step_eq_continuingStep_run (op := .returndatacopy)
+      (step := .returndatacopy) rfl]
+    exact
+      evm_step_returndatacopy_eq_primStep_run
+        (afterEVMInstructionChargeAt state) arg
   case pop =>
-    cases hTransparent
+    cases hStep
+    simp only [EvmYul.EVM.step, PrimOp.toEVM,
+      afterEVMInstructionChargeAt, afterMemoryChargeAt, dynamicGasCostAt,
+      chargeGas]
+    change
+      EvmYul.step (τ := .EVM) .POP arg
+          (afterEVMInstructionChargeAt state) =
+        PrimOp.pop.step (afterEVMInstructionChargeAt state)
+    rw [PrimOp.step_eq_continuingStep_run (op := .pop)
+      (step := .pop) rfl]
+    exact
+      evm_step_pop_eq_primStep_run (afterEVMInstructionChargeAt state) arg
   case mload =>
-    cases hTransparent
+    cases hStep
+    simp only [EvmYul.EVM.step, PrimOp.toEVM,
+      afterEVMInstructionChargeAt, afterMemoryChargeAt, dynamicGasCostAt,
+      chargeGas]
+    change
+      EvmYul.step (τ := .EVM) .MLOAD arg
+          (afterEVMInstructionChargeAt state) =
+        PrimOp.mload.step (afterEVMInstructionChargeAt state)
+    rw [PrimOp.step_eq_continuingStep_run (op := .mload)
+      (step := .mload) rfl]
+    exact
+      evm_step_mload_eq_primStep_run (afterEVMInstructionChargeAt state) arg
   case sstore =>
     cases hStep
     have hPerm := hStaticPermits (by simp [continuingPrimStaticSensitive])
