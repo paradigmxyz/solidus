@@ -852,6 +852,77 @@ theorem elaborate_mem
                   ⟨frontendStmt, stateBefore, stateAfter, hStmt,
                     Or.inr hFrontendMem⟩
 
+theorem elaborate_split
+    {pre suffix : List Raw.Stmt} {stmt : Raw.Stmt}
+    {frontendStmts : List Frontend.Stmt}
+    {state state' : Elab.State}
+    (hElab :
+      (Elab.Stmt.List.elaborate (pre ++ stmt :: suffix)).run state =
+        .ok (frontendStmts, state')) :
+    ∃ (frontendPre : List Frontend.Stmt)
+      (frontendStmt : Frontend.Stmt)
+      (frontendSuffix : List Frontend.Stmt)
+      (stateBeforeStmt stateAfterStmt : Elab.State),
+      (Elab.Stmt.List.elaborate pre).run state =
+        .ok (frontendPre, stateBeforeStmt) ∧
+        (Elab.Stmt.elaborate stmt).run stateBeforeStmt =
+          .ok (frontendStmt, stateAfterStmt) ∧
+        (Elab.Stmt.List.elaborate suffix).run stateAfterStmt =
+          .ok (frontendSuffix, state') ∧
+        frontendStmts = frontendPre ++ frontendStmt :: frontendSuffix := by
+  induction pre generalizing state frontendStmts with
+  | nil =>
+      simp only [List.nil_append, Elab.Stmt.List.elaborate] at hElab
+      cases hStmt : (Elab.Stmt.elaborate stmt).run state with
+      | error err =>
+          simp [hStmt] at hElab
+      | ok stmtResult =>
+          rcases stmtResult with ⟨frontendStmt, stateAfterStmt⟩
+          cases hSuffix :
+              (Elab.Stmt.List.elaborate suffix).run stateAfterStmt with
+          | error err =>
+              simp [hStmt, hSuffix] at hElab
+          | ok suffixResult =>
+              rcases suffixResult with ⟨frontendSuffix, stateAfterSuffix⟩
+              simp [hStmt, hSuffix] at hElab
+              rcases hElab with ⟨rfl, rfl⟩
+              exact
+                ⟨[], frontendStmt, frontendSuffix, state, stateAfterStmt,
+                  by
+                    simp only [Elab.Stmt.List.elaborate]
+                    change
+                      (pure ([], state) :
+                        DecodeM (List Frontend.Stmt × Elab.State)) =
+                        Except.ok ([], state)
+                    rfl,
+                  hStmt, hSuffix, rfl⟩
+  | cons head rest ih =>
+      simp only [List.cons_append, Elab.Stmt.List.elaborate] at hElab
+      cases hHead : (Elab.Stmt.elaborate head).run state with
+      | error err =>
+          simp [hHead] at hElab
+      | ok headResult =>
+          rcases headResult with ⟨frontendHead, stateAfterHead⟩
+          cases hRest :
+              (Elab.Stmt.List.elaborate (rest ++ stmt :: suffix)).run
+                stateAfterHead with
+          | error err =>
+              simp [hHead, hRest] at hElab
+          | ok restResult =>
+              rcases restResult with ⟨frontendRest, stateAfterRest⟩
+              simp [hHead, hRest] at hElab
+              rcases hElab with ⟨rfl, rfl⟩
+              rcases ih hRest with
+                ⟨frontendPre, frontendStmt, frontendSuffix,
+                  stateBeforeStmt, stateAfterStmt, hPre, hStmt,
+                  hSuffix, hFrontend⟩
+              refine
+                ⟨frontendHead :: frontendPre, frontendStmt,
+                  frontendSuffix, stateBeforeStmt, stateAfterStmt,
+                  ?_, hStmt, hSuffix, ?_⟩
+              · simp [Elab.Stmt.List.elaborate, hHead, hPre]
+              · simp [hFrontend]
+
 theorem elaborateBlock_elaborate_exists
     {rawStmts : List Raw.Stmt} {frontendStmts : List Frontend.Stmt}
     {state state' : Elab.State} {createsScope : Bool}
