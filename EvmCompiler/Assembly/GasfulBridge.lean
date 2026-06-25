@@ -2326,6 +2326,24 @@ theorem exists_pop3_of_three_le
           | nil => simp at h
           | cons c suffix => exact ⟨suffix, a, b, c, rfl⟩
 
+theorem exists_pop4_of_four_le
+    {α : Type} {stack : EvmYul.Stack α}
+    (h : 4 ≤ stack.length) :
+    ∃ rest a b c d,
+      EvmYul.Stack.pop4 stack = some (rest, a, b, c, d) := by
+  cases stack with
+  | nil => simp at h
+  | cons a rest =>
+      cases rest with
+      | nil => simp at h
+      | cons b tail =>
+          cases tail with
+          | nil => simp at h
+          | cons c suffix =>
+              cases suffix with
+              | nil => simp at h
+              | cons d rest => exact ⟨rest, a, b, c, d, rfl⟩
+
 theorem raw_invalid_returndatacopy_executes_after_charges
     {validJumps : Array Word} {bytes : ByteArray} {pc : Nat}
     {state : EVMState}
@@ -2690,6 +2708,152 @@ theorem raw_continuing_prim_staticModeViolation_executes_after_charges
     Simulation.Interaction.bind,
     Simulation.Interaction.bind_done_error,
     Compact.Instr.haltKind?] using
+    (Interaction.Executes.done
+      (.error EvmYul.EVM.ExecutionException.StaticModeViolation :
+        Except EVMException StepResult))
+
+theorem create_operands_of_stackEnough
+    {validJumps : Array Word} {state : EVMState}
+    (hPrefix : XStackLimitChecksPass validJumps state)
+    (hCreate : decodedOperationAt state = EvmYul.Operation.CREATE) :
+    ∃ rest operands,
+      Simulation.CreateKind.evmOperands? .create state.stack =
+        some (rest, operands) := by
+  have hNotShort : ¬ state.stack.length < 3 := by
+    simpa [hCreate, EvmYul.EVM.δ] using
+      hPrefix.memoryAccess.jumps.stack.stackEnough
+  have hLen : 3 ≤ state.stack.length := by
+    omega
+  rcases exists_pop3_of_three_le (α := Word) hLen with
+    ⟨rest, value, initOffset, initSize, hPop⟩
+  refine
+    ⟨rest,
+      { value := value
+        initOffset := initOffset
+        initSize := initSize
+        saltArg := EvmYul.UInt256.ofNat 0 }, ?_⟩
+  simp [Simulation.CreateKind.evmOperands?, hPop]
+
+theorem create2_operands_of_stackEnough
+    {validJumps : Array Word} {state : EVMState}
+    (hPrefix : XStackLimitChecksPass validJumps state)
+    (hCreate2 : decodedOperationAt state = EvmYul.Operation.CREATE2) :
+    ∃ rest operands,
+      Simulation.CreateKind.evmOperands? .create2 state.stack =
+        some (rest, operands) := by
+  have hNotShort : ¬ state.stack.length < 4 := by
+    simpa [hCreate2, EvmYul.EVM.δ] using
+      hPrefix.memoryAccess.jumps.stack.stackEnough
+  have hLen : 4 ≤ state.stack.length := by
+    omega
+  rcases exists_pop4_of_four_le (α := Word) hLen with
+    ⟨rest, value, initOffset, initSize, salt, hPop⟩
+  refine
+    ⟨rest,
+      { value := value
+        initOffset := initOffset
+        initSize := initSize
+        saltArg := salt }, ?_⟩
+  simp [Simulation.CreateKind.evmOperands?, hPop]
+
+theorem raw_create_staticModeViolation_executes_after_charges
+    {bytes : ByteArray} {pc : Nat} {state : EVMState}
+    {rest : EvmYul.Stack Word} {operands : Simulation.CreateOperands}
+    (hOperands :
+      Simulation.CreateKind.evmOperands? .create state.stack =
+        some (rest, operands))
+    (hPerm : state.executionEnv.perm = false)
+    (hDecode : Compact.decodeAt bytes pc (.prim .create))
+    (hPc : (afterDynamicChargeAt state).pc = EvmYul.UInt256.ofNat pc) :
+    Interaction.Executes
+      (Compact.InteractionSemantics.openRunNResult
+        bytes 1 (afterDynamicChargeAt state))
+      []
+      (.error EvmYul.EVM.ExecutionException.StaticModeViolation) := by
+  have hOperandsCharged :
+      Simulation.CreateKind.evmOperands? .create
+          (afterDynamicChargeAt state).stack =
+        some (rest, operands) := by
+    simpa [afterDynamicChargeAt, afterMemoryChargeAt, chargeGas] using
+      hOperands
+  have hPermCharged :
+      (Simulation.ExternalFrame.ofShared
+          (afterDynamicChargeAt state).toSharedState).permission = false := by
+    simpa [Simulation.ExternalFrame.ofShared, afterDynamicChargeAt,
+      afterMemoryChargeAt, chargeGas] using hPerm
+  have hOpen :
+      Assembly.InteractionSemantics.PrimOp.openStep
+          .create (afterDynamicChargeAt state) =
+        Simulation.Interaction.done
+          (.error EvmYul.EVM.ExecutionException.StaticModeViolation) := by
+    simp [Assembly.InteractionSemantics.PrimOp.openStep,
+      Assembly.InteractionSemantics.PrimOp.createStep,
+      Assembly.PrimOp.toEVM,
+      Simulation.ExternalKind.ofEVMOperation?,
+      Simulation.CallKind.ofEVMOperation?,
+      Simulation.CreateKind.ofEVMOperation?,
+      hOperandsCharged, hPermCharged]
+  rw [Compact.InteractionSemantics.openRunNResult_one_eq_instr
+    (instr := .prim .create) trivial hDecode hPc]
+  simpa [Compact.Instr.openStepResult, Compact.Instr.openStep,
+    Assembly.InteractionSemantics.Target.openStepInstrResult,
+    Assembly.Target.stepInstrResultWith,
+    Assembly.InteractionSemantics.Target.openStepInstr,
+    Assembly.Target.stepInstrWith, hOpen,
+    Simulation.Interaction.bind,
+    Simulation.Interaction.bind_done_error,
+    Assembly.PrimOp.haltKind?, Compact.Instr.haltKind?] using
+    (Interaction.Executes.done
+      (.error EvmYul.EVM.ExecutionException.StaticModeViolation :
+        Except EVMException StepResult))
+
+theorem raw_create2_staticModeViolation_executes_after_charges
+    {bytes : ByteArray} {pc : Nat} {state : EVMState}
+    {rest : EvmYul.Stack Word} {operands : Simulation.CreateOperands}
+    (hOperands :
+      Simulation.CreateKind.evmOperands? .create2 state.stack =
+        some (rest, operands))
+    (hPerm : state.executionEnv.perm = false)
+    (hDecode : Compact.decodeAt bytes pc (.prim .create2))
+    (hPc : (afterDynamicChargeAt state).pc = EvmYul.UInt256.ofNat pc) :
+    Interaction.Executes
+      (Compact.InteractionSemantics.openRunNResult
+        bytes 1 (afterDynamicChargeAt state))
+      []
+      (.error EvmYul.EVM.ExecutionException.StaticModeViolation) := by
+  have hOperandsCharged :
+      Simulation.CreateKind.evmOperands? .create2
+          (afterDynamicChargeAt state).stack =
+        some (rest, operands) := by
+    simpa [afterDynamicChargeAt, afterMemoryChargeAt, chargeGas] using
+      hOperands
+  have hPermCharged :
+      (Simulation.ExternalFrame.ofShared
+          (afterDynamicChargeAt state).toSharedState).permission = false := by
+    simpa [Simulation.ExternalFrame.ofShared, afterDynamicChargeAt,
+      afterMemoryChargeAt, chargeGas] using hPerm
+  have hOpen :
+      Assembly.InteractionSemantics.PrimOp.openStep
+          .create2 (afterDynamicChargeAt state) =
+        Simulation.Interaction.done
+          (.error EvmYul.EVM.ExecutionException.StaticModeViolation) := by
+    simp [Assembly.InteractionSemantics.PrimOp.openStep,
+      Assembly.InteractionSemantics.PrimOp.createStep,
+      Assembly.PrimOp.toEVM,
+      Simulation.ExternalKind.ofEVMOperation?,
+      Simulation.CallKind.ofEVMOperation?,
+      Simulation.CreateKind.ofEVMOperation?,
+      hOperandsCharged, hPermCharged]
+  rw [Compact.InteractionSemantics.openRunNResult_one_eq_instr
+    (instr := .prim .create2) trivial hDecode hPc]
+  simpa [Compact.Instr.openStepResult, Compact.Instr.openStep,
+    Assembly.InteractionSemantics.Target.openStepInstrResult,
+    Assembly.Target.stepInstrResultWith,
+    Assembly.InteractionSemantics.Target.openStepInstr,
+    Assembly.Target.stepInstrWith, hOpen,
+    Simulation.Interaction.bind,
+    Simulation.Interaction.bind_done_error,
+    Assembly.PrimOp.haltKind?, Compact.Instr.haltKind?] using
     (Interaction.Executes.done
       (.error EvmYul.EVM.ExecutionException.StaticModeViolation :
         Except EVMException StepResult))
@@ -3388,6 +3552,70 @@ theorem runRefinesOpen_continuing_prim_staticModeViolation_after_stack_limit_che
       (op := op) (step := step) (bytes := bytes)
       (pc := pc) (state := state)
       hStep hSensitive hPerm hDecode hPc
+  have hExec :=
+    Compact.InteractionSemantics.openRunNResult_error_add_executes
+      (extra := fuel) hOne
+  apply RunRefinesOpen.completed
+  · simpa [Nat.add_comm] using hExec
+  · exact DoneRel.sameError
+
+theorem runRefinesOpen_create_staticModeViolation_after_stack_limit_checks
+    {fuel : Nat} {validJumps : Array Word}
+    {bytes : ByteArray} {pc : Nat} {state : EVMState}
+    (hPrefix : XStackLimitChecksPass validJumps state)
+    (hCreate : decodedOperationAt state = EvmYul.Operation.CREATE)
+    (hPerm : state.executionEnv.perm = false)
+    (hDecode : Compact.decodeAt bytes pc (.prim .create))
+    (hPc : (afterDynamicChargeAt state).pc = EvmYul.UInt256.ofNat pc) :
+    RunRefinesOpen
+      (EvmYul.EVM.X (fuel + 1) validJumps state)
+      (Compact.InteractionSemantics.openRunNResult
+        bytes (fuel + 1) (afterDynamicChargeAt state))
+      [] := by
+  have hStatic : staticModeViolationAt state :=
+    ⟨hPerm, Or.inl hCreate⟩
+  rw [x_static_mode_violation_after_stack_limit_checks
+    (fuel := fuel) (validJumps := validJumps) (state := state)
+    hPrefix hStatic]
+  rcases create_operands_of_stackEnough hPrefix hCreate with
+    ⟨rest, operands, hOperands⟩
+  have hOne :=
+    raw_create_staticModeViolation_executes_after_charges
+      (bytes := bytes) (pc := pc) (state := state)
+      (rest := rest) (operands := operands)
+      hOperands hPerm hDecode hPc
+  have hExec :=
+    Compact.InteractionSemantics.openRunNResult_error_add_executes
+      (extra := fuel) hOne
+  apply RunRefinesOpen.completed
+  · simpa [Nat.add_comm] using hExec
+  · exact DoneRel.sameError
+
+theorem runRefinesOpen_create2_staticModeViolation_after_stack_limit_checks
+    {fuel : Nat} {validJumps : Array Word}
+    {bytes : ByteArray} {pc : Nat} {state : EVMState}
+    (hPrefix : XStackLimitChecksPass validJumps state)
+    (hCreate2 : decodedOperationAt state = EvmYul.Operation.CREATE2)
+    (hPerm : state.executionEnv.perm = false)
+    (hDecode : Compact.decodeAt bytes pc (.prim .create2))
+    (hPc : (afterDynamicChargeAt state).pc = EvmYul.UInt256.ofNat pc) :
+    RunRefinesOpen
+      (EvmYul.EVM.X (fuel + 1) validJumps state)
+      (Compact.InteractionSemantics.openRunNResult
+        bytes (fuel + 1) (afterDynamicChargeAt state))
+      [] := by
+  have hStatic : staticModeViolationAt state :=
+    ⟨hPerm, Or.inr (Or.inl hCreate2)⟩
+  rw [x_static_mode_violation_after_stack_limit_checks
+    (fuel := fuel) (validJumps := validJumps) (state := state)
+    hPrefix hStatic]
+  rcases create2_operands_of_stackEnough hPrefix hCreate2 with
+    ⟨rest, operands, hOperands⟩
+  have hOne :=
+    raw_create2_staticModeViolation_executes_after_charges
+      (bytes := bytes) (pc := pc) (state := state)
+      (rest := rest) (operands := operands)
+      hOperands hPerm hDecode hPc
   have hExec :=
     Compact.InteractionSemantics.openRunNResult_error_add_executes
       (extra := fuel) hOne
