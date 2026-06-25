@@ -10,6 +10,8 @@
 
 - 2026-06-25 02:52:01 PDT - proof/yul-expression-eval-order-context - Added `YulOccurrence.ExprUserCall.EvalArgContext` and `evalArgContext`, converting nested generated-call expression occurrences into an explicit reversed-argument split at each outer call boundary. This is the structural evaluator-order input for the recursive statement/context theorem. Verification passed: `lake build EvmCompiler.Yul.Occurrence`, `lake build EvmCompiler.Verification`, architecture guard, touched-file hole/trust scan, axiom audit with only Lean foundations, and `git diff --check`.
 
+- 2026-06-25 02:54:45 PDT - proof/generated-call-recursive-context-interface - Added recursive `FocusedGeneratedCallSemanticInterface` context types for expressions, statements, statement lists, and switch cases, plus constructors from the generic `YulOccurrence` occurrence relations. This gives assignment/let/exprstmt/if/switch/blocks/cases/loops one bundled context interface instead of dispatcher/function-body wrapper siblings. Verification passed: focused raw semantics build, verification root build, architecture guard, touched-file hole/trust scan, axiom audit with only Lean foundations, and `git diff --check`.
+
 - 2026-06-23 10:12 PDT - compaction-resume/raw-frontend-status - Resumed
   under `$verifiable-compiler` to report the raw solc frontend migration
   status from the clean `codex/lean-solc-raw-frontend` checkpoint.
