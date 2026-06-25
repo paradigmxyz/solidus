@@ -77,6 +77,56 @@ theorem OpenSameData.trans
     OpenSameData first third :=
   ⟨hFirst.world.trans hSecond.world, hFirst.frame.trans hSecond.frame⟩
 
+/-- Recursive gasful/open state invariant. The mutable world is compared
+through its normalized open projection, frame-local data ignores gas/control,
+and the current PC remains exact so both runners decode the same instruction. -/
+structure OpenStateRel (gasful openState : EVMState) : Prop where
+  openData : OpenSameData gasful openState
+  pc_eq : gasful.pc = openState.pc
+
+namespace OpenStateRel
+
+theorem refl (state : EVMState) : OpenStateRel state state :=
+  ⟨OpenSameData.of_sameData (SameData.refl state), rfl⟩
+
+theorem trans {first second third : EVMState}
+    (hFirst : OpenStateRel first second)
+    (hSecond : OpenStateRel second third) :
+    OpenStateRel first third :=
+  ⟨hFirst.openData.trans hSecond.openData,
+    hFirst.pc_eq.trans hSecond.pc_eq⟩
+
+theorem of_sameData {gasful openState : EVMState}
+    (hData : SameData gasful openState)
+    (hPc : gasful.pc = openState.pc) :
+    OpenStateRel gasful openState :=
+  ⟨OpenSameData.of_sameData hData, hPc⟩
+
+theorem stack_eq {gasful openState : EVMState}
+    (hRel : OpenStateRel gasful openState) :
+    gasful.stack = openState.stack := by
+  have hFrame := hRel.openData.frame
+  cases gasful
+  cases openState
+  simp [eraseOpenWorldData, eraseControl, eraseGas] at hFrame
+  exact hFrame.2
+
+theorem executionEnv_eq {gasful openState : EVMState}
+    (hRel : OpenStateRel gasful openState) :
+    gasful.executionEnv = openState.executionEnv := by
+  have hFrame := hRel.openData.frame
+  cases gasful
+  cases openState
+  simp [eraseOpenWorldData, eraseControl, eraseGas] at hFrame
+  exact hFrame.1.1.2.2.2.1
+
+theorem code_eq {gasful openState : EVMState}
+    (hRel : OpenStateRel gasful openState) :
+    gasful.executionEnv.code = openState.executionEnv.code := by
+  rw [hRel.executionEnv_eq]
+
+end OpenStateRel
+
 /-- A concrete exchange answers a resource query with the value read from the
 given gasful/open frame state. External exchanges are intentionally left to the
 existing open-world strategy relation. -/
@@ -4443,6 +4493,15 @@ structure CallResponseStateRel
     CallResponseGasAccounting kind preCostState operands response
       gasfulState.gasAvailable
 
+theorem CallResponseStateRel.openStateRel
+    {kind : CallKind} {preCostState : EVMState}
+    {operands : CallOperands} {response : CallResponse}
+    {gasfulState openState : EVMState}
+    (hRel : CallResponseStateRel kind preCostState operands response
+      gasfulState openState) :
+    OpenStateRel gasfulState openState :=
+  ⟨hRel.openData, hRel.pc_eq⟩
+
 theorem callResponseStateRel_of_openSameData
     {kind : CallKind} {preCostState : EVMState}
     {operands : CallOperands} {response : CallResponse}
@@ -5101,6 +5160,15 @@ structure CreateResponseStateRel
   gasAccounting :
     CreateResponseGasAccounting kind preCostState operands response
       gasfulState.gasAvailable
+
+theorem CreateResponseStateRel.openStateRel
+    {kind : CreateKind} {preCostState : EVMState}
+    {operands : CreateOperands} {response : CreateResponse}
+    {gasfulState openState : EVMState}
+    (hRel : CreateResponseStateRel kind preCostState operands response
+      gasfulState openState) :
+    OpenStateRel gasfulState openState :=
+  ⟨hRel.openData, hRel.pc_eq⟩
 
 theorem createResponseStateRel_of_openSameData
     {kind : CreateKind} {preCostState : EVMState}

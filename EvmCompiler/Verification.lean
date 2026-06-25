@@ -664,11 +664,16 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Assembly.GasfulBridge.CreateBoundaryAccounting
 #check EvmCompiler.Assembly.GasfulBridge.OpenSameData
 #check EvmCompiler.Assembly.GasfulBridge.OpenSameData.of_sameData
+#check EvmCompiler.Assembly.GasfulBridge.OpenStateRel
+#check EvmCompiler.Assembly.GasfulBridge.OpenStateRel.stack_eq
+#check EvmCompiler.Assembly.GasfulBridge.OpenStateRel.executionEnv_eq
+#check EvmCompiler.Assembly.GasfulBridge.OpenStateRel.code_eq
 #check EvmCompiler.Assembly.GasfulBridge.callResponseFinalGas
 #check EvmCompiler.Assembly.GasfulBridge.CallResponseGasAccounting
 #check EvmCompiler.Assembly.GasfulBridge.callResponseGasAccounting_canonical
 #check EvmCompiler.Assembly.GasfulBridge.callResponseGasAccounting_finalGas_eq
 #check EvmCompiler.Assembly.GasfulBridge.CallResponseStateRel
+#check EvmCompiler.Assembly.GasfulBridge.CallResponseStateRel.openStateRel
 #check EvmCompiler.Assembly.GasfulBridge.callResponseStateRel_of_openSameData
 #check EvmCompiler.Assembly.GasfulBridge.callResponseStateRel_of_sameData
 #check EvmCompiler.Assembly.GasfulBridge.call_result_status_bool
@@ -689,6 +694,7 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Assembly.GasfulBridge.createResponseGasAccounting_canonical
 #check EvmCompiler.Assembly.GasfulBridge.createResponseGasAccounting_finalGas_eq
 #check EvmCompiler.Assembly.GasfulBridge.CreateResponseStateRel
+#check EvmCompiler.Assembly.GasfulBridge.CreateResponseStateRel.openStateRel
 #check EvmCompiler.Assembly.GasfulBridge.createResponseStateRel_of_sameData
 #check EvmCompiler.Assembly.GasfulBridge.CreateKind.stack_eq_args_append_of_evmOperands
 #check EvmCompiler.Assembly.GasfulBridge.CreateKind.canonicalOperands_eq_of_evmOperands
@@ -1316,6 +1322,9 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Assembly.GasfulBridge.callResponseGasAccounting_canonical
 #print axioms EvmCompiler.Assembly.GasfulBridge.callResponseGasAccounting_finalGas_eq
 #print axioms EvmCompiler.Assembly.GasfulBridge.OpenSameData.of_sameData
+#print axioms EvmCompiler.Assembly.GasfulBridge.OpenStateRel.stack_eq
+#print axioms EvmCompiler.Assembly.GasfulBridge.OpenStateRel.executionEnv_eq
+#print axioms EvmCompiler.Assembly.GasfulBridge.OpenStateRel.code_eq
 #print axioms EvmCompiler.Assembly.GasfulBridge.callResponseStateRel_of_openSameData
 #print axioms EvmCompiler.Assembly.GasfulBridge.callResponseStateRel_of_sameData
 #print axioms EvmCompiler.Assembly.GasfulBridge.call_result_status_bool

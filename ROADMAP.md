@@ -163,6 +163,7 @@ Gasful EVM bridge checkpoint:
   `Yul.EndToEnd.optimizedSolcYulToGasfulRawBytecodeOfOpenRunBridge`.
 - [ ] Assemble the complete recursive `EVM.X` simulation from the checked
   ordinary, exceptional, OOG, terminal, and actual CALL/CREATE step theorems,
+  using `OpenStateRel` plus compiler-derived reachable-PC decode compatibility,
   then discharge the public gasful end-to-end bridge premise.
 
 `Compiler.StackArtifact` is the sole code-body artifact and
