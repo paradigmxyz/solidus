@@ -152,6 +152,9 @@ Next raw frontend layer:
   function list. `Raw.Object.ClzExpansionOk` and
   `Raw.Object.HoistedFunctionsRetained` lift these invariants through raw
   object elaboration, raw string decoding, and artifact-wrapper success.
+  `Raw.Object.GeneratedNormalizationEvidence` now bundles those facts with the
+  shared `elaborateCodeCore`/`finalFunctions` witness and is derived from raw
+  object elaboration, raw string decoding, and artifact-wrapper success.
   Semantic preservation of the helper and nested
   hoist/alpha-renaming passes remains open.
 - [x] Expose the production interface

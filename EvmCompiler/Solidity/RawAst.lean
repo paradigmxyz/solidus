@@ -1317,6 +1317,23 @@ def Object.HoistedFunctionsRetained (raw : Object)
             ∀ entry, entry ∈ state.hoistedFunctions →
               entry ∈ frontend.functions
 
+def Object.CodeGeneratedNormalizationEvidence
+    (code : List Stmt) (frontend : Frontend.Object) : Prop :=
+  ∃ (coreDispatcher : List Frontend.Stmt) (state : Elab.State)
+      (helper? arg? ret? : Option Name),
+    Elab.elaborateCodeCore code = .ok (coreDispatcher, state) ∧
+      Elab.elaborateCode code =
+        .ok (frontend.dispatcher, frontend.functions,
+          helper?, arg?, ret?) ∧
+        frontend.functions = Elab.finalFunctions state ∧
+          helper? = state.clzHelperName? ∧
+            arg? = state.clzArgName? ∧
+              ret? = state.clzReturnName? ∧
+                Elab.ClzExpansionOk frontend.functions
+                  helper? arg? ret? ∧
+                  ∀ entry, entry ∈ state.hoistedFunctions →
+                    entry ∈ frontend.functions
+
 theorem Object.elaborate?_clzExpansionOk
     {obj : Object} {evmVersion : Yul.SolcValidation.EvmVersion}
     {frontend : Frontend.Object}
@@ -1399,11 +1416,27 @@ def Object.itemRefsPreserveOrder? (raw : Object)
     (frontend : Frontend.Object) : Bool :=
   Object.itemRefsPreserveOrderFuel? maxDecodeFuel raw frontend
 
+def Object.GeneratedNormalizationEvidence (raw : Object)
+    (frontend : Frontend.Object) : Prop :=
+  Object.itemRefsPreserveOrder? raw frontend = true ∧
+    Object.ClzExpansionOk raw frontend ∧
+      Object.HoistedFunctionsRetained raw frontend ∧
+        match raw.code? with
+        | none => True
+        | some code =>
+            Object.CodeGeneratedNormalizationEvidence code frontend
+
 def Object.FrontendValidated (raw : Object)
     (frontend : Frontend.Object) : Prop :=
   Object.itemRefsPreserveOrder? raw frontend = true ∧
     Object.ClzExpansionOk raw frontend ∧
       Object.HoistedFunctionsRetained raw frontend
+
+theorem Object.GeneratedNormalizationEvidence.frontendValidated
+    {raw : Object} {frontend : Frontend.Object}
+    (hEvidence : Object.GeneratedNormalizationEvidence raw frontend) :
+    Object.FrontendValidated raw frontend := by
+  exact ⟨hEvidence.1, hEvidence.2.1, hEvidence.2.2.1⟩
 
 def Object.elaboratePreservingOrder? (obj : Object)
     (evmVersion : Yul.SolcValidation.EvmVersion) :
@@ -1447,6 +1480,60 @@ theorem Object.elaboratePreservingOrder?_frontendValidated
     ⟨hObject, hOrder,
       Object.elaborate?_clzExpansionOk hObject,
       Object.elaborate?_hoistedFunctionsRetained hObject⟩
+
+theorem Object.elaboratePreservingOrder?_generatedNormalizationEvidence
+    {obj : Object} {evmVersion : Yul.SolcValidation.EvmVersion}
+    {frontend : Frontend.Object}
+    (hElab :
+      Object.elaboratePreservingOrder? obj evmVersion = .ok frontend) :
+    Object.elaborate? obj evmVersion = .ok frontend ∧
+      Object.GeneratedNormalizationEvidence obj frontend := by
+  rcases Object.elaboratePreservingOrder?_parts hElab with
+    ⟨hObject, hOrder⟩
+  rcases Object.elaborate?_parts hObject with
+    ⟨itemFuel, dispatcher, functions, helper?, arg?, ret?, data, objects,
+      items, _hFuel, hCode, _hItems, hFrontend⟩
+  subst frontend
+  have hClz :
+      Object.ClzExpansionOk obj
+        { name := obj.name
+          dispatcher := dispatcher
+          functions := functions
+          data := data
+          objects := objects
+          items := items
+          memoryContract := MemoryContract.unrestricted
+          evmVersion := evmVersion } :=
+    Object.elaborate?_clzExpansionOk hObject
+  have hHoisted :
+      Object.HoistedFunctionsRetained obj
+        { name := obj.name
+          dispatcher := dispatcher
+          functions := functions
+          data := data
+          objects := objects
+          items := items
+          memoryContract := MemoryContract.unrestricted
+          evmVersion := evmVersion } :=
+    Object.elaborate?_hoistedFunctionsRetained hObject
+  refine ⟨hObject, hOrder, hClz, hHoisted, ?_⟩
+  cases hRawCode : obj.code? with
+  | none =>
+      trivial
+  | some code =>
+      have hCodeElab :
+          Elab.elaborateCode code =
+            .ok (dispatcher, functions, helper?, arg?, ret?) := by
+        simpa [hRawCode] using hCode
+      rcases Elab.elaborateCode_parts hCodeElab with
+        ⟨state, hCore, hFunctions, hHelper, hArg, hRet⟩
+      exact
+        ⟨dispatcher, state, helper?, arg?, ret?, hCore, hCodeElab,
+          hFunctions, hHelper, hArg, hRet,
+          Elab.elaborateCode_clzExpansionOk hCodeElab, by
+            intro entry hEntry
+            exact
+              Elab.elaborateCode_hoistedFunction_mem hCore hCodeElab hEntry⟩
 
 def walkObjectsFuel : Nat → Object → List Object
   | 0, obj => [obj]
@@ -1675,6 +1762,39 @@ theorem decodeAndElaborateSolcIrJson_frontendValidated
           · exact hValidated.1
           · exact hValidated.2
 
+theorem decodeAndElaborateSolcIrJson_generatedNormalizationEvidence
+    {json : Lean.Json} {selection : Selection}
+    {program : Frontend.Program}
+    (hDecode :
+      decodeAndElaborateSolcIrJson json selection = .ok program) :
+    ∃ (selected : SelectedIr) (object : Frontend.Object),
+      decodeSelectedIr json selection = .ok selected ∧
+        selected.root.elaborate? selected.evmVersion = .ok object ∧
+          Raw.Object.GeneratedNormalizationEvidence selected.root object ∧
+            program =
+              { source := selected.source
+                contract := selected.contract
+                object := object } := by
+  unfold decodeAndElaborateSolcIrJson at hDecode
+  cases hSelected : decodeSelectedIr json selection with
+  | error err =>
+      simp [hSelected] at hDecode
+  | ok selected =>
+      cases hObject :
+          selected.root.elaboratePreservingOrder? selected.evmVersion with
+      | error err =>
+          simp [hSelected, hObject] at hDecode
+      | ok object =>
+          have hGenerated :=
+            Raw.Object.elaboratePreservingOrder?_generatedNormalizationEvidence
+              hObject
+          simp [hSelected, hObject] at hDecode
+          subst program
+          refine ⟨selected, object, ?_, ?_, ?_, rfl⟩
+          · simp [hSelected]
+          · exact hGenerated.1
+          · exact hGenerated.2
+
 theorem decodeAndElaborateSolcIrJson_objectParts
     {json : Lean.Json} {selection : Selection}
     {program : Frontend.Program}
@@ -1860,6 +1980,30 @@ theorem decodeAndElaborateSolcIr?_frontendValidated
     ⟨selected, object, hSelected, hObject, hValidated, hProgram⟩
   exact
     ⟨json, selected, object, hParse, hSelected, hObject, hValidated, hProgram⟩
+
+theorem decodeAndElaborateSolcIr?_generatedNormalizationEvidence
+    {rawJson : String} {selection : Selection}
+    {program : Frontend.Program}
+    (hDecode :
+      decodeAndElaborateSolcIr? rawJson selection = some program) :
+    ∃ (json : Lean.Json) (selected : SelectedIr)
+        (object : Frontend.Object),
+      Lean.Json.parse rawJson = .ok json ∧
+        decodeSelectedIr json selection = .ok selected ∧
+          selected.root.elaborate? selected.evmVersion = .ok object ∧
+            Raw.Object.GeneratedNormalizationEvidence selected.root object ∧
+              program =
+                { source := selected.source
+                  contract := selected.contract
+                  object := object } := by
+  rcases decodeAndElaborateSolcIr?_some hDecode with
+    ⟨json, hParse, hJsonDecode⟩
+  rcases decodeAndElaborateSolcIrJson_generatedNormalizationEvidence
+      hJsonDecode with
+    ⟨selected, object, hSelected, hObject, hGenerated, hProgram⟩
+  exact
+    ⟨json, selected, object, hParse, hSelected, hObject, hGenerated,
+      hProgram⟩
 
 theorem decodeAndElaborateSolcIr?_objectParts
     {rawJson : String} {selection : Selection}
