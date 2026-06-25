@@ -363,9 +363,6 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.RawAst.Elab.codeGeneratedNormalizationEvidence_clzHelper_call_value_succ
 #print axioms EvmCompiler.Solidity.RawAst.Elab.generatedNormalizationEvidence_clzHelper_call_value_succ
 #print axioms EvmCompiler.Solidity.RawAst.Elab.decodeAndElaborateSolcIr?_clzHelper_call_value_succ
-#print axioms EvmCompiler.Solidity.RawAst.Elab.codeGeneratedNormalizationEvidence_hoistedCallSemantics
-#print axioms EvmCompiler.Solidity.RawAst.Elab.generatedNormalizationEvidence_hoistedCallSemantics
-#print axioms EvmCompiler.Solidity.RawAst.Elab.decodeAndElaborateSolcIr?_hoistedCallSemantics
 #print axioms EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedCallPrefixEvidence.of_yulOccurrence
 #print axioms EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedCallPrefixEvidence.call_succ
 #print axioms EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedCallPrefixEvidence.evalValues_succ
