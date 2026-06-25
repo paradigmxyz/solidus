@@ -76,6 +76,8 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.StmtClzCall
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.StmtListClzCall
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.CaseListClzCall
+#check EvmCompiler.Solidity.RawAst.RawOccurrence.StmtListClzCall.exists_split_stmt
+#check EvmCompiler.Solidity.RawAst.RawOccurrence.StmtListClzCall.of_split_stmt
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.Expr.elaborate_preserves_existing_clzHelperName
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.Expr.List.elaborate_preserves_existing_clzHelperName
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.Expr.elaborate_clz_direct
@@ -382,6 +384,8 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.Expr.elaborate_clz_direct
 #print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.ExprClzCall.elaborate
 #print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.ExprListClzCall.elaborate
+#print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.StmtListClzCall.exists_split_stmt
+#print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.StmtListClzCall.of_split_stmt
 #print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.StmtClzCall.elaborate
 #print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.StmtListClzCall.elaborate
 #print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.CaseListClzCall.elaborate

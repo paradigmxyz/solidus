@@ -883,6 +883,38 @@ theorem toCodeRoute
 
 end StmtListElaborationRoute
 
+namespace StmtListClzCall
+
+theorem exists_split_stmt
+    {rawArg : Raw.Expr} {stmts : List Raw.Stmt}
+    (hOccurrence : StmtListClzCall rawArg stmts) :
+    ∃ (pre : List Raw.Stmt) (stmt : Raw.Stmt)
+      (suffix : List Raw.Stmt),
+      stmts = pre ++ stmt :: suffix ∧
+        StmtClzCall rawArg stmt := by
+  induction stmts with
+  | nil =>
+      cases hOccurrence
+  | cons head rest ih =>
+      cases hOccurrence with
+      | head hStmt =>
+          exact ⟨[], head, rest, rfl, hStmt⟩
+      | tail hTail =>
+          rcases ih hTail with ⟨pre, stmt, suffix, hSplit, hStmt⟩
+          exact ⟨head :: pre, stmt, suffix, by simp [hSplit], hStmt⟩
+
+theorem of_split_stmt
+    {rawArg : Raw.Expr} {pre suffix : List Raw.Stmt} {stmt : Raw.Stmt}
+    (hStmt : StmtClzCall rawArg stmt) :
+    StmtListClzCall rawArg (pre ++ stmt :: suffix) := by
+  induction pre with
+  | nil =>
+      exact StmtListClzCall.head hStmt
+  | cons _ _ ih =>
+      exact StmtListClzCall.tail ih
+
+end StmtListClzCall
+
 namespace StmtListUserCall
 
 theorem exists_split_stmt
