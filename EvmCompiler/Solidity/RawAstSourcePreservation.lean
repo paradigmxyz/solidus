@@ -26,6 +26,15 @@ def SameDoneRel {α : Type} :
     Except Failure α → Except Failure α → Prop :=
   Eq
 
+/-- At the dispatcher-sequence boundary the ordered side has already executed
+the dispatcher lexical block, while the raw side is still immediately before
+its enclosing block restriction. Errors agree exactly; successful ordered
+states are the raw state restricted to the common block-entry store. -/
+def PendingBlockDoneRel (entryStore : EvmYul.Yul.VarStore) :
+    Except Failure State → Except Failure State → Prop :=
+  Simulation.Interaction.ExceptRel Eq
+    (fun raw ordered => ordered = raw.restrictStoreTo entryStore)
+
 def rawObjectRun (fuel : Nat) (context : Frontend.ObjectBuiltinContext)
     (object : Raw.Object) (state : State) : Open State :=
   Raw.SourceSemantics.execObjectCode fuel
@@ -48,6 +57,110 @@ def BlockRunForward (rawFuel orderedFuel : Nat)
       (Raw.SourceSemantics.contextForObject context) code state)
     (orderedRun orderedFuel ordered state)
 
+/-- Exact pre-block statement preservation used by the recursive frontend
+proof. Lexical-store restriction is handled only by block constructors. -/
+def StmtRunForward (rawFuel orderedFuel : Nat)
+    (context : Raw.SourceSemantics.Context)
+    (rawStmt : Raw.Stmt) (orderedStmt : Frontend.AstStmt)
+    (contract : Frontend.AstContract) (state : State) : Prop :=
+  Simulation.Interaction.ForwardRel
+    Yul.FunctionsInteractionPrimitive.Truncated
+    SameDoneRel
+    (Raw.SourceSemantics.exec rawFuel context rawStmt state)
+    (Yul.InteractionSemantics.exec orderedFuel orderedStmt
+      (some contract) state)
+
+/-- Exact pre-block statement-list preservation. Both sides still carry the
+same lexical store; the dispatcher adapter below accounts for the ordered
+dispatcher's additional block boundary. -/
+def SeqRunForward (rawFuel orderedFuel : Nat)
+    (context : Raw.SourceSemantics.Context)
+    (rawCode : List Raw.Stmt) (orderedCode : List Frontend.AstStmt)
+    (contract : Frontend.AstContract) (state : State) : Prop :=
+  Simulation.Interaction.ForwardRel
+    Yul.FunctionsInteractionPrimitive.Truncated
+    SameDoneRel
+    (Raw.SourceSemantics.execSeq rawFuel context rawCode state)
+    (Yul.InteractionSemantics.execSeq orderedFuel orderedCode
+      (some contract) state)
+
+theorem seqRunForward_zero
+    {orderedFuel : Nat}
+    {context : Raw.SourceSemantics.Context}
+    {rawCode : List Raw.Stmt} {orderedCode : List Frontend.AstStmt}
+    {contract : Frontend.AstContract} {state : State} :
+    SeqRunForward 0 orderedFuel context rawCode orderedCode contract state := by
+  unfold SeqRunForward
+  rw [Raw.SourceSemantics.execSeq_zero]
+  exact
+    Simulation.Interaction.ForwardRel.truncated
+      (by simp [Yul.FunctionsInteractionPrimitive.Truncated])
+
+theorem seqRunForward_nil_succ
+    {rawFuel orderedFuel : Nat}
+    {context : Raw.SourceSemantics.Context}
+    {contract : Frontend.AstContract} {state : State} :
+    SeqRunForward (rawFuel + 1) (orderedFuel + 1)
+      context [] [] contract state := by
+  unfold SeqRunForward
+  rw [Raw.SourceSemantics.ExecSeq.nil_succ]
+  rw [Yul.InteractionSemantics.ExecSeq.nil_succ]
+  exact Simulation.Interaction.ForwardRel.done rfl
+
+/-- Generic list constructor for the recursive frontend proof. The head and
+tail share one residual fuel on each side; only regular states enter the tail. -/
+theorem seqRunForward_cons
+    {rawFuel orderedFuel : Nat}
+    {context : Raw.SourceSemantics.Context}
+    {rawStmt : Raw.Stmt} {rawRest : List Raw.Stmt}
+    {orderedStmt : Frontend.AstStmt}
+    {orderedRest : List Frontend.AstStmt}
+    {contract : Frontend.AstContract} {state : State}
+    (hHead :
+      StmtRunForward rawFuel orderedFuel
+        context rawStmt orderedStmt contract state)
+    (hTail :
+      ∀ shared vars,
+        SeqRunForward rawFuel orderedFuel context rawRest orderedRest contract
+          (.Ok shared vars)) :
+    SeqRunForward (rawFuel + 1) (orderedFuel + 1)
+      context (rawStmt :: rawRest) (orderedStmt :: orderedRest)
+      contract state := by
+  unfold SeqRunForward StmtRunForward at *
+  rw [Raw.SourceSemantics.ExecSeq.cons_succ]
+  rw [Yul.InteractionSemantics.ExecSeq.cons_succ]
+  refine Simulation.Interaction.ForwardRel.bind_custom hHead ?_
+  intro rawDone orderedDone hDone
+  unfold SameDoneRel at hDone
+  subst orderedDone
+  cases rawDone with
+  | error error =>
+      exact Simulation.Interaction.ForwardRel.done rfl
+  | ok stateAfterStmt =>
+      cases stateAfterStmt with
+      | Ok shared vars => exact hTail shared vars
+      | OutOfFuel => exact Simulation.Interaction.ForwardRel.done rfl
+      | Checkpoint jump => exact Simulation.Interaction.ForwardRel.done rfl
+
+theorem seqRunForward_cons_functionDefinition_omitted_ok
+    {fuel orderedFuel : Nat}
+    {context : Raw.SourceSemantics.Context}
+    {name : Name} {params returns : List Name} {body rest : List Raw.Stmt}
+    {orderedCode : List Frontend.AstStmt}
+    {contract : Frontend.AstContract}
+    {shared : EvmYul.SharedState .Yul} {vars : EvmYul.Yul.VarStore}
+    (hRest :
+      SeqRunForward (fuel + 1) orderedFuel
+        context rest orderedCode contract (.Ok shared vars)) :
+    SeqRunForward (fuel + 2) orderedFuel
+      context
+      (.functionDefinition name params returns body :: rest)
+      orderedCode contract (.Ok shared vars) := by
+  unfold SeqRunForward at *
+  rw [Raw.SourceSemantics.ExecSeq.cons_succ]
+  rw [Raw.SourceSemantics.Exec.functionDefinition_succ]
+  simpa [Simulation.Interaction.bind_pure]
+
 /-- Raw block-body sequence preservation against the ordered dispatcher
 sequence, before both sides apply their lexical block store restriction. -/
 def DispatcherSeqRunForward (rawFuel orderedFuel : Nat)
@@ -57,13 +170,107 @@ def DispatcherSeqRunForward (rawFuel orderedFuel : Nat)
     (state : State) : Prop :=
   Simulation.Interaction.ForwardRel
     Yul.FunctionsInteractionPrimitive.Truncated
-    SameDoneRel
+    (PendingBlockDoneRel state.store)
     (Raw.SourceSemantics.execSeq rawFuel
       ((Raw.SourceSemantics.contextForObject context).withFunctionScope scope)
       code state)
     (Yul.InteractionSemantics.execSeq orderedFuel
       [ordered.program.contract.dispatcher]
       (some ordered.program.contract) state)
+
+/-- Close the ordered dispatcher's lexical block around an exact raw/Yul
+statement-list simulation. This is the only place where the internal sequence
+relation changes from exact states to the pending block-restriction relation. -/
+theorem dispatcherSeqRunForward_of_seq
+    {rawFuel orderedFuel : Nat}
+    {context : Frontend.ObjectBuiltinContext}
+    {scope : Raw.SourceSemantics.FunctionScope}
+    {rawCode : List Raw.Stmt} {orderedCode : List Frontend.AstStmt}
+    {ordered : Yul.OrderedProgram} {state : State}
+    (hDispatcher :
+      ordered.program.contract.dispatcher = .Block orderedCode)
+    (hSeq :
+      SeqRunForward rawFuel orderedFuel
+        ((Raw.SourceSemantics.contextForObject context).withFunctionScope scope)
+        rawCode orderedCode ordered.program.contract state) :
+    DispatcherSeqRunForward rawFuel (orderedFuel + 2)
+      context scope rawCode ordered state := by
+  unfold DispatcherSeqRunForward SeqRunForward at *
+  have hRestricted :=
+    Simulation.Interaction.ForwardRel.bind_right
+      (rightNext := fun orderedState : State =>
+        pure (orderedState.restrictStoreTo state.store))
+      (targetDoneRel := PendingBlockDoneRel state.store)
+      hSeq (by
+      intro rawDone orderedDone hDone
+      unfold SameDoneRel at hDone
+      subst orderedDone
+      cases rawDone with
+      | error error =>
+          exact
+            Simulation.Interaction.ForwardRel.done
+              (Simulation.Interaction.ExceptRel.error rfl)
+      | ok rawState =>
+          exact
+            Simulation.Interaction.ForwardRel.done
+              (Simulation.Interaction.ExceptRel.ok rfl))
+  rw [hDispatcher]
+  rw [show orderedFuel + 2 = (orderedFuel + 1) + 1 by omega]
+  rw [Yul.InteractionSemantics.ExecSeq.cons_succ]
+  rw [Yul.InteractionSemantics.Exec.block_succ]
+  simp only [Yul.InteractionSemantics.ExecSeq.nil_succ]
+  have hContinue :
+      (fun stateAfterStmt : State =>
+        match stateAfterStmt with
+        | .Ok _ _ =>
+            (Simulation.Interaction.pure stateAfterStmt : Open State)
+        | .OutOfFuel | .Checkpoint _ =>
+            (Simulation.Interaction.pure stateAfterStmt : Open State)) =
+      (fun stateAfterStmt =>
+        (Simulation.Interaction.pure stateAfterStmt : Open State)) := by
+    funext stateAfterStmt
+    cases stateAfterStmt <;> rfl
+  have hRight :
+      Simulation.Interaction.bind
+          (Simulation.Interaction.bind
+            (Yul.InteractionSemantics.execSeq orderedFuel orderedCode
+              (some ordered.program.contract) state)
+            (fun stateAfterBody =>
+              pure (stateAfterBody.restrictStoreTo state.store)))
+          (fun stateAfterStmt : State =>
+            match stateAfterStmt with
+            | .Ok _ _ =>
+                (Simulation.Interaction.pure stateAfterStmt : Open State)
+            | .OutOfFuel | .Checkpoint _ =>
+                (Simulation.Interaction.pure stateAfterStmt : Open State)) =
+        Simulation.Interaction.bind
+          (Yul.InteractionSemantics.execSeq orderedFuel orderedCode
+            (some ordered.program.contract) state)
+          (fun stateAfterBody =>
+            pure (stateAfterBody.restrictStoreTo state.store)) := by
+    rw [hContinue]
+    exact Simulation.Interaction.bind_pure _
+  change
+    Simulation.Interaction.ForwardRel
+      Yul.FunctionsInteractionPrimitive.Truncated
+      (PendingBlockDoneRel state.store)
+      (Raw.SourceSemantics.execSeq rawFuel
+        ((Raw.SourceSemantics.contextForObject context).withFunctionScope scope)
+        rawCode state)
+      (Simulation.Interaction.bind
+        (Simulation.Interaction.bind
+          (Yul.InteractionSemantics.execSeq orderedFuel orderedCode
+            (some ordered.program.contract) state)
+          (fun stateAfterBody =>
+            pure (stateAfterBody.restrictStoreTo state.store)))
+        (fun stateAfterStmt : State =>
+          match stateAfterStmt with
+          | .Ok _ _ =>
+              (Simulation.Interaction.pure stateAfterStmt : Open State)
+          | .OutOfFuel | .Checkpoint _ =>
+              (Simulation.Interaction.pure stateAfterStmt : Open State)))
+  rw [hRight]
+  exact hRestricted
 
 theorem dispatcherSeqRunForward_zero
     {orderedFuel : Nat}
@@ -116,13 +323,17 @@ theorem blockRunForward_of_scope_seq
   simp only [hScope]
   refine Simulation.Interaction.ForwardRel.bind_custom hSeq ?_
   intro leftDone rightDone hDone
-  unfold SameDoneRel at hDone
-  subst rightDone
-  cases leftDone with
-  | error error =>
+  cases hDone with
+  | error hError =>
+      subst_vars
       exact Simulation.Interaction.ForwardRel.done rfl
-  | ok value =>
-      exact Simulation.Interaction.ForwardRel.done rfl
+  | @ok rawState orderedState hRestricted =>
+      subst orderedState
+      apply Simulation.Interaction.ForwardRel.done
+      unfold SameDoneRel
+      congr 1
+      exact (Yul.InteractionSemantics.State.restrictStoreTo_idem
+        rawState state.store).symm
 
 theorem rawObjectRun_none_code
     {fuel : Nat} {context : Frontend.ObjectBuiltinContext}
