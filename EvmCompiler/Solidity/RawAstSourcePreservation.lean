@@ -71,6 +71,44 @@ theorem forward_refl {α : Type}
   | request query resume ih =>
       exact .request ih
 
+theorem runForward_of_eq
+    {rawFuel orderedFuel : Nat}
+    {context : Frontend.ObjectBuiltinContext}
+    {object : Raw.Object} {ordered : Yul.OrderedProgram}
+    {state : State}
+    (hRun :
+      rawObjectRun rawFuel context object state =
+        orderedRun orderedFuel ordered state) :
+    RunForward rawFuel orderedFuel context object ordered state := by
+  unfold RunForward
+  rw [hRun]
+  exact
+    forward_refl Yul.FunctionsInteractionPrimitive.Truncated
+      (orderedRun orderedFuel ordered state)
+
+structure ObjectRunEquivalent
+    (context : Frontend.ObjectBuiltinContext)
+    (object : Raw.Object) (ordered : Yul.OrderedProgram) : Prop where
+  run_eq :
+    ∀ (rawFuel : Nat) (state : State),
+      ∃ orderedFuel,
+        rawObjectRun rawFuel context object state =
+          orderedRun orderedFuel ordered state
+
+namespace ObjectRunEquivalent
+
+theorem preserved
+    {context : Frontend.ObjectBuiltinContext}
+    {object : Raw.Object} {ordered : Yul.OrderedProgram}
+    (hEq : ObjectRunEquivalent context object ordered) :
+    ObjectPreserved context object ordered where
+  forward := by
+    intro rawFuel state
+    rcases hEq.run_eq rawFuel state with ⟨orderedFuel, hRun⟩
+    exact ⟨orderedFuel, runForward_of_eq hRun⟩
+
+end ObjectRunEquivalent
+
 end SourcePreservation
 end Raw
 end RawAst

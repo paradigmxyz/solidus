@@ -86,9 +86,15 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.RawAst.Raw.SourceSemantics.execObjectCode
 #check EvmCompiler.Solidity.RawAst.Raw.SourceSemantics.evalObjectBuiltin
 #check EvmCompiler.Solidity.RawAst.Raw.SourceSemantics.patchSetImmutableStmts?
+#check EvmCompiler.Solidity.RawAst.Raw.SourceSemantics.EvalValues.functionCall_succ_of_ne_clz
+#check EvmCompiler.Solidity.RawAst.Raw.SourceSemantics.EvalObjectBuiltin.datacopy_succ
+#check EvmCompiler.Solidity.RawAst.Raw.SourceSemantics.ExecBlock.succ
+#check EvmCompiler.Solidity.RawAst.Raw.SourceSemantics.Exec.assignment_succ
 #check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.RunForward
 #check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.ObjectPreserved
 #check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.forward_refl
+#check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.runForward_of_eq
+#check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.ObjectRunEquivalent.preserved
 #check EvmCompiler.Solidity.RawAst.FrontendOccurrence.ResolvedLocalCall
 #check EvmCompiler.Solidity.RawAst.FrontendOccurrence.UserCall.objectBuiltinNameArg?_none
 #check EvmCompiler.Solidity.RawAst.FrontendOccurrence.UserCall.not_lit

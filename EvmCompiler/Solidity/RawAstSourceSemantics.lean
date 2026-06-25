@@ -426,6 +426,246 @@ def contextForObject (context : Frontend.ObjectBuiltinContext) : Context :=
     execBlock 0 ctx stmts state = fail state .OutOfFuel := by
   simp [execBlock]
 
+namespace Eval
+
+theorem eval_eq_bind
+    (fuel : Nat) (ctx : Context) (expr : Expr) (state : State) :
+    eval fuel ctx expr state =
+      Simulation.Interaction.bind (evalValues fuel ctx expr state)
+        (fun result => pure (result.1, result.2.head!)) := by
+  unfold eval
+  rfl
+
+end Eval
+
+namespace EvalArgs
+
+theorem nil_succ (fuel : Nat) (ctx : Context) (state : State) :
+    evalArgs (fuel + 1) ctx [] state = pure (state, []) := by
+  simp [evalArgs]
+
+theorem cons_succ
+    (fuel : Nat) (ctx : Context) (arg : Expr) (rest : List Expr)
+    (state : State) :
+    evalArgs (fuel + 1) ctx (arg :: rest) state =
+      evalTail fuel ctx rest (eval fuel ctx arg state) := by
+  simp [evalArgs]
+
+end EvalArgs
+
+namespace EvalValues
+
+theorem literal_succ
+    (fuel : Nat) (ctx : Context) (literal : Literal)
+    (state : State) (value : Word)
+    (hLiteral : literalWord? literal = some value) :
+    evalValues (fuel + 1) ctx (.literal literal) state =
+      pure (state, [value]) := by
+  simp [evalValues, hLiteral]
+
+theorem identifier_succ
+    (fuel : Nat) (ctx : Context) (name : Name)
+    (state : State) (value : Word)
+    (hLookup : state.lookup? name = some value) :
+    evalValues (fuel + 1) ctx (.identifier name) state =
+      pure (state, [value]) := by
+  simp [evalValues, hLookup]
+
+theorem clz_succ
+    (fuel : Nat) (ctx : Context) (arg : Expr) (state : State) :
+    evalValues (fuel + 1) ctx (.functionCall "clz" [arg]) state =
+      (do
+        let result ← eval fuel ctx arg state
+        pure (result.1, [Elab.ClzHelperModel.reference result.2])) := by
+  simp [evalValues]
+
+theorem functionCall_succ_of_ne_clz
+    (fuel : Nat) (ctx : Context) (name : Name) (args : List Expr)
+    (state : State)
+    (hClz : name ≠ "clz") :
+    evalValues (fuel + 1) ctx (.functionCall name args) state =
+      match CallClass.classifyCall name with
+      | .primitive =>
+          match Frontend.Primitive.ofName? name with
+          | none => fail state .InvalidExpression
+          | some op =>
+              (do
+                let result ← evalArgs fuel ctx args.reverse state
+                Yul.InteractionSemantics.primitiveSemantics.eval
+                  fuel result.1 op result.2.reverse)
+      | .user =>
+          (do
+            let result ← evalArgs fuel ctx args.reverse state
+            call fuel ctx result.2.reverse name result.1)
+      | .objectBuiltin =>
+          evalObjectBuiltin fuel ctx name args state
+      | .dialectBuiltin =>
+          fail state .InvalidExpression := by
+  simp [evalValues, hClz]
+
+end EvalValues
+
+namespace EvalObjectBuiltin
+
+theorem datasize_succ
+    (fuel : Nat) (ctx : Context) (nameArg : Expr) (state : State)
+    (dataName : Name) (size : Word)
+    (hName : objectBuiltinNameArg? nameArg = some dataName)
+    (hSize : ctx.objectBuiltins.size? dataName = some size) :
+    evalObjectBuiltin (fuel + 1) ctx "datasize" [nameArg] state =
+      pure (state, [size]) := by
+  simp [evalObjectBuiltin, hName, hSize]
+
+theorem dataoffset_succ
+    (fuel : Nat) (ctx : Context) (nameArg : Expr) (state : State)
+    (dataName : Name) (offset : Word)
+    (hName : objectBuiltinNameArg? nameArg = some dataName)
+    (hOffset : ctx.objectBuiltins.offset? dataName = some offset) :
+    evalObjectBuiltin (fuel + 1) ctx "dataoffset" [nameArg] state =
+      pure (state, [offset]) := by
+  simp [evalObjectBuiltin, hName, hOffset]
+
+theorem linkersymbol_succ
+    (fuel : Nat) (ctx : Context) (nameArg : Expr) (state : State)
+    (linkerName : Name) (value : Word)
+    (hName : objectBuiltinNameArg? nameArg = some linkerName)
+    (hValue : ctx.objectBuiltins.findLinkerSymbol? linkerName = some value) :
+    evalObjectBuiltin (fuel + 1) ctx "linkersymbol" [nameArg] state =
+      pure (state, [value]) := by
+  simp [evalObjectBuiltin, hName, hValue]
+
+theorem loadimmutable_succ
+    (fuel : Nat) (ctx : Context) (nameArg : Expr) (state : State)
+    (immutableName : Name) (value : Word)
+    (hName : objectBuiltinNameArg? nameArg = some immutableName)
+    (hValue :
+      ctx.objectBuiltins.findImmutableValue? immutableName = some value) :
+    evalObjectBuiltin (fuel + 1) ctx "loadimmutable" [nameArg] state =
+      pure (state, [value]) := by
+  simp [evalObjectBuiltin, hName, hValue]
+
+theorem memoryguard_succ
+    (fuel : Nat) (ctx : Context) (value : Expr) (state : State) :
+    evalObjectBuiltin (fuel + 1) ctx "memoryguard" [value] state =
+      (do
+        let result ← eval fuel ctx value state
+        pure (result.1, [result.2])) := by
+  simp [evalObjectBuiltin]
+
+theorem datacopy_succ
+    (fuel : Nat) (ctx : Context) (args : List Expr) (state : State)
+    (op : EvmYul.Operation .Yul)
+    (hOp : Frontend.Primitive.ofName? "codecopy" = some op) :
+    evalObjectBuiltin (fuel + 1) ctx "datacopy" args state =
+      (do
+        let result ← evalArgs fuel ctx args.reverse state
+        Yul.InteractionSemantics.primitiveSemantics.eval
+          fuel result.1 op result.2.reverse) := by
+  simp [evalObjectBuiltin, hOp]
+
+end EvalObjectBuiltin
+
+namespace ExecSeq
+
+theorem nil_succ (fuel : Nat) (ctx : Context) (state : State) :
+    execSeq (fuel + 1) ctx [] state = pure state := by
+  simp [execSeq]
+
+theorem cons_succ
+    (fuel : Nat) (ctx : Context) (stmt : Stmt) (rest : List Stmt)
+    (state : State) :
+    execSeq (fuel + 1) ctx (stmt :: rest) state =
+      (do
+        let stateAfterStmt ← exec fuel ctx stmt state
+        match stateAfterStmt with
+        | .Ok _ _ => execSeq fuel ctx rest stateAfterStmt
+        | .OutOfFuel => pure stateAfterStmt
+        | .Checkpoint _ => pure stateAfterStmt) := by
+  simp [execSeq]
+
+end ExecSeq
+
+namespace ExecBlock
+
+theorem succ
+    (fuel : Nat) (ctx : Context) (stmts : List Stmt) (state : State) :
+    execBlock (fuel + 1) ctx stmts state =
+      match functionScope? stmts with
+      | none => fail state (.DuplicateDeclaration "Yul function")
+      | some scope =>
+          (do
+            let stateAfterBody ←
+              execSeq fuel (ctx.withFunctionScope scope) stmts state
+            pure (stateAfterBody.restrictStoreTo state.store)) := by
+  simp [execBlock]
+
+end ExecBlock
+
+namespace Exec
+
+theorem block_succ
+    (fuel : Nat) (ctx : Context) (stmts : List Stmt) (state : State) :
+    exec (fuel + 1) ctx (.block stmts) state =
+      execBlock fuel ctx stmts state := by
+  simp [exec]
+
+theorem variableDeclaration_none_succ
+    (fuel : Nat) (ctx : Context) (names : List Name) (state : State) :
+    exec (fuel + 1) ctx (.variableDeclaration names none) state =
+      match EvmYul.Yul.checkDeclaration state names with
+      | .error err => fail state err
+      | .ok () => pure (state.zeroFill names) := by
+  simp [exec]
+
+theorem variableDeclaration_some_succ
+    (fuel : Nat) (ctx : Context) (names : List Name)
+    (value : Expr) (state : State) :
+    exec (fuel + 1) ctx (.variableDeclaration names (some value)) state =
+      match EvmYul.Yul.checkDeclaration state names with
+      | .error err => fail state err
+      | .ok () =>
+          (do
+            let result ← evalValues fuel ctx value state
+            pure (result.1.multifill names result.2)) := by
+  simp [exec]
+
+theorem assignment_succ
+    (fuel : Nat) (ctx : Context) (names : List Name)
+    (value : Expr) (state : State) :
+    exec (fuel + 1) ctx (.assignment names value) state =
+      match EvmYul.Yul.checkAssignment state names with
+      | .error err => fail state err
+      | .ok () =>
+          (do
+            let result ← evalValues fuel ctx value state
+            pure (result.1.multifill names result.2)) := by
+  simp [exec]
+
+theorem functionDefinition_succ
+    (fuel : Nat) (ctx : Context) (name : Name)
+    (params returns : List Name) (body : List Stmt) (state : State) :
+    exec (fuel + 1) ctx
+        (.functionDefinition name params returns body) state =
+      pure state := by
+  simp [exec]
+
+theorem break_succ (fuel : Nat) (ctx : Context) (state : State) :
+    exec (fuel + 1) ctx .break state =
+      pure (EvmYul.Yul.State.setBreak state) := by
+  simp [exec]
+
+theorem continue_succ (fuel : Nat) (ctx : Context) (state : State) :
+    exec (fuel + 1) ctx .continue state =
+      pure (EvmYul.Yul.State.setContinue state) := by
+  simp [exec]
+
+theorem leave_succ (fuel : Nat) (ctx : Context) (state : State) :
+    exec (fuel + 1) ctx .leave state =
+      pure (EvmYul.Yul.State.setLeave state) := by
+  simp [exec]
+
+end Exec
+
 end SourceSemantics
 end Raw
 end RawAst
