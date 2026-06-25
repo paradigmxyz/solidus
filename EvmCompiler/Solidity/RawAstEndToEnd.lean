@@ -2998,6 +2998,56 @@ structure ForBodyContextRun
 
 namespace ForBodyContextRun
 
+def ofSplitFocused
+    {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    {topName : Frontend.Name}
+    {hEvidence : AlphaRenamedLocalCallYulEvidence object ordered topName}
+    {σ : Type}
+    {model : Yul.Source.Effectful.StateModel σ}
+    {prim : Yul.Source.Effectful.PrimitiveSemantics σ}
+    {prefixFuel : Nat}
+    {condition : Frontend.AstExpr}
+    {post body : List Frontend.AstStmt}
+    {state stateAfterCondition : σ}
+    {conditionValue : Frontend.Word}
+    {afterFor : σ}
+    (bodyRun :
+      StmtListOccurrenceRun.SplitFocusedRun hEvidence model prim
+        prefixFuel body stateAfterCondition)
+    (hEval :
+      Yul.Source.Effectful.eval model prim
+          (((prefixFuel + 1) + bodyRun.pre.length) + 1)
+          condition (some ordered.program.contract)
+          (model.withSource state
+            (EvmYul.Yul.State.mkOk (model.source state))) =
+        .ok (stateAfterCondition, conditionValue))
+    (hNonzero :
+      conditionValue ≠ EvmYul.UInt256.ofNat 0)
+    (hContinuation :
+      ForBodyContinuationRun model prim
+        (((prefixFuel + 1) + bodyRun.pre.length) + 1)
+        condition post body (some ordered.program.contract)
+        state stateAfterCondition conditionValue
+        (model.withSource bodyRun.afterRest
+          ((model.source bodyRun.afterRest).restrictStoreTo
+            (model.source stateAfterCondition).store))
+        afterFor) :
+    ForBodyContextRun hEvidence model prim prefixFuel
+      condition post body state where
+  stateAfterCondition := stateAfterCondition
+  conditionValue := conditionValue
+  bodyRun := bodyRun.toStmtListOccurrenceRun
+  hEval := hEval
+  hNonzero := hNonzero
+  afterBody :=
+    model.withSource bodyRun.afterRest
+      ((model.source bodyRun.afterRest).restrictStoreTo
+        (model.source stateAfterCondition).store)
+  hAfterBody := rfl
+  afterFor := afterFor
+  hContinuation := hContinuation
+
 theorem context
     {object : Frontend.Object}
     {ordered : Yul.OrderedProgram}
@@ -3256,6 +3306,73 @@ structure ForPostContextRun
       state stateAfterCondition conditionValue afterBody afterPost afterFor
 
 namespace ForPostContextRun
+
+def ofSplitFocused
+    {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    {topName : Frontend.Name}
+    {hEvidence : AlphaRenamedLocalCallYulEvidence object ordered topName}
+    {σ : Type}
+    {model : Yul.Source.Effectful.StateModel σ}
+    {prim : Yul.Source.Effectful.PrimitiveSemantics σ}
+    {prefixFuel : Nat}
+    {condition : Frontend.AstExpr}
+    {post body : List Frontend.AstStmt}
+    {state stateAfterCondition afterBody : σ}
+    {conditionValue : Frontend.Word}
+    {afterFor : σ}
+    (postRun :
+      StmtListOccurrenceRun.SplitFocusedRun hEvidence model prim
+        prefixFuel post
+        (model.withSource afterBody
+          (model.source afterBody).reviveJump))
+    (hEval :
+      Yul.Source.Effectful.eval model prim
+          (((prefixFuel + 1) + postRun.pre.length) + 1)
+          condition (some ordered.program.contract)
+          (model.withSource state
+            (EvmYul.Yul.State.mkOk (model.source state))) =
+        .ok (stateAfterCondition, conditionValue))
+    (hNonzero :
+      conditionValue ≠ EvmYul.UInt256.ofNat 0)
+    (hBody :
+      Yul.Source.Effectful.exec model prim
+          (((prefixFuel + 1) + postRun.pre.length) + 1)
+          (.Block body)
+          (some ordered.program.contract) stateAfterCondition =
+        .ok afterBody)
+    (hBodyContinues :
+      Yul.Source.Effectful.LoopBodyContinues (model.source afterBody))
+    (hContinuation :
+      ForPostContinuationRun model prim
+        (((prefixFuel + 1) + postRun.pre.length) + 1)
+        condition post body (some ordered.program.contract)
+        state stateAfterCondition conditionValue afterBody
+        (model.withSource postRun.afterRest
+          ((model.source postRun.afterRest).restrictStoreTo
+            (model.source
+              (model.withSource afterBody
+                (model.source afterBody).reviveJump)).store))
+        afterFor) :
+    ForPostContextRun hEvidence model prim prefixFuel
+      condition post body state where
+  stateAfterCondition := stateAfterCondition
+  conditionValue := conditionValue
+  afterBody := afterBody
+  postRun := postRun.toStmtListOccurrenceRun
+  hEval := hEval
+  hNonzero := hNonzero
+  hBody := hBody
+  hBodyContinues := hBodyContinues
+  afterPost :=
+    model.withSource postRun.afterRest
+      ((model.source postRun.afterRest).restrictStoreTo
+        (model.source
+          (model.withSource afterBody
+            (model.source afterBody).reviveJump)).store)
+  hAfterPost := rfl
+  afterFor := afterFor
+  hContinuation := hContinuation
 
 theorem context
     {object : Frontend.Object}
