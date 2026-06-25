@@ -1,5 +1,9 @@
 # Progress Log
 
+- 2026-06-25 02:34:47 PDT - compaction-resume/statement-context-generated-call - Resumed after compaction at clean checkpoint 76b6b4aa; current target is the generic statement-list/context theorem consuming FocusedGeneratedCallPrefixEvidence rather than adding more bespoke dispatcher/function-body wrapper cases.
+
+- 2026-06-25 02:39:21 PDT - proof/generated-call-semantic-interface - Added `FocusedGeneratedCallSemanticInterface`, bundling the generated callee lookup/prefix evidence with the canonical internal-call, evalValues, and eval equalities, and lifted it to `decodeAndElaborateSolcIr?_semanticInterfaceOfRawOccurrence` from raw decode success. Verification passed: `lake build EvmCompiler.Solidity.RawAstSemantics`, `lake build EvmCompiler.Verification`, architecture guard, touched-file hole/trust scan, axiom audit with only Lean foundations, and `git diff --check`.
+
 - 2026-06-23 10:12 PDT - compaction-resume/raw-frontend-status - Resumed
   under `$verifiable-compiler` to report the raw solc frontend migration
   status from the clean `codex/lean-solc-raw-frontend` checkpoint.

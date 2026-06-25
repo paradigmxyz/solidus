@@ -74,11 +74,14 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedCallPrefixEvidence.call_succ
 #check EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedCallPrefixEvidence.evalValues_succ
 #check EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedCallPrefixEvidence.eval_succ
+#check EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedCallSemanticInterface
+#check EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedCallSemanticInterface.of_prefixEvidence
 #check EvmCompiler.Solidity.RawAst.Elab.codeGeneratedNormalizationEvidence_prefixEvidenceOfCodeRoute
 #check EvmCompiler.Solidity.RawAst.Elab.codeGeneratedNormalizationEvidence_codeRouteOfRawOccurrence
 #check EvmCompiler.Solidity.RawAst.Elab.generatedNormalizationEvidence_codeRouteOfRawOccurrence
 #check EvmCompiler.Solidity.RawAst.Elab.generatedNormalizationEvidence_prefixOfRawOccurrence
 #check EvmCompiler.Solidity.RawAst.Elab.decodeAndElaborateSolcIr?_prefixOfRawOccurrence
+#check EvmCompiler.Solidity.RawAst.Elab.decodeAndElaborateSolcIr?_semanticInterfaceOfRawOccurrence
 #check EvmCompiler.Solidity.RawAst.Elab.decodeAndElaborateSolcIr?_codeRouteOfRawOccurrence
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.StmtElaborationOccurrence
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.StmtListElaborationOccurrence
@@ -315,12 +318,14 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedCallPrefixEvidence.call_succ
 #print axioms EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedCallPrefixEvidence.evalValues_succ
 #print axioms EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedCallPrefixEvidence.eval_succ
+#print axioms EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedCallSemanticInterface.of_prefixEvidence
 #print axioms EvmCompiler.Solidity.RawAst.Elab.codeGeneratedNormalizationEvidence_prefixEvidenceOfCodeRoute
 #print axioms EvmCompiler.Solidity.RawAst.Elab.codeGeneratedNormalizationEvidence_codeRouteOfRawOccurrence
 #print axioms EvmCompiler.Solidity.RawAst.Elab.generatedNormalizationEvidence_codeRouteOfRawOccurrence
 #print axioms EvmCompiler.Solidity.RawAst.Elab.generatedNormalizationEvidence_prefixOfRawOccurrence
 #print axioms EvmCompiler.Solidity.RawAst.Elab.decodeAndElaborateSolcIr?_codeRouteOfRawOccurrence
 #print axioms EvmCompiler.Solidity.RawAst.Elab.decodeAndElaborateSolcIr?_prefixOfRawOccurrence
+#print axioms EvmCompiler.Solidity.RawAst.Elab.decodeAndElaborateSolcIr?_semanticInterfaceOfRawOccurrence
 #print axioms EvmCompiler.Yul.YulOccurrence.StmtListUserCall.exists_split_stmt
 #print axioms EvmCompiler.Yul.YulOccurrence.StmtListUserCall.append_right
 #print axioms EvmCompiler.Yul.YulOccurrence.StmtListUserCall.execSeq_prefix_cons_succ

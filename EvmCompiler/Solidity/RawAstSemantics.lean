@@ -1991,6 +1991,109 @@ theorem eval_succ
 
 end FocusedGeneratedCallPrefixEvidence
 
+structure FocusedGeneratedCallSemanticInterface
+    (ordered : Yul.OrderedProgram)
+    (generated : Name)
+    (params returns : List Name) (body : List Yul.AstStmt)
+    (args : List Yul.AstExpr) (stmts : List Yul.AstStmt)
+    (prefixFuel : Nat) (code : Option Yul.AstContract)
+    (shared : EvmYul.SharedState .Yul)
+    (vars : EvmYul.Yul.VarStore) : Prop where
+  prefixEvidence :
+    FocusedGeneratedCallPrefixEvidence ordered generated params returns
+      body args stmts prefixFuel code shared vars
+  call_succ :
+    ∀ (fuel : Nat) (callArgs : List Word)
+      (source : Yul.InteractionSemantics.State),
+      Yul.InteractionSemantics.call (fuel + 1) callArgs
+          (some generated) (some ordered.program.contract) source =
+        Simulation.Interaction.bind
+          (Yul.InteractionSemantics.exec fuel
+            (.Block body) (some ordered.program.contract)
+            (EvmYul.Yul.State.mkOk
+              (source.initcall params returns callArgs)))
+          (fun stateAfterBody =>
+            pure
+              ((stateAfterBody.reviveJump.overwrite? source).setStore
+                source,
+                List.map stateAfterBody.lookup! returns))
+  evalValues_succ :
+    ∀ (fuel : Nat) (source : Yul.InteractionSemantics.State),
+      Yul.InteractionSemantics.evalValues (fuel + 2)
+          (.Call (.inr generated) args)
+          (some ordered.program.contract) source =
+        Simulation.Interaction.bind
+          (Yul.InteractionSemantics.evalArgs (fuel + 1)
+            args.reverse (some ordered.program.contract) source)
+          (fun argsResult =>
+            Simulation.Interaction.bind
+              (Yul.InteractionSemantics.exec fuel
+                (.Block body) (some ordered.program.contract)
+                (EvmYul.Yul.State.mkOk
+                  (argsResult.1.initcall params returns
+                    argsResult.2.reverse)))
+              (fun stateAfterBody =>
+                pure
+                  ((stateAfterBody.reviveJump.overwrite?
+                      argsResult.1).setStore argsResult.1,
+                    List.map stateAfterBody.lookup! returns)))
+  eval_succ :
+    ∀ (fuel : Nat) (source : Yul.InteractionSemantics.State),
+      Yul.InteractionSemantics.eval (fuel + 2)
+          (.Call (.inr generated) args)
+          (some ordered.program.contract) source =
+        Simulation.Interaction.bind
+          (Simulation.Interaction.bind
+            (Yul.InteractionSemantics.evalArgs (fuel + 1)
+              args.reverse (some ordered.program.contract) source)
+            (fun argsResult =>
+              Simulation.Interaction.bind
+                (Yul.InteractionSemantics.exec fuel
+                  (.Block body) (some ordered.program.contract)
+                  (EvmYul.Yul.State.mkOk
+                    (argsResult.1.initcall params returns
+                      argsResult.2.reverse)))
+                (fun stateAfterBody =>
+                  pure
+                    ((stateAfterBody.reviveJump.overwrite?
+                        argsResult.1).setStore argsResult.1,
+                      List.map stateAfterBody.lookup! returns))))
+          (fun result => pure (result.1, result.2.head!))
+
+namespace FocusedGeneratedCallSemanticInterface
+
+theorem of_prefixEvidence
+    {ordered : Yul.OrderedProgram}
+    {generated : Name}
+    {params returns : List Name} {body : List Yul.AstStmt}
+    {args : List Yul.AstExpr} {stmts : List Yul.AstStmt}
+    {prefixFuel : Nat} {code : Option Yul.AstContract}
+    {shared : EvmYul.SharedState .Yul}
+    {vars : EvmYul.Yul.VarStore}
+    (hEvidence :
+      FocusedGeneratedCallPrefixEvidence ordered generated params returns
+        body args stmts prefixFuel code shared vars) :
+    FocusedGeneratedCallSemanticInterface ordered generated params returns
+      body args stmts prefixFuel code shared vars := by
+  exact
+    { prefixEvidence := hEvidence
+      call_succ := by
+        intro fuel callArgs source
+        exact
+          FocusedGeneratedCallPrefixEvidence.call_succ hEvidence fuel
+            callArgs source
+      evalValues_succ := by
+        intro fuel source
+        exact
+          FocusedGeneratedCallPrefixEvidence.evalValues_succ hEvidence fuel
+            source
+      eval_succ := by
+        intro fuel source
+        exact
+          FocusedGeneratedCallPrefixEvidence.eval_succ hEvidence fuel source }
+
+end FocusedGeneratedCallSemanticInterface
+
 def FocusedGeneratedStmtListCallPrefix
     (state : State) (ordered : Yul.OrderedProgram)
     (generated : Name) (fn : Frontend.FunctionDef)
@@ -3714,6 +3817,80 @@ theorem decodeAndElaborateSolcIr?_prefixOfRawOccurrence
     ⟨json, selected, object, hParse, hSelected, hObject, hProgram,
       generatedNormalizationEvidence_prefixOfRawOccurrence hEvidence
         hObjectConvert⟩
+
+theorem decodeAndElaborateSolcIr?_semanticInterfaceOfRawOccurrence
+    {rawJson : String} {selection : Selection}
+    {program : Frontend.Program} {ordered : Yul.OrderedProgram}
+    (hDecode :
+      decodeAndElaborateSolcIr? rawJson selection = some program)
+    (hConvert : program.object.toSolcYulOrderedProgram? = some ordered) :
+    ∃ (json : Lean.Json) (selected : SelectedIr)
+        (object : Frontend.Object),
+      Lean.Json.parse rawJson = .ok json ∧
+        decodeSelectedIr json selection = .ok selected ∧
+          selected.root.elaborate? selected.evmVersion = .ok object ∧
+            program =
+              { source := selected.source
+                contract := selected.contract
+                object := object } ∧
+              match selected.root.code? with
+              | none => True
+              | some code =>
+                  ∃ (coreDispatcher : List Frontend.Stmt) (state : State)
+                      (helper? arg? ret? : Option Name),
+                    elaborateCodeCore code = .ok (coreDispatcher, state) ∧
+                      elaborateCode code =
+                        .ok (object.dispatcher, object.functions,
+                          helper?, arg?, ret?) ∧
+                        ∀ {functionName : Name}
+                            {rawArgs : List Raw.Expr},
+                          RawOccurrence.StmtListUserCall functionName
+                            rawArgs code →
+                            functionName ≠ "memoryguard" →
+                              functionName ≠ "clz" →
+                                CallClass.classifyCall functionName =
+                                  .user →
+                                  ∃ (generated : Name)
+                                    (frontendArgs : List Frontend.Expr),
+                                    ∀ {fuel : Nat}
+                                        {shared : EvmYul.SharedState .Yul}
+                                        {vars : EvmYul.Yul.VarStore},
+                                      ∃ (params returns : List Name)
+                                        (body : List Yul.AstStmt)
+                                        (yulArgs : List Yul.AstExpr)
+                                        (stmts : List Yul.AstStmt),
+                                        FocusedGeneratedCallSemanticInterface
+                                          ordered generated params returns
+                                          body yulArgs stmts fuel
+                                          (some
+                                            ordered.program.contract)
+                                          shared vars := by
+  rcases decodeAndElaborateSolcIr?_prefixOfRawOccurrence hDecode hConvert with
+    ⟨json, selected, object, hParse, hSelected, hObject, hProgram, hPrefix⟩
+  refine ⟨json, selected, object, hParse, hSelected, hObject, hProgram, ?_⟩
+  cases hRawCode : selected.root.code? with
+  | none =>
+      simp [hRawCode]
+  | some code =>
+      rw [hRawCode] at hPrefix
+      rcases hPrefix with
+        ⟨coreDispatcher, state, helper?, arg?, ret?, hCore, hElab,
+          hOccurrencePrefix⟩
+      refine
+        ⟨coreDispatcher, state, helper?, arg?, ret?, hCore, hElab, ?_⟩
+      intro functionName rawArgs hOccurrence hNotMemoryguard hNotClz
+        hKind
+      rcases hOccurrencePrefix hOccurrence hNotMemoryguard hNotClz
+          hKind with
+        ⟨generated, frontendArgs, hGenerated⟩
+      refine ⟨generated, frontendArgs, ?_⟩
+      intro fuel shared vars
+      rcases hGenerated with
+        ⟨params, returns, body, yulArgs, stmts, hEvidence⟩
+      exact
+        ⟨params, returns, body, yulArgs, stmts,
+          FocusedGeneratedCallSemanticInterface.of_prefixEvidence
+            hEvidence⟩
 
 theorem decodeAndElaborateSolcIr?_codeRouteOfRawOccurrence
     {rawJson : String} {selection : Selection}
