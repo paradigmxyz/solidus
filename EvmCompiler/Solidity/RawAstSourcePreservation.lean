@@ -58,6 +58,18 @@ theorem rawObjectRun_some_code
   exact Raw.SourceSemantics.ExecObjectCode.code_some
     fuel (Raw.SourceSemantics.contextForObject context) object state hCode
 
+theorem rawObjectRun_some_code_succ
+    {fuel : Nat} {context : Frontend.ObjectBuiltinContext}
+    {object : Raw.Object} {state : State}
+    {code : List Raw.Stmt}
+    (hCode : object.code? = some code) :
+    rawObjectRun (fuel + 1) context object state =
+      Raw.SourceSemantics.execBlock (fuel + 1)
+        (Raw.SourceSemantics.contextForObject context) code state := by
+  unfold rawObjectRun
+  exact Raw.SourceSemantics.ExecObjectCode.code_some_succ
+    fuel (Raw.SourceSemantics.contextForObject context) object state hCode
+
 /-- Finite-prefix preservation from raw solc Yul execution to ordered Yul
 execution for one selected object/context/fuel pair. -/
 def RunForward (rawFuel orderedFuel : Nat)

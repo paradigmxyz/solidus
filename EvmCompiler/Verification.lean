@@ -96,6 +96,7 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.RawAst.Raw.SourceSemantics.Exec.assignment_succ
 #check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.rawObjectRun_none_code
 #check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.rawObjectRun_some_code
+#check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.rawObjectRun_some_code_succ
 #check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.RunForward
 #check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.ObjectPreserved
 #check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.ObjectPositivePreserved
@@ -846,6 +847,7 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.RawAst.Raw.Object.elaboratePreservingOrder?_sourceLocalFunction_noShadow_function_entries
 #print axioms EvmCompiler.Solidity.RawAst.Raw.SourceSemantics.ExecObjectCode.code_some_succ
 #print axioms EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.rawObjectRun_some_code
+#print axioms EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.rawObjectRun_some_code_succ
 #print axioms EvmCompiler.Solidity.RawAst.Raw.Object.elaborate?_parts
 #print axioms EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIrJson_parts
 #print axioms EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIrJson_objectParts
