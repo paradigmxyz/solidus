@@ -525,6 +525,72 @@ theorem rawSourcePreservedToRawBytecode
         subst rawDone
         exact ⟨orderedError, rfl, hTruncated⟩)
 
+theorem rawSourceCodePreservedToRawBytecode
+    {rawJson : String} {selection : Selection}
+    {artifact : Frontend.Program.Artifact}
+    {rawFuel : Nat}
+    {baseSource : EvmYul.SharedState .Yul}
+    (ctx : ArtifactRawSourceContext rawJson selection artifact)
+    {code : List Raw.Stmt}
+    (hCode : ctx.selected.root.code? = some code)
+    (hCodeRun :
+      CodePositivePreserved ctx.context code
+        artifact.codeArtifact.ordered) :
+    ∃ structuredFuel : Nat,
+      Assembly.Accepted artifact.codeArtifact.compiled.certified.target ∧
+        Simulation.Interaction.ForwardRel
+          Yul.FunctionsInteractionPrimitive.Truncated
+          (RawSourceBytecodePrefixDoneRel artifact)
+          (rawObjectRun (rawFuel + 1) ctx.context ctx.selected.root
+            (Yul.EndToEnd.installedSourceState artifact baseSource))
+          (Assembly.Compact.InteractionSemantics.openRunNResult
+            (Assembly.Bytecode.ofList artifact.image.bytes)
+            (2 *
+              ((Structured.InteractionStaticCost.blockBudget
+                  artifact.codeArtifact.compiled.expressions.toStructured
+                  structuredFuel
+                  artifact.codeArtifact.compiled.expressions.toStructured.body +
+                    1) *
+                TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
+                  artifact.codeArtifact.compiled.cfg))
+            { (Yul.EndToEnd.initialExpressionsState artifact baseSource).evm with
+              pc := EvmYul.UInt256.ofNat 0 }) :=
+  rawSourcePreservedToRawBytecode
+    (ctx.withSourceCodePreserved hCode hCodeRun)
+
+theorem rawSourceCodeEquivalentToRawBytecode
+    {rawJson : String} {selection : Selection}
+    {artifact : Frontend.Program.Artifact}
+    {rawFuel : Nat}
+    {baseSource : EvmYul.SharedState .Yul}
+    (ctx : ArtifactRawSourceContext rawJson selection artifact)
+    {code : List Raw.Stmt}
+    (hCode : ctx.selected.root.code? = some code)
+    (hCodeRun :
+      CodePositiveRunEquivalent ctx.context code
+        artifact.codeArtifact.ordered) :
+    ∃ structuredFuel : Nat,
+      Assembly.Accepted artifact.codeArtifact.compiled.certified.target ∧
+        Simulation.Interaction.ForwardRel
+          Yul.FunctionsInteractionPrimitive.Truncated
+          (RawSourceBytecodePrefixDoneRel artifact)
+          (rawObjectRun (rawFuel + 1) ctx.context ctx.selected.root
+            (Yul.EndToEnd.installedSourceState artifact baseSource))
+          (Assembly.Compact.InteractionSemantics.openRunNResult
+            (Assembly.Bytecode.ofList artifact.image.bytes)
+            (2 *
+              ((Structured.InteractionStaticCost.blockBudget
+                  artifact.codeArtifact.compiled.expressions.toStructured
+                  structuredFuel
+                  artifact.codeArtifact.compiled.expressions.toStructured.body +
+                    1) *
+                TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
+                  artifact.codeArtifact.compiled.cfg))
+            { (Yul.EndToEnd.initialExpressionsState artifact baseSource).evm with
+              pc := EvmYul.UInt256.ofNat 0 }) :=
+  rawSourceCodePreservedToRawBytecode
+    ctx hCode hCodeRun.preserved
+
 end SourcePreservation
 end Raw
 end RawAst
