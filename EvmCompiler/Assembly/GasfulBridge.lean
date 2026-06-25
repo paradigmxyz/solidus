@@ -1845,6 +1845,50 @@ theorem prim_revert_step_after_dynamic_of_pop2
     binaryMachineStateStepState, hPop]
   rfl
 
+theorem prim_return_step_after_dynamic_stackUnderflow
+    {state : EVMState}
+    (hShort : state.stack.length < 2) :
+    Assembly.PrimOp.return.step (afterDynamicChargeAt state) =
+      .error EvmYul.EVM.ExecutionException.StackUnderflow := by
+  have hShortCharged :
+      (afterDynamicChargeAt state).stack.length < 2 := by
+    simpa [afterDynamicChargeAt, afterMemoryChargeAt, chargeGas] using hShort
+  have hPop :
+      (afterDynamicChargeAt state).stack.pop2 = none := by
+    cases hPop : (afterDynamicChargeAt state).stack.pop2 with
+    | none => rfl
+    | some popped =>
+        rcases popped with ⟨rest, μ₀, μ₁⟩
+        have hLen := PrimStep.Stack.length_of_pop2_some hPop
+        omega
+  change
+    EvmYul.EVM.binaryMachineStateOp EvmYul.MachineState.evmReturn
+      (afterDynamicChargeAt state) =
+      .error EvmYul.EVM.ExecutionException.StackUnderflow
+  simp [EvmYul.EVM.binaryMachineStateOp, hPop]
+
+theorem prim_revert_step_after_dynamic_stackUnderflow
+    {state : EVMState}
+    (hShort : state.stack.length < 2) :
+    Assembly.PrimOp.revert.step (afterDynamicChargeAt state) =
+      .error EvmYul.EVM.ExecutionException.StackUnderflow := by
+  have hShortCharged :
+      (afterDynamicChargeAt state).stack.length < 2 := by
+    simpa [afterDynamicChargeAt, afterMemoryChargeAt, chargeGas] using hShort
+  have hPop :
+      (afterDynamicChargeAt state).stack.pop2 = none := by
+    cases hPop : (afterDynamicChargeAt state).stack.pop2 with
+    | none => rfl
+    | some popped =>
+        rcases popped with ⟨rest, μ₀, μ₁⟩
+        have hLen := PrimStep.Stack.length_of_pop2_some hPop
+        omega
+  change
+    EvmYul.EVM.binaryMachineStateOp EvmYul.MachineState.evmRevert
+      (afterDynamicChargeAt state) =
+      .error EvmYul.EVM.ExecutionException.StackUnderflow
+  simp [EvmYul.EVM.binaryMachineStateOp, hPop]
+
 theorem afterDynamic_pop2_of_afterEVMInstruction_pop2
     {state : EVMState} {stack : EvmYul.Stack Word} {μ₀ μ₁ : Word}
     (hPop :
@@ -2650,6 +2694,82 @@ theorem raw_continuing_prim_staticModeViolation_executes_after_charges
       (.error EvmYul.EVM.ExecutionException.StaticModeViolation :
         Except EVMException StepResult))
 
+theorem raw_return_stackUnderflow_executes_after_charges
+    {bytes : ByteArray} {pc : Nat} {state : EVMState}
+    (hShort : state.stack.length < 2)
+    (hDecode : Compact.decodeAt bytes pc (.prim .return))
+    (hPc : (afterDynamicChargeAt state).pc = EvmYul.UInt256.ofNat pc) :
+    Interaction.Executes
+      (Compact.InteractionSemantics.openRunNResult
+        bytes 1 (afterDynamicChargeAt state))
+      []
+      (.error EvmYul.EVM.ExecutionException.StackUnderflow) := by
+  have hPrim :
+      Assembly.PrimOp.return.step (afterDynamicChargeAt state) =
+        .error EvmYul.EVM.ExecutionException.StackUnderflow :=
+    prim_return_step_after_dynamic_stackUnderflow hShort
+  have hOpen :
+      Assembly.InteractionSemantics.PrimOp.openStep
+          .return (afterDynamicChargeAt state) =
+        Simulation.Interaction.done
+          (.error EvmYul.EVM.ExecutionException.StackUnderflow) := by
+    simp [Assembly.InteractionSemantics.PrimOp.openStep,
+      Assembly.PrimOp.toEVM,
+      Simulation.ExternalKind.ofEVMOperation?,
+      Simulation.CallKind.ofEVMOperation?,
+      Simulation.CreateKind.ofEVMOperation?, hPrim]
+  rw [Compact.InteractionSemantics.openRunNResult_one_eq_instr
+    (instr := .prim .return) trivial hDecode hPc]
+  simpa [Compact.Instr.openStepResult, Compact.Instr.openStep,
+    Assembly.InteractionSemantics.Target.openStepInstrResult,
+    Assembly.Target.stepInstrResultWith,
+    Assembly.InteractionSemantics.Target.openStepInstr,
+    Assembly.Target.stepInstrWith, hOpen,
+    Simulation.Interaction.bind,
+    Simulation.Interaction.bind_done_error,
+    Assembly.PrimOp.haltKind?, Compact.Instr.haltKind?] using
+    (Interaction.Executes.done
+      (.error EvmYul.EVM.ExecutionException.StackUnderflow :
+        Except EVMException StepResult))
+
+theorem raw_revert_stackUnderflow_executes_after_charges
+    {bytes : ByteArray} {pc : Nat} {state : EVMState}
+    (hShort : state.stack.length < 2)
+    (hDecode : Compact.decodeAt bytes pc (.prim .revert))
+    (hPc : (afterDynamicChargeAt state).pc = EvmYul.UInt256.ofNat pc) :
+    Interaction.Executes
+      (Compact.InteractionSemantics.openRunNResult
+        bytes 1 (afterDynamicChargeAt state))
+      []
+      (.error EvmYul.EVM.ExecutionException.StackUnderflow) := by
+  have hPrim :
+      Assembly.PrimOp.revert.step (afterDynamicChargeAt state) =
+        .error EvmYul.EVM.ExecutionException.StackUnderflow :=
+    prim_revert_step_after_dynamic_stackUnderflow hShort
+  have hOpen :
+      Assembly.InteractionSemantics.PrimOp.openStep
+          .revert (afterDynamicChargeAt state) =
+        Simulation.Interaction.done
+          (.error EvmYul.EVM.ExecutionException.StackUnderflow) := by
+    simp [Assembly.InteractionSemantics.PrimOp.openStep,
+      Assembly.PrimOp.toEVM,
+      Simulation.ExternalKind.ofEVMOperation?,
+      Simulation.CallKind.ofEVMOperation?,
+      Simulation.CreateKind.ofEVMOperation?, hPrim]
+  rw [Compact.InteractionSemantics.openRunNResult_one_eq_instr
+    (instr := .prim .revert) trivial hDecode hPc]
+  simpa [Compact.Instr.openStepResult, Compact.Instr.openStep,
+    Assembly.InteractionSemantics.Target.openStepInstrResult,
+    Assembly.Target.stepInstrResultWith,
+    Assembly.InteractionSemantics.Target.openStepInstr,
+    Assembly.Target.stepInstrWith, hOpen,
+    Simulation.Interaction.bind,
+    Simulation.Interaction.bind_done_error,
+    Assembly.PrimOp.haltKind?, Compact.Instr.haltKind?] using
+    (Interaction.Executes.done
+      (.error EvmYul.EVM.ExecutionException.StackUnderflow :
+        Except EVMException StepResult))
+
 theorem raw_return_executes_after_charges
     {fuel : Nat} {bytes : ByteArray} {pc : Nat}
     {state gasfulFinal : EVMState}
@@ -3161,6 +3281,74 @@ theorem runRefinesOpen_continuing_prim_stackUnderflow_after_gas_checks
       (op := op) (step := step) (bytes := bytes)
       (pc := pc) (state := state)
       hStep hMsize hStaticPermits hShort hDecode hPc
+  have hExec :=
+    Compact.InteractionSemantics.openRunNResult_error_add_executes
+      (extra := fuel) hOne
+  apply RunRefinesOpen.completed
+  · simpa [Nat.add_comm] using hExec
+  · exact DoneRel.sameError
+
+theorem runRefinesOpen_return_stackUnderflow_after_gas_checks
+    {fuel : Nat} {validJumps : Array Word}
+    {bytes : ByteArray} {pc : Nat} {state : EVMState}
+    (hGas : XGasChecksPass state)
+    (hReturn : decodedOperationAt state = EvmYul.Operation.RETURN)
+    (hShort : state.stack.length < 2)
+    (hDecode : Compact.decodeAt bytes pc (.prim .return))
+    (hPc : (afterDynamicChargeAt state).pc = EvmYul.UInt256.ofNat pc) :
+    RunRefinesOpen
+      (EvmYul.EVM.X (fuel + 1) validJumps state)
+      (Compact.InteractionSemantics.openRunNResult
+        bytes (fuel + 1) (afterDynamicChargeAt state))
+      [] := by
+  have hOpcodeValid :
+      EvmYul.EVM.δ (decodedOperationAt state) ≠ none := by
+    simp [hReturn, EvmYul.EVM.δ]
+  have hShortDecoded :
+      state.stack.length <
+        (EvmYul.EVM.δ (decodedOperationAt state)).getD 0 := by
+    simpa [hReturn, EvmYul.EVM.δ] using hShort
+  rw [x_stack_underflow_after_gas_opcode_check
+    (fuel := fuel) (validJumps := validJumps) (state := state)
+    hGas hOpcodeValid hShortDecoded]
+  have hOne :=
+    raw_return_stackUnderflow_executes_after_charges
+      (bytes := bytes) (pc := pc) (state := state)
+      hShort hDecode hPc
+  have hExec :=
+    Compact.InteractionSemantics.openRunNResult_error_add_executes
+      (extra := fuel) hOne
+  apply RunRefinesOpen.completed
+  · simpa [Nat.add_comm] using hExec
+  · exact DoneRel.sameError
+
+theorem runRefinesOpen_revert_stackUnderflow_after_gas_checks
+    {fuel : Nat} {validJumps : Array Word}
+    {bytes : ByteArray} {pc : Nat} {state : EVMState}
+    (hGas : XGasChecksPass state)
+    (hRevert : decodedOperationAt state = EvmYul.Operation.REVERT)
+    (hShort : state.stack.length < 2)
+    (hDecode : Compact.decodeAt bytes pc (.prim .revert))
+    (hPc : (afterDynamicChargeAt state).pc = EvmYul.UInt256.ofNat pc) :
+    RunRefinesOpen
+      (EvmYul.EVM.X (fuel + 1) validJumps state)
+      (Compact.InteractionSemantics.openRunNResult
+        bytes (fuel + 1) (afterDynamicChargeAt state))
+      [] := by
+  have hOpcodeValid :
+      EvmYul.EVM.δ (decodedOperationAt state) ≠ none := by
+    simp [hRevert, EvmYul.EVM.δ]
+  have hShortDecoded :
+      state.stack.length <
+        (EvmYul.EVM.δ (decodedOperationAt state)).getD 0 := by
+    simpa [hRevert, EvmYul.EVM.δ] using hShort
+  rw [x_stack_underflow_after_gas_opcode_check
+    (fuel := fuel) (validJumps := validJumps) (state := state)
+    hGas hOpcodeValid hShortDecoded]
+  have hOne :=
+    raw_revert_stackUnderflow_executes_after_charges
+      (bytes := bytes) (pc := pc) (state := state)
+      hShort hDecode hPc
   have hExec :=
     Compact.InteractionSemantics.openRunNResult_error_add_executes
       (extra := fuel) hOne
