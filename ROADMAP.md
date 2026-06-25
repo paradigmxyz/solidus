@@ -80,6 +80,9 @@ Gasful EVM bridge checkpoint:
   `.invalid` raw-bytecode execution for the gasful invalid-instruction precheck,
   plus explicit empty-transcript OOG wrappers for memory charge, dynamic charge,
   `SSTORE` stipend, and CREATE/CREATE2 initcode-size failures.
+- [x] Represent finite target proof-fuel exhaustion honestly as an open
+  transcript-prefix interruption in `RunRefinesOpen`; `EVM.X 0` no longer has
+  to pretend that the open fuel-zero runner raises the same `OutOfFuel` error.
 - [x] Compose invalid `RETURNDATACOPY` into `RunRefinesOpen`: after the ordered
   gasful prechecks and dynamic charge, the actual return-data bounds failure
   resolves to the open raw-bytecode `InvalidMemoryAccess` error.

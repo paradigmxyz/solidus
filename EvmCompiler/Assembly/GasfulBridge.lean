@@ -5679,6 +5679,10 @@ inductive RunRefinesOpen
       gasful = .error EvmYul.EVM.ExecutionException.OutOfGass →
       Interaction.Follows openRun transcript →
       RunRefinesOpen gasful openRun transcript
+  | outOfFuel {transcript} :
+      gasful = .error EvmYul.EVM.ExecutionException.OutOfFuel →
+      Interaction.Follows openRun transcript →
+      RunRefinesOpen gasful openRun transcript
   | badJumpDestination {transcript} :
       gasful = .error EvmYul.EVM.ExecutionException.BadJumpDestination →
       Interaction.Follows openRun transcript →
@@ -5728,6 +5732,9 @@ theorem runRefinesOpen_bind_running_prefix
       · exact hDone
   | outOfGas hGas hFollow =>
       apply RunRefinesOpen.outOfGas hGas
+      exact Interaction.Follows.bind_ok hFirst hFollow
+  | outOfFuel hFuel hFollow =>
+      apply RunRefinesOpen.outOfFuel hFuel
       exact Interaction.Follows.bind_ok hFirst hFollow
   | badJumpDestination hBad hFollow =>
       apply RunRefinesOpen.badJumpDestination hBad
@@ -5974,6 +5981,19 @@ theorem runRefinesOpen_jumpdest_step
                   Compact.InteractionSemantics.openRunNResult bytes fuel mid
               | .halted halt => Interaction.pure (.halted halt))
             hFirst hFollow)
+  | outOfFuel hFuel hFollow =>
+      apply RunRefinesOpen.outOfFuel hFuel
+      rw [Compact.InteractionSemantics.openRunNResult_succ]
+      simpa using
+        (Interaction.Follows.bind_ok
+          (first := Compact.InteractionSemantics.openStepResult
+            bytes (afterDynamicChargeAt state))
+          (next := fun result =>
+            match result with
+            | .running mid =>
+                Compact.InteractionSemantics.openRunNResult bytes fuel mid
+            | .halted halt => Interaction.pure (.halted halt))
+          hFirst hFollow)
   | badJumpDestination hBad hFollow =>
       apply RunRefinesOpen.badJumpDestination hBad
       rw [Compact.InteractionSemantics.openRunNResult_succ]
@@ -6830,6 +6850,21 @@ theorem runRefinesOpen_continuing_prim_success
                     bytes (fuel + 1) mid
               | .halted halt => Interaction.pure (.halted halt))
             hFirst hFollow)
+    | outOfFuel hFuel hFollow =>
+        apply RunRefinesOpen.outOfFuel hFuel
+        rw [show fuel + 1 + 1 = 1 + (fuel + 1) by omega]
+        rw [Compact.InteractionSemantics.openRunNResult_add]
+        simpa using
+          (Interaction.Follows.bind_ok
+            (first := Compact.InteractionSemantics.openRunNResult
+              bytes 1 (afterDynamicChargeAt state))
+            (next := fun result =>
+              match result with
+              | .running mid =>
+                  Compact.InteractionSemantics.openRunNResult
+                    bytes (fuel + 1) mid
+              | .halted halt => Interaction.pure (.halted halt))
+            hFirst hFollow)
     | badJumpDestination hBad hFollow =>
         apply RunRefinesOpen.badJumpDestination hBad
         rw [show fuel + 1 + 1 = 1 + (fuel + 1) by omega]
@@ -7218,6 +7253,22 @@ theorem runRefinesOpen_outOfGas_prefix
       (.error EvmYul.EVM.ExecutionException.OutOfGass)
       openRun transcript :=
   .outOfGas rfl hFollows
+
+theorem runRefinesOpen_outOfFuel_prefix
+    {openRun : Interaction EVMException StepResult}
+    {transcript : Interaction.Transcript}
+    (hFollows : Interaction.Follows openRun transcript) :
+    RunRefinesOpen
+      (.error EvmYul.EVM.ExecutionException.OutOfFuel)
+      openRun transcript :=
+  .outOfFuel rfl hFollows
+
+theorem runRefinesOpen_zero
+    {validJumps : Array Word} {state : EVMState}
+    {openRun : Interaction EVMException StepResult} :
+    RunRefinesOpen (EvmYul.EVM.X 0 validJumps state) openRun [] := by
+  apply RunRefinesOpen.outOfFuel rfl
+  exact Interaction.Follows.nil openRun
 
 theorem runRefinesOpen_badJumpDestination_prefix
     {openRun : Interaction EVMException StepResult}
