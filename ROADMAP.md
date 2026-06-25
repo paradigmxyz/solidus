@@ -164,8 +164,11 @@ Next raw frontend layer:
   .toSolcYulOrderedProgram?_functionLookup_of_mem` and
   `Elab.clzHelperYulInterface_orderedLookup` then place the generated helper
   at the actual validated ordered-Yul contract callee lookup boundary.
-  Semantic preservation of the helper and nested
-  hoist/alpha-renaming passes remains open.
+  `RawAstSemantics.clzHelperYulInterface_call_succ` connects that lookup to
+  the Yul internal-call evaluator, exposing execution of the generated helper
+  body under `initcall` and caller-frame restoration after return. Arithmetic
+  correctness of the helper body and nested hoist/alpha-renaming semantic
+  preservation remain open.
 - [x] Expose the production interface
   `decodeAndElaborateSolcIr? rawJson selection = some frontendProgram` without
   public certificate premises, and expose artifact-facing raw wrappers whose
