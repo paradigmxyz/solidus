@@ -66,15 +66,21 @@ def lookupFunctionInScope (name : FunctionName) :
   | (headName, fn) :: rest =>
       if headName == name then some fn else lookupFunctionInScope name rest
 
+def lookupFunctionWithLexicalScopesIn (name : FunctionName) :
+    List FunctionScope → Option (FunctionDef × List FunctionScope)
+  | [] => none
+  | scope :: rest =>
+      match lookupFunctionInScope name scope with
+      | some fn => some (fn, scope :: rest)
+      | none => lookupFunctionWithLexicalScopesIn name rest
+
+def lookupFunctionWithLexicalScopes (ctx : Context) (name : FunctionName) :
+    Option (FunctionDef × List FunctionScope) :=
+  lookupFunctionWithLexicalScopesIn name ctx.functionScopes
+
 def lookupFunction (ctx : Context) (name : FunctionName) :
     Option FunctionDef :=
-  let rec go : List FunctionScope → Option FunctionDef
-    | [] => none
-    | scope :: rest =>
-        match lookupFunctionInScope name scope with
-        | some fn => some fn
-        | none => go rest
-  go ctx.functionScopes
+  (lookupFunctionWithLexicalScopes ctx name).map Prod.fst
 
 def functionScope? : List Stmt → Option FunctionScope
   | [] => some []
@@ -232,14 +238,14 @@ mutual
     match fuel with
     | 0 => fail state .OutOfFuel
     | fuel' + 1 =>
-        match lookupFunction ctx functionName with
+        match lookupFunctionWithLexicalScopes ctx functionName with
         | none => fail state (.MissingContractFunction functionName)
-        | some fn => do
+        | some (fn, lexicalScopes) => do
             let sourceAtEntry :=
               EvmYul.Yul.State.mkOk
                 (state.initcall fn.params fn.returns args)
             let stateAfterBody ←
-              execBlock fuel' ctx fn.body
+              execBlock fuel' { ctx with functionScopes := lexicalScopes } fn.body
                 (Yul.InteractionSemantics.stateModel.withSource
                   state sourceAtEntry)
             let sourceAfterCall :=
@@ -447,6 +453,57 @@ theorem code_some_succ
 
 end ExecObjectCode
 
+namespace LookupFunctionWithLexicalScopes
+
+theorem head
+    (ctx : Context) (name : FunctionName) (scope : FunctionScope)
+    (fn : FunctionDef)
+    (hLookup : lookupFunctionInScope name scope = some fn) :
+    lookupFunctionWithLexicalScopes
+        { ctx with functionScopes := scope :: ctx.functionScopes } name =
+      some (fn, scope :: ctx.functionScopes) := by
+  simp [lookupFunctionWithLexicalScopes,
+    lookupFunctionWithLexicalScopesIn, hLookup]
+
+theorem tail
+    (ctx : Context) (name : FunctionName) (scope : FunctionScope)
+    (hLookup : lookupFunctionInScope name scope = none) :
+    lookupFunctionWithLexicalScopes
+        { ctx with functionScopes := scope :: ctx.functionScopes } name =
+      lookupFunctionWithLexicalScopes ctx name := by
+  simp [lookupFunctionWithLexicalScopes,
+    lookupFunctionWithLexicalScopesIn, hLookup]
+
+end LookupFunctionWithLexicalScopes
+
+namespace LexicalScopeRegression
+
+private def outerFunction : FunctionDef :=
+  { params := [], returns := [], body := [] }
+
+private def outerTarget : FunctionDef :=
+  { params := [], returns := [], body := [.leave] }
+
+private def callerLocalTarget : FunctionDef :=
+  { params := [], returns := [], body := [.break] }
+
+private def outerScope : FunctionScope :=
+  [("f", outerFunction), ("g", outerTarget)]
+
+private def callerLocalScope : FunctionScope :=
+  [("g", callerLocalTarget)]
+
+/-- Looking up an outer function from a nested caller drops the caller's local
+function frame. Calls made by `f` therefore resolve `g` in `outerScope`, where
+`f` was defined, rather than in `callerLocalScope`. -/
+theorem outer_function_captures_definition_suffix :
+    lookupFunctionWithLexicalScopes
+        { functionScopes := [callerLocalScope, outerScope] } "f" =
+      some (outerFunction, [outerScope]) := by
+  rfl
+
+end LexicalScopeRegression
+
 @[simp] theorem evalArgs_zero
     (ctx : Context) (args : List Expr) (state : State) :
     evalArgs 0 ctx args state = fail state .OutOfFuel := by
@@ -600,6 +657,31 @@ theorem datacopy_succ
   simp [evalObjectBuiltin, hOp]
 
 end EvalObjectBuiltin
+
+namespace Call
+
+theorem explicit_succ
+    (fuel : Nat) (ctx : Context) (args : List Word)
+    (functionName : FunctionName) (state : State)
+    (fn : FunctionDef) (lexicalScopes : List FunctionScope)
+    (hLookup :
+      lookupFunctionWithLexicalScopes ctx functionName =
+        some (fn, lexicalScopes)) :
+    call (fuel + 1) ctx args functionName state =
+      (do
+        let sourceAtEntry :=
+          EvmYul.Yul.State.mkOk
+            (state.initcall fn.params fn.returns args)
+        let stateAfterBody ←
+          execBlock fuel { ctx with functionScopes := lexicalScopes } fn.body
+            (Yul.InteractionSemantics.stateModel.withSource
+              state sourceAtEntry)
+        let sourceAfterCall :=
+          (stateAfterBody.reviveJump.overwrite? state).setStore state
+        pure (sourceAfterCall, fn.returns.map stateAfterBody.lookup!)) := by
+  simp [call, hLookup]
+
+end Call
 
 namespace ExecSeq
 
