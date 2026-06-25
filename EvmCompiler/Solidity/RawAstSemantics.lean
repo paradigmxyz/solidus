@@ -4125,11 +4125,12 @@ theorem codeGeneratedNormalizationEvidence_clzCodeRouteOfRawOccurrence
           ∀ {rawArg : Raw.Expr},
             RawOccurrence.StmtListClzCall rawArg code →
               ∃ (helper : Name) (frontendArg : Frontend.Expr),
+                helper? = some helper ∧
                 RawOccurrence.CodeElaborationRoute state helper
                   [frontendArg] object.dispatcher := by
   rcases hEvidence with
     ⟨coreDispatcher, state, helper?, arg?, ret?, hCore, hElab,
-      _hFunctions, _hHelper, _hArg, _hRet, _hDistinct, _hClz,
+      _hFunctions, hHelper, _hArg, _hRet, _hDistinct, _hClz,
       _hInterface, _hHoistedRetained⟩
   have hDispatcherEq : object.dispatcher = coreDispatcher := by
     rcases elaborateCode_parts hElab with
@@ -4142,8 +4143,12 @@ theorem codeGeneratedNormalizationEvidence_clzCodeRouteOfRawOccurrence
   intro rawArg hOccurrence
   rcases RawOccurrence.Elab.elaborateCodeCore_clzCodeRoute hCore
       hOccurrence with
-    ⟨helper, frontendArg, hRoute⟩
-  exact ⟨helper, frontendArg, by simpa [hDispatcherEq] using hRoute⟩
+    ⟨helper, frontendArg, hStateHelper, hRoute⟩
+  have hHelperOpt : helper? = some helper :=
+    hHelper.trans hStateHelper
+  exact
+    ⟨helper, frontendArg, hHelperOpt,
+      by simpa [hDispatcherEq] using hRoute⟩
 
 theorem generatedNormalizationEvidence_clzCodeRouteOfRawOccurrence
     {raw : Raw.Object} {object : Frontend.Object}
@@ -4160,6 +4165,7 @@ theorem generatedNormalizationEvidence_clzCodeRouteOfRawOccurrence
               ∀ {rawArg : Raw.Expr},
                 RawOccurrence.StmtListClzCall rawArg code →
                   ∃ (helper : Name) (frontendArg : Frontend.Expr),
+                    helper? = some helper ∧
                     RawOccurrence.CodeElaborationRoute state helper
                       [frontendArg] object.dispatcher := by
   cases hRawCode : raw.code? with
@@ -4173,6 +4179,92 @@ theorem generatedNormalizationEvidence_clzCodeRouteOfRawOccurrence
       exact
         codeGeneratedNormalizationEvidence_clzCodeRouteOfRawOccurrence
           hCodeEvidence
+
+theorem codeGeneratedNormalizationEvidence_clzPrefixOfRawOccurrence
+    {code : List Raw.Stmt} {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    (hEvidence :
+      Raw.Object.CodeGeneratedNormalizationEvidence code object)
+    (hConvert : object.toSolcYulOrderedProgram? = some ordered) :
+    ∃ (coreDispatcher : List Frontend.Stmt) (state : State)
+        (helper? arg? ret? : Option Name),
+      elaborateCodeCore code = .ok (coreDispatcher, state) ∧
+        elaborateCode code =
+          .ok (object.dispatcher, object.functions,
+            helper?, arg?, ret?) ∧
+          ∀ {rawArg : Raw.Expr},
+            RawOccurrence.StmtListClzCall rawArg code →
+              ∃ (helper : Name) (frontendArg : Frontend.Expr),
+                helper? = some helper ∧
+                ∀ {fuel : Nat}
+                    {shared : EvmYul.SharedState .Yul}
+                    {vars : EvmYul.Yul.VarStore},
+                  ∃ (params returns : List Name)
+                    (body : List Yul.AstStmt)
+                    (yulArgs : List Yul.AstExpr)
+                    (stmts : List Yul.AstStmt),
+                    FocusedGeneratedCallPrefixEvidence ordered helper
+                      params returns body yulArgs stmts fuel
+                      (some ordered.program.contract) shared vars := by
+  have hPrefix :
+      ∃ (coreDispatcher : List Frontend.Stmt) (state : State)
+          (helper? arg? ret? : Option Name),
+        elaborateCodeCore code = .ok (coreDispatcher, state) ∧
+          elaborateCode code =
+            .ok (object.dispatcher, object.functions,
+              helper?, arg?, ret?) ∧
+            ∀ {generated : Name} {frontendArgs : List Frontend.Expr}
+                {fuel : Nat} {shared : EvmYul.SharedState .Yul}
+                {vars : EvmYul.Yul.VarStore},
+              RawOccurrence.CodeElaborationRoute state generated
+                frontendArgs object.dispatcher →
+                ∃ (params returns : List Name)
+                  (body : List Yul.AstStmt)
+                  (yulArgs : List Yul.AstExpr)
+                  (stmts : List Yul.AstStmt),
+                  FocusedGeneratedCallPrefixEvidence ordered generated
+                    params returns body yulArgs stmts fuel
+                    (some ordered.program.contract) shared vars := by
+    exact
+      codeGeneratedNormalizationEvidence_prefixEvidenceOfCodeRoute
+        hEvidence hConvert
+  have hRoute :
+      ∃ (coreDispatcher : List Frontend.Stmt) (state : State)
+          (helper? arg? ret? : Option Name),
+        elaborateCodeCore code = .ok (coreDispatcher, state) ∧
+          elaborateCode code =
+            .ok (object.dispatcher, object.functions,
+              helper?, arg?, ret?) ∧
+            ∀ {rawArg : Raw.Expr},
+              RawOccurrence.StmtListClzCall rawArg code →
+                ∃ (helper : Name) (frontendArg : Frontend.Expr),
+                  helper? = some helper ∧
+                  RawOccurrence.CodeElaborationRoute state helper
+                    [frontendArg] object.dispatcher := by
+    exact
+      codeGeneratedNormalizationEvidence_clzCodeRouteOfRawOccurrence
+        hEvidence
+  rcases hPrefix with
+    ⟨coreDispatcher, state, helper?, arg?, ret?, hCore, hPrefixRest⟩
+  rcases hPrefixRest with ⟨hElab, hPrefixRoute⟩
+  rcases hRoute with
+    ⟨coreDispatcherRoute, stateRoute, helperRoute?, argRoute?,
+      retRoute?, hCoreRoute, hRouteRest⟩
+  rcases hRouteRest with ⟨hElabRoute, hRouteOfRaw⟩
+  rw [hCore] at hCoreRoute
+  simp at hCoreRoute
+  rcases hCoreRoute with ⟨hDispatcherEq, hStateEq⟩
+  subst coreDispatcherRoute
+  subst stateRoute
+  refine
+    ⟨coreDispatcher, state, helperRoute?, argRoute?, retRoute?,
+      hCore, hElabRoute, ?_⟩
+  intro rawArg hOccurrence
+  rcases hRouteOfRaw hOccurrence with
+    ⟨helper, frontendArg, hHelperRoute, hRoute⟩
+  exact
+    ⟨helper, frontendArg, hHelperRoute,
+      fun {fuel shared vars} => hPrefixRoute hRoute⟩
 
 theorem generatedNormalizationEvidence_prefixOfRawOccurrence
     {raw : Raw.Object} {object : Frontend.Object}
@@ -4291,6 +4383,7 @@ theorem generatedNormalizationEvidence_clzPrefixOfRawOccurrence
               ∀ {rawArg : Raw.Expr},
                 RawOccurrence.StmtListClzCall rawArg code →
                   ∃ (helper : Name) (frontendArg : Frontend.Expr),
+                    helper? = some helper ∧
                     ∀ {fuel : Nat}
                         {shared : EvmYul.SharedState .Yul}
                         {vars : EvmYul.Yul.VarStore},
@@ -4341,6 +4434,7 @@ theorem generatedNormalizationEvidence_clzPrefixOfRawOccurrence
                 ∀ {rawArg : Raw.Expr},
                   RawOccurrence.StmtListClzCall rawArg code →
                     ∃ (helper : Name) (frontendArg : Frontend.Expr),
+                      helper? = some helper ∧
                       RawOccurrence.CodeElaborationRoute state helper
                         [frontendArg] object.dispatcher := by
         simpa [hRawCode] using
@@ -4358,12 +4452,14 @@ theorem generatedNormalizationEvidence_clzPrefixOfRawOccurrence
       rcases hCoreRoute with ⟨hDispatcherEq, hStateEq⟩
       subst coreDispatcherRoute
       subst stateRoute
-      refine ⟨coreDispatcher, state, helper?, arg?, ret?, hCore, hElab, ?_⟩
+      refine
+        ⟨coreDispatcher, state, helperRoute?, argRoute?, retRoute?,
+          hCore, hElabRoute, ?_⟩
       intro rawArg hOccurrence
       rcases hRouteOfRaw hOccurrence with
-        ⟨helper, frontendArg, hRoute⟩
+        ⟨helper, frontendArg, hHelperRoute, hRoute⟩
       exact
-        ⟨helper, frontendArg,
+        ⟨helper, frontendArg, hHelperRoute,
           fun {fuel shared vars} => hPrefixRoute hRoute⟩
 
 theorem decodeAndElaborateSolcIr?_prefixOfRawOccurrence
@@ -4603,6 +4699,7 @@ theorem decodeAndElaborateSolcIr?_clzPrefixOfRawOccurrence
                           RawOccurrence.StmtListClzCall rawArg code →
                             ∃ (helper : Name)
                               (frontendArg : Frontend.Expr),
+                              helper? = some helper ∧
                               ∀ {fuel : Nat}
                                   {shared : EvmYul.SharedState .Yul}
                                   {vars : EvmYul.Yul.VarStore},
@@ -4655,6 +4752,7 @@ theorem decodeAndElaborateSolcIr?_clzSemanticInterfaceOfRawOccurrence
                           RawOccurrence.StmtListClzCall rawArg code →
                             ∃ (helper : Name)
                               (frontendArg : Frontend.Expr),
+                              helper? = some helper ∧
                               ∀ {fuel : Nat}
                                   {shared : EvmYul.SharedState .Yul}
                                   {vars : EvmYul.Yul.VarStore},
@@ -4684,8 +4782,8 @@ theorem decodeAndElaborateSolcIr?_clzSemanticInterfaceOfRawOccurrence
         ⟨coreDispatcher, state, helper?, arg?, ret?, hCore, hElab, ?_⟩
       intro rawArg hOccurrence
       rcases hOccurrencePrefix hOccurrence with
-        ⟨helper, frontendArg, hGenerated⟩
-      refine ⟨helper, frontendArg, ?_⟩
+        ⟨helper, frontendArg, hHelperOpt, hGenerated⟩
+      refine ⟨helper, frontendArg, hHelperOpt, ?_⟩
       intro fuel shared vars
       rcases hGenerated with
         ⟨params, returns, body, yulArgs, stmts, hEvidence⟩
@@ -4722,6 +4820,7 @@ theorem decodeAndElaborateSolcIr?_clzRecursiveExecutionOfRawOccurrence
                           RawOccurrence.StmtListClzCall rawArg code →
                             ∃ (helper : Name)
                               (frontendArg : Frontend.Expr),
+                              helper? = some helper ∧
                               ∀ {fuel : Nat}
                                   {shared : EvmYul.SharedState .Yul}
                                   {vars : EvmYul.Yul.VarStore},
@@ -4752,8 +4851,8 @@ theorem decodeAndElaborateSolcIr?_clzRecursiveExecutionOfRawOccurrence
         ⟨coreDispatcher, state, helper?, arg?, ret?, hCore, hElab, ?_⟩
       intro rawArg hOccurrence
       rcases hOccurrenceSemantic hOccurrence with
-        ⟨helper, frontendArg, hGenerated⟩
-      refine ⟨helper, frontendArg, ?_⟩
+        ⟨helper, frontendArg, hHelperOpt, hGenerated⟩
+      refine ⟨helper, frontendArg, hHelperOpt, ?_⟩
       intro fuel shared vars
       rcases hGenerated with
         ⟨params, returns, body, yulArgs, stmts, hInterface⟩
@@ -4833,6 +4932,7 @@ theorem decodeAndElaborateSolcIr?_clzCodeRouteOfRawOccurrence
                           RawOccurrence.StmtListClzCall rawArg code →
                             ∃ (helper : Name)
                               (frontendArg : Frontend.Expr),
+                              helper? = some helper ∧
                               RawOccurrence.CodeElaborationRoute state
                                 helper [frontendArg]
                                 object.dispatcher := by

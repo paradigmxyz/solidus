@@ -1892,10 +1892,12 @@ theorem elaborate_clzCodeRoute_exists_of_body
           .ok (frontendBody, stateAfterBody) →
         fn.body = frontendBody →
           ∃ (helper : Name) (frontendArg : Frontend.Expr),
-            CodeElaborationRoute stateAfterBody helper [frontendArg]
-              frontendBody) :
+            stateAfterBody.clzHelperName? = some helper ∧
+              CodeElaborationRoute stateAfterBody helper [frontendArg]
+                frontendBody) :
     ∃ (helper : Name) (frontendArg : Frontend.Expr),
-      CodeElaborationRoute state' helper [frontendArg] fn.body := by
+      state'.clzHelperName? = some helper ∧
+        CodeElaborationRoute state' helper [frontendArg] fn.body := by
   unfold Elab.FunctionDef.elaborate at hElab
   cases hPush : Elab.pushIdentifierScope.run state with
   | error err =>
@@ -1925,9 +1927,22 @@ theorem elaborate_clzCodeRoute_exists_of_body
                   simp [hPush, hDeclare, hBody, hPop] at hElab
                   rcases hElab with ⟨rfl, rfl⟩
                   rcases hBodyRoute hBody rfl with
-                    ⟨helper, frontendArg, hRoute⟩
+                    ⟨helper, frontendArg, hHelperBody, hRoute⟩
+                  have hHelperAtEnd :
+                      stateAfterPop.clzHelperName? = some helper :=
+                    by
+                      cases hScopes :
+                          stateAfterBody.identifierScopes with
+                      | nil =>
+                          simp [Elab.popIdentifierScope, hScopes] at hPop
+                          unfold Elab.throw at hPop
+                          cases hPop
+                      | cons head rest =>
+                          simp [Elab.popIdentifierScope, hScopes] at hPop
+                          rcases hPop with ⟨_hUnit, rfl⟩
+                          exact hHelperBody
                   exact
-                    ⟨helper, frontendArg,
+                    ⟨helper, frontendArg, hHelperAtEnd,
                       CodeElaborationRoute.retain hRoute
                         (fun {entry} hMem => by
                           cases hScopes :
@@ -3901,8 +3916,9 @@ structure ClzCodeRouteBelow (fuel : Nat) : Prop where
       (Elab.Stmt.elaborate rawStmt).run state =
         .ok (frontendStmt, state') →
       ∃ (helper : Name) (frontendArg : Frontend.Expr),
-        StmtCodeElaborationRoute state' helper [frontendArg]
-          frontendStmt
+        state'.clzHelperName? = some helper ∧
+          StmtCodeElaborationRoute state' helper [frontendArg]
+            frontendStmt
   stmtListAfterHoist :
     ∀ {rawArg : Raw.Expr} {rawStmts : List Raw.Stmt}
       {scope : List (Name × Name)}
@@ -3916,7 +3932,8 @@ structure ClzCodeRouteBelow (fuel : Nat) : Prop where
       (Elab.Stmt.List.elaborate rawStmts).run stateAfterHoist =
         .ok (frontendStmts, state') →
       ∃ (helper : Name) (frontendArg : Frontend.Expr),
-        CodeElaborationRoute state' helper [frontendArg] frontendStmts
+        state'.clzHelperName? = some helper ∧
+          CodeElaborationRoute state' helper [frontendArg] frontendStmts
   block :
     ∀ {rawArg : Raw.Expr} {rawStmts : List Raw.Stmt}
       {frontendStmts : List Frontend.Stmt}
@@ -3926,7 +3943,8 @@ structure ClzCodeRouteBelow (fuel : Nat) : Prop where
       (Elab.Stmt.List.elaborateBlock rawStmts createsScope).run state =
         .ok (frontendStmts, state') →
       ∃ (helper : Name) (frontendArg : Frontend.Expr),
-        CodeElaborationRoute state' helper [frontendArg] frontendStmts
+        state'.clzHelperName? = some helper ∧
+          CodeElaborationRoute state' helper [frontendArg] frontendStmts
   forInit :
     ∀ {rawArg : Raw.Expr} {rawStmts : List Raw.Stmt}
       {frontendStmts : List Frontend.Stmt} {state state' : Elab.State},
@@ -3935,7 +3953,8 @@ structure ClzCodeRouteBelow (fuel : Nat) : Prop where
       (Elab.Stmt.List.elaborateForInitBlockWithScope rawStmts).run state =
         .ok (frontendStmts, state') →
       ∃ (helper : Name) (frontendArg : Frontend.Expr),
-        CodeElaborationRoute state' helper [frontendArg] frontendStmts
+        state'.clzHelperName? = some helper ∧
+          CodeElaborationRoute state' helper [frontendArg] frontendStmts
   caseList :
     ∀ {rawArg : Raw.Expr}
       {rawCases : List (Raw.SwitchCaseValue × List Raw.Stmt)}
@@ -3947,8 +3966,9 @@ structure ClzCodeRouteBelow (fuel : Nat) : Prop where
       (Elab.Stmt.CaseList.elaborate rawCases).run state =
         .ok (frontendCases, state') →
       ∃ (helper : Name) (frontendArg : Frontend.Expr),
-        CaseListCodeElaborationRoute state' helper [frontendArg]
-          frontendCases
+        state'.clzHelperName? = some helper ∧
+          CaseListCodeElaborationRoute state' helper [frontendArg]
+            frontendCases
 
 theorem codeRouteBelow_zero : CodeRouteBelow 0 := by
   exact
@@ -7096,9 +7116,12 @@ theorem hoistLocalFunctions_function_route_mem
       (Elab.FunctionDef.elaborate params returns body).run stateBefore =
         .ok (fn, stateAfter) ∧
         (generated, fn) ∈ state'.hoistedFunctions ∧
-          ∀ {entry : Name × Frontend.FunctionDef},
+          (∀ {entry : Name × Frontend.FunctionDef},
             entry ∈ stateAfter.hoistedFunctions →
-              entry ∈ state'.hoistedFunctions := by
+              entry ∈ state'.hoistedFunctions) ∧
+          ∀ {helper : Name},
+            stateAfter.clzHelperName? = some helper →
+              state'.clzHelperName? = some helper := by
   induction rawStmts generalizing state state' generated hLookup with
   | nil =>
       simp at hMem
@@ -7161,9 +7184,20 @@ theorem hoistLocalFunctions_function_route_mem
                           exact
                             hoistLocalFunctions_retains_hoisted hTail
                               hStoreEntry
+                        have hHelperRetain :
+                            ∀ {helper : Name},
+                              stateAfterFn.clzHelperName? = some helper →
+                                state'.clzHelperName? = some helper := by
+                          intro helper hHelper
+                          have hStoreHelper :
+                              stateAfterStore.clzHelperName? = some helper :=
+                            hHelper
+                          exact
+                            hoistLocalFunctions_preserves_existing_clzHelperName
+                              hTail hStoreHelper
                         exact
                           ⟨headFn, state, stateAfterFn, hFn, hFinalMem,
-                            hRetain⟩
+                            hRetain, hHelperRetain⟩
                       · exact ih hTail hRest hLookup
       | block blockBody =>
           rcases hMem with hHere | hRest
@@ -7257,7 +7291,7 @@ theorem functionDefinition_codeRoute_of_hoist
       RawOccurrence.Elab.hoistLocalFunctions_function_route_mem
         hHoist hMem hLookup with
     ⟨fn, stateBeforeFn, stateAfterFn, hFn, hContextHoist,
-      hRetainFnToHoist⟩
+      hRetainFnToHoist, _hHelperFnToHoist⟩
   have hContextBefore :
       (generated, fn) ∈ stateBeforeStmt.hoistedFunctions :=
     hRetainHoistToStmt hContextHoist
@@ -7410,17 +7444,22 @@ theorem elaborate_clzCodeRoute_exists_of_split
         (Elab.Stmt.elaborate stmt).run stateBeforeStmt =
           .ok (frontendStmt, stateAfterStmt) →
         ∃ (helper : Name) (frontendArg : Frontend.Expr),
-          StmtCodeElaborationRoute stateAfterStmt helper [frontendArg]
-            frontendStmt) :
+          stateAfterStmt.clzHelperName? = some helper ∧
+            StmtCodeElaborationRoute stateAfterStmt helper [frontendArg]
+              frontendStmt) :
     ∃ (helper : Name) (frontendArg : Frontend.Expr),
-      CodeElaborationRoute state' helper [frontendArg] frontendStmts := by
+      state'.clzHelperName? = some helper ∧
+        CodeElaborationRoute state' helper [frontendArg] frontendStmts := by
   rcases
       _root_.EvmCompiler.Solidity.RawAst.RawOccurrence.Stmt.List.elaborate_split
         hRun with
     ⟨frontendPre, frontendStmt, frontendSuffix, stateBeforeStmt,
       stateAfterStmt, hPre, hStmt, hSuffix, hFrontend⟩
   rcases hStmtRoute hStmt with
-    ⟨helper, frontendArg, hRouteAtStmt⟩
+    ⟨helper, frontendArg, hHelperAtStmt, hRouteAtStmt⟩
+  have hHelperAtEnd :
+      state'.clzHelperName? = some helper :=
+    elaborate_preserves_existing_clzHelperName hSuffix hHelperAtStmt
   have hRouteAtEnd :
       StmtCodeElaborationRoute state' helper [frontendArg] frontendStmt :=
     StmtCodeElaborationRoute.retain hRouteAtStmt
@@ -7428,7 +7467,7 @@ theorem elaborate_clzCodeRoute_exists_of_split
         elaborate_retains_hoisted hSuffix hMem)
   rw [hFrontend]
   exact
-    ⟨helper, frontendArg,
+    ⟨helper, frontendArg, hHelperAtEnd,
       StmtCodeElaborationRoute.toCodeRoute_of_split hRouteAtEnd⟩
 
 theorem elaborate_codeRoute_of_functionDefinition_split
@@ -7517,7 +7556,7 @@ theorem elaborate_codeRoute_exists_of_functionDefinition_split
       RawOccurrence.Elab.hoistLocalFunctions_function_route_mem
         hHoist hFunctionMem hLookup with
     ⟨fn, stateBeforeFn, stateAfterFn, hFn, hContextHoist,
-      hRetainFnToHoist⟩
+      hRetainFnToHoist, _hHelperFnToHoist⟩
   rcases hBodyRoute hFn with
     ⟨innerGenerated, frontendArgs, hBodyCodeRoute⟩
   have hContextBefore :
@@ -7580,10 +7619,12 @@ theorem elaborate_clzCodeRoute_exists_of_functionDefinition_split
           stateBeforeFn =
           .ok (fn, stateAfterFn) →
         ∃ (helper : Name) (frontendArg : Frontend.Expr),
-          CodeElaborationRoute stateAfterFn helper [frontendArg]
-            fn.body) :
+          stateAfterFn.clzHelperName? = some helper ∧
+            CodeElaborationRoute stateAfterFn helper [frontendArg]
+              fn.body) :
     ∃ (helper : Name) (frontendArg : Frontend.Expr),
-      CodeElaborationRoute state' helper [frontendArg] frontendStmts := by
+      state'.clzHelperName? = some helper ∧
+        CodeElaborationRoute state' helper [frontendArg] frontendStmts := by
   rcases
       _root_.EvmCompiler.Solidity.RawAst.RawOccurrence.Stmt.List.elaborate_split
         hList with
@@ -7597,9 +7638,22 @@ theorem elaborate_clzCodeRoute_exists_of_functionDefinition_split
       RawOccurrence.Elab.hoistLocalFunctions_function_route_mem
         hHoist hFunctionMem hLookup with
     ⟨fn, stateBeforeFn, stateAfterFn, hFn, hContextHoist,
-      hRetainFnToHoist⟩
+      hRetainFnToHoist, hHelperFnToHoist⟩
   rcases hBodyRoute hFn with
-    ⟨helper, frontendArg, hBodyCodeRoute⟩
+    ⟨helper, frontendArg, hHelperAtFn, hBodyCodeRoute⟩
+  have hHelperAfterHoist :
+      stateAfterHoist.clzHelperName? = some helper :=
+    hHelperFnToHoist hHelperAtFn
+  have hHelperBeforeStmt :
+      stateBeforeStmt.clzHelperName? = some helper :=
+    elaborate_preserves_existing_clzHelperName hPre hHelperAfterHoist
+  have hHelperAfterStmt :
+      stateAfterStmt.clzHelperName? = some helper :=
+    _root_.EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.Stmt.elaborate_preserves_existing_clzHelperName
+      hStmt hHelperBeforeStmt
+  have hHelperAtEnd :
+      state'.clzHelperName? = some helper :=
+    elaborate_preserves_existing_clzHelperName hSuffix hHelperAfterStmt
   have hContextBefore :
       (generated, fn) ∈ stateBeforeStmt.hoistedFunctions :=
     elaborate_retains_hoisted hPre hContextHoist
@@ -7629,7 +7683,7 @@ theorem elaborate_clzCodeRoute_exists_of_functionDefinition_split
         elaborate_retains_hoisted hSuffix hMem)
   rw [hFrontend]
   exact
-    ⟨helper, frontendArg,
+    ⟨helper, frontendArg, hHelperAtEnd,
       StmtCodeElaborationRoute.toCodeRoute_of_split hRouteAtEnd⟩
 
 theorem elaborateBlock_retains_hoisted
@@ -8039,11 +8093,13 @@ theorem elaborate_clzCodeRoute_exists_of_head
         (Elab.Stmt.List.elaborateBlock body true).run state =
           .ok (frontendBody, stateAfterBody) →
         ∃ (helper : Name) (frontendArg : Frontend.Expr),
-          CodeElaborationRoute stateAfterBody helper [frontendArg]
-            frontendBody) :
+          stateAfterBody.clzHelperName? = some helper ∧
+            CodeElaborationRoute stateAfterBody helper [frontendArg]
+              frontendBody) :
     ∃ (helper : Name) (frontendArg : Frontend.Expr),
-      CaseListCodeElaborationRoute state' helper [frontendArg]
-        frontendCases := by
+      state'.clzHelperName? = some helper ∧
+        CaseListCodeElaborationRoute state' helper [frontendArg]
+          frontendCases := by
   simp only [Elab.Stmt.CaseList.elaborate] at hRun
   cases hValue : Elab.SwitchCaseValue.elaborate value with
   | error err =>
@@ -8066,9 +8122,13 @@ theorem elaborate_clzCodeRoute_exists_of_head
               simp [hValue, hBody, hTail] at hRun
               rcases hRun with ⟨rfl, rfl⟩
               rcases hBodyRoute hBody with
-                ⟨helper, frontendArg, hRoute⟩
+                ⟨helper, frontendArg, hHelperAtBody, hRoute⟩
+              have hHelperAtEnd :
+                  stateAfterTail.clzHelperName? = some helper :=
+                Stmt.CaseList.elaborate_preserves_existing_clzHelperName
+                  hTail hHelperAtBody
               exact
-                ⟨helper, frontendArg,
+                ⟨helper, frontendArg, hHelperAtEnd,
                   CaseListCodeElaborationRoute.retain
                     (CodeElaborationRoute.toCaseListRoute_head hRoute)
                     (fun {entry} hMem =>
@@ -8088,11 +8148,13 @@ theorem elaborate_clzCodeRoute_exists_of_tail
         (Elab.Stmt.CaseList.elaborate rest).run stateAfterBody =
           .ok (frontendRest, state') →
         ∃ (helper : Name) (frontendArg : Frontend.Expr),
-          CaseListCodeElaborationRoute state' helper [frontendArg]
-            frontendRest) :
+          state'.clzHelperName? = some helper ∧
+            CaseListCodeElaborationRoute state' helper [frontendArg]
+              frontendRest) :
     ∃ (helper : Name) (frontendArg : Frontend.Expr),
-      CaseListCodeElaborationRoute state' helper [frontendArg]
-        frontendCases := by
+      state'.clzHelperName? = some helper ∧
+        CaseListCodeElaborationRoute state' helper [frontendArg]
+          frontendCases := by
   simp only [Elab.Stmt.CaseList.elaborate] at hRun
   cases hValue : Elab.SwitchCaseValue.elaborate value with
   | error err =>
@@ -8115,9 +8177,9 @@ theorem elaborate_clzCodeRoute_exists_of_tail
               simp [hValue, hBody, hTail] at hRun
               rcases hRun with ⟨rfl, rfl⟩
               rcases hTailRoute hTail with
-                ⟨helper, frontendArg, hRoute⟩
+                ⟨helper, frontendArg, hHelperAtTail, hRoute⟩
               exact
-                ⟨helper, frontendArg,
+                ⟨helper, frontendArg, hHelperAtTail,
                   CaseListCodeElaborationRoute.tail hRoute⟩
 
 end CaseList
@@ -8180,8 +8242,9 @@ theorem clzCodeRouteBelow_caseList_succ
       (Elab.Stmt.CaseList.elaborate rawCases).run state =
         .ok (frontendCases, state') →
       ∃ (helper : Name) (frontendArg : Frontend.Expr),
-        CaseListCodeElaborationRoute state' helper [frontendArg]
-          frontendCases := by
+        state'.clzHelperName? = some helper ∧
+          CaseListCodeElaborationRoute state' helper [frontendArg]
+            frontendCases := by
   intro rawArg rawCases frontendCases state state' hSize hOccurrence hRun
   cases rawCases with
   | nil =>
@@ -8345,7 +8408,8 @@ theorem clzCodeRouteBelow_stmtListAfterHoist_succ
       (Elab.Stmt.List.elaborate rawStmts).run stateAfterHoist =
         .ok (frontendStmts, state') →
       ∃ (helper : Name) (frontendArg : Frontend.Expr),
-        CodeElaborationRoute state' helper [frontendArg] frontendStmts := by
+        state'.clzHelperName? = some helper ∧
+          CodeElaborationRoute state' helper [frontendArg] frontendStmts := by
   intro rawArg rawStmts scope stateBeforeHoist stateAfterHoist state'
     frontendStmts hSize hOccurrence hHoist hRun
   rcases StmtListClzCall.exists_split_stmt hOccurrence with
@@ -8359,8 +8423,9 @@ theorem clzCodeRouteBelow_stmtListAfterHoist_succ
       RawStmtNotFunctionDefinition stmt →
         StmtClzCall rawArg stmt →
         ∃ (helper : Name) (frontendArg : Frontend.Expr),
-          CodeElaborationRoute state' helper [frontendArg]
-            frontendStmts := by
+          state'.clzHelperName? = some helper ∧
+            CodeElaborationRoute state' helper [frontendArg]
+              frontendStmts := by
     intro hNotFunction hStmtOccurrence'
     exact
       Stmt.List.elaborate_clzCodeRoute_exists_of_split hRun
@@ -8594,7 +8659,8 @@ theorem clzCodeRouteBelow_block_succ
       (Elab.Stmt.List.elaborateBlock rawStmts createsScope).run state =
         .ok (frontendStmts, state') →
       ∃ (helper : Name) (frontendArg : Frontend.Expr),
-        CodeElaborationRoute state' helper [frontendArg] frontendStmts := by
+        state'.clzHelperName? = some helper ∧
+          CodeElaborationRoute state' helper [frontendArg] frontendStmts := by
   intro rawArg rawStmts frontendStmts createsScope state state' hSize
     hOccurrence hRun
   unfold Elab.Stmt.List.elaborateBlock at hRun
@@ -8638,9 +8704,13 @@ theorem clzCodeRouteBelow_block_succ
                         rcases hRun with ⟨rfl, rfl⟩
                         rcases clzCodeRouteBelow_stmtListAfterHoist_succ
                             ih hSize hOccurrence hHoist hList with
-                          ⟨helper, frontendArg, hRoute⟩
+                          ⟨helper, frontendArg, hHelperName, hRoute⟩
+                        have hFinalHelper :
+                            stateAfterPop.clzHelperName? = some helper :=
+                          popFunctionScope_preserves_existing_clzHelperName
+                            hPop hHelperName
                         exact
-                          ⟨helper, frontendArg,
+                          ⟨helper, frontendArg, hFinalHelper,
                             CodeElaborationRoute.retain hRoute
                               (fun {entry} hMem =>
                                 popFunctionScope_retains_hoisted hPop
@@ -8702,9 +8772,20 @@ theorem clzCodeRouteBelow_block_succ
                                 rcases hRun with ⟨rfl, rfl⟩
                                 rcases clzCodeRouteBelow_stmtListAfterHoist_succ
                                     ih hSize hOccurrence hHoist hList with
-                                  ⟨helper, frontendArg, hRoute⟩
+                                  ⟨helper, frontendArg, hHelperName,
+                                    hRoute⟩
+                                have hPopHelper :
+                                    stateAfterPop.clzHelperName? =
+                                      some helper :=
+                                  popFunctionScope_preserves_existing_clzHelperName
+                                    hPop hHelperName
+                                have hFinalHelper :
+                                    stateAfterIdentPop.clzHelperName? =
+                                      some helper :=
+                                  popIdentifierScope_preserves_existing_clzHelperName
+                                    hPopIdent hPopHelper
                                 exact
-                                  ⟨helper, frontendArg,
+                                  ⟨helper, frontendArg, hFinalHelper,
                                     CodeElaborationRoute.retain hRoute
                                       (fun {entry} hMem =>
                                         popIdentifierScope_retains_hoisted
@@ -8772,7 +8853,8 @@ theorem clzCodeRouteBelow_forInit_succ
       (Elab.Stmt.List.elaborateForInitBlockWithScope rawStmts).run state =
         .ok (frontendStmts, state') →
       ∃ (helper : Name) (frontendArg : Frontend.Expr),
-        CodeElaborationRoute state' helper [frontendArg] frontendStmts := by
+        state'.clzHelperName? = some helper ∧
+          CodeElaborationRoute state' helper [frontendArg] frontendStmts := by
   intro rawArg rawStmts frontendStmts state state' hSize hOccurrence hRun
   unfold Elab.Stmt.List.elaborateForInitBlockWithScope at hRun
   cases hScope :
@@ -8994,8 +9076,9 @@ theorem clzCodeRouteBelow_stmt_succ
       (Elab.Stmt.elaborate rawStmt).run state =
         .ok (frontendStmt, state') →
       ∃ (helper : Name) (frontendArg : Frontend.Expr),
-        StmtCodeElaborationRoute state' helper [frontendArg]
-          frontendStmt := by
+        state'.clzHelperName? = some helper ∧
+          StmtCodeElaborationRoute state' helper [frontendArg]
+            frontendStmt := by
   intro rawArg rawStmt frontendStmt state state' hSize hNotFunction
     hOccurrence hRun
   cases rawStmt with
@@ -9014,9 +9097,9 @@ theorem clzCodeRouteBelow_stmt_succ
               simp [Elab.Stmt.elaborate, hBody] at hRun
               rcases hRun with ⟨rfl, rfl⟩
               rcases ih.block hBodySize hBodyOccurrence hBody with
-                ⟨helper, frontendArg, hRoute⟩
+                ⟨helper, frontendArg, hHelperName, hRoute⟩
               exact
-                ⟨helper, frontendArg,
+                ⟨helper, frontendArg, hHelperName,
                   CodeElaborationRoute.toStmtRoute_block hRoute⟩
   | variableDeclaration names value? =>
       cases value? with
@@ -9044,27 +9127,43 @@ theorem clzCodeRouteBelow_stmt_succ
                         at hRun
                       rcases hRun with ⟨rfl, rfl⟩
                       rcases ExprClzCall.elaborate hValueOccurrence hValue with
-                        ⟨helper, frontendArg, _hHelperName,
+                        ⟨helper, frontendArg, hHelperName,
                           hFrontendExpr⟩
+                      have hFinalHelper :
+                          stateAfterDeclare.clzHelperName? = some helper :=
+                        declareIdentifiers_preserves_existing_clzHelperName
+                          hDeclare hHelperName
                       exact
-                        ⟨helper, frontendArg,
+                        ⟨helper, frontendArg, hFinalHelper,
                           StmtCodeElaborationRoute.current
                             (FrontendOccurrence.StmtUserCall.letValue
                               hFrontendExpr)⟩
   | assignment names value =>
       cases hOccurrence with
       | assignmentValue hValueOccurrence =>
-          rcases Stmt.assignment_elaborate_value_exists hRun with
-            ⟨frontendValue, stateBeforeValue, stateAfterValue,
-              hValue, hStmtEq⟩
-          subst frontendStmt
-          rcases ExprClzCall.elaborate hValueOccurrence hValue with
-            ⟨helper, frontendArg, _hHelperName, hFrontendExpr⟩
-          exact
-            ⟨helper, frontendArg,
-              StmtCodeElaborationRoute.current
-                (FrontendOccurrence.StmtUserCall.assignValue
-                  hFrontendExpr)⟩
+          unfold Elab.Stmt.elaborate at hRun
+          cases hRequire :
+              (Elab.requireIdentifiersVisible names "assignment").run
+                state with
+          | error err =>
+              simp [hRequire] at hRun
+          | ok requireResult =>
+              rcases requireResult with ⟨unitRequire, stateAfterRequire⟩
+              cases hValue :
+                  (Elab.Expr.elaborate value).run stateAfterRequire with
+              | error err =>
+                  simp [hRequire, hValue] at hRun
+              | ok valueResult =>
+                  rcases valueResult with ⟨frontendValue, stateAfterValue⟩
+                  simp [hRequire, hValue] at hRun
+                  rcases hRun with ⟨rfl, rfl⟩
+                  rcases ExprClzCall.elaborate hValueOccurrence hValue with
+                    ⟨helper, frontendArg, hHelperName, hFrontendExpr⟩
+                  exact
+                    ⟨helper, frontendArg, hHelperName,
+                      StmtCodeElaborationRoute.current
+                        (FrontendOccurrence.StmtUserCall.assignValue
+                          hFrontendExpr)⟩
   | expressionStatement value =>
       cases hOccurrence with
       | expressionStatement hValueOccurrence =>
@@ -9076,9 +9175,9 @@ theorem clzCodeRouteBelow_stmt_succ
               simp [Elab.Stmt.elaborate, hValue] at hRun
               rcases hRun with ⟨rfl, rfl⟩
               rcases ExprClzCall.elaborate hValueOccurrence hValue with
-                ⟨helper, frontendArg, _hHelperName, hFrontendExpr⟩
+                ⟨helper, frontendArg, hHelperName, hFrontendExpr⟩
               exact
-                ⟨helper, frontendArg,
+                ⟨helper, frontendArg, hHelperName,
                   StmtCodeElaborationRoute.current
                     (FrontendOccurrence.StmtUserCall.exprStmt
                       hFrontendExpr)⟩
@@ -9121,16 +9220,28 @@ theorem clzCodeRouteBelow_stmt_succ
                   | switchScrutinee hScrutineeOccurrence =>
                       rcases ExprClzCall.elaborate hScrutineeOccurrence
                           hScrutinee with
-                        ⟨helper, frontendArg, _hHelperName,
+                        ⟨helper, frontendArg, hHelperName,
                           hFrontendExpr⟩
+                      have hCaseHelper :
+                          stateAfterCases.clzHelperName? = some helper :=
+                        Stmt.CaseList.elaborate_preserves_existing_clzHelperName
+                          hCases hHelperName
+                      have hDefaultHelper :
+                          stateAfterDefault.clzHelperName? = some helper :=
+                        Stmt.List.elaborateBlock_preserves_existing_clzHelperName
+                          hDefault hCaseHelper
                       exact
-                        ⟨helper, frontendArg,
+                        ⟨helper, frontendArg, hDefaultHelper,
                           StmtCodeElaborationRoute.current
                             (FrontendOccurrence.StmtUserCall.switchScrutinee
                               hFrontendExpr)⟩
                   | switchCase hCaseOccurrence =>
                       rcases ih.caseList hCaseSize hCaseOccurrence hCases with
-                        ⟨helper, frontendArg, hRoute⟩
+                        ⟨helper, frontendArg, hHelperName, hRoute⟩
+                      have hHelperAtEnd :
+                          stateAfterDefault.clzHelperName? = some helper :=
+                        Stmt.List.elaborateBlock_preserves_existing_clzHelperName
+                          hDefault hHelperName
                       have hRouteAtEnd :
                           CaseListCodeElaborationRoute stateAfterDefault
                             helper [frontendArg] frontendCases :=
@@ -9139,15 +9250,15 @@ theorem clzCodeRouteBelow_stmt_succ
                             Stmt.List.elaborateBlock_retains_hoisted
                               hDefault hMem)
                       exact
-                        ⟨helper, frontendArg,
+                        ⟨helper, frontendArg, hHelperAtEnd,
                           CaseListCodeElaborationRoute.toStmtRoute_switchCase
                             hRouteAtEnd⟩
                   | switchDefault hDefaultOccurrence =>
                       rcases ih.block hDefaultSize hDefaultOccurrence
                           hDefault with
-                        ⟨helper, frontendArg, hRoute⟩
+                        ⟨helper, frontendArg, hHelperName, hRoute⟩
                       exact
-                        ⟨helper, frontendArg,
+                        ⟨helper, frontendArg, hHelperName,
                           CodeElaborationRoute.toStmtRoute_switchDefault
                             hRoute⟩
   | forLoop pre condition post body =>
@@ -9220,7 +9331,28 @@ theorem clzCodeRouteBelow_stmt_succ
                                   | forPre hPreOccurrence =>
                                       rcases ih.block hPreSize
                                           hPreOccurrence hPre with
-                                        ⟨helper, frontendArg, hRoute⟩
+                                        ⟨helper, frontendArg, hHelperName,
+                                          hRoute⟩
+                                      have hConditionHelper :
+                                          stateAfterCondition.clzHelperName? =
+                                            some helper :=
+                                        Expr.elaborate_preserves_existing_clzHelperName
+                                          hCondition hHelperName
+                                      have hPostHelper :
+                                          stateAfterPost.clzHelperName? =
+                                            some helper :=
+                                        Stmt.List.elaborateBlock_preserves_existing_clzHelperName
+                                          hPost hConditionHelper
+                                      have hBodyHelper :
+                                          stateAfterBody.clzHelperName? =
+                                            some helper :=
+                                        Stmt.List.elaborateBlock_preserves_existing_clzHelperName
+                                          hBody hPostHelper
+                                      have hFinalHelper :
+                                          stateAfterPop.clzHelperName? =
+                                            some helper :=
+                                        popIdentifierScope_preserves_existing_clzHelperName
+                                          hPop hBodyHelper
                                       have hRouteAtEnd :
                                           CodeElaborationRoute stateAfterPop
                                             helper [frontendArg]
@@ -9236,23 +9368,49 @@ theorem clzCodeRouteBelow_stmt_succ
                                                   (Expr.elaborate_retains_hoisted
                                                     hCondition hMem))))
                                       exact
-                                        ⟨helper, frontendArg,
+                                        ⟨helper, frontendArg, hFinalHelper,
                                           CodeElaborationRoute.toStmtRoute_forPre
                                             hRouteAtEnd⟩
                                   | forCondition hConditionOccurrence =>
                                       rcases ExprClzCall.elaborate
                                           hConditionOccurrence hCondition with
-                                        ⟨helper, frontendArg, _hHelperName,
+                                        ⟨helper, frontendArg, hHelperName,
                                           hFrontendExpr⟩
+                                      have hPostHelper :
+                                          stateAfterPost.clzHelperName? =
+                                            some helper :=
+                                        Stmt.List.elaborateBlock_preserves_existing_clzHelperName
+                                          hPost hHelperName
+                                      have hBodyHelper :
+                                          stateAfterBody.clzHelperName? =
+                                            some helper :=
+                                        Stmt.List.elaborateBlock_preserves_existing_clzHelperName
+                                          hBody hPostHelper
+                                      have hFinalHelper :
+                                          stateAfterPop.clzHelperName? =
+                                            some helper :=
+                                        popIdentifierScope_preserves_existing_clzHelperName
+                                          hPop hBodyHelper
                                       exact
-                                        ⟨helper, frontendArg,
+                                        ⟨helper, frontendArg, hFinalHelper,
                                           StmtCodeElaborationRoute.current
                                             (FrontendOccurrence.StmtUserCall.forCondition
                                               hFrontendExpr)⟩
                                   | forPost hPostOccurrence =>
                                       rcases ih.block hPostSize
                                           hPostOccurrence hPost with
-                                        ⟨helper, frontendArg, hRoute⟩
+                                        ⟨helper, frontendArg, hHelperName,
+                                          hRoute⟩
+                                      have hBodyHelper :
+                                          stateAfterBody.clzHelperName? =
+                                            some helper :=
+                                        Stmt.List.elaborateBlock_preserves_existing_clzHelperName
+                                          hBody hHelperName
+                                      have hFinalHelper :
+                                          stateAfterPop.clzHelperName? =
+                                            some helper :=
+                                        popIdentifierScope_preserves_existing_clzHelperName
+                                          hPop hBodyHelper
                                       have hRouteAtEnd :
                                           CodeElaborationRoute stateAfterPop
                                             helper [frontendArg]
@@ -9264,13 +9422,19 @@ theorem clzCodeRouteBelow_stmt_succ
                                               (Stmt.List.elaborateBlock_retains_hoisted
                                                 hBody hMem))
                                       exact
-                                        ⟨helper, frontendArg,
+                                        ⟨helper, frontendArg, hFinalHelper,
                                           CodeElaborationRoute.toStmtRoute_forPost
                                             hRouteAtEnd⟩
                                   | forBody hBodyOccurrence =>
                                       rcases ih.block hBodySize
                                           hBodyOccurrence hBody with
-                                        ⟨helper, frontendArg, hRoute⟩
+                                        ⟨helper, frontendArg, hHelperName,
+                                          hRoute⟩
+                                      have hFinalHelper :
+                                          stateAfterPop.clzHelperName? =
+                                            some helper :=
+                                        popIdentifierScope_preserves_existing_clzHelperName
+                                          hPop hHelperName
                                       have hRouteAtEnd :
                                           CodeElaborationRoute stateAfterPop
                                             helper [frontendArg]
@@ -9280,7 +9444,7 @@ theorem clzCodeRouteBelow_stmt_succ
                                             popIdentifierScope_retains_hoisted
                                               hPop hMem)
                                       exact
-                                        ⟨helper, frontendArg,
+                                        ⟨helper, frontendArg, hFinalHelper,
                                           CodeElaborationRoute.toStmtRoute_forBody
                                             hRouteAtEnd⟩
           | true =>
@@ -9349,7 +9513,32 @@ theorem clzCodeRouteBelow_stmt_succ
                                           rcases ih.forInit hPreSize
                                               hPreOccurrence hPre with
                                             ⟨helper, frontendArg,
-                                              hRoute⟩
+                                              hHelperName, hRoute⟩
+                                          have hConditionHelper :
+                                              stateAfterCondition.clzHelperName? =
+                                                some helper :=
+                                            Expr.elaborate_preserves_existing_clzHelperName
+                                              hCondition hHelperName
+                                          have hPostHelper :
+                                              stateAfterPost.clzHelperName? =
+                                                some helper :=
+                                            Stmt.List.elaborateBlock_preserves_existing_clzHelperName
+                                              hPost hConditionHelper
+                                          have hBodyHelper :
+                                              stateAfterBody.clzHelperName? =
+                                                some helper :=
+                                            Stmt.List.elaborateBlock_preserves_existing_clzHelperName
+                                              hBody hPostHelper
+                                          have hPopFunctionHelper :
+                                              stateAfterPopFunction.clzHelperName? =
+                                                some helper :=
+                                            popFunctionScope_preserves_existing_clzHelperName
+                                              hPopFunction hBodyHelper
+                                          have hFinalHelper :
+                                              stateAfterPopIdentifier.clzHelperName? =
+                                                some helper :=
+                                            popIdentifierScope_preserves_existing_clzHelperName
+                                              hPopIdentifier hPopFunctionHelper
                                           have hRouteAtEnd :
                                               CodeElaborationRoute
                                                 stateAfterPopIdentifier
@@ -9369,7 +9558,7 @@ theorem clzCodeRouteBelow_stmt_succ
                                                         (Expr.elaborate_retains_hoisted
                                                           hCondition hMem)))))
                                           exact
-                                            ⟨helper, frontendArg,
+                                            ⟨helper, frontendArg, hFinalHelper,
                                               CodeElaborationRoute.toStmtRoute_forPre
                                                 hRouteAtEnd⟩
                                       | forCondition hConditionOccurrence =>
@@ -9377,9 +9566,29 @@ theorem clzCodeRouteBelow_stmt_succ
                                               hConditionOccurrence
                                               hCondition with
                                             ⟨helper, frontendArg,
-                                              _hHelperName, hFrontendExpr⟩
+                                              hHelperName, hFrontendExpr⟩
+                                          have hPostHelper :
+                                              stateAfterPost.clzHelperName? =
+                                                some helper :=
+                                            Stmt.List.elaborateBlock_preserves_existing_clzHelperName
+                                              hPost hHelperName
+                                          have hBodyHelper :
+                                              stateAfterBody.clzHelperName? =
+                                                some helper :=
+                                            Stmt.List.elaborateBlock_preserves_existing_clzHelperName
+                                              hBody hPostHelper
+                                          have hPopFunctionHelper :
+                                              stateAfterPopFunction.clzHelperName? =
+                                                some helper :=
+                                            popFunctionScope_preserves_existing_clzHelperName
+                                              hPopFunction hBodyHelper
+                                          have hFinalHelper :
+                                              stateAfterPopIdentifier.clzHelperName? =
+                                                some helper :=
+                                            popIdentifierScope_preserves_existing_clzHelperName
+                                              hPopIdentifier hPopFunctionHelper
                                           exact
-                                            ⟨helper, frontendArg,
+                                            ⟨helper, frontendArg, hFinalHelper,
                                               StmtCodeElaborationRoute.current
                                                 (FrontendOccurrence.StmtUserCall.forCondition
                                                   hFrontendExpr)⟩
@@ -9387,7 +9596,22 @@ theorem clzCodeRouteBelow_stmt_succ
                                           rcases ih.block hPostSize
                                               hPostOccurrence hPost with
                                             ⟨helper, frontendArg,
-                                              hRoute⟩
+                                              hHelperName, hRoute⟩
+                                          have hBodyHelper :
+                                              stateAfterBody.clzHelperName? =
+                                                some helper :=
+                                            Stmt.List.elaborateBlock_preserves_existing_clzHelperName
+                                              hBody hHelperName
+                                          have hPopFunctionHelper :
+                                              stateAfterPopFunction.clzHelperName? =
+                                                some helper :=
+                                            popFunctionScope_preserves_existing_clzHelperName
+                                              hPopFunction hBodyHelper
+                                          have hFinalHelper :
+                                              stateAfterPopIdentifier.clzHelperName? =
+                                                some helper :=
+                                            popIdentifierScope_preserves_existing_clzHelperName
+                                              hPopIdentifier hPopFunctionHelper
                                           have hRouteAtEnd :
                                               CodeElaborationRoute
                                                 stateAfterPopIdentifier
@@ -9403,14 +9627,24 @@ theorem clzCodeRouteBelow_stmt_succ
                                                     (Stmt.List.elaborateBlock_retains_hoisted
                                                       hBody hMem)))
                                           exact
-                                            ⟨helper, frontendArg,
+                                            ⟨helper, frontendArg, hFinalHelper,
                                               CodeElaborationRoute.toStmtRoute_forPost
                                                 hRouteAtEnd⟩
                                       | forBody hBodyOccurrence =>
                                           rcases ih.block hBodySize
                                               hBodyOccurrence hBody with
                                             ⟨helper, frontendArg,
-                                              hRoute⟩
+                                              hHelperName, hRoute⟩
+                                          have hPopFunctionHelper :
+                                              stateAfterPopFunction.clzHelperName? =
+                                                some helper :=
+                                            popFunctionScope_preserves_existing_clzHelperName
+                                              hPopFunction hHelperName
+                                          have hFinalHelper :
+                                              stateAfterPopIdentifier.clzHelperName? =
+                                                some helper :=
+                                            popIdentifierScope_preserves_existing_clzHelperName
+                                              hPopIdentifier hPopFunctionHelper
                                           have hRouteAtEnd :
                                               CodeElaborationRoute
                                                 stateAfterPopIdentifier
@@ -9424,7 +9658,7 @@ theorem clzCodeRouteBelow_stmt_succ
                                                   (popFunctionScope_retains_hoisted
                                                     hPopFunction hMem))
                                           exact
-                                            ⟨helper, frontendArg,
+                                            ⟨helper, frontendArg, hFinalHelper,
                                               CodeElaborationRoute.toStmtRoute_forBody
                                                 hRouteAtEnd⟩
   | ifThen condition body =>
@@ -9451,17 +9685,21 @@ theorem clzCodeRouteBelow_stmt_succ
               | ifCondition hConditionOccurrence =>
                   rcases ExprClzCall.elaborate hConditionOccurrence
                       hCondition with
-                    ⟨helper, frontendArg, _hHelperName, hFrontendExpr⟩
+                    ⟨helper, frontendArg, hHelperName, hFrontendExpr⟩
+                  have hFinalHelper :
+                      stateAfterBody.clzHelperName? = some helper :=
+                    Stmt.List.elaborateBlock_preserves_existing_clzHelperName
+                      hBody hHelperName
                   exact
-                    ⟨helper, frontendArg,
+                    ⟨helper, frontendArg, hFinalHelper,
                       StmtCodeElaborationRoute.current
                         (FrontendOccurrence.StmtUserCall.ifCondition
                           hFrontendExpr)⟩
               | ifBody hBodyOccurrence =>
                   rcases ih.block hBodySize hBodyOccurrence hBody with
-                    ⟨helper, frontendArg, hRoute⟩
+                    ⟨helper, frontendArg, hHelperName, hRoute⟩
                   exact
-                    ⟨helper, frontendArg,
+                    ⟨helper, frontendArg, hHelperName,
                       CodeElaborationRoute.toStmtRoute_ifBody hRoute⟩
   | «break» =>
       cases hOccurrence
@@ -10145,6 +10383,142 @@ theorem elaborateCodeStmts_retains_hoisted
           simp [Elab.Stmt.elaborate] at hElab
           exact ih hElab hMem
 
+theorem elaborateCodeStmts_preserves_existing_clzHelperName
+    {rawStmts : List Raw.Stmt}
+    {dispatcherAcc dispatcherOut : List Frontend.Stmt}
+    {topFunctionsAcc topFunctionsOut : List (Name × Frontend.FunctionDef)}
+    {state state' : Elab.State} {helper : Name}
+    (hElab :
+      (Elab.elaborateCodeStmts rawStmts dispatcherAcc topFunctionsAcc).run
+        state = .ok ((dispatcherOut, topFunctionsOut), state'))
+    (hHelperName : state.clzHelperName? = some helper) :
+    state'.clzHelperName? = some helper := by
+  induction rawStmts generalizing dispatcherAcc topFunctionsAcc state
+      dispatcherOut topFunctionsOut state' with
+  | nil =>
+      simp [Elab.elaborateCodeStmts] at hElab
+      rcases hElab with ⟨_hDispatcher, _hFunctions, rfl⟩
+      exact hHelperName
+  | cons head rest ih =>
+      simp only [Elab.elaborateCodeStmts] at hElab
+      cases head with
+      | functionDefinition name params returns body =>
+          cases hFn :
+              (Elab.FunctionDef.elaborate params returns body).run state with
+          | error err =>
+              simp [hFn] at hElab
+          | ok fnResult =>
+              rcases fnResult with ⟨fn, stateAfterFn⟩
+              simp [hFn] at hElab
+              have hFnHelper :
+                  stateAfterFn.clzHelperName? = some helper :=
+                FunctionDef.elaborate_preserves_existing_clzHelperName
+                  hFn hHelperName
+              exact ih hElab hFnHelper
+      | block body =>
+          cases hStmt : (Elab.Stmt.elaborate (.block body)).run state with
+          | error err =>
+              simp [hStmt] at hElab
+          | ok stmtResult =>
+              rcases stmtResult with ⟨frontendStmt, stateAfterStmt⟩
+              simp [hStmt] at hElab
+              have hStmtHelper :
+                  stateAfterStmt.clzHelperName? = some helper :=
+                Stmt.elaborate_preserves_existing_clzHelperName
+                  hStmt hHelperName
+              exact ih hElab hStmtHelper
+      | variableDeclaration names value? =>
+          cases hStmt :
+              (Elab.Stmt.elaborate
+                (.variableDeclaration names value?)).run state with
+          | error err =>
+              simp [hStmt] at hElab
+          | ok stmtResult =>
+              rcases stmtResult with ⟨frontendStmt, stateAfterStmt⟩
+              simp [hStmt] at hElab
+              have hStmtHelper :
+                  stateAfterStmt.clzHelperName? = some helper :=
+                Stmt.elaborate_preserves_existing_clzHelperName
+                  hStmt hHelperName
+              exact ih hElab hStmtHelper
+      | assignment names value =>
+          cases hStmt :
+              (Elab.Stmt.elaborate (.assignment names value)).run state with
+          | error err =>
+              simp [hStmt] at hElab
+          | ok stmtResult =>
+              rcases stmtResult with ⟨frontendStmt, stateAfterStmt⟩
+              simp [hStmt] at hElab
+              have hStmtHelper :
+                  stateAfterStmt.clzHelperName? = some helper :=
+                Stmt.elaborate_preserves_existing_clzHelperName
+                  hStmt hHelperName
+              exact ih hElab hStmtHelper
+      | expressionStatement value =>
+          cases hStmt :
+              (Elab.Stmt.elaborate (.expressionStatement value)).run
+                state with
+          | error err =>
+              simp [hStmt] at hElab
+          | ok stmtResult =>
+              rcases stmtResult with ⟨frontendStmt, stateAfterStmt⟩
+              simp [hStmt] at hElab
+              have hStmtHelper :
+                  stateAfterStmt.clzHelperName? = some helper :=
+                Stmt.elaborate_preserves_existing_clzHelperName
+                  hStmt hHelperName
+              exact ih hElab hStmtHelper
+      | switch scrutinee cases defaultBody =>
+          cases hStmt :
+              (Elab.Stmt.elaborate
+                (.switch scrutinee cases defaultBody)).run state with
+          | error err =>
+              simp [hStmt] at hElab
+          | ok stmtResult =>
+              rcases stmtResult with ⟨frontendStmt, stateAfterStmt⟩
+              simp [hStmt] at hElab
+              have hStmtHelper :
+                  stateAfterStmt.clzHelperName? = some helper :=
+                Stmt.elaborate_preserves_existing_clzHelperName
+                  hStmt hHelperName
+              exact ih hElab hStmtHelper
+      | forLoop pre condition post body =>
+          cases hStmt :
+              (Elab.Stmt.elaborate
+                (.forLoop pre condition post body)).run state with
+          | error err =>
+              simp [hStmt] at hElab
+          | ok stmtResult =>
+              rcases stmtResult with ⟨frontendStmt, stateAfterStmt⟩
+              simp [hStmt] at hElab
+              have hStmtHelper :
+                  stateAfterStmt.clzHelperName? = some helper :=
+                Stmt.elaborate_preserves_existing_clzHelperName
+                  hStmt hHelperName
+              exact ih hElab hStmtHelper
+      | ifThen condition body =>
+          cases hStmt :
+              (Elab.Stmt.elaborate (.ifThen condition body)).run state with
+          | error err =>
+              simp [hStmt] at hElab
+          | ok stmtResult =>
+              rcases stmtResult with ⟨frontendStmt, stateAfterStmt⟩
+              simp [hStmt] at hElab
+              have hStmtHelper :
+                  stateAfterStmt.clzHelperName? = some helper :=
+                Stmt.elaborate_preserves_existing_clzHelperName
+                  hStmt hHelperName
+              exact ih hElab hStmtHelper
+      | «break» =>
+          simp [Elab.Stmt.elaborate] at hElab
+          exact ih hElab hHelperName
+      | «continue» =>
+          simp [Elab.Stmt.elaborate] at hElab
+          exact ih hElab hHelperName
+      | «leave» =>
+          simp [Elab.Stmt.elaborate] at hElab
+          exact ih hElab hHelperName
+
 theorem elaborateCodeStmts_retains_dispatcher
     {rawStmts : List Raw.Stmt}
     {dispatcherAcc dispatcherOut : List Frontend.Stmt}
@@ -10496,12 +10870,15 @@ theorem elaborateCodeStmts_function_mem_retains_hoisted
     (hMem :
       Raw.Stmt.functionDefinition name params returns body ∈ rawStmts) :
     ∃ (fn : Frontend.FunctionDef) (stateBefore stateAfter : Elab.State),
-      (Elab.FunctionDef.elaborate params returns body).run stateBefore =
+        (Elab.FunctionDef.elaborate params returns body).run stateBefore =
         .ok (fn, stateAfter) ∧
         (name, fn) ∈ topFunctionsOut ∧
-        ∀ {entry : Name × Frontend.FunctionDef},
+        (∀ {entry : Name × Frontend.FunctionDef},
           entry ∈ stateAfter.hoistedFunctions →
-            entry ∈ state'.hoistedFunctions := by
+            entry ∈ state'.hoistedFunctions) ∧
+        ∀ {helper : Name},
+          stateAfter.clzHelperName? = some helper →
+            state'.clzHelperName? = some helper := by
   induction rawStmts generalizing dispatcherAcc topFunctionsAcc state
       dispatcherOut topFunctionsOut state' with
   | nil =>
@@ -10524,7 +10901,10 @@ theorem elaborateCodeStmts_function_mem_retains_hoisted
             exact
               ⟨fn, state, stateAfterFn, hFn, hRetained,
                 fun {entry} hEntry =>
-                  elaborateCodeStmts_retains_hoisted hElab hEntry⟩
+                  elaborateCodeStmts_retains_hoisted hElab hEntry,
+                fun {helper} hHelper =>
+                  elaborateCodeStmts_preserves_existing_clzHelperName
+                    hElab hHelper⟩
       · cases head with
         | functionDefinition headName headParams headReturns headBody =>
             cases hFn :
@@ -10867,9 +11247,12 @@ theorem elaborateCodeStmts_stmt_mem_retains_hoisted
       (Elab.Stmt.elaborate rawStmt).run stateBefore =
         .ok (frontendStmt, stateAfter) ∧
         frontendStmt ∈ dispatcherOut ∧
-        ∀ {entry : Name × Frontend.FunctionDef},
+        (∀ {entry : Name × Frontend.FunctionDef},
           entry ∈ stateAfter.hoistedFunctions →
-            entry ∈ state'.hoistedFunctions := by
+            entry ∈ state'.hoistedFunctions) ∧
+        ∀ {helper : Name},
+          stateAfter.clzHelperName? = some helper →
+            state'.clzHelperName? = some helper := by
   induction rawStmts generalizing dispatcherAcc topFunctionsAcc state
       dispatcherOut topFunctionsOut state' with
   | nil =>
@@ -10896,7 +11279,10 @@ theorem elaborateCodeStmts_stmt_mem_retains_hoisted
                 exact
                   ⟨frontendStmt, state, stateAfterStmt, hStmt, hRetained,
                     fun {entry} hEntry =>
-                      elaborateCodeStmts_retains_hoisted hElab hEntry⟩
+                      elaborateCodeStmts_retains_hoisted hElab hEntry,
+                    fun {helper} hHelper =>
+                      elaborateCodeStmts_preserves_existing_clzHelperName
+                        hElab hHelper⟩
         | variableDeclaration names value? =>
             cases hStmt :
                 (Elab.Stmt.elaborate
@@ -10912,7 +11298,10 @@ theorem elaborateCodeStmts_stmt_mem_retains_hoisted
                 exact
                   ⟨frontendStmt, state, stateAfterStmt, hStmt, hRetained,
                     fun {entry} hEntry =>
-                      elaborateCodeStmts_retains_hoisted hElab hEntry⟩
+                      elaborateCodeStmts_retains_hoisted hElab hEntry,
+                    fun {helper} hHelper =>
+                      elaborateCodeStmts_preserves_existing_clzHelperName
+                        hElab hHelper⟩
         | assignment names value =>
             cases hStmt :
                 (Elab.Stmt.elaborate (.assignment names value)).run state with
@@ -10927,7 +11316,10 @@ theorem elaborateCodeStmts_stmt_mem_retains_hoisted
                 exact
                   ⟨frontendStmt, state, stateAfterStmt, hStmt, hRetained,
                     fun {entry} hEntry =>
-                      elaborateCodeStmts_retains_hoisted hElab hEntry⟩
+                      elaborateCodeStmts_retains_hoisted hElab hEntry,
+                    fun {helper} hHelper =>
+                      elaborateCodeStmts_preserves_existing_clzHelperName
+                        hElab hHelper⟩
         | expressionStatement value =>
             cases hStmt :
                 (Elab.Stmt.elaborate (.expressionStatement value)).run
@@ -10943,7 +11335,10 @@ theorem elaborateCodeStmts_stmt_mem_retains_hoisted
                 exact
                   ⟨frontendStmt, state, stateAfterStmt, hStmt, hRetained,
                     fun {entry} hEntry =>
-                      elaborateCodeStmts_retains_hoisted hElab hEntry⟩
+                      elaborateCodeStmts_retains_hoisted hElab hEntry,
+                    fun {helper} hHelper =>
+                      elaborateCodeStmts_preserves_existing_clzHelperName
+                        hElab hHelper⟩
         | switch scrutinee cases defaultBody =>
             cases hStmt :
                 (Elab.Stmt.elaborate
@@ -10959,7 +11354,10 @@ theorem elaborateCodeStmts_stmt_mem_retains_hoisted
                 exact
                   ⟨frontendStmt, state, stateAfterStmt, hStmt, hRetained,
                     fun {entry} hEntry =>
-                      elaborateCodeStmts_retains_hoisted hElab hEntry⟩
+                      elaborateCodeStmts_retains_hoisted hElab hEntry,
+                    fun {helper} hHelper =>
+                      elaborateCodeStmts_preserves_existing_clzHelperName
+                        hElab hHelper⟩
         | forLoop pre condition post body =>
             cases hStmt :
                 (Elab.Stmt.elaborate
@@ -10975,7 +11373,10 @@ theorem elaborateCodeStmts_stmt_mem_retains_hoisted
                 exact
                   ⟨frontendStmt, state, stateAfterStmt, hStmt, hRetained,
                     fun {entry} hEntry =>
-                      elaborateCodeStmts_retains_hoisted hElab hEntry⟩
+                      elaborateCodeStmts_retains_hoisted hElab hEntry,
+                    fun {helper} hHelper =>
+                      elaborateCodeStmts_preserves_existing_clzHelperName
+                        hElab hHelper⟩
         | ifThen condition body =>
             cases hStmt :
                 (Elab.Stmt.elaborate (.ifThen condition body)).run state with
@@ -10990,7 +11391,10 @@ theorem elaborateCodeStmts_stmt_mem_retains_hoisted
                 exact
                   ⟨frontendStmt, state, stateAfterStmt, hStmt, hRetained,
                     fun {entry} hEntry =>
-                      elaborateCodeStmts_retains_hoisted hElab hEntry⟩
+                      elaborateCodeStmts_retains_hoisted hElab hEntry,
+                    fun {helper} hHelper =>
+                      elaborateCodeStmts_preserves_existing_clzHelperName
+                        hElab hHelper⟩
         | «break» =>
             simp [Elab.Stmt.elaborate] at hElab
             have hRetained :
@@ -11001,7 +11405,10 @@ theorem elaborateCodeStmts_stmt_mem_retains_hoisted
                 by simp only [Elab.Stmt.elaborate]; rfl,
                 hRetained,
                 fun {entry} hEntry =>
-                  elaborateCodeStmts_retains_hoisted hElab hEntry⟩
+                  elaborateCodeStmts_retains_hoisted hElab hEntry,
+                fun {helper} hHelper =>
+                  elaborateCodeStmts_preserves_existing_clzHelperName
+                    hElab hHelper⟩
         | «continue» =>
             simp [Elab.Stmt.elaborate] at hElab
             have hRetained :
@@ -11011,7 +11418,10 @@ theorem elaborateCodeStmts_stmt_mem_retains_hoisted
               ⟨Frontend.Stmt.continue, state, state,
                 by simp only [Elab.Stmt.elaborate]; rfl, hRetained,
                 fun {entry} hEntry =>
-                  elaborateCodeStmts_retains_hoisted hElab hEntry⟩
+                  elaborateCodeStmts_retains_hoisted hElab hEntry,
+                fun {helper} hHelper =>
+                  elaborateCodeStmts_preserves_existing_clzHelperName
+                    hElab hHelper⟩
         | «leave» =>
             simp [Elab.Stmt.elaborate] at hElab
             have hRetained :
@@ -11021,7 +11431,10 @@ theorem elaborateCodeStmts_stmt_mem_retains_hoisted
               ⟨Frontend.Stmt.leave, state, state,
                 by simp only [Elab.Stmt.elaborate]; rfl, hRetained,
                 fun {entry} hEntry =>
-                  elaborateCodeStmts_retains_hoisted hElab hEntry⟩
+                  elaborateCodeStmts_retains_hoisted hElab hEntry,
+                fun {helper} hHelper =>
+                  elaborateCodeStmts_preserves_existing_clzHelperName
+                    hElab hHelper⟩
       · cases head with
         | functionDefinition headName headParams headReturns headBody =>
             cases hFn :
@@ -11131,7 +11544,7 @@ theorem elaborateCodeStmts_stmt_codeRoute_of_mem
   rcases elaborateCodeStmts_stmt_mem_retains_hoisted hElab hMem
       hNotFunction with
     ⟨frontendStmt, stateBeforeStmt, stateAfterStmt, hStmt,
-      hFrontendMem, hRetain⟩
+      hFrontendMem, hRetain, _hHelperRetain⟩
   have hBelow := codeRouteBelow (rawStmtSize rawStmt + 1)
   rcases hBelow.stmt (Nat.lt_succ_self _) hNotFunction hOccurrence
       hNotMemoryguard hNotClz hKind hStmt with
@@ -11224,12 +11637,15 @@ theorem elaborateCodeCore_function_mem_retains_hoisted
     (hMem :
       Raw.Stmt.functionDefinition name params returns body ∈ rawStmts) :
     ∃ (fn : Frontend.FunctionDef) (stateBefore stateAfter : Elab.State),
-      (Elab.FunctionDef.elaborate params returns body).run stateBefore =
+        (Elab.FunctionDef.elaborate params returns body).run stateBefore =
         .ok (fn, stateAfter) ∧
         (name, fn) ∈ state.hoistedFunctions ∧
-        ∀ {entry : Name × Frontend.FunctionDef},
+        (∀ {entry : Name × Frontend.FunctionDef},
           entry ∈ stateAfter.hoistedFunctions →
-            entry ∈ state.hoistedFunctions := by
+            entry ∈ state.hoistedFunctions) ∧
+        ∀ {helper : Name},
+          stateAfter.clzHelperName? = some helper →
+            state.clzHelperName? = some helper := by
   unfold Elab.elaborateCodeCore Elab.elaborateCodeAction at hCore
   cases hPush : Elab.pushIdentifierScope.run {} with
   | error err =>
@@ -11285,7 +11701,7 @@ theorem elaborateCodeCore_function_mem_retains_hoisted
                               elaborateCodeStmts_function_mem_retains_hoisted
                                 hLoop hMem with
                             ⟨fn, stateBefore, stateAfter, hFn,
-                              hTopMem, hRetainLoop⟩
+                              hTopMem, hRetainLoop, hHelperLoop⟩
                           have hRetainFinal :
                               ∀ {entry : Name × Frontend.FunctionDef},
                                 entry ∈ stateAfter.hoistedFunctions →
@@ -11312,7 +11728,24 @@ theorem elaborateCodeCore_function_mem_retains_hoisted
                             simp [hPopIdentifierEntry]
                           exact
                             ⟨fn, stateBefore, stateAfter, hFn,
-                              by simp [hTopMem], hRetainFinal⟩
+                              by simp [hTopMem], hRetainFinal,
+                              fun {helper} hHelper =>
+                                by
+                                  have hLoopHelper :
+                                      stateAfterLoop.clzHelperName? =
+                                        some helper :=
+                                    hHelperLoop hHelper
+                                  have hPopFunctionHelper :
+                                      stateAfterPopFunctions.clzHelperName? =
+                                        some helper :=
+                                    popFunctionScope_preserves_existing_clzHelperName
+                                      hPopFunctions hLoopHelper
+                                  have hPopIdentifierHelper :
+                                      stateAfterPopIdentifiers.clzHelperName? =
+                                        some helper :=
+                                    popIdentifierScope_preserves_existing_clzHelperName
+                                      hPopIdentifiers hPopFunctionHelper
+                                  simpa using hPopIdentifierHelper⟩
 
 theorem elaborateCodeCore_stmt_mem
     {rawStmts : List Raw.Stmt} {dispatcher : List Frontend.Stmt}
@@ -11457,7 +11890,8 @@ theorem elaborateCodeCore_stmt_codeRoute_of_mem
                               elaborateCodeStmts_stmt_mem_retains_hoisted
                                 hLoop hMem hNotFunction with
                             ⟨frontendStmt, stateBeforeStmt, stateAfterStmt,
-                              hStmt, hFrontendMem, hRetainLoop⟩
+                              hStmt, hFrontendMem, hRetainLoop,
+                              _hHelperLoop⟩
                           have hFinalMem :
                               frontendStmt ∈ dispatcherRev.reverse := by
                             simpa using hFrontendMem
@@ -11522,7 +11956,8 @@ theorem elaborateCodeCore_functionBody_codeRoute_of_mem
     ∃ (generated : Name) (frontendArgs : List Frontend.Expr),
       CodeElaborationRoute state generated frontendArgs dispatcher := by
   rcases elaborateCodeCore_function_mem_retains_hoisted hCore hMem with
-    ⟨fn, stateBeforeFn, stateAfterFn, hFn, hTopMem, hRetainFn⟩
+    ⟨fn, stateBeforeFn, stateAfterFn, hFn, hTopMem, hRetainFn,
+      _hHelperFn⟩
   rcases
       _root_.EvmCompiler.Solidity.RawAst.RawOccurrence.FunctionDef.elaborate_codeRoute_exists_of_body
         hFn
@@ -11549,7 +11984,8 @@ theorem elaborateCodeCore_stmt_clzCodeRoute_of_mem
     (hNotFunction : RawStmtNotFunctionDefinition rawStmt)
     (hOccurrence : StmtClzCall rawArg rawStmt) :
     ∃ (helper : Name) (frontendArg : Frontend.Expr),
-      CodeElaborationRoute state helper [frontendArg] dispatcher := by
+      state.clzHelperName? = some helper ∧
+        CodeElaborationRoute state helper [frontendArg] dispatcher := by
   unfold Elab.elaborateCodeCore Elab.elaborateCodeAction at hCore
   cases hPush : Elab.pushIdentifierScope.run {} with
   | error err =>
@@ -11605,7 +12041,8 @@ theorem elaborateCodeCore_stmt_clzCodeRoute_of_mem
                               elaborateCodeStmts_stmt_mem_retains_hoisted
                                 hLoop hMem hNotFunction with
                             ⟨frontendStmt, stateBeforeStmt, stateAfterStmt,
-                              hStmt, hFrontendMem, hRetainLoop⟩
+                              hStmt, hFrontendMem, hRetainLoop,
+                              hHelperLoop⟩
                           have hFinalMem :
                               frontendStmt ∈ dispatcherRev.reverse := by
                             simpa using hFrontendMem
@@ -11613,7 +12050,28 @@ theorem elaborateCodeCore_stmt_clzCodeRoute_of_mem
                             clzCodeRouteBelow (rawStmtSize rawStmt + 1)
                           rcases hBelow.stmt (Nat.lt_succ_self _)
                               hNotFunction hOccurrence hStmt with
-                            ⟨helper, frontendArg, hRoute⟩
+                            ⟨helper, frontendArg, hHelperAtStmt,
+                              hRoute⟩
+                          have hLoopHelper :
+                              stateAfterLoop.clzHelperName? = some helper :=
+                            hHelperLoop hHelperAtStmt
+                          have hPopFunctionHelper :
+                              stateAfterPopFunctions.clzHelperName? =
+                                some helper :=
+                            popFunctionScope_preserves_existing_clzHelperName
+                              hPopFunctions hLoopHelper
+                          have hPopIdentifierHelper :
+                              stateAfterPopIdentifiers.clzHelperName? =
+                                some helper :=
+                            popIdentifierScope_preserves_existing_clzHelperName
+                              hPopIdentifiers hPopFunctionHelper
+                          have hFinalHelper :
+                              ({ stateAfterPopIdentifiers with
+                                hoistedFunctions :=
+                                  stateAfterPopIdentifiers.hoistedFunctions ++
+                                    topFunctions } :
+                                Elab.State).clzHelperName? = some helper :=
+                            hPopIdentifierHelper
                           have hRetainFinal :
                               ∀ {entry : Name × Frontend.FunctionDef},
                                 entry ∈ stateAfterStmt.hoistedFunctions →
@@ -11649,7 +12107,7 @@ theorem elaborateCodeCore_stmt_clzCodeRoute_of_mem
                             StmtCodeElaborationRoute.retain hRoute
                               hRetainFinal
                           exact
-                            ⟨helper, frontendArg,
+                            ⟨helper, frontendArg, hFinalHelper,
                               StmtCodeElaborationRoute.toCodeRoute_of_mem
                                 hFinalMem hRouteAtEnd⟩
 
@@ -11664,9 +12122,11 @@ theorem elaborateCodeCore_functionBody_clzCodeRoute_of_mem
     {rawArg : Raw.Expr}
     (hOccurrence : StmtListClzCall rawArg body) :
     ∃ (helper : Name) (frontendArg : Frontend.Expr),
+      state.clzHelperName? = some helper ∧
       CodeElaborationRoute state helper [frontendArg] dispatcher := by
   rcases elaborateCodeCore_function_mem_retains_hoisted hCore hMem with
-    ⟨fn, stateBeforeFn, stateAfterFn, hFn, hTopMem, hRetainFn⟩
+    ⟨fn, stateBeforeFn, stateAfterFn, hFn, hTopMem, hRetainFn,
+      hHelperFn⟩
   rcases
       _root_.EvmCompiler.Solidity.RawAst.RawOccurrence.FunctionDef.elaborate_clzCodeRoute_exists_of_body
         hFn
@@ -11676,9 +12136,11 @@ theorem elaborateCodeCore_functionBody_clzCodeRoute_of_mem
             have hBelow := clzCodeRouteBelow (rawStmtListSize body + 1)
             exact
               hBelow.block (Nat.lt_succ_self _) hOccurrence hBody) with
-    ⟨helper, frontendArg, hBodyRoute⟩
+    ⟨helper, frontendArg, hHelperAtFn, hBodyRoute⟩
+  have hHelperAtEnd : state.clzHelperName? = some helper :=
+    hHelperFn hHelperAtFn
   exact
-    ⟨helper, frontendArg,
+    ⟨helper, frontendArg, hHelperAtEnd,
       CodeElaborationRoute.liftFunctionBody hTopMem hRetainFn
         hBodyRoute⟩
 
@@ -11690,6 +12152,7 @@ theorem elaborateCodeCore_clzCodeRoute
     {rawArg : Raw.Expr}
     (hOccurrence : StmtListClzCall rawArg rawStmts) :
     ∃ (helper : Name) (frontendArg : Frontend.Expr),
+      state.clzHelperName? = some helper ∧
       CodeElaborationRoute state helper [frontendArg] dispatcher := by
   rcases StmtListClzCall.exists_split_stmt hOccurrence with
     ⟨pre, stmt, suffix, hSplit, hStmtOccurrence⟩
@@ -11699,6 +12162,7 @@ theorem elaborateCodeCore_clzCodeRoute
   have hStatementRoute :
       RawStmtNotFunctionDefinition stmt →
         ∃ (helper : Name) (frontendArg : Frontend.Expr),
+          state.clzHelperName? = some helper ∧
           CodeElaborationRoute state helper [frontendArg] dispatcher := by
     intro hNotFunction
     exact
