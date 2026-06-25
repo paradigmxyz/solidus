@@ -79,6 +79,25 @@ theorem dispatcherSeqRunForward_zero
       (by
         simp [Yul.FunctionsInteractionPrimitive.Truncated])
 
+theorem dispatcherSeqRunForward_cons_functionDefinition_ok
+    {fuel orderedFuel : Nat}
+    {context : Frontend.ObjectBuiltinContext}
+    {scope : Raw.SourceSemantics.FunctionScope}
+    {name : Name} {params returns : List Name} {body rest : List Raw.Stmt}
+    {ordered : Yul.OrderedProgram}
+    {shared : EvmYul.SharedState .Yul} {vars : EvmYul.Yul.VarStore}
+    (hRest :
+      DispatcherSeqRunForward (fuel + 1) orderedFuel
+        context scope rest ordered (.Ok shared vars)) :
+    DispatcherSeqRunForward (fuel + 2) orderedFuel
+      context scope
+      (.functionDefinition name params returns body :: rest)
+      ordered (.Ok shared vars) := by
+  unfold DispatcherSeqRunForward at *
+  rw [Raw.SourceSemantics.ExecSeq.cons_succ]
+  rw [Raw.SourceSemantics.Exec.functionDefinition_succ]
+  simpa [Simulation.Interaction.bind_pure]
+
 theorem blockRunForward_of_scope_seq
     {rawFuel orderedFuel : Nat}
     {context : Frontend.ObjectBuiltinContext}
