@@ -4641,6 +4641,401 @@ def switchOfFocusedGenerated
 
 end FocusedStmtRun
 
+/-- Bundled generated-call interface for one focused source occurrence.
+
+The route evidence is compiler-derived and kept private to this package.
+Consumers choose the direct statement form they are proving and provide the
+ordinary dynamic Yul premises for that statement.  The constructors below then
+build `FocusedStmtRun` through the generic Yul statement rules, avoiding another
+round of generated-name/route/fuel theorem families. -/
+structure FocusedGeneratedCallInterface
+    (object : Frontend.Object)
+    (ordered : Yul.OrderedProgram)
+    (topName : Frontend.Name) where
+  routeEvidence : BodyRouteEvidence object ordered topName
+
+namespace FocusedGeneratedCallInterface
+
+def ofRouteEvidence
+    {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    {topName : Frontend.Name}
+    (routeEvidence : BodyRouteEvidence object ordered topName) :
+    FocusedGeneratedCallInterface object ordered topName where
+  routeEvidence := routeEvidence
+
+def callRun
+    {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    {topName : Frontend.Name}
+    {σ : Type}
+    (hInterface : FocusedGeneratedCallInterface object ordered topName)
+    (model : Yul.Source.Effectful.StateModel σ)
+    (prim : Yul.Source.Effectful.PrimitiveSemantics σ)
+    {bodyFuel : Nat}
+    {state stateAfterArgs stateAfterBody : σ}
+    {reversedValues : List Frontend.Word}
+    (hArgs :
+      Yul.Source.Effectful.evalArgs model prim (bodyFuel + 1)
+          hInterface.routeEvidence.yulEvidence.yulArgs.reverse
+          (some ordered.program.contract) state =
+        .ok (stateAfterArgs, reversedValues))
+    (hBody :
+      Yul.Source.Effectful.exec model prim bodyFuel
+          (.Block hInterface.routeEvidence.yulEvidence.localYulBody)
+          (some ordered.program.contract)
+          (model.withSource stateAfterArgs
+            (EvmYul.Yul.State.mkOk
+              ((model.source stateAfterArgs).initcall
+                hInterface.routeEvidence.yulEvidence.localFn.params
+                hInterface.routeEvidence.yulEvidence.localFn.returns
+                reversedValues.reverse))) =
+        .ok stateAfterBody) :
+    FocusedGeneratedCallRun (object := object) (ordered := ordered)
+      (topName := topName) model prim bodyFuel state :=
+  FocusedGeneratedCallRun.of_parts
+    model prim hInterface.routeEvidence hArgs hBody
+
+def exprStmtRun
+    {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    {topName : Frontend.Name}
+    {σ : Type}
+    (hInterface : FocusedGeneratedCallInterface object ordered topName)
+    (model : Yul.Source.Effectful.StateModel σ)
+    (prim : Yul.Source.Effectful.PrimitiveSemantics σ)
+    {bodyFuel : Nat}
+    {state stateAfterArgs stateAfterBody : σ}
+    {reversedValues : List Frontend.Word}
+    (hArgs :
+      Yul.Source.Effectful.evalArgs model prim (bodyFuel + 2)
+          hInterface.routeEvidence.yulEvidence.yulArgs.reverse
+          (some ordered.program.contract) state =
+        .ok (stateAfterArgs, reversedValues))
+    (hBody :
+      Yul.Source.Effectful.exec model prim bodyFuel
+          (.Block hInterface.routeEvidence.yulEvidence.localYulBody)
+          (some ordered.program.contract)
+          (model.withSource stateAfterArgs
+            (EvmYul.Yul.State.mkOk
+              ((model.source stateAfterArgs).initcall
+                hInterface.routeEvidence.yulEvidence.localFn.params
+                hInterface.routeEvidence.yulEvidence.localFn.returns
+                reversedValues.reverse))) =
+        .ok stateAfterBody) :
+    FocusedGeneratedExprStmtRun (object := object) (ordered := ordered)
+      (topName := topName) model prim bodyFuel state :=
+  FocusedGeneratedExprStmtRun.of_parts
+    model prim hInterface.routeEvidence hArgs hBody
+
+def assign
+    {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    {topName : Frontend.Name}
+    {σ : Type}
+    (hInterface : FocusedGeneratedCallInterface object ordered topName)
+    (model : Yul.Source.Effectful.StateModel σ)
+    (prim : Yul.Source.Effectful.PrimitiveSemantics σ)
+    {bodyFuel : Nat}
+    {state stateAfterArgs stateAfterBody : σ}
+    {names : List Frontend.Name}
+    {reversedValues : List Frontend.Word}
+    (hCheck :
+      EvmYul.Yul.checkAssignment (model.source state) names = .ok ())
+    (hArgs :
+      Yul.Source.Effectful.evalArgs model prim (bodyFuel + 1)
+          hInterface.routeEvidence.yulEvidence.yulArgs.reverse
+          (some ordered.program.contract) state =
+        .ok (stateAfterArgs, reversedValues))
+    (hBody :
+      Yul.Source.Effectful.exec model prim bodyFuel
+          (.Block hInterface.routeEvidence.yulEvidence.localYulBody)
+          (some ordered.program.contract)
+          (model.withSource stateAfterArgs
+            (EvmYul.Yul.State.mkOk
+              ((model.source stateAfterArgs).initcall
+                hInterface.routeEvidence.yulEvidence.localFn.params
+                hInterface.routeEvidence.yulEvidence.localFn.returns
+                reversedValues.reverse))) =
+        .ok stateAfterBody) :
+    FocusedStmtRun hInterface.routeEvidence.yulEvidence model prim state
+      ((bodyFuel + 2) + 1)
+      (.Assign names
+        (.Call (.inr hInterface.routeEvidence.yulEvidence.generated)
+          hInterface.routeEvidence.yulEvidence.yulArgs))
+      (model.multifill names
+        (model.withSource stateAfterBody
+          (((model.source stateAfterBody).reviveJump.overwrite?
+              (model.source stateAfterArgs)).setStore
+                (model.source stateAfterArgs)))
+        (List.map (model.source stateAfterBody).lookup!
+          hInterface.routeEvidence.yulEvidence.localFn.returns)) := by
+  let hRun := hInterface.callRun model prim hArgs hBody
+  simpa [hRun.run.postState_eq, hRun.run.returns_eq] using
+    FocusedStmtRun.assignOfFocusedGenerated hRun hCheck
+
+def letValue
+    {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    {topName : Frontend.Name}
+    {σ : Type}
+    (hInterface : FocusedGeneratedCallInterface object ordered topName)
+    (model : Yul.Source.Effectful.StateModel σ)
+    (prim : Yul.Source.Effectful.PrimitiveSemantics σ)
+    {bodyFuel : Nat}
+    {state stateAfterArgs stateAfterBody : σ}
+    {names : List Frontend.Name}
+    {reversedValues : List Frontend.Word}
+    (hCheck :
+      EvmYul.Yul.checkDeclaration (model.source state) names = .ok ())
+    (hArgs :
+      Yul.Source.Effectful.evalArgs model prim (bodyFuel + 1)
+          hInterface.routeEvidence.yulEvidence.yulArgs.reverse
+          (some ordered.program.contract) state =
+        .ok (stateAfterArgs, reversedValues))
+    (hBody :
+      Yul.Source.Effectful.exec model prim bodyFuel
+          (.Block hInterface.routeEvidence.yulEvidence.localYulBody)
+          (some ordered.program.contract)
+          (model.withSource stateAfterArgs
+            (EvmYul.Yul.State.mkOk
+              ((model.source stateAfterArgs).initcall
+                hInterface.routeEvidence.yulEvidence.localFn.params
+                hInterface.routeEvidence.yulEvidence.localFn.returns
+                reversedValues.reverse))) =
+        .ok stateAfterBody) :
+    FocusedStmtRun hInterface.routeEvidence.yulEvidence model prim state
+      ((bodyFuel + 2) + 1)
+      (.Let names
+        (some (.Call (.inr hInterface.routeEvidence.yulEvidence.generated)
+          hInterface.routeEvidence.yulEvidence.yulArgs)))
+      (model.multifill names
+        (model.withSource stateAfterBody
+          (((model.source stateAfterBody).reviveJump.overwrite?
+              (model.source stateAfterArgs)).setStore
+                (model.source stateAfterArgs)))
+        (List.map (model.source stateAfterBody).lookup!
+          hInterface.routeEvidence.yulEvidence.localFn.returns)) := by
+  let hRun := hInterface.callRun model prim hArgs hBody
+  simpa [hRun.run.postState_eq, hRun.run.returns_eq] using
+    FocusedStmtRun.letOfFocusedGenerated hRun hCheck
+
+def exprStmt
+    {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    {topName : Frontend.Name}
+    {σ : Type}
+    (hInterface : FocusedGeneratedCallInterface object ordered topName)
+    (model : Yul.Source.Effectful.StateModel σ)
+    (prim : Yul.Source.Effectful.PrimitiveSemantics σ)
+    {bodyFuel : Nat}
+    {state stateAfterArgs stateAfterBody : σ}
+    {reversedValues : List Frontend.Word}
+    (hArgs :
+      Yul.Source.Effectful.evalArgs model prim (bodyFuel + 2)
+          hInterface.routeEvidence.yulEvidence.yulArgs.reverse
+          (some ordered.program.contract) state =
+        .ok (stateAfterArgs, reversedValues))
+    (hBody :
+      Yul.Source.Effectful.exec model prim bodyFuel
+          (.Block hInterface.routeEvidence.yulEvidence.localYulBody)
+          (some ordered.program.contract)
+          (model.withSource stateAfterArgs
+            (EvmYul.Yul.State.mkOk
+              ((model.source stateAfterArgs).initcall
+                hInterface.routeEvidence.yulEvidence.localFn.params
+                hInterface.routeEvidence.yulEvidence.localFn.returns
+                reversedValues.reverse))) =
+        .ok stateAfterBody) :
+    FocusedStmtRun hInterface.routeEvidence.yulEvidence model prim state
+      ((bodyFuel + 1) + 2)
+      (.ExprStmtCall
+        (.Call (.inr hInterface.routeEvidence.yulEvidence.generated)
+          hInterface.routeEvidence.yulEvidence.yulArgs))
+      (model.multifill []
+        (model.withSource stateAfterBody
+          (((model.source stateAfterBody).reviveJump.overwrite?
+              (model.source stateAfterArgs)).setStore
+                (model.source stateAfterArgs)))
+        (List.map (model.source stateAfterBody).lookup!
+          hInterface.routeEvidence.yulEvidence.localFn.returns)) := by
+  let hRun := hInterface.exprStmtRun model prim hArgs hBody
+  simpa [hRun.postState_eq, hRun.returns_eq] using
+    FocusedStmtRun.exprStmtOfFocusedGenerated hRun
+
+def ifFalse
+    {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    {topName : Frontend.Name}
+    {σ : Type}
+    (hInterface : FocusedGeneratedCallInterface object ordered topName)
+    (model : Yul.Source.Effectful.StateModel σ)
+    (prim : Yul.Source.Effectful.PrimitiveSemantics σ)
+    {bodyFuel : Nat}
+    {state stateAfterArgs stateAfterBody : σ}
+    {ifBody : List Frontend.AstStmt}
+    {reversedValues : List Frontend.Word}
+    (hArgs :
+      Yul.Source.Effectful.evalArgs model prim (bodyFuel + 1)
+          hInterface.routeEvidence.yulEvidence.yulArgs.reverse
+          (some ordered.program.contract) state =
+        .ok (stateAfterArgs, reversedValues))
+    (hBody :
+      Yul.Source.Effectful.exec model prim bodyFuel
+          (.Block hInterface.routeEvidence.yulEvidence.localYulBody)
+          (some ordered.program.contract)
+          (model.withSource stateAfterArgs
+            (EvmYul.Yul.State.mkOk
+              ((model.source stateAfterArgs).initcall
+                hInterface.routeEvidence.yulEvidence.localFn.params
+                hInterface.routeEvidence.yulEvidence.localFn.returns
+                reversedValues.reverse))) =
+        .ok stateAfterBody)
+    (hZero :
+      (List.map (model.source stateAfterBody).lookup!
+          hInterface.routeEvidence.yulEvidence.localFn.returns).head! =
+        EvmYul.UInt256.ofNat 0) :
+    FocusedStmtRun hInterface.routeEvidence.yulEvidence model prim state
+      ((bodyFuel + 2) + 1)
+      (.If
+        (.Call (.inr hInterface.routeEvidence.yulEvidence.generated)
+          hInterface.routeEvidence.yulEvidence.yulArgs)
+        ifBody)
+      (model.withSource stateAfterBody
+        (((model.source stateAfterBody).reviveJump.overwrite?
+            (model.source stateAfterArgs)).setStore
+              (model.source stateAfterArgs))) := by
+  let hRun := hInterface.callRun model prim hArgs hBody
+  have hZeroRun : hRun.run.returns.head! = EvmYul.UInt256.ofNat 0 := by
+    simpa [hRun.run.returns_eq] using hZero
+  simpa [hRun.run.postState_eq] using
+    FocusedStmtRun.ifFalseOfFocusedGenerated hRun hZeroRun
+
+def ifTrue
+    {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    {topName : Frontend.Name}
+    {σ : Type}
+    (hInterface : FocusedGeneratedCallInterface object ordered topName)
+    (model : Yul.Source.Effectful.StateModel σ)
+    (prim : Yul.Source.Effectful.PrimitiveSemantics σ)
+    {bodyFuel : Nat}
+    {state stateAfterArgs stateAfterBody final : σ}
+    {ifBody : List Frontend.AstStmt}
+    {reversedValues : List Frontend.Word}
+    (hArgs :
+      Yul.Source.Effectful.evalArgs model prim (bodyFuel + 1)
+          hInterface.routeEvidence.yulEvidence.yulArgs.reverse
+          (some ordered.program.contract) state =
+        .ok (stateAfterArgs, reversedValues))
+    (hBody :
+      Yul.Source.Effectful.exec model prim bodyFuel
+          (.Block hInterface.routeEvidence.yulEvidence.localYulBody)
+          (some ordered.program.contract)
+          (model.withSource stateAfterArgs
+            (EvmYul.Yul.State.mkOk
+              ((model.source stateAfterArgs).initcall
+                hInterface.routeEvidence.yulEvidence.localFn.params
+                hInterface.routeEvidence.yulEvidence.localFn.returns
+                reversedValues.reverse))) =
+        .ok stateAfterBody)
+    (hNonzero :
+      (List.map (model.source stateAfterBody).lookup!
+          hInterface.routeEvidence.yulEvidence.localFn.returns).head! ≠
+        EvmYul.UInt256.ofNat 0)
+    (hIfBody :
+      Yul.Source.Effectful.exec model prim (bodyFuel + 2)
+          (.Block ifBody)
+          (some ordered.program.contract)
+          (model.withSource stateAfterBody
+            (((model.source stateAfterBody).reviveJump.overwrite?
+                (model.source stateAfterArgs)).setStore
+                  (model.source stateAfterArgs))) =
+        .ok final) :
+    FocusedStmtRun hInterface.routeEvidence.yulEvidence model prim state
+      ((bodyFuel + 2) + 1)
+      (.If
+        (.Call (.inr hInterface.routeEvidence.yulEvidence.generated)
+          hInterface.routeEvidence.yulEvidence.yulArgs)
+        ifBody)
+      final := by
+  let hRun := hInterface.callRun model prim hArgs hBody
+  have hNonzeroRun :
+      hRun.run.returns.head! ≠ EvmYul.UInt256.ofNat 0 := by
+    simpa [hRun.run.returns_eq] using hNonzero
+  have hIfBodyRun :
+      Yul.Source.Effectful.exec model prim (bodyFuel + 2)
+          (.Block ifBody)
+          (some ordered.program.contract) hRun.run.postState =
+        .ok final := by
+    simpa [hRun.run.postState_eq] using hIfBody
+  exact
+    FocusedStmtRun.ifTrueOfFocusedGenerated
+      hRun hNonzeroRun hIfBodyRun
+
+def switch
+    {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    {topName : Frontend.Name}
+    {σ : Type}
+    (hInterface : FocusedGeneratedCallInterface object ordered topName)
+    (model : Yul.Source.Effectful.StateModel σ)
+    (prim : Yul.Source.Effectful.PrimitiveSemantics σ)
+    {bodyFuel : Nat}
+    {state stateAfterArgs stateAfterBody final : σ}
+    {cases : List (Frontend.Word × List Frontend.AstStmt)}
+    {defaultBody : List Frontend.AstStmt}
+    {reversedValues : List Frontend.Word}
+    (hArgs :
+      Yul.Source.Effectful.evalArgs model prim (bodyFuel + 1)
+          hInterface.routeEvidence.yulEvidence.yulArgs.reverse
+          (some ordered.program.contract) state =
+        .ok (stateAfterArgs, reversedValues))
+    (hBody :
+      Yul.Source.Effectful.exec model prim bodyFuel
+          (.Block hInterface.routeEvidence.yulEvidence.localYulBody)
+          (some ordered.program.contract)
+          (model.withSource stateAfterArgs
+            (EvmYul.Yul.State.mkOk
+              ((model.source stateAfterArgs).initcall
+                hInterface.routeEvidence.yulEvidence.localFn.params
+                hInterface.routeEvidence.yulEvidence.localFn.returns
+                reversedValues.reverse))) =
+        .ok stateAfterBody)
+    (hSelected :
+      Yul.Source.Effectful.exec model prim (bodyFuel + 2)
+          (.Block
+            (EvmYul.Yul.selectSwitchCase
+              (List.map (model.source stateAfterBody).lookup!
+                hInterface.routeEvidence.yulEvidence.localFn.returns).head!
+              defaultBody cases))
+          (some ordered.program.contract)
+          (model.withSource stateAfterBody
+            (((model.source stateAfterBody).reviveJump.overwrite?
+                (model.source stateAfterArgs)).setStore
+                  (model.source stateAfterArgs))) =
+        .ok final) :
+    FocusedStmtRun hInterface.routeEvidence.yulEvidence model prim state
+      ((bodyFuel + 2) + 1)
+      (.Switch
+        (.Call (.inr hInterface.routeEvidence.yulEvidence.generated)
+          hInterface.routeEvidence.yulEvidence.yulArgs)
+        cases defaultBody)
+      final := by
+  let hRun := hInterface.callRun model prim hArgs hBody
+  have hSelectedRun :
+      Yul.Source.Effectful.exec model prim (bodyFuel + 2)
+          (.Block
+            (EvmYul.Yul.selectSwitchCase
+              hRun.run.returns.head! defaultBody cases))
+          (some ordered.program.contract) hRun.run.postState =
+        .ok final := by
+    simpa [hRun.run.postState_eq, hRun.run.returns_eq] using hSelected
+  exact
+    FocusedStmtRun.switchOfFocusedGenerated hRun hSelectedRun
+
+end FocusedGeneratedCallInterface
+
 /-- Semantic execution package for the concrete route body selected by
 `AlphaRenamedLocalCallYulEvidence.routes`.
 
@@ -7288,6 +7683,36 @@ theorem alphaRenamedLocalCallPreserved_bodyRouteEvidence
   exact
     AlphaRenamedLocalCallYulEvidence.BodyRouteEvidence.ofYulEvidence
       hEvidence
+
+/-- Source-facing constructor for the bundled generated-call interface.
+
+Successful source alpha-preservation and ordered-Yul conversion derive the
+compiler-owned route evidence once; statement/list proofs can then consume
+`FocusedGeneratedCallInterface` without reopening generated names, callee lookup,
+lowered arguments, or the lowerable/stub route split. -/
+theorem alphaRenamedLocalCallPreserved_focusedGeneratedCallInterface
+    {topBody : List Raw.Stmt}
+    {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    {topName name : Frontend.Name}
+    {localParams localReturns : List Frontend.Name}
+    {localBody : List Raw.Stmt}
+    {args : List Raw.Expr}
+    (hAlpha :
+      Raw.Source.AlphaRenamedLocalCallPreserved
+        topBody object.functions topName name
+          localParams localReturns localBody args)
+    (hConvert :
+      object.toSolcYulOrderedProgram? = some ordered) :
+    Nonempty
+      (AlphaRenamedLocalCallYulEvidence.FocusedGeneratedCallInterface
+        object ordered topName) := by
+  rcases alphaRenamedLocalCallPreserved_bodyRouteEvidence
+      hAlpha hConvert with
+    ⟨routeEvidence⟩
+  exact
+    ⟨AlphaRenamedLocalCallYulEvidence.FocusedGeneratedCallInterface.ofRouteEvidence
+      routeEvidence⟩
 
 /-- Source-facing expression-statement focused run for an alpha-renamed local
 call.
