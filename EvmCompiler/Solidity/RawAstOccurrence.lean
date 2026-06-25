@@ -2082,6 +2082,70 @@ theorem ensureClzHelper_retains_hoisted
                     freshNonFunctionBindingName_retains_hoisted hRet hArgMem
                   exact hRetMem
 
+theorem ensureClzHelper_helperName
+    {helper : Name} {state state' : Elab.State}
+    (hRun : Elab.ensureClzHelper.run state = .ok (helper, state')) :
+    state'.clzHelperName? = some helper := by
+  unfold Elab.ensureClzHelper at hRun
+  cases hClz : state.clzHelperName? with
+  | some existing =>
+      simp [hClz] at hRun
+      rcases hRun with ⟨rfl, rfl⟩
+      exact hClz
+  | none =>
+      simp [hClz] at hRun
+      cases hHelper :
+          (Elab.freshGeneratedFunctionName "clz").run state with
+      | error err =>
+          simp [hHelper] at hRun
+      | ok helperResult =>
+          rcases helperResult with ⟨generatedHelper, stateAfterHelper⟩
+          cases hArg :
+              (Elab.freshNonFunctionBindingName "clz_arg").run
+                stateAfterHelper with
+          | error err =>
+              simp [hHelper, hArg] at hRun
+          | ok argResult =>
+              rcases argResult with ⟨arg, stateAfterArg⟩
+              cases hRet :
+                  (Elab.freshNonFunctionBindingName "clz_ret").run
+                    stateAfterArg with
+              | error err =>
+                  simp [hHelper, hArg, hRet] at hRun
+              | ok retResult =>
+                  rcases retResult with ⟨ret, stateAfterRet⟩
+                  simp [hHelper, hArg, hRet] at hRun
+                  rcases hRun with ⟨rfl, rfl⟩
+                  simp
+
+theorem Expr.elaborate_clz_direct
+    {rawArg : Raw.Expr} {frontendExpr : Frontend.Expr}
+    {state state' : Elab.State}
+    (hElab :
+      (Elab.Expr.elaborate (.functionCall "clz" [rawArg])).run state =
+        .ok (frontendExpr, state')) :
+    ∃ (helper : Name) (frontendArg : Frontend.Expr),
+      state'.clzHelperName? = some helper ∧
+        FrontendOccurrence.ExprUserCall helper [frontendArg]
+          frontendExpr := by
+  cases hArg :
+      (Elab.Expr.elaborate rawArg).run state with
+  | error err =>
+      simp [Elab.Expr.elaborate, hArg] at hElab
+  | ok argResult =>
+      rcases argResult with ⟨frontendArg, stateAfterArg⟩
+      cases hHelper :
+          Elab.ensureClzHelper.run stateAfterArg with
+      | error err =>
+          simp [Elab.Expr.elaborate, hArg, hHelper] at hElab
+      | ok helperResult =>
+          rcases helperResult with ⟨helper, stateAfterHelper⟩
+          simp [Elab.Expr.elaborate, hArg, hHelper] at hElab
+          rcases hElab with ⟨rfl, rfl⟩
+          exact
+            ⟨helper, frontendArg, ensureClzHelper_helperName hHelper,
+              FrontendOccurrence.ExprUserCall.here⟩
+
 theorem localFunctionScope_retains_hoisted
     {rawStmts : List Raw.Stmt} {scope : List (Name × Name)}
     {state state' : Elab.State}

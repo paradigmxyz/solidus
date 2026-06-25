@@ -69,6 +69,8 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.RawAst.Elab.clzHelperYulInterface_orderedLookup
 #check EvmCompiler.Solidity.RawAst.Elab.clzHelperAstBody_zero_exec
 #check EvmCompiler.Solidity.RawAst.Elab.clzHelperYulInterface_call_succ
+#check EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.ensureClzHelper_helperName
+#check EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.Expr.elaborate_clz_direct
 #check EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedCallPrefixEvidence
 #check EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedCallPrefixEvidence.of_yulOccurrence
 #check EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedCallPrefixEvidence.call_succ
@@ -360,6 +362,8 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.RawAst.Elab.clzHelperAstBody_zero_exec
 #print axioms EvmCompiler.Solidity.RawAst.Elab.clzHelperYulInterface_call_succ
 #print axioms EvmCompiler.Solidity.RawAst.Elab.clzHelperYulInterface_call_value_succ
+#print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.ensureClzHelper_helperName
+#print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.Expr.elaborate_clz_direct
 #print axioms EvmCompiler.Solidity.RawAst.Elab.codeGeneratedNormalizationEvidence_clzHelper_call_value_succ
 #print axioms EvmCompiler.Solidity.RawAst.Elab.generatedNormalizationEvidence_clzHelper_call_value_succ
 #print axioms EvmCompiler.Solidity.RawAst.Elab.decodeAndElaborateSolcIr?_clzHelper_call_value_succ

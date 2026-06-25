@@ -169,8 +169,12 @@ Next raw frontend layer:
   body under `initcall` and caller-frame restoration after return. Arithmetic
   correctness now has a checked zero-input base theorem,
   `Elab.clzHelperAstBody_zero_exec`, which proves the generated body returns
-  256 and skips the nonzero schedule when the helper argument is zero. The
-  full scheduled-step `clzHelperValue` theorem and nested
+  256 and skips the nonzero schedule when the helper argument is zero.
+  `Elab.clzHelperYulInterface_call_value_succ` proves the full scheduled
+  helper call returns `clzHelperValue argValue`, and
+  `RawOccurrence.Elab.Expr.elaborate_clz_direct` proves direct raw `clz(arg)`
+  elaboration exposes the generated helper as a frontend user-call occurrence.
+  Full contextual raw-`clz` source preservation and nested
   hoist/alpha-renaming semantic preservation remain open.
 - [x] Expose the production interface
   `decodeAndElaborateSolcIr? rawJson selection = some frontendProgram` without
