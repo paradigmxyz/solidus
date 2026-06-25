@@ -3351,6 +3351,265 @@ def StmtListPrefixExec
           Yul.YulOccurrence.StmtListUserCall.continueAfterPrefix
             (fuel + 1) (focused :: suffix) codeOverride stateAfterPre)
 
+inductive DirectCallExecution
+    {ordered : Yul.OrderedProgram}
+    {generated : Name}
+    {params returns : List Name} {body : List Yul.AstStmt}
+    {args : List Yul.AstExpr} {stmts : List Yul.AstStmt}
+    {prefixFuel : Nat} {code : Option Yul.AstContract}
+    {shared : EvmYul.SharedState .Yul}
+    {vars : EvmYul.Yul.VarStore}
+    (hInterface :
+      FocusedGeneratedCallSemanticInterface ordered generated params returns
+        body args stmts prefixFuel code shared vars) :
+    Yul.AstStmt → Prop where
+  | exprStmt :
+      (∀ (fuel : Nat) (source : Yul.InteractionSemantics.State),
+        Yul.InteractionSemantics.exec (fuel + 3)
+            (.ExprStmtCall (.Call (.inr generated) args))
+            (some ordered.program.contract) source =
+          Simulation.Interaction.bind
+            (Yul.InteractionSemantics.evalArgs (fuel + 2)
+              args.reverse (some ordered.program.contract) source)
+            (fun argsResult =>
+              Simulation.Interaction.bind
+                (Yul.InteractionSemantics.exec fuel
+                  (.Block body) (some ordered.program.contract)
+                  (EvmYul.Yul.State.mkOk
+                    (argsResult.1.initcall params returns
+                      argsResult.2.reverse)))
+                (fun stateAfterBody =>
+                  pure
+                    (Yul.InteractionSemantics.stateModel.multifill []
+                      ((stateAfterBody.reviveJump.overwrite?
+                          argsResult.1).setStore argsResult.1)
+                      (List.map stateAfterBody.lookup! returns))))) →
+      DirectCallExecution hInterface
+        (.ExprStmtCall (.Call (.inr generated) args))
+  | letValue {names : List Name} :
+      (∀ (fuel : Nat) (source : Yul.InteractionSemantics.State),
+        EvmYul.Yul.checkDeclaration source names = .ok () →
+        Yul.InteractionSemantics.exec (fuel + 3)
+            (.Let names (some (.Call (.inr generated) args)))
+            (some ordered.program.contract) source =
+          Simulation.Interaction.bind
+            (Yul.InteractionSemantics.evalArgs (fuel + 1)
+              args.reverse (some ordered.program.contract) source)
+            (fun argsResult =>
+              Simulation.Interaction.bind
+                (Yul.InteractionSemantics.exec fuel
+                  (.Block body) (some ordered.program.contract)
+                  (EvmYul.Yul.State.mkOk
+                    (argsResult.1.initcall params returns
+                      argsResult.2.reverse)))
+                (fun stateAfterBody =>
+                  pure
+                    (Yul.InteractionSemantics.stateModel.multifill names
+                      ((stateAfterBody.reviveJump.overwrite?
+                          argsResult.1).setStore argsResult.1)
+                      (List.map stateAfterBody.lookup! returns))))) →
+      DirectCallExecution hInterface
+        (.Let names (some (.Call (.inr generated) args)))
+  | assignValue {names : List Name} :
+      (∀ (fuel : Nat) (source : Yul.InteractionSemantics.State),
+        EvmYul.Yul.checkAssignment source names = .ok () →
+        Yul.InteractionSemantics.exec (fuel + 3)
+            (.Assign names (.Call (.inr generated) args))
+            (some ordered.program.contract) source =
+          Simulation.Interaction.bind
+            (Yul.InteractionSemantics.evalArgs (fuel + 1)
+              args.reverse (some ordered.program.contract) source)
+            (fun argsResult =>
+              Simulation.Interaction.bind
+                (Yul.InteractionSemantics.exec fuel
+                  (.Block body) (some ordered.program.contract)
+                  (EvmYul.Yul.State.mkOk
+                    (argsResult.1.initcall params returns
+                      argsResult.2.reverse)))
+                (fun stateAfterBody =>
+                  pure
+                    (Yul.InteractionSemantics.stateModel.multifill names
+                      ((stateAfterBody.reviveJump.overwrite?
+                          argsResult.1).setStore argsResult.1)
+                      (List.map stateAfterBody.lookup! returns))))) →
+      DirectCallExecution hInterface
+        (.Assign names (.Call (.inr generated) args))
+  | ifCondition {ifBody : List Yul.AstStmt} :
+      (∀ (fuel : Nat) (source : Yul.InteractionSemantics.State),
+        Yul.InteractionSemantics.exec (fuel + 3)
+            (.If (.Call (.inr generated) args) ifBody)
+            (some ordered.program.contract) source =
+          Simulation.Interaction.bind
+            (Yul.InteractionSemantics.evalArgs (fuel + 1)
+              args.reverse (some ordered.program.contract) source)
+            (fun argsResult =>
+              Simulation.Interaction.bind
+                (Yul.InteractionSemantics.exec fuel
+                  (.Block body) (some ordered.program.contract)
+                  (EvmYul.Yul.State.mkOk
+                    (argsResult.1.initcall params returns
+                      argsResult.2.reverse)))
+                (fun stateAfterBody =>
+                  let stateAfterCall :=
+                    ((stateAfterBody.reviveJump.overwrite?
+                        argsResult.1).setStore argsResult.1)
+                  let values := List.map stateAfterBody.lookup! returns
+                  if values.head! ≠ EvmYul.UInt256.ofNat 0 then
+                    Yul.InteractionSemantics.exec (fuel + 2)
+                      (.Block ifBody) (some ordered.program.contract)
+                      stateAfterCall
+                  else
+                    pure stateAfterCall))) →
+      DirectCallExecution hInterface
+        (.If (.Call (.inr generated) args) ifBody)
+  | switchScrutinee
+      {cases : List (Word × List Yul.AstStmt)}
+      {defaultBody : List Yul.AstStmt} :
+      (∀ (fuel : Nat) (source : Yul.InteractionSemantics.State),
+        Yul.InteractionSemantics.exec (fuel + 3)
+            (.Switch (.Call (.inr generated) args) cases defaultBody)
+            (some ordered.program.contract) source =
+          Simulation.Interaction.bind
+            (Yul.InteractionSemantics.evalArgs (fuel + 1)
+              args.reverse (some ordered.program.contract) source)
+            (fun argsResult =>
+              Simulation.Interaction.bind
+                (Yul.InteractionSemantics.exec fuel
+                  (.Block body) (some ordered.program.contract)
+                  (EvmYul.Yul.State.mkOk
+                    (argsResult.1.initcall params returns
+                      argsResult.2.reverse)))
+                (fun stateAfterBody =>
+                  let stateAfterCall :=
+                    ((stateAfterBody.reviveJump.overwrite?
+                        argsResult.1).setStore argsResult.1)
+                  let values := List.map stateAfterBody.lookup! returns
+                  Yul.InteractionSemantics.exec (fuel + 2)
+                    (.Block
+                      (EvmYul.Yul.selectSwitchCase values.head! defaultBody
+                        cases))
+                    (some ordered.program.contract) stateAfterCall))) →
+      DirectCallExecution hInterface
+        (.Switch (.Call (.inr generated) args) cases defaultBody)
+  | forCondition {post loopBody : List Yul.AstStmt} :
+      (∀ (fuel : Nat)
+        (entryShared : EvmYul.SharedState .Yul)
+        (entryVars : EvmYul.Yul.VarStore),
+        Yul.InteractionSemantics.exec (fuel + 5)
+            (.For (.Call (.inr generated) args) post loopBody)
+            (some ordered.program.contract) (.Ok entryShared entryVars) =
+          Simulation.Interaction.bind
+            (Simulation.Interaction.bind
+              (Simulation.Interaction.bind
+                (Yul.InteractionSemantics.evalArgs (fuel + 1)
+                  args.reverse (some ordered.program.contract)
+                  (.Ok entryShared entryVars))
+                (fun argsResult =>
+                  Simulation.Interaction.bind
+                    (Yul.InteractionSemantics.exec fuel
+                      (.Block body) (some ordered.program.contract)
+                      (EvmYul.Yul.State.mkOk
+                        (argsResult.1.initcall params returns
+                          argsResult.2.reverse)))
+                    (fun stateAfterBody =>
+                      pure
+                        ((stateAfterBody.reviveJump.overwrite?
+                            argsResult.1).setStore argsResult.1,
+                          List.map stateAfterBody.lookup! returns))))
+              (fun result =>
+                if result.2.head! = EvmYul.UInt256.ofNat 0 then
+                  Simulation.Interaction.pure (.inl result.1)
+                else
+                  Simulation.Interaction.map Sum.inr
+                    (Yul.InteractionSemantics.exec (fuel + 2)
+                      (.Block loopBody) (some ordered.program.contract)
+                      result.1)))
+            (fun guarded =>
+              match guarded with
+              | .inl stateAfterCond =>
+                  Simulation.Interaction.pure stateAfterCond
+              | .inr stateAfterBody =>
+                  match stateAfterBody with
+                  | .OutOfFuel => Simulation.Interaction.pure .OutOfFuel
+                  | .Checkpoint (.Break shared vars) =>
+                      Simulation.Interaction.pure (.Ok shared vars)
+                  | .Checkpoint (.Leave shared vars) =>
+                      Simulation.Interaction.pure
+                        (.Checkpoint (.Leave shared vars))
+                  | .Checkpoint (.Continue shared vars) | .Ok shared vars =>
+                      Simulation.Interaction.bind
+                        (Yul.InteractionSemantics.exec (fuel + 2)
+                          (.Block post) (some ordered.program.contract)
+                          (.Ok shared vars))
+                        (fun stateAfterPost =>
+                          match stateAfterPost with
+                          | .OutOfFuel =>
+                              Simulation.Interaction.pure .OutOfFuel
+                          | .Checkpoint (.Leave shared vars) =>
+                              Simulation.Interaction.pure
+                                (.Checkpoint (.Leave shared vars))
+                          | _ =>
+                              Yul.InteractionSemantics.exec (fuel + 2)
+                                (.For (.Call (.inr generated) args) post
+                                  loopBody)
+                                (some ordered.program.contract)
+                                stateAfterPost))) →
+      DirectCallExecution hInterface
+        (.For (.Call (.inr generated) args) post loopBody)
+
+theorem directCallExecution_of_exprSlot
+    {ordered : Yul.OrderedProgram}
+    {generated : Name}
+    {params returns : List Name} {body : List Yul.AstStmt}
+    {args : List Yul.AstExpr} {stmts : List Yul.AstStmt}
+    {prefixFuel : Nat} {code : Option Yul.AstContract}
+    {shared : EvmYul.SharedState .Yul}
+    {vars : EvmYul.Yul.VarStore}
+    {stmt : Yul.AstStmt} {expr : Yul.AstExpr}
+    {hInterface :
+      FocusedGeneratedCallSemanticInterface ordered generated params returns
+        body args stmts prefixFuel code shared vars}
+    (hSlot : StmtExprSlot hInterface stmt expr)
+    (hDirect : expr = .Call (.inr generated) args) :
+    DirectCallExecution hInterface stmt := by
+  cases hSlot with
+  | letValue hExpr =>
+      cases hDirect
+      exact
+        DirectCallExecution.letValue (by
+          intro fuel source hCheck
+          exact letCall_succ hInterface fuel _ source hCheck)
+  | assignValue hExpr =>
+      cases hDirect
+      exact
+        DirectCallExecution.assignValue (by
+          intro fuel source hCheck
+          exact assignCall_succ hInterface fuel _ source hCheck)
+  | exprStmt hExpr =>
+      cases hDirect
+      exact
+        DirectCallExecution.exprStmt (by
+          intro fuel source
+          exact exprStmtCall_succ hInterface fuel source)
+  | switchScrutinee hExpr =>
+      cases hDirect
+      exact
+        DirectCallExecution.switchScrutinee (by
+          intro fuel source
+          exact switchScrutineeCall_succ hInterface fuel _ _ source)
+  | forCondition hExpr =>
+      cases hDirect
+      exact
+        DirectCallExecution.forCondition (by
+          intro fuel entryShared entryVars
+          exact forConditionCall_succ hInterface fuel _ _ entryShared entryVars)
+  | ifCondition hExpr =>
+      cases hDirect
+      exact
+        DirectCallExecution.ifCondition (by
+          intro fuel source
+          exact ifConditionCall_succ hInterface fuel _ source)
+
 inductive RecursiveSemanticStep
     {ordered : Yul.OrderedProgram}
     {generated : Name}
@@ -3401,6 +3660,87 @@ inductive RecursiveSemanticStep
             StmtContext hInterface focused →
               StmtListPrefixExec caseBody pre focused suffix →
                 RecursiveSemanticStep hInterface stmt
+
+inductive RecursiveSemanticExecution
+    {ordered : Yul.OrderedProgram}
+    {generated : Name}
+    {params returns : List Name} {body : List Yul.AstStmt}
+    {args : List Yul.AstExpr} {stmts : List Yul.AstStmt}
+    {prefixFuel : Nat} {code : Option Yul.AstContract}
+    {shared : EvmYul.SharedState .Yul}
+    {vars : EvmYul.Yul.VarStore}
+    (hInterface :
+      FocusedGeneratedCallSemanticInterface ordered generated params returns
+        body args stmts prefixFuel code shared vars) :
+    Yul.AstStmt → Prop where
+  | direct {stmt : Yul.AstStmt} :
+      DirectCallExecution hInterface stmt →
+        RecursiveSemanticExecution hInterface stmt
+  | exprCallArgPrefix
+      {stmt : Yul.AstStmt} {expr : Yul.AstExpr}
+      {callee : EvmYul.Operation .Yul ⊕ Name}
+      {outerArgs before : List Yul.AstExpr} {arg : Yul.AstExpr}
+      {after : List Yul.AstExpr} :
+      StmtExprSlot hInterface stmt expr →
+        expr = .Call callee outerArgs →
+          outerArgs.reverse = before ++ arg :: after →
+            ExprContext hInterface arg →
+              ExprCallArgPrefixEval ordered expr callee before arg after →
+                RecursiveSemanticExecution hInterface stmt
+  | stmtListPrefix
+      {stmt : Yul.AstStmt} {stmtList : List Yul.AstStmt}
+      {pre : List Yul.AstStmt} {focused : Yul.AstStmt}
+      {suffix : List Yul.AstStmt} :
+      StmtListSlot hInterface stmt stmtList →
+        stmtList = pre ++ focused :: suffix →
+          StmtContext hInterface focused →
+            StmtListPrefixExec stmtList pre focused suffix →
+              RecursiveSemanticExecution hInterface stmt
+  | caseListPrefix
+      {stmt : Yul.AstStmt} {cases : List (Word × List Yul.AstStmt)}
+      {casePre : List (Word × List Yul.AstStmt)} {value : Word}
+      {caseBody : List Yul.AstStmt}
+      {caseSuffix : List (Word × List Yul.AstStmt)}
+      {pre : List Yul.AstStmt} {focused : Yul.AstStmt}
+      {suffix : List Yul.AstStmt} :
+      StmtCaseListSlot hInterface stmt cases →
+        cases = casePre ++ (value, caseBody) :: caseSuffix →
+          caseBody = pre ++ focused :: suffix →
+            StmtContext hInterface focused →
+              StmtListPrefixExec caseBody pre focused suffix →
+                RecursiveSemanticExecution hInterface stmt
+
+theorem RecursiveSemanticStep.execution
+    {ordered : Yul.OrderedProgram}
+    {generated : Name}
+    {params returns : List Name} {body : List Yul.AstStmt}
+    {args : List Yul.AstExpr} {stmts : List Yul.AstStmt}
+    {prefixFuel : Nat} {code : Option Yul.AstContract}
+    {shared : EvmYul.SharedState .Yul}
+    {vars : EvmYul.Yul.VarStore}
+    {stmt : Yul.AstStmt}
+    {hInterface :
+      FocusedGeneratedCallSemanticInterface ordered generated params returns
+        body args stmts prefixFuel code shared vars}
+    (hStep : RecursiveSemanticStep hInterface stmt) :
+    RecursiveSemanticExecution hInterface stmt := by
+  cases hStep with
+  | exprDirect hSlot hDirect =>
+      exact
+        RecursiveSemanticExecution.direct
+          (directCallExecution_of_exprSlot hSlot hDirect)
+  | exprCallArgPrefix hSlot hExpr hSplit hArg hEval =>
+      exact
+        RecursiveSemanticExecution.exprCallArgPrefix hSlot hExpr hSplit
+          hArg hEval
+  | stmtListPrefix hSlot hSplit hFocused hPrefix =>
+      exact
+        RecursiveSemanticExecution.stmtListPrefix hSlot hSplit hFocused
+          hPrefix
+  | caseListPrefix hSlot hCases hBody hFocused hPrefix =>
+      exact
+        RecursiveSemanticExecution.caseListPrefix hSlot hCases hBody
+          hFocused hPrefix
 
 theorem recursiveSemanticStep
     {ordered : Yul.OrderedProgram}
@@ -3625,6 +3965,49 @@ theorem recursiveStepEvidence_of_interface
   rcases stmtListRecursiveSemanticStep hInterface with
     ⟨pre, stmt, suffix, hSplit, hStep, hPrefix⟩
   exact ⟨hInterface, pre, stmt, suffix, hSplit, hStep, hPrefix⟩
+
+def RecursiveExecution
+    (ordered : Yul.OrderedProgram)
+    (generated : Name)
+    (params returns : List Name) (body : List Yul.AstStmt)
+    (args : List Yul.AstExpr) (stmts : List Yul.AstStmt)
+    (prefixFuel : Nat) (code : Option Yul.AstContract)
+    (shared : EvmYul.SharedState .Yul)
+    (vars : EvmYul.Yul.VarStore) : Prop :=
+  ∃ (hInterface :
+      FocusedGeneratedCallSemanticInterface ordered generated params returns
+        body args stmts prefixFuel code shared vars)
+    (pre : List Yul.AstStmt) (stmt : Yul.AstStmt)
+    (suffix : List Yul.AstStmt),
+    stmts = pre ++ stmt :: suffix ∧
+      StmtContext.RecursiveSemanticExecution hInterface stmt ∧
+        Yul.InteractionSemantics.execSeq
+          (prefixFuel + pre.length + 1) stmts code (.Ok shared vars) =
+          Simulation.Interaction.bind
+            (Yul.InteractionSemantics.execSeq
+              (prefixFuel + pre.length + 1) pre code (.Ok shared vars))
+            (fun stateAfterPre =>
+              Yul.YulOccurrence.StmtListUserCall.continueAfterPrefix
+                (prefixFuel + 1) (stmt :: suffix) code stateAfterPre)
+
+theorem recursiveExecution_of_recursiveStepEvidence
+    {ordered : Yul.OrderedProgram}
+    {generated : Name}
+    {params returns : List Name} {body : List Yul.AstStmt}
+    {args : List Yul.AstExpr} {stmts : List Yul.AstStmt}
+    {prefixFuel : Nat} {code : Option Yul.AstContract}
+    {shared : EvmYul.SharedState .Yul}
+    {vars : EvmYul.Yul.VarStore}
+    (hEvidence :
+      RecursiveStepEvidence ordered generated params returns body args stmts
+        prefixFuel code shared vars) :
+    RecursiveExecution ordered generated params returns body args stmts
+      prefixFuel code shared vars := by
+  rcases hEvidence with
+    ⟨hInterface, pre, stmt, suffix, hSplit, hStep, hPrefix⟩
+  exact
+    ⟨hInterface, pre, stmt, suffix, hSplit,
+      StmtContext.RecursiveSemanticStep.execution hStep, hPrefix⟩
 
 end FocusedGeneratedCallSemanticInterface
 
@@ -5502,6 +5885,82 @@ theorem decodeAndElaborateSolcIr?_recursiveStepEvidenceOfRawOccurrence
         ⟨params, returns, body, yulArgs, stmts,
           FocusedGeneratedCallSemanticInterface.recursiveStepEvidence_of_interface
             hInterface⟩
+
+theorem decodeAndElaborateSolcIr?_recursiveExecutionOfRawOccurrence
+    {rawJson : String} {selection : Selection}
+    {program : Frontend.Program} {ordered : Yul.OrderedProgram}
+    (hDecode :
+      decodeAndElaborateSolcIr? rawJson selection = some program)
+    (hConvert : program.object.toSolcYulOrderedProgram? = some ordered) :
+    ∃ (json : Lean.Json) (selected : SelectedIr)
+        (object : Frontend.Object),
+      Lean.Json.parse rawJson = .ok json ∧
+        decodeSelectedIr json selection = .ok selected ∧
+          selected.root.elaborate? selected.evmVersion = .ok object ∧
+            program =
+              { source := selected.source
+                contract := selected.contract
+                object := object } ∧
+              match selected.root.code? with
+              | none => True
+              | some code =>
+                  ∃ (coreDispatcher : List Frontend.Stmt) (state : State)
+                      (helper? arg? ret? : Option Name),
+                    elaborateCodeCore code = .ok (coreDispatcher, state) ∧
+                      elaborateCode code =
+                        .ok (object.dispatcher, object.functions,
+                          helper?, arg?, ret?) ∧
+                        ∀ {functionName : Name}
+                            {rawArgs : List Raw.Expr},
+                          RawOccurrence.StmtListUserCall functionName
+                            rawArgs code →
+                            functionName ≠ "memoryguard" →
+                              functionName ≠ "clz" →
+                                CallClass.classifyCall functionName =
+                                  .user →
+                                  ∃ (generated : Name)
+                                    (frontendArgs : List Frontend.Expr),
+                                    ∀ {fuel : Nat}
+                                        {shared : EvmYul.SharedState .Yul}
+                                        {vars : EvmYul.Yul.VarStore},
+                                      ∃ (params returns : List Name)
+                                        (body : List Yul.AstStmt)
+                                        (yulArgs : List Yul.AstExpr)
+                                        (stmts : List Yul.AstStmt),
+                                        FocusedGeneratedCallSemanticInterface.RecursiveExecution
+                                          ordered generated params returns
+                                          body yulArgs stmts fuel
+                                          (some
+                                            ordered.program.contract)
+                                          shared vars := by
+  rcases
+      decodeAndElaborateSolcIr?_recursiveStepEvidenceOfRawOccurrence
+        hDecode hConvert with
+    ⟨json, selected, object, hParse, hSelected, hObject, hProgram,
+      hStepEvidence⟩
+  refine ⟨json, selected, object, hParse, hSelected, hObject, hProgram, ?_⟩
+  cases hRawCode : selected.root.code? with
+  | none =>
+      simp [hRawCode]
+  | some code =>
+      rw [hRawCode] at hStepEvidence
+      rcases hStepEvidence with
+        ⟨coreDispatcher, state, helper?, arg?, ret?, hCore, hElab,
+          hOccurrenceStep⟩
+      refine
+        ⟨coreDispatcher, state, helper?, arg?, ret?, hCore, hElab, ?_⟩
+      intro functionName rawArgs hOccurrence hNotMemoryguard hNotClz
+        hKind
+      rcases hOccurrenceStep hOccurrence hNotMemoryguard hNotClz hKind with
+        ⟨generated, frontendArgs, hGenerated⟩
+      refine ⟨generated, frontendArgs, ?_⟩
+      intro fuel shared vars
+      rcases hGenerated with
+        ⟨params, returns, body, yulArgs, stmts, hEvidence⟩
+      exact
+        ⟨params, returns, body, yulArgs, stmts,
+          FocusedGeneratedCallSemanticInterface.recursiveExecution_of_recursiveStepEvidence
+            hEvidence⟩
 
 theorem decodeAndElaborateSolcIr?_codeRouteOfRawOccurrence
     {rawJson : String} {selection : Selection}
