@@ -4372,6 +4372,30 @@ theorem classified_split_execSeq
           .ok hRun.run.afterRest :=
   hRun.run.classified_split_execSeq
 
+theorem focused_split_execSeq
+    {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    {topName : Frontend.Name}
+    {hEvidence : AlphaRenamedLocalCallYulEvidence object ordered topName}
+    {σ : Type}
+    {model : Yul.Source.Effectful.StateModel σ}
+    {prim : Yul.Source.Effectful.PrimitiveSemantics σ}
+    {prefixFuel : Nat}
+    {state : σ}
+    (hRun :
+      BodyRouteRun hEvidence model prim prefixFuel state) :
+    ∃ (pre : List Frontend.AstStmt)
+        (stmt : Frontend.AstStmt)
+        (rest : List Frontend.AstStmt),
+      hRun.yulBody = pre ++ stmt :: rest ∧
+        YulOccurrence.StmtUserCall stmt
+          hEvidence.generated hEvidence.yulArgs ∧
+        Yul.Source.Effectful.execSeq model prim
+            ((prefixFuel + 1) + pre.length) hRun.yulBody
+            (some ordered.program.contract) state =
+          .ok hRun.run.afterRest :=
+  hRun.splitFocused.classified_split_execSeq
+
 end BodyRouteRun
 
 /-- Direct assignment statement execution for a generated alpha-renamed call

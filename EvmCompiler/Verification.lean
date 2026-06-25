@@ -493,6 +493,7 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.BodyRouteRun.execSeq
 #check EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.BodyRouteRun.classified_split_execSeq
 #check EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.BodyRouteRun.splitFocused
+#check EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.BodyRouteRun.focused_split_execSeq
 #check EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.assign_succ
 #check EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.let_succ
 #check EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.exprStmt_succ
@@ -1000,6 +1001,7 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.BodyRouteRun.execSeq
 #print axioms EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.BodyRouteRun.classified_split_execSeq
 #print axioms EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.BodyRouteRun.splitFocused
+#print axioms EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.BodyRouteRun.focused_split_execSeq
 #print axioms EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.assign_succ
 #print axioms EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.let_succ
 #print axioms EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.exprStmt_succ
