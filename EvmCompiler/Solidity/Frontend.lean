@@ -2375,6 +2375,53 @@ def functionMap (entries : List (Name × AstFunctionDefinition)) :
       AstFunctionDefinition) :=
   Yul.FunctionList.functionMap entries
 
+private theorem lookup_foldl_insert_of_not_mem
+    (entries : List (Name × AstFunctionDefinition))
+    (state : Finmap (fun (_ : Name) => AstFunctionDefinition))
+    (name : Name)
+    (hNotMem : name ∉ entries.map Prod.fst) :
+    (entries.foldl
+        (fun acc entry => acc.insert entry.fst entry.snd) state).lookup name =
+      state.lookup name := by
+  induction entries generalizing state with
+  | nil => rfl
+  | cons entry rest ih =>
+      rcases entry with ⟨headName, headFn⟩
+      simp only [List.map_cons, List.mem_cons, not_or] at hNotMem
+      rw [List.foldl_cons, ih _ hNotMem.2]
+      exact Finmap.lookup_insert_of_ne state hNotMem.1
+
+private theorem lookup_foldl_insert_of_mem
+    {entries : List (Name × AstFunctionDefinition)}
+    (hNames : (entries.map Prod.fst).Nodup)
+    {name : Name} {fn : AstFunctionDefinition}
+    (hMem : (name, fn) ∈ entries)
+    (state : Finmap (fun (_ : Name) => AstFunctionDefinition)) :
+    (entries.foldl
+        (fun acc entry => acc.insert entry.fst entry.snd) state).lookup name =
+      some fn := by
+  induction entries generalizing state with
+  | nil => simp at hMem
+  | cons entry rest ih =>
+      rcases entry with ⟨headName, headFn⟩
+      simp only [List.map_cons, List.nodup_cons] at hNames
+      simp only [List.mem_cons, Prod.mk.injEq] at hMem
+      rcases hMem with hHere | hTail
+      · rcases hHere with ⟨rfl, rfl⟩
+        rw [List.foldl_cons,
+          lookup_foldl_insert_of_not_mem rest _ name hNames.1]
+        exact Finmap.lookup_insert _
+      · rw [List.foldl_cons]
+        exact ih hNames.2 hTail _
+
+theorem functionMap_lookup_of_mem
+    {entries : List (Name × AstFunctionDefinition)}
+    (hNames : (entries.map Prod.fst).Nodup)
+    {name : Name} {fn : AstFunctionDefinition}
+    (hMem : (name, fn) ∈ entries) :
+    (functionMap entries).lookup name = some fn := by
+  exact lookup_foldl_insert_of_mem hNames hMem _
+
 def toYulContractWithFunctionEntries? (object : Object) :
     Option (AstContract × List (Name × AstFunctionDefinition)) := do
   let dispatcher ← Stmt.toYul? (.block object.dispatcher)
@@ -2502,6 +2549,49 @@ theorem toSolcYulOrderedProgram?_programOkWithEntries
         object.dialectProfile ordered.program
         ordered.functionEntries = true := by
   exact (toSolcYulOrderedProgram?_source hConvert).2.2.1
+
+theorem toSolcYulOrderedProgram?_functionLookup_of_mem
+    {object : Object} {ordered : Yul.OrderedProgram}
+    {name : Name} {fn : FunctionDef} {yulFn : AstFunctionDefinition}
+    (hConvert : object.toSolcYulOrderedProgram? = some ordered)
+    (hMem : (name, fn) ∈ object.functions)
+    (hFn : FunctionDef.toYul? fn = some yulFn) :
+    ordered.program.contract.functions.lookup name = some yulFn := by
+  unfold toSolcYulOrderedProgram? at hConvert
+  cases hContract : object.toYulContractWithFunctionEntries? with
+  | none => simp [hContract] at hConvert
+  | some result =>
+      rcases result with ⟨contract, functions⟩
+      cases hValid :
+          Yul.SolcValidation.ContractOkWithEntries?
+            object.dialectProfile contract functions <;>
+        simp [hContract, hValid] at hConvert
+      rcases hConvert with ⟨_hSpelling, hConvert⟩
+      subst ordered
+      unfold toYulContractWithFunctionEntries? at hContract
+      cases hDispatcher : Stmt.toYul? (.block object.dispatcher) with
+      | none => simp [hDispatcher] at hContract
+      | some dispatcher =>
+          cases hFunctions : FunctionDef.List.toYul? object.functions with
+          | none => simp [hDispatcher, hFunctions] at hContract
+          | some entries =>
+              simp [hDispatcher, hFunctions] at hContract
+              rcases hContract with ⟨rfl, rfl⟩
+              have hEntry :
+                  (name, yulFn) ∈ entries :=
+                FunctionDef.List.toYul?_mem hFunctions hMem hFn
+              have hNamesOk :
+                  Yul.SolcValidation.FunctionNamesOk?
+                      (entries.map Prod.fst) = true := by
+                have hParts := hValid
+                simp [Yul.SolcValidation.ContractOkWithEntries?] at hParts
+                exact hParts.1
+              have hNames : (entries.map Prod.fst).Nodup := by
+                have hParts := hNamesOk
+                simp [Yul.SolcValidation.FunctionNamesOk?,
+                  Yul.SolcValidation.namesNodup?] at hParts
+                exact hParts.2
+              exact functionMap_lookup_of_mem hNames hEntry
 
 theorem toSolcYulProgram?_memoryContract
     {object : Object} {program : Yul.Program}

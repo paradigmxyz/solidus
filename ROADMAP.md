@@ -160,8 +160,10 @@ Next raw frontend layer:
   corresponding primitive-step value function for the later semantic theorem.
   `Frontend.FunctionDef.List.toYul?_mem` and
   `Elab.clzHelperYulInterface_functionEntry` carry that helper through
-  frontend-to-Yul function-entry conversion, positioning the later semantics
-  proof at the actual callee-lookup boundary.
+  frontend-to-Yul function-entry conversion. `Frontend.Object
+  .toSolcYulOrderedProgram?_functionLookup_of_mem` and
+  `Elab.clzHelperYulInterface_orderedLookup` then place the generated helper
+  at the actual validated ordered-Yul contract callee lookup boundary.
   Semantic preservation of the helper and nested
   hoist/alpha-renaming passes remains open.
 - [x] Expose the production interface

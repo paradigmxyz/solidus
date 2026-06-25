@@ -1136,6 +1136,25 @@ theorem clzHelperYulInterface_functionEntry
   rcases hInterface with ⟨fn, hMem, hFn⟩
   exact Frontend.FunctionDef.List.toYul?_mem hConvert hMem hFn
 
+theorem clzHelperYulInterface_orderedLookup
+    {object : Frontend.Object} {ordered : Yul.OrderedProgram}
+    {helper? arg? ret? : Option Name}
+    (hInterface :
+      ClzHelperYulInterface object.functions helper? arg? ret?)
+    (hConvert : object.toSolcYulOrderedProgram? = some ordered) :
+    match helper?, arg?, ret? with
+    | some helper, some arg, some ret =>
+        ordered.program.contract.functions.lookup helper =
+          some (clzHelperAstFunctionDef arg ret)
+    | _, _, _ => True := by
+  unfold ClzHelperYulInterface at hInterface
+  cases helper? <;> cases arg? <;> cases ret? <;> simp at hInterface ⊢
+  rename_i helper arg ret
+  rcases hInterface with ⟨fn, hMem, hFn⟩
+  exact
+    Frontend.Object.toSolcYulOrderedProgram?_functionLookup_of_mem
+      hConvert hMem hFn
+
 theorem finalFunctions_clzExpansionOk (state : State) :
     ClzExpansionOk (finalFunctions state) state.clzHelperName?
       state.clzArgName? state.clzReturnName? := by
