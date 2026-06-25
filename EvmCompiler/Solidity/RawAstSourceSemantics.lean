@@ -677,12 +677,82 @@ theorem assignment_succ
             pure (result.1.multifill names result.2)) := by
   simp [exec]
 
+theorem expressionStatement_succ
+    (fuel : Nat) (ctx : Context) (expr : Expr) (state : State) :
+    exec (fuel + 1) ctx (.expressionStatement expr) state =
+      match expr with
+      | .functionCall "setimmutable" [base, nameArg, value] =>
+          match objectBuiltinNameArg? nameArg >>=
+              ctx.objectBuiltins.findImmutableReferences? with
+          | none => fail state .InvalidArguments
+          | some references =>
+              match patchSetImmutableStmts? references base value with
+              | none => fail state .InvalidArguments
+              | some stmts => execBlock fuel ctx stmts state
+      | _ =>
+          (do
+            let result ← evalValues fuel ctx expr state
+            pure result.1) := by
+  cases expr <;> simp [exec]
+  next name args =>
+    by_cases hName : name = "setimmutable"
+    · subst name
+      cases args with
+      | nil =>
+          simp [exec]
+      | cons base rest =>
+          cases rest with
+          | nil =>
+              simp [exec]
+          | cons nameArg rest =>
+              cases rest with
+              | nil =>
+                  simp [exec]
+              | cons value rest =>
+                  cases rest with
+                  | nil =>
+                      simp [exec]
+                  | cons extra rest =>
+                      simp [exec]
+    · simp [exec, hName]
+
 theorem functionDefinition_succ
     (fuel : Nat) (ctx : Context) (name : Name)
     (params returns : List Name) (body : List Stmt) (state : State) :
     exec (fuel + 1) ctx
         (.functionDefinition name params returns body) state =
       pure state := by
+  simp [exec]
+
+theorem switch_succ
+    (fuel : Nat) (ctx : Context) (scrutinee : Expr)
+    (cases : List (SwitchCaseValue × List Stmt)) (default : List Stmt)
+    (state : State) :
+    exec (fuel + 1) ctx (.switch scrutinee cases default) state =
+      (do
+        let result ← eval fuel ctx scrutinee state
+        match selectSwitchCase result.2 default cases with
+        | none => fail result.1 .InvalidArguments
+        | some body => execBlock fuel ctx body result.1) := by
+  simp [exec]
+
+theorem forLoop_succ
+    (fuel : Nat) (ctx : Context) (pre : List Stmt)
+    (condition : Expr) (post body : List Stmt) (state : State) :
+    exec (fuel + 1) ctx (.forLoop pre condition post body) state =
+      execFor fuel ctx pre condition post body state := by
+  simp [exec]
+
+theorem ifThen_succ
+    (fuel : Nat) (ctx : Context) (condition : Expr)
+    (body : List Stmt) (state : State) :
+    exec (fuel + 1) ctx (.ifThen condition body) state =
+      (do
+        let result ← eval fuel ctx condition state
+        if result.2 ≠ ⟨0⟩ then
+          execBlock fuel ctx body result.1
+        else
+          pure result.1) := by
   simp [exec]
 
 theorem break_succ (fuel : Nat) (ctx : Context) (state : State) :
@@ -701,6 +771,78 @@ theorem leave_succ (fuel : Nat) (ctx : Context) (state : State) :
   simp [exec]
 
 end Exec
+
+namespace ExecFor
+
+theorem succ
+    (fuel : Nat) (ctx : Context) (pre : List Stmt)
+    (condition : Expr) (post body : List Stmt) (state : State) :
+    execFor (fuel + 1) ctx pre condition post body state =
+      match functionScope? pre with
+      | none => fail state (.DuplicateDeclaration "Yul for-init function")
+      | some scope =>
+          (do
+            let stateAfterPre ←
+              execSeq fuel (ctx.withFunctionScope scope) pre state
+            let stateAfterLoop ←
+              match stateAfterPre with
+              | .Ok _ _ =>
+                  loop fuel (ctx.withFunctionScope scope)
+                    condition post body stateAfterPre
+              | .OutOfFuel => pure stateAfterPre
+              | .Checkpoint _ => pure stateAfterPre
+            pure (stateAfterLoop.restrictStoreTo state.store)) := by
+  simp [execFor]
+
+end ExecFor
+
+namespace Loop
+
+theorem zero
+    (ctx : Context) (condition : Expr) (post body : List Stmt)
+    (state : State) :
+    loop 0 ctx condition post body state = fail state .OutOfFuel := by
+  simp [loop]
+
+theorem one
+    (ctx : Context) (condition : Expr) (post body : List Stmt)
+    (state : State) :
+    loop 1 ctx condition post body state = fail state .OutOfFuel := by
+  simp [loop]
+
+theorem succ_succ
+    (fuel : Nat) (ctx : Context) (condition : Expr)
+    (post body : List Stmt) (state : State) :
+    loop (fuel + 1 + 1) ctx condition post body state =
+      (do
+        let result ←
+          eval fuel ctx condition (EvmYul.Yul.State.mkOk state)
+        if result.2 = ⟨0⟩ then
+          pure (result.1.overwrite? state)
+        else
+          let stateAfterBody ← execBlock fuel ctx body result.1
+          match stateAfterBody with
+          | .OutOfFuel =>
+              pure (stateAfterBody.overwrite? state)
+          | .Checkpoint (.Break _ _) =>
+              pure (stateAfterBody.reviveJump.overwrite? state)
+          | .Checkpoint (.Leave _ _) =>
+              pure (stateAfterBody.overwrite? state)
+          | .Checkpoint (.Continue _ _)
+          | .Ok _ _ =>
+              let stateAfterPost ←
+                execBlock fuel ctx post stateAfterBody.reviveJump
+              let sourceAfterPost := stateAfterPost.overwrite? state
+              match stateAfterPost with
+              | .OutOfFuel => pure sourceAfterPost
+              | .Checkpoint (.Leave _ _) => pure sourceAfterPost
+              | _ =>
+                  let stateAfterLoop ←
+                    loop fuel ctx condition post body sourceAfterPost
+                  pure (stateAfterLoop.overwrite? state)) := by
+  simp [loop]
+
+end Loop
 
 end SourceSemantics
 end Raw

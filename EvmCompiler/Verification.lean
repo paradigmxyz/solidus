@@ -94,6 +94,14 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.RawAst.Raw.SourceSemantics.EvalObjectBuiltin.datacopy_succ
 #check EvmCompiler.Solidity.RawAst.Raw.SourceSemantics.ExecBlock.succ
 #check EvmCompiler.Solidity.RawAst.Raw.SourceSemantics.Exec.assignment_succ
+#check EvmCompiler.Solidity.RawAst.Raw.SourceSemantics.Exec.expressionStatement_succ
+#check EvmCompiler.Solidity.RawAst.Raw.SourceSemantics.Exec.switch_succ
+#check EvmCompiler.Solidity.RawAst.Raw.SourceSemantics.Exec.forLoop_succ
+#check EvmCompiler.Solidity.RawAst.Raw.SourceSemantics.Exec.ifThen_succ
+#check EvmCompiler.Solidity.RawAst.Raw.SourceSemantics.ExecFor.succ
+#check EvmCompiler.Solidity.RawAst.Raw.SourceSemantics.Loop.zero
+#check EvmCompiler.Solidity.RawAst.Raw.SourceSemantics.Loop.one
+#check EvmCompiler.Solidity.RawAst.Raw.SourceSemantics.Loop.succ_succ
 #check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.BlockRunForward
 #check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.rawObjectRun_none_code
 #check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.rawObjectRun_some_code
@@ -857,6 +865,12 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.RawAst.Raw.Object.elaboratePreservingOrder?_sourceLocalFunction_ordered_entry
 #print axioms EvmCompiler.Solidity.RawAst.Raw.Object.elaboratePreservingOrder?_sourceLocalFunction_noShadow_function_entries
 #print axioms EvmCompiler.Solidity.RawAst.Raw.SourceSemantics.ExecObjectCode.code_some_succ
+#print axioms EvmCompiler.Solidity.RawAst.Raw.SourceSemantics.Exec.expressionStatement_succ
+#print axioms EvmCompiler.Solidity.RawAst.Raw.SourceSemantics.Exec.switch_succ
+#print axioms EvmCompiler.Solidity.RawAst.Raw.SourceSemantics.Exec.forLoop_succ
+#print axioms EvmCompiler.Solidity.RawAst.Raw.SourceSemantics.Exec.ifThen_succ
+#print axioms EvmCompiler.Solidity.RawAst.Raw.SourceSemantics.ExecFor.succ
+#print axioms EvmCompiler.Solidity.RawAst.Raw.SourceSemantics.Loop.succ_succ
 #print axioms EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.rawObjectRun_some_code
 #print axioms EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.rawObjectRun_some_code_succ
 #print axioms EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.blockRunForward_of_eq
