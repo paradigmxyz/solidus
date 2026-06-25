@@ -618,6 +618,7 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Assembly.GasfulBridge.raw_create_staticModeViolation_executes_after_charges
 #check EvmCompiler.Assembly.GasfulBridge.raw_create2_staticModeViolation_executes_after_charges
 #check EvmCompiler.Assembly.GasfulBridge.raw_call_staticModeViolation_executes_after_charges
+#check EvmCompiler.Assembly.GasfulBridge.raw_selfdestruct_staticModeViolation_executes_after_charges
 #check EvmCompiler.Assembly.GasfulBridge.runRefinesOpen_of_x_after_prechecks_step_result
 #check EvmCompiler.Assembly.GasfulBridge.runRefinesOpen_of_x_after_prechecks_step_error_executes
 #check EvmCompiler.Assembly.GasfulBridge.runRefinesOpen_jumpdest_step
@@ -631,6 +632,7 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Assembly.GasfulBridge.runRefinesOpen_create_staticModeViolation_after_stack_limit_checks
 #check EvmCompiler.Assembly.GasfulBridge.runRefinesOpen_create2_staticModeViolation_after_stack_limit_checks
 #check EvmCompiler.Assembly.GasfulBridge.runRefinesOpen_call_staticModeViolation_after_stack_limit_checks
+#check EvmCompiler.Assembly.GasfulBridge.runRefinesOpen_selfdestruct_staticModeViolation_after_stack_limit_checks
 #check EvmCompiler.Assembly.GasfulBridge.runRefinesOpen_continuing_prim_success
 #check EvmCompiler.Assembly.GasfulBridge.CallBoundaryAccounting
 #check EvmCompiler.Assembly.GasfulBridge.CreateBoundaryAccounting
@@ -1164,6 +1166,7 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Assembly.GasfulBridge.raw_create_staticModeViolation_executes_after_charges
 #print axioms EvmCompiler.Assembly.GasfulBridge.raw_create2_staticModeViolation_executes_after_charges
 #print axioms EvmCompiler.Assembly.GasfulBridge.raw_call_staticModeViolation_executes_after_charges
+#print axioms EvmCompiler.Assembly.GasfulBridge.raw_selfdestruct_staticModeViolation_executes_after_charges
 #print axioms EvmCompiler.Assembly.GasfulBridge.SameData.hReturn_eq
 #print axioms EvmCompiler.Assembly.GasfulBridge.evm_step_return_after_charges
 #print axioms EvmCompiler.Assembly.GasfulBridge.evm_step_revert_after_charges
@@ -1197,6 +1200,7 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Assembly.GasfulBridge.runRefinesOpen_create_staticModeViolation_after_stack_limit_checks
 #print axioms EvmCompiler.Assembly.GasfulBridge.runRefinesOpen_create2_staticModeViolation_after_stack_limit_checks
 #print axioms EvmCompiler.Assembly.GasfulBridge.runRefinesOpen_call_staticModeViolation_after_stack_limit_checks
+#print axioms EvmCompiler.Assembly.GasfulBridge.runRefinesOpen_selfdestruct_staticModeViolation_after_stack_limit_checks
 #print axioms EvmCompiler.Assembly.GasfulBridge.runRefinesOpen_return_success
 #print axioms EvmCompiler.Assembly.GasfulBridge.runRefinesOpen_revert_success
 #print axioms EvmCompiler.Assembly.GasfulBridge.runRefinesOpen_continuing_prim_success

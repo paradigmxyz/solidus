@@ -94,6 +94,9 @@ Gasful EVM bridge checkpoint:
 - [x] Compose static `CALL` with nonzero value into `RunRefinesOpen`: the open
   raw-bytecode `callStep` rejects with `StaticModeViolation` before emitting an
   external request, using the same parsed stack value checked by `EVM.X`.
+- [x] Compose static `SELFDESTRUCT` into `RunRefinesOpen` after the stack-limit
+  prefix: both gasful `EVM.X` and open raw-bytecode execution report
+  `StaticModeViolation` before terminal halt handling.
 - [x] Compose terminal `RETURN`/`REVERT` stack underflow into `RunRefinesOpen`:
   short-stack open raw-bytecode execution returns the same `StackUnderflow`
   error as the gasful `EVM.X` stack precheck before terminal halt handling.
@@ -110,7 +113,7 @@ Gasful EVM bridge checkpoint:
   responses with EIP-150/returned gas, and the remaining non-OOG exceptional
   composition cases: residual stack underflow outside the static-permitted
   continuing-primitive and terminal `RETURN`/`REVERT` slices, stack overflow,
-  SELFDESTRUCT static-mode violation, and bad jump destinations.
+  and bad jump destinations.
 
 `Compiler.StackArtifact` is the sole code-body artifact and
 `Solidity.Frontend.VerifiedStackObjectArtifact` is the sole recursive object

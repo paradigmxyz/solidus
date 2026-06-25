@@ -3045,6 +3045,47 @@ theorem raw_call_staticModeViolation_executes_after_charges
       (.error EvmYul.EVM.ExecutionException.StaticModeViolation :
         Except EVMException StepResult))
 
+theorem raw_selfdestruct_staticModeViolation_executes_after_charges
+    {bytes : ByteArray} {pc : Nat} {state : EVMState}
+    (hPerm : state.executionEnv.perm = false)
+    (hDecode : Compact.decodeAt bytes pc (.prim .selfdestruct))
+    (hPc : (afterDynamicChargeAt state).pc = EvmYul.UInt256.ofNat pc) :
+    Interaction.Executes
+      (Compact.InteractionSemantics.openRunNResult
+        bytes 1 (afterDynamicChargeAt state))
+      []
+      (.error EvmYul.EVM.ExecutionException.StaticModeViolation) := by
+  have hPermCharged :
+      (afterDynamicChargeAt state).executionEnv.perm = false := by
+    simpa [afterDynamicChargeAt, afterMemoryChargeAt, chargeGas] using hPerm
+  have hPrim :
+      Assembly.PrimOp.selfdestruct.step (afterDynamicChargeAt state) =
+        .error EvmYul.EVM.ExecutionException.StaticModeViolation := by
+    simp [Assembly.PrimOp.step_selfdestruct_of_static _ hPermCharged]
+  have hOpen :
+      Assembly.InteractionSemantics.PrimOp.openStep
+          .selfdestruct (afterDynamicChargeAt state) =
+        Simulation.Interaction.done
+          (.error EvmYul.EVM.ExecutionException.StaticModeViolation) := by
+    simp [Assembly.InteractionSemantics.PrimOp.openStep,
+      Assembly.PrimOp.toEVM,
+      Simulation.ExternalKind.ofEVMOperation?,
+      Simulation.CallKind.ofEVMOperation?,
+      Simulation.CreateKind.ofEVMOperation?, hPrim]
+  rw [Compact.InteractionSemantics.openRunNResult_one_eq_instr
+    (instr := .prim .selfdestruct) trivial hDecode hPc]
+  simpa [Compact.Instr.openStepResult, Compact.Instr.openStep,
+    Assembly.InteractionSemantics.Target.openStepInstrResult,
+    Assembly.Target.stepInstrResultWith,
+    Assembly.InteractionSemantics.Target.openStepInstr,
+    Assembly.Target.stepInstrWith, hOpen,
+    Simulation.Interaction.bind,
+    Simulation.Interaction.bind_done_error,
+    Assembly.PrimOp.haltKind?, Compact.Instr.haltKind?] using
+    (Interaction.Executes.done
+      (.error EvmYul.EVM.ExecutionException.StaticModeViolation :
+        Except EVMException StepResult))
+
 theorem raw_return_stackUnderflow_executes_after_charges
     {bytes : ByteArray} {pc : Nat} {state : EVMState}
     (hShort : state.stack.length < 2)
@@ -3840,6 +3881,36 @@ theorem runRefinesOpen_call_staticModeViolation_after_stack_limit_checks
       (bytes := bytes) (pc := pc) (state := state)
       (rest := rest) (operands := operands)
       hOperands hPerm hValue hDecode hPc
+  have hExec :=
+    Compact.InteractionSemantics.openRunNResult_error_add_executes
+      (extra := fuel) hOne
+  apply RunRefinesOpen.completed
+  · simpa [Nat.add_comm] using hExec
+  · exact DoneRel.sameError
+
+theorem runRefinesOpen_selfdestruct_staticModeViolation_after_stack_limit_checks
+    {fuel : Nat} {validJumps : Array Word}
+    {bytes : ByteArray} {pc : Nat} {state : EVMState}
+    (hPrefix : XStackLimitChecksPass validJumps state)
+    (hSelfdestruct :
+      decodedOperationAt state = EvmYul.Operation.SELFDESTRUCT)
+    (hPerm : state.executionEnv.perm = false)
+    (hDecode : Compact.decodeAt bytes pc (.prim .selfdestruct))
+    (hPc : (afterDynamicChargeAt state).pc = EvmYul.UInt256.ofNat pc) :
+    RunRefinesOpen
+      (EvmYul.EVM.X (fuel + 1) validJumps state)
+      (Compact.InteractionSemantics.openRunNResult
+        bytes (fuel + 1) (afterDynamicChargeAt state))
+      [] := by
+  have hStatic : staticModeViolationAt state := by
+    simp [staticModeViolationAt, hPerm, hSelfdestruct]
+  rw [x_static_mode_violation_after_stack_limit_checks
+    (fuel := fuel) (validJumps := validJumps) (state := state)
+    hPrefix hStatic]
+  have hOne :=
+    raw_selfdestruct_staticModeViolation_executes_after_charges
+      (bytes := bytes) (pc := pc) (state := state)
+      hPerm hDecode hPc
   have hExec :=
     Compact.InteractionSemantics.openRunNResult_error_add_executes
       (extra := fuel) hOne
