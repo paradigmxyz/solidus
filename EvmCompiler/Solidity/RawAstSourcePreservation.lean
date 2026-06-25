@@ -150,6 +150,242 @@ def SwitchCasesRunForward (rawFuel orderedFuel : Nat)
         BlockCodeRunForward rawFuel orderedFuel
           context rawBody orderedBody contract stateAfterCondition
 
+/-- Compiler-owned evidence that one elaborated expression survives object
+builtin resolution and converts to the exact canonical ordered expression. -/
+structure ExprNormalized (context : Frontend.ObjectBuiltinContext)
+    (front : Frontend.Expr) (ordered : Frontend.AstExpr) where
+  resolved : Frontend.Expr
+  resolve : front.resolveObjectBuiltinsIn? context = some resolved
+  toYul : resolved.toYul? = some ordered
+
+structure ExprListNormalized (context : Frontend.ObjectBuiltinContext)
+    (front : List Frontend.Expr) (ordered : List Frontend.AstExpr) where
+  resolved : List Frontend.Expr
+  resolve : Frontend.Expr.List.resolveObjectBuiltinsIn? front context =
+    some resolved
+  toYul : Frontend.Expr.List.toYul? resolved = some ordered
+
+structure StmtNormalized (context : Frontend.ObjectBuiltinContext)
+    (front : Frontend.Stmt) (ordered : Frontend.AstStmt) where
+  resolved : Frontend.Stmt
+  resolve : front.resolveObjectBuiltinsIn? context = some resolved
+  toYul : resolved.toYul? = some ordered
+
+structure StmtListNormalized (context : Frontend.ObjectBuiltinContext)
+    (front : List Frontend.Stmt) (ordered : List Frontend.AstStmt) where
+  resolved : List Frontend.Stmt
+  resolve : Frontend.Stmt.List.resolveObjectBuiltinsIn? front context =
+    some resolved
+  toYul : Frontend.Stmt.List.toYul? resolved = some ordered
+
+namespace ExprListNormalized
+
+def nil (context : Frontend.ObjectBuiltinContext) :
+    ExprListNormalized context [] [] where
+  resolved := []
+  resolve := by simp [Frontend.Expr.List.resolveObjectBuiltinsIn?]
+  toYul := rfl
+
+theorem nil_ordered
+    {context : Frontend.ObjectBuiltinContext}
+    {ordered : List Frontend.AstExpr}
+    (hNormalized : ExprListNormalized context [] ordered) :
+    ordered = [] := by
+  rcases hNormalized with ⟨resolved, hResolve, hToYul⟩
+  simp [Frontend.Expr.List.resolveObjectBuiltinsIn?] at hResolve
+  subst resolved
+  simpa [Frontend.Expr.List.toYul?] using hToYul.symm
+
+theorem cons_parts
+    {context : Frontend.ObjectBuiltinContext}
+    {frontHead : Frontend.Expr} {frontTail : List Frontend.Expr}
+    {ordered : List Frontend.AstExpr}
+    (hNormalized :
+      ExprListNormalized context (frontHead :: frontTail)
+        ordered) :
+    ∃ orderedHead orderedTail,
+      ordered = orderedHead :: orderedTail ∧
+        Nonempty (ExprNormalized context frontHead orderedHead) ∧
+        Nonempty (ExprListNormalized context frontTail orderedTail) := by
+  rcases hNormalized with ⟨resolved, hResolve, hToYul⟩
+  unfold Frontend.Expr.List.resolveObjectBuiltinsIn? at hResolve
+  cases hHeadResolve :
+      Frontend.Expr.resolveObjectBuiltinsIn? frontHead context with
+  | none => simp [hHeadResolve] at hResolve
+  | some resolvedHead =>
+      cases hTailResolve :
+          Frontend.Expr.List.resolveObjectBuiltinsIn? frontTail context with
+      | none => simp [hHeadResolve, hTailResolve] at hResolve
+      | some resolvedTail =>
+          simp [hHeadResolve, hTailResolve] at hResolve
+          subst resolved
+          unfold Frontend.Expr.List.toYul? at hToYul
+          cases hHeadToYul : Frontend.Expr.toYul? resolvedHead with
+          | none => simp [hHeadToYul] at hToYul
+          | some headYul =>
+              cases hTailToYul :
+                  Frontend.Expr.List.toYul? resolvedTail with
+              | none => simp [hHeadToYul, hTailToYul] at hToYul
+              | some tailYul =>
+                  simp [hHeadToYul, hTailToYul] at hToYul
+                  exact
+                    ⟨headYul, tailYul, hToYul.symm,
+                      ⟨{
+                        resolved := resolvedHead
+                        resolve := hHeadResolve
+                        toYul := hHeadToYul }⟩,
+                      ⟨{
+                        resolved := resolvedTail
+                        resolve := hTailResolve
+                        toYul := hTailToYul }⟩⟩
+
+end ExprListNormalized
+
+namespace StmtListNormalized
+
+def nil (context : Frontend.ObjectBuiltinContext) :
+    StmtListNormalized context [] [] where
+  resolved := []
+  resolve := by simp [Frontend.Stmt.List.resolveObjectBuiltinsIn?]
+  toYul := rfl
+
+theorem nil_ordered
+    {context : Frontend.ObjectBuiltinContext}
+    {ordered : List Frontend.AstStmt}
+    (hNormalized : StmtListNormalized context [] ordered) :
+    ordered = [] := by
+  rcases hNormalized with ⟨resolved, hResolve, hToYul⟩
+  simp [Frontend.Stmt.List.resolveObjectBuiltinsIn?] at hResolve
+  subst resolved
+  simpa [Frontend.Stmt.List.toYul?] using hToYul.symm
+
+theorem cons_parts
+    {context : Frontend.ObjectBuiltinContext}
+    {frontHead : Frontend.Stmt} {frontTail : List Frontend.Stmt}
+    {ordered : List Frontend.AstStmt}
+    (hNormalized :
+      StmtListNormalized context (frontHead :: frontTail)
+        ordered) :
+    ∃ orderedHead orderedTail,
+      ordered = orderedHead :: orderedTail ∧
+        Nonempty (StmtNormalized context frontHead orderedHead) ∧
+        Nonempty (StmtListNormalized context frontTail orderedTail) := by
+  rcases hNormalized with ⟨resolved, hResolve, hToYul⟩
+  unfold Frontend.Stmt.List.resolveObjectBuiltinsIn? at hResolve
+  cases hHeadResolve :
+      Frontend.Stmt.resolveObjectBuiltinsIn? frontHead context with
+  | none => simp [hHeadResolve] at hResolve
+  | some resolvedHead =>
+      cases hTailResolve :
+          Frontend.Stmt.List.resolveObjectBuiltinsIn? frontTail context with
+      | none => simp [hHeadResolve, hTailResolve] at hResolve
+      | some resolvedTail =>
+          simp [hHeadResolve, hTailResolve] at hResolve
+          subst resolved
+          unfold Frontend.Stmt.List.toYul? at hToYul
+          cases hHeadToYul : Frontend.Stmt.toYul? resolvedHead with
+          | none => simp [hHeadToYul] at hToYul
+          | some headYul =>
+              cases hTailToYul :
+                  Frontend.Stmt.List.toYul? resolvedTail with
+              | none => simp [hHeadToYul, hTailToYul] at hToYul
+              | some tailYul =>
+                  simp [hHeadToYul, hTailToYul] at hToYul
+                  exact
+                    ⟨headYul, tailYul, hToYul.symm,
+                      ⟨{
+                        resolved := resolvedHead
+                        resolve := hHeadResolve
+                        toYul := hHeadToYul }⟩,
+                      ⟨{
+                        resolved := resolvedTail
+                        resolve := hTailResolve
+                        toYul := hTailToYul }⟩⟩
+
+end StmtListNormalized
+
+namespace ExprNormalized
+
+theorem literal_parts
+    {context : Frontend.ObjectBuiltinContext}
+    {literal : Raw.Literal}
+    {state finalState : Elab.State}
+    {front : Frontend.Expr} {ordered : Frontend.AstExpr}
+    (hElab :
+      (Elab.Expr.elaborate (.literal literal)).run state =
+        .ok (front, finalState))
+    (hNormalized : ExprNormalized context front ordered) :
+    ∃ value,
+      Raw.SourceSemantics.literalWord? literal = some value ∧
+        ordered = .Lit value := by
+  rcases hNormalized with ⟨resolved, hResolve, hToYul⟩
+  cases literal with
+  | number value =>
+      simp [Elab.Expr.elaborate, Elab.Literal.elaborate] at hElab
+      rcases hElab with ⟨hFront, hState⟩
+      simp [Frontend.Expr.resolveObjectBuiltinsIn?] at hResolve
+      subst resolved
+      simp [Frontend.Expr.toYul?] at hToYul
+      subst ordered
+      exact ⟨value, rfl, rfl⟩
+  | bool value =>
+      simp [Elab.Expr.elaborate, Elab.Literal.elaborate] at hElab
+      rcases hElab with ⟨hFront, hState⟩
+      simp [Frontend.Expr.resolveObjectBuiltinsIn?] at hResolve
+      subst resolved
+      simp [Frontend.Expr.toYul?] at hToYul
+      subst ordered
+      exact ⟨EvmYul.UInt256.ofNat (if value then 1 else 0), rfl, rfl⟩
+  | stringLit value =>
+      simp [Elab.Expr.elaborate, Elab.Literal.elaborate] at hElab
+      rcases hElab with ⟨hFront, hState⟩
+      simp [Frontend.Expr.resolveObjectBuiltinsIn?] at hResolve
+      subst resolved
+      cases hWord : Frontend.StringLiteral.word? value with
+      | none => simp [Frontend.Expr.toYul?, hWord] at hToYul
+      | some word =>
+          simp [Frontend.Expr.toYul?, hWord] at hToYul
+          subst ordered
+          exact ⟨word, by simp [Raw.SourceSemantics.literalWord?, hWord], rfl⟩
+  | bytesLit bytes =>
+      simp [Elab.Expr.elaborate, Elab.Literal.elaborate] at hElab
+      rcases hElab with ⟨hFront, hState⟩
+      simp [Frontend.Expr.resolveObjectBuiltinsIn?] at hResolve
+      subst resolved
+      cases hWord : Frontend.StringLiteral.wordBytes? bytes with
+      | none => simp [Frontend.Expr.toYul?, hWord] at hToYul
+      | some word =>
+          simp [Frontend.Expr.toYul?, hWord] at hToYul
+          subst ordered
+          exact ⟨word, by simp [Raw.SourceSemantics.literalWord?, hWord], rfl⟩
+
+theorem identifier_ordered
+    {context : Frontend.ObjectBuiltinContext}
+    {name : Name} {state finalState : Elab.State}
+    {front : Frontend.Expr} {ordered : Frontend.AstExpr}
+    (hElab :
+      (Elab.Expr.elaborate (.identifier name)).run state =
+        .ok (front, finalState))
+    (hNormalized : ExprNormalized context front ordered) :
+    ordered = .Var name := by
+  rcases hNormalized with ⟨resolved, hResolve, hToYul⟩
+  unfold Elab.Expr.elaborate at hElab
+  simp at hElab
+  cases hVisible :
+      (Elab.requireIdentifierVisible name "expression").run state with
+  | error err => simp [hVisible] at hElab
+  | ok result =>
+      rcases result with ⟨_, visibleState⟩
+      simp [hVisible] at hElab
+      rcases hElab with ⟨rfl, rfl⟩
+      have hResolved : resolved = .var name := by
+        unfold Frontend.Expr.resolveObjectBuiltinsIn? at hResolve
+        exact Option.some.inj hResolve.symm
+      subst resolved
+      simpa [Frontend.Expr.toYul?] using hToYul.symm
+
+end ExprNormalized
+
 /-- Bundled semantic evidence for one elaborated raw user call. The frontend
 derivation supplies the generated callee lookup; recursive preservation
 supplies the callee body for every argument result. -/
@@ -246,6 +482,64 @@ theorem exprValuesRunForward_identifier_succ
     Yul.InteractionSemantics.stateModel, id_eq, hLookup]
   exact Simulation.Interaction.ForwardRel.done rfl
 
+theorem exprValuesRunForward_identifier_succ_any
+    {rawFuel orderedFuel : Nat}
+    {context : Raw.SourceSemantics.Context}
+    {name : Name}
+    {contract : Frontend.AstContract} {state : State} :
+    ExprValuesRunForward (rawFuel + 1) (orderedFuel + 1)
+      context (.identifier name) (.Var name) contract state := by
+  cases hLookup : state.lookup? name with
+  | some value =>
+      exact exprValuesRunForward_identifier_succ hLookup
+  | none =>
+      unfold ExprValuesRunForward
+      unfold Raw.SourceSemantics.evalValues
+        Yul.InteractionSemantics.evalValues Yul.Source.Canonical.evalValues
+        Yul.Source.Effectful.evalValues
+      simp only [hLookup, Yul.InteractionSemantics.stateModel, id_eq]
+      unfold Raw.SourceSemantics.fail
+        Yul.Source.Effectful.Control.fail
+        Yul.InteractionSemantics.Primitive.fail
+      exact Simulation.Interaction.ForwardRel.done rfl
+
+theorem exprValuesRunForward_of_elaborated_literal
+    {rawFuel orderedFuel : Nat}
+    {builtinContext : Frontend.ObjectBuiltinContext}
+    {context : Raw.SourceSemantics.Context}
+    {literal : Raw.Literal}
+    {elabState finalElabState : Elab.State}
+    {front : Frontend.Expr} {ordered : Frontend.AstExpr}
+    {contract : Frontend.AstContract} {state : State}
+    (hElab :
+      (Elab.Expr.elaborate (.literal literal)).run elabState =
+        .ok (front, finalElabState))
+    (hNormalized : ExprNormalized builtinContext front ordered) :
+    ExprValuesRunForward (rawFuel + 1) (orderedFuel + 1)
+      context (.literal literal) ordered contract state := by
+  rcases ExprNormalized.literal_parts hElab hNormalized with
+    ⟨value, hLiteral, hOrdered⟩
+  subst ordered
+  exact exprValuesRunForward_literal_succ hLiteral
+
+theorem exprValuesRunForward_of_elaborated_identifier
+    {rawFuel orderedFuel : Nat}
+    {builtinContext : Frontend.ObjectBuiltinContext}
+    {context : Raw.SourceSemantics.Context}
+    {name : Name}
+    {elabState finalElabState : Elab.State}
+    {front : Frontend.Expr} {ordered : Frontend.AstExpr}
+    {contract : Frontend.AstContract} {state : State}
+    (hElab :
+      (Elab.Expr.elaborate (.identifier name)).run elabState =
+        .ok (front, finalElabState))
+    (hNormalized : ExprNormalized builtinContext front ordered) :
+    ExprValuesRunForward (rawFuel + 1) (orderedFuel + 1)
+      context (.identifier name) ordered contract state := by
+  have hOrdered := ExprNormalized.identifier_ordered hElab hNormalized
+  subst ordered
+  exact exprValuesRunForward_identifier_succ_any
+
 theorem exprRunForward_of_values
     {rawFuel orderedFuel : Nat}
     {context : Raw.SourceSemantics.Context}
@@ -266,6 +560,23 @@ theorem exprRunForward_of_values
   cases rawDone with
   | error error => exact Simulation.Interaction.ForwardRel.done rfl
   | ok result => exact Simulation.Interaction.ForwardRel.done rfl
+
+/-- Semantic compiler interface for one expression under arbitrary residual
+source/target fuels. The recursive frontend theorem will construct this by
+source-fuel induction; argument-list traversal consumes it structurally. -/
+def ExprElaborationRunForward
+    (rawContext : Raw.SourceSemantics.Context)
+    (builtinContext : Frontend.ObjectBuiltinContext)
+    (contract : Frontend.AstContract) : Prop :=
+  ∀ (rawFuel orderedFuel : Nat)
+    {rawExpr : Raw.Expr} {front : Frontend.Expr}
+    {ordered : Frontend.AstExpr}
+    {elabState finalElabState : Elab.State} {state : State},
+    (Elab.Expr.elaborate rawExpr).run elabState =
+        .ok (front, finalElabState) →
+      ExprNormalized builtinContext front ordered →
+        ExprValuesRunForward rawFuel orderedFuel
+          rawContext rawExpr ordered contract state
 
 theorem argsRunForward_cons
     {rawFuel orderedFuel : Nat}
@@ -308,6 +619,77 @@ theorem argsRunForward_cons
           exact Simulation.Interaction.ForwardRel.done rfl
       | ok tailResult =>
           exact Simulation.Interaction.ForwardRel.done rfl
+
+theorem argsRunForward_of_elaboration
+    {rawContext : Raw.SourceSemantics.Context}
+    {builtinContext : Frontend.ObjectBuiltinContext}
+    {contract : Frontend.AstContract}
+    (hExpr :
+      ExprElaborationRunForward rawContext builtinContext contract) :
+    ∀ {rawExprs : List Raw.Expr} {fronts : List Frontend.Expr}
+      {ordered : List Frontend.AstExpr}
+      {elabState finalElabState : Elab.State},
+      (Elab.Expr.List.elaborate rawExprs).run elabState =
+          .ok (fronts, finalElabState) →
+        ExprListNormalized builtinContext fronts ordered →
+          ∀ (rawBase orderedBase : Nat) (state : State),
+            ArgsRunForward
+              (rawBase + 2 * rawExprs.length + 1)
+              (orderedBase + 2 * rawExprs.length + 1)
+              rawContext rawExprs ordered contract state := by
+  intro rawExprs
+  induction rawExprs with
+  | nil =>
+      intro fronts ordered elabState finalElabState hElab hNormalized
+        rawBase orderedBase state
+      simp [Elab.Expr.List.elaborate] at hElab
+      rcases hElab with ⟨rfl, rfl⟩
+      have hOrdered := ExprListNormalized.nil_ordered hNormalized
+      subst ordered
+      simpa using
+        (argsRunForward_nil_succ
+          (rawFuel := rawBase) (orderedFuel := orderedBase)
+          (context := rawContext) (contract := contract) (state := state))
+  | cons rawHead rawTail ih =>
+      intro fronts ordered elabState finalElabState hElab hNormalized
+        rawBase orderedBase state
+      unfold Elab.Expr.List.elaborate at hElab
+      simp [StateT.run_bind] at hElab
+      cases hHead : (Elab.Expr.elaborate rawHead).run elabState with
+      | error err => simp [hHead] at hElab
+      | ok headResult =>
+          rcases headResult with ⟨frontHead, headElabState⟩
+          simp [hHead] at hElab
+          cases hTail :
+              (Elab.Expr.List.elaborate rawTail).run headElabState with
+          | error err => simp [hTail] at hElab
+          | ok tailResult =>
+              rcases tailResult with ⟨frontTail, tailElabState⟩
+              simp [hTail] at hElab
+              rcases hElab with ⟨rfl, rfl⟩
+              rcases ExprListNormalized.cons_parts hNormalized with
+                ⟨orderedHead, orderedTail, rfl,
+                  ⟨hHeadNormalized⟩, ⟨hTailNormalized⟩⟩
+              let rawTailFuel := rawBase + 2 * rawTail.length + 1
+              let orderedTailFuel :=
+                orderedBase + 2 * rawTail.length + 1
+              have hHeadValues :=
+                hExpr (rawTailFuel + 1) (orderedTailFuel + 1)
+                  (state := state) hHead hHeadNormalized
+              have hHeadRun := exprRunForward_of_values hHeadValues
+              have hCons :=
+                argsRunForward_cons
+                  (rawFuel := rawTailFuel)
+                  (orderedFuel := orderedTailFuel)
+                  (context := rawContext) (rawArg := rawHead)
+                  (rawRest := rawTail) (orderedArg := orderedHead)
+                  (orderedRest := orderedTail) (contract := contract)
+                  (state := state) hHeadRun
+                  (fun stateAfterHead =>
+                    ih hTail hTailNormalized rawBase orderedBase
+                      stateAfterHead)
+              simpa [rawTailFuel, orderedTailFuel, Nat.mul_add,
+                Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using hCons
 
 theorem exprValuesRunForward_primitiveCall_of_runs
     {rawFuel orderedFuel : Nat}
@@ -1725,6 +2107,37 @@ theorem dispatcher_parts
     ⟨helper?, arg?, ret?, memoryContract, resolvedDispatcher,
       orderedDispatcher, hElab, hMemory, hResolveDispatcher,
       hResolvedDispatcher, hResolvedToYul, hOrderedDispatcher⟩
+
+theorem dispatcher_normalized
+    {rawJson : String} {selection : Selection}
+    {artifact : Frontend.Program.Artifact}
+    (ctx : ArtifactRawSourceContext rawJson selection artifact)
+    {code : List Raw.Stmt}
+    (hCode : ctx.selected.root.code? = some code) :
+    ∃ helper? arg? ret? memoryContract orderedDispatcher,
+      Elab.elaborateCode code =
+          .ok (ctx.program.object.dispatcher, ctx.program.object.functions,
+            helper?, arg?, ret?) ∧
+        Frontend.MemoryGuard.Object.inferredContract? ctx.program.object =
+          some memoryContract ∧
+        Nonempty
+          (StmtListNormalized
+            { ctx.context with memoryContract := memoryContract }
+            ctx.program.object.dispatcher orderedDispatcher) ∧
+        artifact.codeArtifact.ordered.program.contract.dispatcher =
+          .Block orderedDispatcher := by
+  rcases ctx.dispatcher_parts hCode with
+    ⟨helper?, arg?, ret?, memoryContract, resolvedDispatcher,
+      orderedDispatcher, hElab, hMemory, hResolve, _hResolved,
+      hToYul, hOrdered⟩
+  exact
+    ⟨helper?, arg?, ret?, memoryContract, orderedDispatcher,
+      hElab, hMemory,
+      ⟨{
+        resolved := resolvedDispatcher
+        resolve := hResolve
+        toYul := hToYul }⟩,
+      hOrdered⟩
 
 theorem code_functionScope
     {rawJson : String} {selection : Selection}
