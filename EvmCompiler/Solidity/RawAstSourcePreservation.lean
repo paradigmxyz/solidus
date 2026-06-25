@@ -747,6 +747,75 @@ theorem resolve
 
 end CompiledFunctionScopes
 
+namespace CompiledFunctionBinding
+
+/-- Peel the checked function elaboration down to the lexical block run used
+by recursive semantic preservation. Identifier-scope setup is erased, while
+the definition-site generated function scopes are retained exactly. -/
+theorem block_parts
+    {builtinContext : Frontend.ObjectBuiltinContext}
+    {contract : Frontend.AstContract}
+    {generated : Name}
+    {rawFn : Raw.SourceSemantics.FunctionDef}
+    {generatedScopes : List (List (Name × Name))}
+    (hBinding :
+      CompiledFunctionBinding builtinContext contract
+        generated rawFn generatedScopes) :
+    ∃ bodyState finalBodyState frontBody orderedBody,
+      bodyState.functionScopes = generatedScopes ∧
+        (Elab.Stmt.List.elaborateBlock rawFn.body true).run bodyState =
+          .ok (frontBody, finalBodyState) ∧
+        Nonempty (StmtListNormalized builtinContext frontBody orderedBody) ∧
+        contract.functions.lookup generated =
+          some (.Def rawFn.params rawFn.returns orderedBody) := by
+  rcases hBinding with
+    ⟨frontFn, functionState, finalFunctionState, orderedBody,
+      hFunctionScopes, hFunction, hNormalized, hOrderedLookup⟩
+  unfold Elab.FunctionDef.elaborate at hFunction
+  simp [StateT.run_bind] at hFunction
+  cases hPush : Elab.pushIdentifierScope.run functionState with
+  | error err => simp [hPush] at hFunction
+  | ok pushResult =>
+      rcases pushResult with ⟨_, pushedState⟩
+      have hPushScopes :
+          pushedState.functionScopes = functionState.functionScopes :=
+        Elab.pushIdentifierScope_preserves_functionScopes hPush
+      simp [hPush] at hFunction
+      cases hDeclare :
+          (Elab.declareIdentifiers (rawFn.params ++ rawFn.returns)
+            "function parameter/result").run pushedState with
+      | error err => simp [hDeclare] at hFunction
+      | ok declareResult =>
+          rcases declareResult with ⟨_, declaredState⟩
+          have hDeclareScopes :
+              declaredState.functionScopes = pushedState.functionScopes :=
+            Elab.declareIdentifiers_preserves_functionScopes
+              (rawFn.params ++ rawFn.returns)
+              "function parameter/result" hDeclare
+          simp [hDeclare] at hFunction
+          cases hBody :
+              (Elab.Stmt.List.elaborateBlock rawFn.body true).run
+                declaredState with
+          | error err => simp [hBody] at hFunction
+          | ok bodyResult =>
+              rcases bodyResult with ⟨frontBody, bodyState⟩
+              simp [hBody] at hFunction
+              cases hPop : Elab.popIdentifierScope.run bodyState with
+              | error err => simp [hPop] at hFunction
+              | ok popResult =>
+                  rcases popResult with ⟨_, poppedState⟩
+                  simp [hPop] at hFunction
+                  rcases hFunction with ⟨hFrontFn, _hFinalState⟩
+                  have hFrontBody : frontFn.body = frontBody := by
+                    rw [← hFrontFn]
+                  rw [hFrontBody] at hNormalized
+                  refine
+                    ⟨declaredState, bodyState, frontBody, orderedBody,
+                      ?_, hBody, ⟨hNormalized⟩, hOrderedLookup⟩
+                  rw [hDeclareScopes, hPushScopes, hFunctionScopes]
+
+end CompiledFunctionBinding
+
 /-- Bundled semantic evidence for one elaborated raw user call. The frontend
 derivation supplies the generated callee lookup; recursive preservation
 supplies the callee body for every argument result. -/
@@ -940,6 +1009,47 @@ def ExprElaborationRunForward
         ExprValuesRunForward rawFuel (rawFuel + slack)
           rawContext rawExpr ordered contract state
 
+/-- Source-facing recursive expression interface. Unlike the older local
+scaffold above, this interface only accepts elaborator states whose generated
+function scopes are checked against the active raw lexical context. -/
+def ScopedExprElaborationRunForward
+    (slack : Nat)
+    (builtinContext : Frontend.ObjectBuiltinContext)
+    (contract : Frontend.AstContract) : Prop :=
+  ∀ (rawFuel : Nat)
+    {rawContext : Raw.SourceSemantics.Context}
+    {rawExpr : Raw.Expr} {front : Frontend.Expr}
+    {ordered : Frontend.AstExpr}
+    {elabState finalElabState : Elab.State} {state : State},
+    CompiledFunctionScopes builtinContext contract
+        rawContext.functionScopes elabState.functionScopes →
+      (Elab.Expr.elaborate rawExpr).run elabState =
+          .ok (front, finalElabState) →
+        ExprNormalized builtinContext front ordered →
+          ExprValuesRunForward rawFuel (rawFuel + slack)
+            rawContext rawExpr ordered contract state
+
+/-- Recursive lexical-block interface paired with
+`ScopedExprElaborationRunForward`. Child blocks construct a fresh head scope;
+function calls reuse the definition-site suffix returned by
+`CompiledFunctionScopes.resolve`. -/
+def ScopedBlockElaborationRunForward
+    (slack : Nat)
+    (builtinContext : Frontend.ObjectBuiltinContext)
+    (contract : Frontend.AstContract) : Prop :=
+  ∀ (rawFuel : Nat)
+    {rawContext : Raw.SourceSemantics.Context}
+    {rawCode : List Raw.Stmt} {front : List Frontend.Stmt}
+    {ordered : List Frontend.AstStmt}
+    {elabState finalElabState : Elab.State} {state : State},
+    CompiledFunctionScopes builtinContext contract
+        rawContext.functionScopes elabState.functionScopes →
+      (Elab.Stmt.List.elaborateBlock rawCode true).run elabState =
+          .ok (front, finalElabState) →
+        StmtListNormalized builtinContext front ordered →
+          BlockCodeRunForward rawFuel (rawFuel + slack)
+            rawContext rawCode ordered contract state
+
 /-- Pointwise checked expression compilation, independent of the order in
 which runtime argument evaluation visits the list. -/
 inductive ExprListCompiled (builtinContext : Frontend.ObjectBuiltinContext) :
@@ -1031,6 +1141,120 @@ theorem reverse
 
 end ExprListCompiled
 
+/-- Pointwise expression compilation with one fixed generated lexical scope
+stack. This retains precisely the state relation that ordinary user calls need
+after runtime reverses the argument list. -/
+inductive ScopedExprListCompiled
+    (builtinContext : Frontend.ObjectBuiltinContext)
+    (generatedScopes : List (List (Name × Name))) :
+    List Raw.Expr → List Frontend.AstExpr → Prop where
+  | nil : ScopedExprListCompiled builtinContext generatedScopes [] []
+  | cons
+      {rawHead : Raw.Expr} {orderedHead : Frontend.AstExpr}
+      {rawTail : List Raw.Expr} {orderedTail : List Frontend.AstExpr}
+      {frontHead : Frontend.Expr}
+      {elabState finalElabState : Elab.State}
+      (headElaborates :
+        (Elab.Expr.elaborate rawHead).run elabState =
+          .ok (frontHead, finalElabState))
+      (headScopes : elabState.functionScopes = generatedScopes)
+      (headNormalized :
+        ExprNormalized builtinContext frontHead orderedHead)
+      (tail :
+        ScopedExprListCompiled builtinContext generatedScopes
+          rawTail orderedTail) :
+      ScopedExprListCompiled builtinContext generatedScopes
+        (rawHead :: rawTail) (orderedHead :: orderedTail)
+
+namespace ScopedExprListCompiled
+
+theorem of_elaboration
+    {builtinContext : Frontend.ObjectBuiltinContext} :
+    ∀ {rawExprs : List Raw.Expr} {fronts : List Frontend.Expr}
+      {ordered : List Frontend.AstExpr}
+      {elabState finalElabState : Elab.State},
+      (Elab.Expr.List.elaborate rawExprs).run elabState =
+          .ok (fronts, finalElabState) →
+        ExprListNormalized builtinContext fronts ordered →
+          ScopedExprListCompiled builtinContext elabState.functionScopes
+            rawExprs ordered := by
+  intro rawExprs
+  induction rawExprs with
+  | nil =>
+      intro fronts ordered elabState finalElabState hElab hNormalized
+      simp [Elab.Expr.List.elaborate] at hElab
+      rcases hElab with ⟨rfl, rfl⟩
+      have hOrdered := ExprListNormalized.nil_ordered hNormalized
+      subst ordered
+      exact .nil
+  | cons rawHead rawTail ih =>
+      intro fronts ordered elabState finalElabState hElab hNormalized
+      unfold Elab.Expr.List.elaborate at hElab
+      simp [StateT.run_bind] at hElab
+      cases hHead : (Elab.Expr.elaborate rawHead).run elabState with
+      | error err => simp [hHead] at hElab
+      | ok headResult =>
+          rcases headResult with ⟨frontHead, headElabState⟩
+          simp [hHead] at hElab
+          cases hTail :
+              (Elab.Expr.List.elaborate rawTail).run headElabState with
+          | error err => simp [hTail] at hElab
+          | ok tailResult =>
+              rcases tailResult with ⟨frontTail, tailElabState⟩
+              simp [hTail] at hElab
+              rcases hElab with ⟨rfl, rfl⟩
+              rcases ExprListNormalized.cons_parts hNormalized with
+                ⟨orderedHead, orderedTail, rfl,
+                  ⟨hHeadNormalized⟩, ⟨hTailNormalized⟩⟩
+              have hHeadScopes :
+                  headElabState.functionScopes =
+                    elabState.functionScopes :=
+                Elab.Expr.elaborate_preserves_functionScopes
+                  rawHead hHead
+              have hTailCompiled := ih hTail hTailNormalized
+              rw [hHeadScopes] at hTailCompiled
+              exact
+                .cons hHead rfl hHeadNormalized hTailCompiled
+
+theorem append
+    {builtinContext : Frontend.ObjectBuiltinContext}
+    {generatedScopes : List (List (Name × Name))}
+    {rawLeft rawRight : List Raw.Expr}
+    {orderedLeft orderedRight : List Frontend.AstExpr}
+    (hLeft :
+      ScopedExprListCompiled builtinContext generatedScopes
+        rawLeft orderedLeft)
+    (hRight :
+      ScopedExprListCompiled builtinContext generatedScopes
+        rawRight orderedRight) :
+    ScopedExprListCompiled builtinContext generatedScopes
+      (rawLeft ++ rawRight) (orderedLeft ++ orderedRight) := by
+  induction hLeft with
+  | nil => exact hRight
+  | cons hElab hScopes hNormalized hTail ih =>
+      exact .cons hElab hScopes hNormalized ih
+
+theorem reverse
+    {builtinContext : Frontend.ObjectBuiltinContext}
+    {generatedScopes : List (List (Name × Name))}
+    {rawExprs : List Raw.Expr} {ordered : List Frontend.AstExpr}
+    (hCompiled :
+      ScopedExprListCompiled builtinContext generatedScopes
+        rawExprs ordered) :
+    ScopedExprListCompiled builtinContext generatedScopes
+      rawExprs.reverse ordered.reverse := by
+  induction hCompiled with
+  | nil => exact .nil
+  | @cons rawHead orderedHead rawTail orderedTail frontHead
+      elabState finalElabState hElab hScopes hNormalized hTail ih =>
+      simpa using
+        append ih
+          (.cons hElab hScopes hNormalized
+            (.nil :
+              ScopedExprListCompiled builtinContext generatedScopes [] []))
+
+end ScopedExprListCompiled
+
 theorem argsRunForward_cons
     {rawFuel orderedFuel : Nat}
     {context : Raw.SourceSemantics.Context}
@@ -1072,6 +1296,94 @@ theorem argsRunForward_cons
           exact Simulation.Interaction.ForwardRel.done rfl
       | ok tailResult =>
           exact Simulation.Interaction.ForwardRel.done rfl
+
+theorem argsRunForward_of_scoped_compiled
+    {slack : Nat}
+    {builtinContext : Frontend.ObjectBuiltinContext}
+    {contract : Frontend.AstContract}
+    (hExpr :
+      ScopedExprElaborationRunForward slack builtinContext contract) :
+    ∀ {rawContext : Raw.SourceSemantics.Context}
+      {generatedScopes : List (List (Name × Name))}
+      {rawExprs : List Raw.Expr} {ordered : List Frontend.AstExpr},
+      CompiledFunctionScopes builtinContext contract
+          rawContext.functionScopes generatedScopes →
+        ScopedExprListCompiled builtinContext generatedScopes
+          rawExprs ordered →
+          ∀ (rawBase : Nat) (state : State),
+            ArgsRunForward
+              (rawBase + 2 * rawExprs.length + 1)
+              ((rawBase + slack) + 2 * rawExprs.length + 1)
+              rawContext rawExprs ordered contract state := by
+  intro rawContext generatedScopes rawExprs ordered hFunctionScopes hCompiled
+  induction hCompiled with
+  | nil =>
+      intro rawBase state
+      simpa using
+        (argsRunForward_nil_succ
+          (rawFuel := rawBase) (orderedFuel := rawBase + slack)
+          (context := rawContext) (contract := contract) (state := state))
+  | @cons rawHead orderedHead rawTail orderedTail frontHead
+      elabState finalElabState hElab hScopes hNormalized hTail ih =>
+      intro rawBase state
+      let rawTailFuel := rawBase + 2 * rawTail.length + 1
+      let orderedTailFuel := rawTailFuel + slack
+      have hHeadFunctionScopes :
+          CompiledFunctionScopes builtinContext contract
+            rawContext.functionScopes elabState.functionScopes := by
+        simpa [hScopes] using hFunctionScopes
+      have hHeadValues :=
+        hExpr (rawTailFuel + 1) hHeadFunctionScopes
+          (state := state) hElab hNormalized
+      have hHeadRun := exprRunForward_of_values hHeadValues
+      have hHeadRun' :
+          ExprRunForward (rawTailFuel + 1) (orderedTailFuel + 1)
+            rawContext rawHead orderedHead contract state := by
+        simpa [orderedTailFuel, Nat.add_assoc, Nat.add_comm,
+          Nat.add_left_comm] using hHeadRun
+      have hCons :=
+        argsRunForward_cons
+          (rawFuel := rawTailFuel) (orderedFuel := orderedTailFuel)
+          (context := rawContext) (rawArg := rawHead)
+          (rawRest := rawTail) (orderedArg := orderedHead)
+          (orderedRest := orderedTail) (contract := contract)
+          (state := state) hHeadRun'
+          (fun stateAfterHead =>
+            by
+              simpa [rawTailFuel, orderedTailFuel, Nat.add_assoc,
+                Nat.add_comm, Nat.add_left_comm] using
+                (ih rawBase stateAfterHead))
+      simpa [rawTailFuel, orderedTailFuel, Nat.mul_add,
+        Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using hCons
+
+theorem argsRunForward_reverse_of_scoped_elaboration
+    {slack : Nat}
+    {builtinContext : Frontend.ObjectBuiltinContext}
+    {contract : Frontend.AstContract}
+    (hExpr :
+      ScopedExprElaborationRunForward slack builtinContext contract)
+    {rawContext : Raw.SourceSemantics.Context}
+    {rawExprs : List Raw.Expr} {fronts : List Frontend.Expr}
+    {ordered : List Frontend.AstExpr}
+    {elabState finalElabState : Elab.State}
+    (hFunctionScopes :
+      CompiledFunctionScopes builtinContext contract
+        rawContext.functionScopes elabState.functionScopes)
+    (hElab :
+      (Elab.Expr.List.elaborate rawExprs).run elabState =
+        .ok (fronts, finalElabState))
+    (hNormalized : ExprListNormalized builtinContext fronts ordered)
+    (rawBase : Nat) (state : State) :
+    ArgsRunForward
+      (rawBase + 2 * rawExprs.length + 1)
+      ((rawBase + slack) + 2 * rawExprs.length + 1)
+      rawContext rawExprs.reverse ordered.reverse contract state := by
+  have hCompiled :=
+    ScopedExprListCompiled.of_elaboration hElab hNormalized
+  have hReversed := ScopedExprListCompiled.reverse hCompiled
+  simpa using
+    argsRunForward_of_scoped_compiled hExpr hFunctionScopes hReversed
+      rawBase state
 
 theorem argsRunForward_of_compiled
     {slack : Nat}
@@ -1403,6 +1715,120 @@ theorem exprValuesRunForward_of_elaborated_userCall
     omega
   rw [hRawFuel, hOrderedFuel]
   exact hCall
+
+/-- Ordinary generated user calls are preserved from compiler-derived lexical
+scope evidence and the lower-fuel recursive expression/block hypotheses. No
+callee-preservation or generated-layout premise is exposed. -/
+theorem exprValuesRunForward_of_scoped_elaborated_userCall
+    {slack rawBase : Nat}
+    {builtinContext : Frontend.ObjectBuiltinContext}
+    {rawContext : Raw.SourceSemantics.Context}
+    {name : Name} {rawArgs : List Raw.Expr}
+    {elabState finalElabState : Elab.State}
+    {front : Frontend.Expr} {ordered : Frontend.AstExpr}
+    {contract : Frontend.AstContract} {state : State}
+    (hExpr :
+      ScopedExprElaborationRunForward slack builtinContext contract)
+    (hBlock :
+      ScopedBlockElaborationRunForward slack builtinContext contract)
+    (hFunctionScopes :
+      CompiledFunctionScopes builtinContext contract
+        rawContext.functionScopes elabState.functionScopes)
+    (hNotMemoryguard : name ≠ "memoryguard")
+    (hNotClz : name ≠ "clz")
+    (hClass : CallClass.classifyCall name = .user)
+    (hElab :
+      (Elab.Expr.elaborate (.functionCall name rawArgs)).run elabState =
+        .ok (front, finalElabState))
+    (hNormalized : ExprNormalized builtinContext front ordered) :
+    ExprValuesRunForward
+      (rawBase + 2 * rawArgs.length + 2)
+      ((rawBase + slack) + 2 * rawArgs.length + 2)
+      rawContext (.functionCall name rawArgs) ordered contract state := by
+  unfold Elab.Expr.elaborate at hElab
+  simp [StateT.run_bind] at hElab
+  cases hArgs : (Elab.Expr.List.elaborate rawArgs).run elabState with
+  | error err => simp [hArgs] at hElab
+  | ok argsResult =>
+      rcases argsResult with ⟨frontArgs, argsState⟩
+      have hArgsScopes :
+          argsState.functionScopes = elabState.functionScopes :=
+        Elab.Expr.List.elaborate_preserves_functionScopes rawArgs hArgs
+      have hArgsFunctionScopes :
+          CompiledFunctionScopes builtinContext contract
+            rawContext.functionScopes argsState.functionScopes := by
+        simpa [hArgsScopes] using hFunctionScopes
+      simp [hArgs, hClass] at hElab
+      cases hResolve :
+          Elab.resolveFunctionIn name argsState.functionScopes with
+      | none =>
+          simp [Elab.resolveFunction, StateT.run_bind,
+            StateT.run_get, hResolve] at hElab
+          unfold Elab.throw at hElab
+          change
+            (Except.error _ : Except String (Frontend.Expr × Elab.State)) =
+              .ok (front, finalElabState) at hElab
+          cases hElab
+      | some generated =>
+          simp [Elab.resolveFunction, hResolve] at hElab
+          rcases hElab with ⟨rfl, rfl⟩
+          rcases ExprNormalized.user_call_parts hNormalized with
+            ⟨orderedArgs, rfl, ⟨hArgsNormalized⟩⟩
+          rcases CompiledFunctionScopes.resolve
+              hArgsFunctionScopes hResolve with
+            ⟨rawFn, rawLexical, generatedLexical,
+              hRawResolve, ⟨hBinding⟩, hLexicalScopes⟩
+          rcases CompiledFunctionBinding.block_parts hBinding with
+            ⟨bodyElabState, finalBodyElabState, frontBody, orderedBody,
+              hBodyScopes, hBodyElab, ⟨hBodyNormalized⟩,
+              hOrderedLookup⟩
+          have hBodyFunctionScopes :
+              CompiledFunctionScopes builtinContext contract
+                rawLexical bodyElabState.functionScopes := by
+            simpa [hBodyScopes] using hLexicalScopes
+          have hArgsRun :=
+            argsRunForward_reverse_of_scoped_elaboration
+              hExpr hFunctionScopes hArgs hArgsNormalized
+              rawBase state
+          have hRawLookup :
+              Raw.SourceSemantics.lookupFunctionWithLexicalScopes
+                  rawContext name = some (rawFn, rawLexical) := by
+            simpa [Raw.SourceSemantics.lookupFunctionWithLexicalScopes]
+              using hRawResolve
+          let callRawFuel := rawBase + 2 * rawArgs.length
+          let callOrderedFuel :=
+            (rawBase + slack) + 2 * rawArgs.length
+          have hRun :
+              GeneratedUserCallRun callRawFuel callOrderedFuel
+                rawContext name rawArgs generated orderedArgs contract state :=
+            { fn := rawFn
+              lexicalScopes := rawLexical
+              orderedBody := orderedBody
+              notClz := hNotClz
+              callClass := hClass
+              rawLookup := hRawLookup
+              orderedLookup := hOrderedLookup
+              argsForward := by
+                simpa [callRawFuel, callOrderedFuel] using hArgsRun
+              bodyForward := by
+                intro stateAfterArgs values
+                have hBody :=
+                  hBlock callRawFuel
+                    (rawContext :=
+                      { rawContext with functionScopes := rawLexical })
+                    hBodyFunctionScopes
+                    (state :=
+                      Yul.InteractionSemantics.stateModel.withSource
+                        stateAfterArgs
+                        (EvmYul.Yul.State.mkOk
+                          (stateAfterArgs.initcall rawFn.params
+                            rawFn.returns values.reverse)))
+                    hBodyElab hBodyNormalized
+                simpa [callOrderedFuel, callRawFuel, Nat.add_assoc,
+                  Nat.add_comm, Nat.add_left_comm] using hBody }
+          have hCall := exprValuesRunForward_userCall_succ hRun
+          simpa [callRawFuel, callOrderedFuel, Nat.add_assoc,
+            Nat.add_comm, Nat.add_left_comm] using hCall
 
 theorem exprValuesRunForward_datasize_succ
     {rawFuel orderedFuel : Nat}
