@@ -437,6 +437,30 @@ private theorem clzHelperAssignArgShl_exec_succ
     Yul.Source.Effectful.StateModel.multifill,
     EvmYul.Yul.State.multifill, EvmYul.Yul.State.insert]
 
+private theorem restrictStoreTo_insert_existing
+    (shared : EvmYul.SharedState .Yul)
+    (vars : EvmYul.Yul.VarStore) (name : Name)
+    (oldValue newValue : Word)
+    (hLookup : vars.lookup name = some oldValue) :
+    ((EvmYul.Yul.State.Ok shared vars).insert name newValue).restrictStoreTo
+        vars =
+      EvmYul.Yul.State.Ok shared (vars.insert name newValue) := by
+  simp [EvmYul.Yul.State.insert, EvmYul.Yul.State.restrictStoreTo]
+  apply Finmap.ext_lookup
+  intro key
+  cases hScope : vars.lookup key with
+  | some value =>
+      rw [Yul.VarStoreRestriction.lookup_restrict_of_some
+        (vars.insert name newValue) vars key hScope]
+  | none =>
+      rw [Yul.VarStoreRestriction.lookup_restrict_of_none
+        (vars.insert name newValue) vars key hScope]
+      by_cases hKey : key = name
+      · subst key
+        simp [hLookup] at hScope
+      · rw [Finmap.lookup_insert_of_ne vars hKey]
+        exact hScope.symm
+
 private theorem clzHelper_isZero_of_beq_false (value : Word)
     (hValue : (value == EvmYul.UInt256.ofNat 0) = false) :
     EvmYul.UInt256.isZero value = EvmYul.UInt256.ofNat 0 := by
@@ -444,6 +468,15 @@ private theorem clzHelper_isZero_of_beq_false (value : Word)
     simpa [EvmYul.UInt256.ofNat] using hValue
   simpa [EvmYul.UInt256.isZero, EvmYul.UInt256.eq0,
     Bool.toUInt256, hValueZero]
+
+private theorem clzHelper_isZero_ne_zero_of_beq_true (value : Word)
+    (hValue : (value == EvmYul.UInt256.ofNat 0) = true) :
+    EvmYul.UInt256.isZero value ≠ EvmYul.UInt256.ofNat 0 := by
+  have hValueZero : (value == (⟨0⟩ : EvmYul.UInt256)) = true := by
+    simpa [EvmYul.UInt256.ofNat] using hValue
+  simp [EvmYul.UInt256.isZero, EvmYul.UInt256.eq0,
+    Bool.toUInt256, hValueZero]
+  decide
 
 private theorem clzHelperIfIszeroShr_noop_exec_succ
     (fuel checkShift : Nat) (arg : Name) (argValue : Word)
@@ -503,6 +536,117 @@ private theorem clzHelperAstStepBody_noop_execSeq_succ
   rw [open_bind_pure_left]
   rw [show fuel + 15 = (fuel + 14) + 1 by omega]
   rw [Yul.InteractionSemantics.ExecSeq.nil_succ]
+
+private theorem clzHelperRetAdd_block_exec_succ
+    (fuel addend : Nat) (arg ret : Name)
+    (argValue retValue : Word) (code : Option Yul.AstContract)
+    (shared : EvmYul.SharedState .Yul)
+    (vars : EvmYul.Yul.VarStore)
+    (hFrame : ClzHelperFrame arg ret argValue retValue shared vars) :
+    Yul.InteractionSemantics.exec (fuel + 13)
+        (.Block
+          [EvmYul.Yul.Ast.Stmt.Assign [ret]
+            (clzHelperAstPrim .ADD
+              [clzHelperAstValue ret, clzHelperAstWord addend])])
+        code (.Ok shared vars) =
+      pure
+        ((EvmYul.Yul.State.Ok shared vars).insert ret
+          (EvmYul.UInt256.add retValue
+            (EvmYul.UInt256.ofNat addend))) := by
+  rw [show fuel + 13 = (fuel + 12) + 1 by omega]
+  rw [Yul.InteractionSemantics.Exec.block_succ]
+  rw [show fuel + 12 = (fuel + 11) + 1 by omega]
+  rw [Yul.InteractionSemantics.ExecSeq.cons_succ]
+  rw [show fuel + 11 = (fuel + 1) + 10 by omega]
+  rw [clzHelperAssignRetAdd_exec_succ
+    (fuel + 1) addend arg ret argValue retValue code shared vars hFrame]
+  rw [open_bind_pure_left]
+  rw [show fuel + 11 = (fuel + 10) + 1 by omega]
+  rw [Yul.InteractionSemantics.ExecSeq.nil_succ]
+  change
+    pure
+        (((EvmYul.Yul.State.Ok shared vars).insert ret
+            (EvmYul.UInt256.add retValue
+              (EvmYul.UInt256.ofNat addend))).restrictStoreTo vars) =
+      pure
+        ((EvmYul.Yul.State.Ok shared vars).insert ret
+          (EvmYul.UInt256.add retValue
+            (EvmYul.UInt256.ofNat addend)))
+  rw [restrictStoreTo_insert_existing shared vars ret retValue
+    (EvmYul.UInt256.add retValue (EvmYul.UInt256.ofNat addend))
+    hFrame.2]
+  rfl
+
+private theorem clzHelperIfIszeroShr_retAdd_exec_succ
+    (fuel checkShift addend : Nat) (arg ret : Name)
+    (argValue retValue : Word) (code : Option Yul.AstContract)
+    (shared : EvmYul.SharedState .Yul)
+    (vars : EvmYul.Yul.VarStore)
+    (hFrame : ClzHelperFrame arg ret argValue retValue shared vars)
+    (hShift :
+      (EvmYul.UInt256.shiftRight argValue
+        (EvmYul.UInt256.ofNat checkShift) ==
+          EvmYul.UInt256.ofNat 0) = true) :
+    Yul.InteractionSemantics.exec (fuel + 16)
+        (.If
+          (clzHelperAstPrim .ISZERO
+            [clzHelperAstPrim .SHR
+              [clzHelperAstWord checkShift, clzHelperAstValue arg]])
+          [EvmYul.Yul.Ast.Stmt.Assign [ret]
+            (clzHelperAstPrim .ADD
+              [clzHelperAstValue ret, clzHelperAstWord addend])])
+        code (.Ok shared vars) =
+      pure
+        ((EvmYul.Yul.State.Ok shared vars).insert ret
+          (EvmYul.UInt256.add retValue
+            (EvmYul.UInt256.ofNat addend))) := by
+  rw [show fuel + 16 = (fuel + 15) + 1 by omega]
+  rw [Yul.InteractionSemantics.Exec.if_succ]
+  rw [show fuel + 15 = (fuel + 3) + 12 by omega]
+  rw [clzHelperAstIszeroShr_eval_succ
+    (fuel + 3) checkShift arg argValue code shared vars hFrame.1]
+  rw [open_bind_pure_left]
+  have hCond :
+      EvmYul.UInt256.isZero
+          (EvmYul.UInt256.shiftRight argValue
+            (EvmYul.UInt256.ofNat checkShift)) ≠
+        EvmYul.UInt256.ofNat 0 :=
+    clzHelper_isZero_ne_zero_of_beq_true
+      (EvmYul.UInt256.shiftRight argValue
+        (EvmYul.UInt256.ofNat checkShift)) hShift
+  simp [hCond]
+  rw [show fuel + 15 = (fuel + 2) + 13 by omega]
+  rw [clzHelperRetAdd_block_exec_succ
+    (fuel + 2) addend arg ret argValue retValue code shared vars hFrame]
+
+private theorem clzHelperAstStepBody_addOne_execSeq_succ
+    (fuel checkShift : Nat) (arg ret : Name)
+    (argValue retValue : Word) (code : Option Yul.AstContract)
+    (shared : EvmYul.SharedState .Yul)
+    (vars : EvmYul.Yul.VarStore)
+    (hFrame : ClzHelperFrame arg ret argValue retValue shared vars)
+    (hShift :
+      (EvmYul.UInt256.shiftRight argValue
+        (EvmYul.UInt256.ofNat checkShift) ==
+          EvmYul.UInt256.ofNat 0) = true) :
+    Yul.InteractionSemantics.execSeq (fuel + 18)
+        (clzHelperAstStepBody arg ret (checkShift, 1))
+        code (.Ok shared vars) =
+      pure
+        ((EvmYul.Yul.State.Ok shared vars).insert ret
+          (EvmYul.UInt256.add retValue (EvmYul.UInt256.ofNat 1))) := by
+  rw [show fuel + 18 = (fuel + 17) + 1 by omega]
+  simp only [clzHelperAstStepBody, beq_self_eq_true, ↓reduceIte,
+    List.append_nil]
+  rw [Yul.InteractionSemantics.ExecSeq.cons_succ]
+  rw [show fuel + 17 = (fuel + 1) + 16 by omega]
+  rw [clzHelperIfIszeroShr_retAdd_exec_succ
+    (fuel + 1) checkShift 1 arg ret argValue retValue code shared vars
+    hFrame hShift]
+  rw [open_bind_pure_left]
+  rw [show fuel + 17 = (fuel + 16) + 1 by omega]
+  rw [Yul.InteractionSemantics.ExecSeq.nil_succ]
+  simp [EvmYul.Yul.State.insert]
 
 theorem clzHelperZeroEntry_insertRet_lookupArg
     (arg ret : Name) (hArgRet : arg ≠ ret)
