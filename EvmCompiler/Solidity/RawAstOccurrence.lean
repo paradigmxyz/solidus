@@ -538,6 +538,28 @@ theorem retain
         CodeElaborationRoute.functionBody contextName contextFn
           (hRetain hContext) hBody
 
+theorem liftFunctionBody
+    {state state' : Elab.State} {functionName : Name}
+    {args : List Frontend.Expr} {dispatcher : List Frontend.Stmt}
+    {contextGenerated : Name} {contextFn : Frontend.FunctionDef}
+    (hContext : (contextGenerated, contextFn) ∈ state'.hoistedFunctions)
+    (hRetain :
+      ∀ {entry : Name × Frontend.FunctionDef},
+        entry ∈ state.hoistedFunctions →
+          entry ∈ state'.hoistedFunctions)
+    (hRoute :
+      CodeElaborationRoute state functionName args contextFn.body) :
+    CodeElaborationRoute state' functionName args dispatcher := by
+  cases hRoute with
+  | dispatcher hBody =>
+      exact
+        CodeElaborationRoute.functionBody contextGenerated contextFn
+          hContext hBody
+  | functionBody innerGenerated innerFn hInner hBody =>
+      exact
+        CodeElaborationRoute.functionBody innerGenerated innerFn
+          (hRetain hInner) hBody
+
 theorem dispatcher_of_stmt_mem
     {state : Elab.State} {functionName : Name}
     {args : List Frontend.Expr} {stmt : Frontend.Stmt}
@@ -1881,6 +1903,118 @@ theorem localFunctionScope_retains_hoisted
           exact ih hRun hMem
       | «leave» =>
           exact ih hRun hMem
+
+theorem localFunctionScope_lookup_of_mem
+    {rawStmts : List Raw.Stmt} {scope : List (Name × Name)}
+    {state state' : Elab.State}
+    (hRun :
+      (Elab.Stmt.List.localFunctionScope rawStmts).run state =
+        .ok (scope, state'))
+    {name : Name} {params returns : List Name} {body : List Raw.Stmt}
+    (hMem :
+      Raw.Stmt.functionDefinition name params returns body ∈ rawStmts) :
+    ∃ generated, Elab.lookupFunctionInScope name scope = some generated := by
+  induction rawStmts generalizing scope state state' with
+  | nil =>
+      simp at hMem
+  | cons head rest ih =>
+      unfold Elab.Stmt.List.localFunctionScope at hRun
+      simp only [List.mem_cons] at hMem
+      cases head with
+      | functionDefinition headName headParams headReturns headBody =>
+          cases hTail :
+              (Elab.Stmt.List.localFunctionScope rest).run state with
+          | error err =>
+              simp [hTail] at hRun
+          | ok tailResult =>
+              rcases tailResult with ⟨tail, stateAfterTail⟩
+              cases hDuplicate :
+                  tail.any (fun entry => entry.fst == headName) with
+              | true =>
+                  unfold Elab.throw at hRun
+                  simp [hTail, hDuplicate] at hRun
+                  change Except.error
+                      (toString "duplicate Yul function " ++
+                        toString headName ++ toString " in block") =
+                    Except.ok (scope, state') at hRun
+                  cases hRun
+              | false =>
+                  cases hDeclare :
+                      (Elab.declareIdentifiers [headName] "function").run
+                        stateAfterTail with
+                  | error err =>
+                      simp [hTail, hDuplicate, hDeclare] at hRun
+                  | ok declareResult =>
+                      rcases declareResult with
+                        ⟨unitDecl, stateAfterDeclare⟩
+                      cases hFresh :
+                          (Elab.freshGeneratedFunctionName headName).run
+                            stateAfterDeclare with
+                      | error err =>
+                          simp [hTail, hDuplicate, hDeclare, hFresh]
+                            at hRun
+                      | ok freshResult =>
+                          rcases freshResult with
+                            ⟨generated, stateAfterFresh⟩
+                          simp [hTail, hDuplicate, hDeclare, hFresh] at hRun
+                          rcases hRun with ⟨rfl, rfl⟩
+                          rcases hMem with hHere | hRest
+                          · cases hHere
+                            exact
+                              ⟨generated,
+                                by simp [Elab.lookupFunctionInScope]⟩
+                          · by_cases hSame : headName = name
+                            · subst headName
+                              exact
+                                ⟨generated,
+                                  by simp [Elab.lookupFunctionInScope]⟩
+                            · rcases ih hTail hRest with
+                                ⟨tailGenerated, hLookup⟩
+                              exact
+                                ⟨tailGenerated,
+                                  by
+                                    simp [Elab.lookupFunctionInScope, hSame,
+                                      hLookup]⟩
+      | block body =>
+          rcases hMem with hHere | hRest
+          · cases hHere
+          · exact ih hRun hRest
+      | variableDeclaration names value? =>
+          rcases hMem with hHere | hRest
+          · cases hHere
+          · exact ih hRun hRest
+      | assignment names value =>
+          rcases hMem with hHere | hRest
+          · cases hHere
+          · exact ih hRun hRest
+      | expressionStatement expr =>
+          rcases hMem with hHere | hRest
+          · cases hHere
+          · exact ih hRun hRest
+      | switch scrutinee cases defaultBody =>
+          rcases hMem with hHere | hRest
+          · cases hHere
+          · exact ih hRun hRest
+      | forLoop pre condition post body =>
+          rcases hMem with hHere | hRest
+          · cases hHere
+          · exact ih hRun hRest
+      | ifThen condition body =>
+          rcases hMem with hHere | hRest
+          · cases hHere
+          · exact ih hRun hRest
+      | «break» =>
+          rcases hMem with hHere | hRest
+          · cases hHere
+          · exact ih hRun hRest
+      | «continue» =>
+          rcases hMem with hHere | hRest
+          · cases hHere
+          · exact ih hRun hRest
+      | «leave» =>
+          rcases hMem with hHere | hRest
+          · cases hHere
+          · exact ih hRun hRest
 
 theorem requireIdentifierVisible_retains_hoisted
     {name : Name} {what : String} {state state' : Elab.State}

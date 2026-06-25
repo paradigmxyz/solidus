@@ -103,6 +103,7 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.CaseListCodeElaborationRoute
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.frontendStmtListUserCall_of_mem
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.CodeElaborationRoute.retain
+#check EvmCompiler.Solidity.RawAst.RawOccurrence.CodeElaborationRoute.liftFunctionBody
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.CodeElaborationRoute.dispatcher_of_stmt_mem
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.CodeElaborationRoute.dispatcher_head
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.CodeElaborationRoute.dispatcher_tail
@@ -129,6 +130,7 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.freshNonFunctionBindingName_retains_hoisted
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.ensureClzHelper_retains_hoisted
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.localFunctionScope_retains_hoisted
+#check EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.localFunctionScope_lookup_of_mem
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.requireIdentifierVisible_retains_hoisted
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.requireIdentifiersVisible_retains_hoisted
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.resolveFunction_retains_hoisted
@@ -357,6 +359,7 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.CaseListUserCall.elaborate_route
 #print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.frontendStmtListUserCall_of_mem
 #print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.CodeElaborationRoute.retain
+#print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.CodeElaborationRoute.liftFunctionBody
 #print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.CodeElaborationRoute.dispatcher_of_stmt_mem
 #print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.CodeElaborationRoute.dispatcher_head
 #print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.CodeElaborationRoute.dispatcher_tail
@@ -383,6 +386,7 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.freshNonFunctionBindingName_retains_hoisted
 #print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.ensureClzHelper_retains_hoisted
 #print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.localFunctionScope_retains_hoisted
+#print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.localFunctionScope_lookup_of_mem
 #print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.requireIdentifierVisible_retains_hoisted
 #print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.requireIdentifiersVisible_retains_hoisted
 #print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.resolveFunction_retains_hoisted
