@@ -1330,12 +1330,27 @@ theorem continuingStep_not_externalCallCreate
   cases op <;>
     simp [PrimOp.continuingStep?, PrimOp.isExternalCallCreate] at hStep ⊢
 
+theorem continuingStep_toEVM_isCreate_false
+    {op : PrimOp} {step : PrimStep}
+    (hStep : op.continuingStep? = some step) :
+    EvmYul.Operation.isCreate op.toEVM = false := by
+  cases op <;>
+    simp [PrimOp.continuingStep?, PrimOp.toEVM,
+      EvmYul.Operation.isCreate] at hStep ⊢
+
 theorem continuingStep_haltKind?_none
     {op : PrimOp} {step : PrimStep}
     (hStep : op.continuingStep? = some step) :
     op.haltKind? = none := by
   cases op <;>
     simp [PrimOp.continuingStep?, PrimOp.haltKind?] at hStep ⊢
+
+theorem haltOutputAt_none_of_continuingStep
+    {op : PrimOp} {step : PrimStep} (state : EVMState)
+    (hStep : op.continuingStep? = some step) :
+    haltOutputAt state op.toEVM = none := by
+  cases op <;>
+    simp [PrimOp.continuingStep?, PrimOp.toEVM, haltOutputAt] at hStep ⊢
 
 theorem continuingPrim_open_success_after_charges
     {op : PrimOp} {step : PrimStep} {state gasfulNext : EVMState}
@@ -2686,6 +2701,118 @@ theorem runRefinesOpen_revert_success
   apply RunRefinesOpen.completed
   · simpa [Nat.add_comm] using hExec
   · exact DoneRel.revert
+
+theorem runRefinesOpen_continuing_prim_success
+    {fuel : Nat} {validJumps : Array Word}
+    {bytes : ByteArray} {pc : Nat} {state gasfulNext : EVMState}
+    {op : PrimOp} {step : PrimStep} {arg : Option (Word × Nat)}
+    {transcript : Interaction.Transcript}
+    (hPrefix : XSstoreStipendChecksPass validJumps state)
+    (hDecodedPair :
+      ((EvmYul.EVM.decode state.executionEnv.code state.pc).getD
+        (EvmYul.Operation.STOP, none)) = (op.toEVM, arg))
+    (hStep : op.continuingStep? = some step)
+    (hMsize : op ≠ .msize)
+    (hTransparent : continuingPrimEVMStepTransparent op)
+    (hDecode : Compact.decodeAt bytes pc (.prim op))
+    (hPc : (afterDynamicChargeAt state).pc = EvmYul.UInt256.ofNat pc)
+    (hGasful :
+      EvmYul.EVM.step (fuel + 1) (dynamicGasCostAt state)
+        (some (op.toEVM, arg)) (afterMemoryChargeAt state) =
+          .ok gasfulNext)
+    (hCont :
+      ∀ openNext,
+        SameData gasfulNext openNext →
+          RunRefinesOpen
+            (EvmYul.EVM.X (fuel + 1) validJumps gasfulNext)
+            (Compact.InteractionSemantics.openRunNResult
+              bytes (fuel + 1) openNext)
+            transcript) :
+    RunRefinesOpen
+      (EvmYul.EVM.X (fuel + 1 + 1) validJumps state)
+      (Compact.InteractionSemantics.openRunNResult
+        bytes (fuel + 1 + 1) (afterDynamicChargeAt state))
+      transcript := by
+  have hDecodedOp : decodedOperationAt state = op.toEVM := by
+    simpa [decodedOperationAt, hDecodedPair]
+  have hCreateOk :
+      ¬ (EvmYul.Operation.isCreate (decodedOperationAt state) = true ∧
+        (EvmYul.UInt256.ofNat 49152) <
+          state.stack[2]?.getD (EvmYul.UInt256.ofNat 0)) := by
+    intro hBad
+    have hCreateFalse :
+        EvmYul.Operation.isCreate (decodedOperationAt state) = false := by
+      simpa [hDecodedOp] using
+        continuingStep_toEVM_isCreate_false hStep
+    simp [hCreateFalse] at hBad
+  have hStaticPermits : continuingPrimStaticPermits state op :=
+    continuingPrimStaticPermits_of_static_check hPrefix.static hDecodedOp
+  rcases raw_continuing_prim_refines_evm_step_after_charges
+      (fuel := fuel) (op := op) (step := step)
+      (bytes := bytes) (pc := pc) (state := state)
+      (gasfulNext := gasfulNext) (arg := arg)
+      hStep hMsize hTransparent hStaticPermits hDecode hPc hGasful with
+    ⟨openNext, hFirst, hSame⟩
+  have hTail := hCont openNext hSame
+  have hPostRun :
+      RunRefinesOpen
+        (EvmYul.EVM.X (fuel + 1) validJumps gasfulNext)
+        (Compact.InteractionSemantics.openRunNResult
+          bytes (fuel + 1 + 1) (afterDynamicChargeAt state))
+        transcript := by
+    cases hTail with
+    | completed hExec hDone =>
+        apply RunRefinesOpen.completed
+        · rw [show fuel + 1 + 1 = 1 + (fuel + 1) by omega]
+          rw [Compact.InteractionSemantics.openRunNResult_add]
+          simpa using
+            (Interaction.Executes.bind_ok
+              (first := Compact.InteractionSemantics.openRunNResult
+                bytes 1 (afterDynamicChargeAt state))
+              (next := fun result =>
+                match result with
+                | .running mid =>
+                    Compact.InteractionSemantics.openRunNResult
+                      bytes (fuel + 1) mid
+                | .halted halt => Interaction.pure (.halted halt))
+              hFirst hExec)
+        · exact hDone
+    | outOfGas hGas hFollow =>
+        apply RunRefinesOpen.outOfGas hGas
+        rw [show fuel + 1 + 1 = 1 + (fuel + 1) by omega]
+        rw [Compact.InteractionSemantics.openRunNResult_add]
+        simpa using
+          (Interaction.Follows.bind_ok
+            (first := Compact.InteractionSemantics.openRunNResult
+              bytes 1 (afterDynamicChargeAt state))
+            (next := fun result =>
+              match result with
+              | .running mid =>
+                  Compact.InteractionSemantics.openRunNResult
+                    bytes (fuel + 1) mid
+              | .halted halt => Interaction.pure (.halted halt))
+            hFirst hFollow)
+  have hPostBridge :
+      RunRefinesOpen
+        (xPostStepExceptResult (fuel + 1) validJumps
+          (decodedOperationAt state) (.ok gasfulNext))
+        (Compact.InteractionSemantics.openRunNResult
+          bytes (fuel + 1 + 1) (afterDynamicChargeAt state))
+        transcript := by
+    simpa [xPostStepExceptResult, xPostStepResult, hDecodedOp,
+      haltOutputAt_none_of_continuingStep gasfulNext hStep] using hPostRun
+  have hStepActual :
+      EvmYul.EVM.step (fuel + 1) (dynamicGasCostAt state)
+        (some
+          ((EvmYul.EVM.decode state.executionEnv.code state.pc).getD
+            (EvmYul.Operation.STOP, none)))
+        (afterMemoryChargeAt state) = .ok gasfulNext := by
+    simpa [hDecodedPair] using hGasful
+  exact
+    runRefinesOpen_of_x_after_prechecks_step_result
+      (fuel := fuel + 1) (validJumps := validJumps) (state := state)
+      (stepResult := .ok gasfulNext)
+      hPrefix hCreateOk hStepActual hPostBridge
 
 theorem runRefinesOpen_outOfGas_prefix
     {openRun : Interaction EVMException StepResult}

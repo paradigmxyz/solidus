@@ -584,6 +584,8 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Assembly.GasfulBridge.x_jumpdest_continues_after_charges
 #check EvmCompiler.Assembly.GasfulBridge.raw_jumpdest_executes_after_charges
 #check EvmCompiler.Assembly.GasfulBridge.jumpdest_chargedStepRel_after_charges
+#check EvmCompiler.Assembly.GasfulBridge.continuingStep_toEVM_isCreate_false
+#check EvmCompiler.Assembly.GasfulBridge.haltOutputAt_none_of_continuingStep
 #check EvmCompiler.Assembly.GasfulBridge.x_stop_success_after_charges
 #check EvmCompiler.Assembly.GasfulBridge.evm_step_stop_after_charges
 #check EvmCompiler.Assembly.GasfulBridge.sameData_gasful_open_stop_after_charges
@@ -593,6 +595,7 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Assembly.GasfulBridge.runRefinesOpen_of_x_after_prechecks_step_error_executes
 #check EvmCompiler.Assembly.GasfulBridge.runRefinesOpen_jumpdest_step
 #check EvmCompiler.Assembly.GasfulBridge.runRefinesOpen_stop_success
+#check EvmCompiler.Assembly.GasfulBridge.runRefinesOpen_continuing_prim_success
 #check EvmCompiler.Assembly.GasfulBridge.CallBoundaryAccounting
 #check EvmCompiler.Assembly.GasfulBridge.CreateBoundaryAccounting
 
@@ -1085,7 +1088,9 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Assembly.GasfulBridge.continuingStep_not_pc
 #print axioms EvmCompiler.Assembly.GasfulBridge.continuingStep_not_gas
 #print axioms EvmCompiler.Assembly.GasfulBridge.continuingStep_not_externalCallCreate
+#print axioms EvmCompiler.Assembly.GasfulBridge.continuingStep_toEVM_isCreate_false
 #print axioms EvmCompiler.Assembly.GasfulBridge.continuingStep_haltKind?_none
+#print axioms EvmCompiler.Assembly.GasfulBridge.haltOutputAt_none_of_continuingStep
 #print axioms EvmCompiler.Assembly.GasfulBridge.continuingPrim_open_success_after_charges
 #print axioms EvmCompiler.Assembly.GasfulBridge.raw_continuing_prim_executes_after_charges
 #print axioms EvmCompiler.Assembly.GasfulBridge.raw_continuing_prim_refines_step_after_charges
@@ -1122,5 +1127,6 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Assembly.GasfulBridge.runRefinesOpen_stop_success
 #print axioms EvmCompiler.Assembly.GasfulBridge.runRefinesOpen_return_success
 #print axioms EvmCompiler.Assembly.GasfulBridge.runRefinesOpen_revert_success
+#print axioms EvmCompiler.Assembly.GasfulBridge.runRefinesOpen_continuing_prim_success
 #print axioms EvmCompiler.Yul.EndToEnd.optimizedSolcYulToRawBytecodeFinished
 #print axioms EvmCompiler.Yul.EndToEnd.optimizedSolcYulToRawBytecodeFinishedLegacy
