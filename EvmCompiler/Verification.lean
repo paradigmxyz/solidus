@@ -265,7 +265,18 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.Expr.List.elaborate_mem
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.RawStmtNotFunctionDefinition
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.CodeRouteBelow
+#check EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.ClzCodeRouteBelow
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.codeRouteBelow_zero
+#check EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.clzCodeRouteBelow_zero
+#check EvmCompiler.Solidity.RawAst.RawOccurrence.FunctionDef.elaborate_clzCodeRoute_exists_of_body
+#check EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.Stmt.List.elaborate_clzCodeRoute_exists_of_split
+#check EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.Stmt.List.elaborate_clzCodeRoute_exists_of_functionDefinition_split
+#check EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.Stmt.CaseList.elaborate_clzCodeRoute_exists_of_head
+#check EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.Stmt.CaseList.elaborate_clzCodeRoute_exists_of_tail
+#check EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.clzCodeRouteBelow_caseList_succ
+#check EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.clzCodeRouteBelow_stmtListAfterHoist_succ
+#check EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.clzCodeRouteBelow_block_succ
+#check EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.clzCodeRouteBelow_forInit_succ
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.ExprUserCall.elaborate
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.Stmt.assignment_elaborate_value_exists
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.Stmt.switch_elaborate_parts
@@ -464,7 +475,18 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Expr.List.elaborate_mem
 #print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.RawStmtNotFunctionDefinition
 #print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.CodeRouteBelow
+#print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.ClzCodeRouteBelow
 #print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.codeRouteBelow_zero
+#print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.clzCodeRouteBelow_zero
+#print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.FunctionDef.elaborate_clzCodeRoute_exists_of_body
+#print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.Stmt.List.elaborate_clzCodeRoute_exists_of_split
+#print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.Stmt.List.elaborate_clzCodeRoute_exists_of_functionDefinition_split
+#print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.Stmt.CaseList.elaborate_clzCodeRoute_exists_of_head
+#print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.Stmt.CaseList.elaborate_clzCodeRoute_exists_of_tail
+#print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.clzCodeRouteBelow_caseList_succ
+#print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.clzCodeRouteBelow_stmtListAfterHoist_succ
+#print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.clzCodeRouteBelow_block_succ
+#print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.clzCodeRouteBelow_forInit_succ
 #print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.ExprUserCall.elaborate_direct_user
 #print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.ExprUserCall.elaborate
 #print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Stmt.assignment_elaborate_value_exists
