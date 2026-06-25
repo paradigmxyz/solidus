@@ -1582,6 +1582,71 @@ theorem runRefinesOpen_of_x_after_prechecks_step_error_executes
     (stepResult := .error err) hPrefix hCreateOk hStep
   exact runRefinesOpen_of_executes hExec DoneRel.sameError
 
+theorem runRefinesOpen_jumpdest_step
+    {fuel : Nat} {validJumps : Array Word}
+    {bytes : ByteArray} {pc : Nat} {state gasfulNext : EVMState}
+    {transcript : Interaction.Transcript}
+    (hPrefix : XSstoreStipendChecksPass validJumps state)
+    (hJumpdest : decodedOperationAt state = EvmYul.Operation.JUMPDEST)
+    (hStep :
+      EvmYul.EVM.step fuel (dynamicGasCostAt state)
+        (some
+          (EvmYul.Operation.JUMPDEST,
+            ((EvmYul.EVM.decode state.executionEnv.code state.pc).getD
+              (EvmYul.Operation.STOP, none)).2))
+        (afterMemoryChargeAt state) = .ok gasfulNext)
+    (hDecode : Compact.decodeAt bytes pc .jumpdest)
+    (hPc : (afterDynamicChargeAt state).pc = EvmYul.UInt256.ofNat pc)
+    (hCont :
+      RunRefinesOpen
+        (EvmYul.EVM.X fuel validJumps gasfulNext)
+        (Compact.InteractionSemantics.openRunNResult
+          bytes fuel (afterDynamicChargeAt state).incrPC)
+        transcript) :
+    RunRefinesOpen
+      (EvmYul.EVM.X (fuel + 1) validJumps state)
+      (Compact.InteractionSemantics.openRunNResult
+        bytes (fuel + 1) (afterDynamicChargeAt state))
+      transcript := by
+  rw [x_jumpdest_continues_after_charges hPrefix hJumpdest hStep]
+  have hFirst :
+      Interaction.Executes
+        (Compact.InteractionSemantics.openStepResult
+          bytes (afterDynamicChargeAt state))
+        []
+        (.ok (.running (afterDynamicChargeAt state).incrPC)) := by
+    rw [Compact.openStepResultEqInstrOfDecodeAt
+      (instr := .jumpdest) trivial hDecode hPc]
+    exact Interaction.Executes.done _
+  cases hCont with
+  | completed hExec hDone =>
+      apply RunRefinesOpen.completed
+      · rw [Compact.InteractionSemantics.openRunNResult_succ]
+        simpa using
+          (Interaction.Executes.bind_ok
+            (first := Compact.InteractionSemantics.openStepResult
+              bytes (afterDynamicChargeAt state))
+            (next := fun result =>
+              match result with
+              | .running mid =>
+                  Compact.InteractionSemantics.openRunNResult bytes fuel mid
+              | .halted halt => Interaction.pure (.halted halt))
+            hFirst hExec)
+      · exact hDone
+  | outOfGas hGas hFollow =>
+      apply RunRefinesOpen.outOfGas hGas
+      rw [Compact.InteractionSemantics.openRunNResult_succ]
+      simpa using
+        (Interaction.Follows.bind_ok
+          (first := Compact.InteractionSemantics.openStepResult
+            bytes (afterDynamicChargeAt state))
+          (next := fun result =>
+            match result with
+            | .running mid =>
+                Compact.InteractionSemantics.openRunNResult bytes fuel mid
+            | .halted halt => Interaction.pure (.halted halt))
+          hFirst hFollow)
+
 theorem runRefinesOpen_outOfGas_prefix
     {openRun : Interaction EVMException StepResult}
     {transcript : Interaction.Transcript}

@@ -57,7 +57,10 @@ Gasful EVM bridge checkpoint:
   are not silently assumed away.
 - [x] Compose post-precheck gasful step results into `RunRefinesOpen` via
   checked lemmas, reducing the remaining full bridge premise to open refinement
-  of the actual parent-frame `EVM.step` result.
+  of the actual parent-frame `EVM.step` result. Add
+  `GasfulBridge.runRefinesOpen_jumpdest_step` as the first one-step continuation
+  composition from actual charged `JUMPDEST` execution to the open raw-bytecode
+  run.
 - [x] Compose the existing Yul-to-open-raw-bytecode theorem with the named
   gasful target bridge premise in
   `Yul.EndToEnd.optimizedSolcYulToGasfulRawBytecodeOfOpenRunBridge`.
