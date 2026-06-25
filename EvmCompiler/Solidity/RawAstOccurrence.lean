@@ -199,6 +199,203 @@ theorem elaborate_mem
 end List
 end Expr
 
+namespace Stmt
+namespace List
+
+theorem elaborate_mem
+    {rawStmts : List Raw.Stmt} {frontendStmts : List Frontend.Stmt}
+    {state state' : Elab.State}
+    (hElab :
+      (Elab.Stmt.List.elaborate rawStmts).run state =
+        .ok (frontendStmts, state'))
+    {rawStmt : Raw.Stmt} (hMem : rawStmt ∈ rawStmts) :
+    ∃ (frontendStmt : Frontend.Stmt)
+      (stateBefore stateAfter : Elab.State),
+      (Elab.Stmt.elaborate rawStmt).run stateBefore =
+        .ok (frontendStmt, stateAfter) ∧
+        frontendStmt ∈ frontendStmts := by
+  induction rawStmts generalizing state state' frontendStmts with
+  | nil =>
+      simp at hMem
+  | cons head rest ih =>
+      simp only [Elab.Stmt.List.elaborate] at hElab
+      cases hHead : (Elab.Stmt.elaborate head).run state with
+      | error err =>
+          simp [hHead] at hElab
+      | ok headResult =>
+          rcases headResult with ⟨headStmt, stateAfterHead⟩
+          cases hTail :
+              (Elab.Stmt.List.elaborate rest).run stateAfterHead with
+          | error err =>
+              simp [hHead, hTail] at hElab
+          | ok tailResult =>
+              rcases tailResult with ⟨tailStmts, stateAfterTail⟩
+              simp [hHead, hTail] at hElab
+              rcases hElab with ⟨rfl, rfl⟩
+              simp only [List.mem_cons] at hMem ⊢
+              rcases hMem with hHere | hRest
+              · subst rawStmt
+                exact
+                  ⟨headStmt, state, stateAfterHead, hHead, Or.inl rfl⟩
+              · rcases ih hTail hRest with
+                  ⟨frontendStmt, stateBefore, stateAfter,
+                    hStmt, hFrontendMem⟩
+                exact
+                  ⟨frontendStmt, stateBefore, stateAfter, hStmt,
+                    Or.inr hFrontendMem⟩
+
+end List
+
+namespace CaseList
+
+theorem elaborate_mem
+    {rawCases : List (Raw.SwitchCaseValue × List Raw.Stmt)}
+    {frontendCases : List (Frontend.SwitchCaseValue × List Frontend.Stmt)}
+    {state state' : Elab.State}
+    (hElab :
+      (Elab.Stmt.CaseList.elaborate rawCases).run state =
+        .ok (frontendCases, state'))
+    {rawValue : Raw.SwitchCaseValue} {rawBody : List Raw.Stmt}
+    (hMem : (rawValue, rawBody) ∈ rawCases) :
+    ∃ (frontendValue : Frontend.SwitchCaseValue)
+      (frontendBody : List Frontend.Stmt)
+      (stateBeforeBody stateAfterBody : Elab.State),
+      Elab.SwitchCaseValue.elaborate rawValue = .ok frontendValue ∧
+        (Elab.Stmt.List.elaborateBlock rawBody true).run stateBeforeBody =
+          .ok (frontendBody, stateAfterBody) ∧
+        (frontendValue, frontendBody) ∈ frontendCases := by
+  induction rawCases generalizing state state' frontendCases with
+  | nil =>
+      simp at hMem
+  | cons head rest ih =>
+      rcases head with ⟨headValue, headBody⟩
+      simp only [Elab.Stmt.CaseList.elaborate] at hElab
+      cases hValue : Elab.SwitchCaseValue.elaborate headValue with
+      | error err =>
+          simp [hValue] at hElab
+          unfold Elab.throw at hElab
+          cases hElab
+      | ok frontendValue =>
+          cases hBody :
+              (Elab.Stmt.List.elaborateBlock headBody true).run state with
+          | error err =>
+              simp [hValue, hBody] at hElab
+          | ok bodyResult =>
+              rcases bodyResult with ⟨frontendBody, stateAfterBody⟩
+              cases hTail :
+                  (Elab.Stmt.CaseList.elaborate rest).run
+                    stateAfterBody with
+              | error err =>
+                  simp [hValue, hBody, hTail] at hElab
+              | ok tailResult =>
+                  rcases tailResult with ⟨tailCases, stateAfterTail⟩
+                  simp [hValue, hBody, hTail] at hElab
+                  rcases hElab with ⟨rfl, rfl⟩
+                  simp only [List.mem_cons] at hMem ⊢
+                  rcases hMem with hHere | hRest
+                  · rcases hHere with ⟨rfl, rfl⟩
+                    exact
+                      ⟨frontendValue, frontendBody, state, stateAfterBody,
+                        hValue, hBody, Or.inl rfl⟩
+                  · rcases ih hTail hRest with
+                      ⟨frontendValue, frontendBody, stateBeforeBody,
+                        stateAfterBody, hValue, hBody, hFrontendMem⟩
+                    exact
+                      ⟨frontendValue, frontendBody, stateBeforeBody,
+                        stateAfterBody, hValue, hBody,
+                        Or.inr hFrontendMem⟩
+
+end CaseList
+end Stmt
+
+namespace StmtListUserCall
+
+theorem elaborate_exists_stmt
+    {functionName : Name} {args : List Raw.Expr}
+    {rawStmts : List Raw.Stmt} {frontendStmts : List Frontend.Stmt}
+    {state state' : Elab.State}
+    (hOccurrence : StmtListUserCall functionName args rawStmts)
+    (hElab :
+      (Elab.Stmt.List.elaborate rawStmts).run state =
+        .ok (frontendStmts, state')) :
+    ∃ (rawStmt : Raw.Stmt) (frontendStmt : Frontend.Stmt)
+      (stateBefore stateAfter : Elab.State),
+      StmtUserCall functionName args rawStmt ∧
+        (Elab.Stmt.elaborate rawStmt).run stateBefore =
+          .ok (frontendStmt, stateAfter) ∧
+        frontendStmt ∈ frontendStmts := by
+  rcases exists_split_stmt hOccurrence with
+    ⟨pre, stmt, suffix, hSplit, hStmt⟩
+  have hMem : stmt ∈ rawStmts := by
+    subst rawStmts
+    simp
+  rcases Stmt.List.elaborate_mem hElab hMem with
+    ⟨frontendStmt, stateBefore, stateAfter, hStmtElab, hFrontendMem⟩
+  exact
+    ⟨stmt, frontendStmt, stateBefore, stateAfter,
+      hStmt, hStmtElab, hFrontendMem⟩
+
+end StmtListUserCall
+
+namespace CaseListUserCall
+
+theorem exists_split_case
+    {functionName : Name} {args : List Raw.Expr}
+    {cases : List (Raw.SwitchCaseValue × List Raw.Stmt)}
+    (hOccurrence : CaseListUserCall functionName args cases) :
+    ∃ (pre : List (Raw.SwitchCaseValue × List Raw.Stmt))
+      (value : Raw.SwitchCaseValue) (body : List Raw.Stmt)
+      (suffix : List (Raw.SwitchCaseValue × List Raw.Stmt)),
+      cases = pre ++ (value, body) :: suffix ∧
+        StmtListUserCall functionName args body := by
+  induction cases with
+  | nil =>
+      cases hOccurrence
+  | cons caseHead rest ih =>
+      rcases caseHead with ⟨caseValue, caseBody⟩
+      cases hOccurrence with
+      | head hBody =>
+          exact ⟨[], caseValue, caseBody, rest, rfl, hBody⟩
+      | tail hTail =>
+          rcases ih hTail with
+            ⟨pre, value, body, suffix, hSplit, hBody⟩
+          exact
+            ⟨(caseValue, caseBody) :: pre, value, body, suffix,
+              by simp [hSplit], hBody⟩
+
+theorem elaborate_exists_case
+    {functionName : Name} {args : List Raw.Expr}
+    {rawCases : List (Raw.SwitchCaseValue × List Raw.Stmt)}
+    {frontendCases : List (Frontend.SwitchCaseValue × List Frontend.Stmt)}
+    {state state' : Elab.State}
+    (hOccurrence : CaseListUserCall functionName args rawCases)
+    (hElab :
+      (Elab.Stmt.CaseList.elaborate rawCases).run state =
+        .ok (frontendCases, state')) :
+    ∃ (rawValue : Raw.SwitchCaseValue) (rawBody : List Raw.Stmt)
+      (frontendValue : Frontend.SwitchCaseValue)
+      (frontendBody : List Frontend.Stmt)
+      (stateBeforeBody stateAfterBody : Elab.State),
+      StmtListUserCall functionName args rawBody ∧
+        Elab.SwitchCaseValue.elaborate rawValue = .ok frontendValue ∧
+        (Elab.Stmt.List.elaborateBlock rawBody true).run stateBeforeBody =
+          .ok (frontendBody, stateAfterBody) ∧
+        (frontendValue, frontendBody) ∈ frontendCases := by
+  rcases exists_split_case hOccurrence with
+    ⟨pre, value, body, suffix, hSplit, hBodyOccurrence⟩
+  have hMem : (value, body) ∈ rawCases := by
+    subst rawCases
+    simp
+  rcases Stmt.CaseList.elaborate_mem hElab hMem with
+    ⟨frontendValue, frontendBody, stateBeforeBody, stateAfterBody,
+      hValue, hBodyElab, hFrontendMem⟩
+  exact
+    ⟨value, body, frontendValue, frontendBody, stateBeforeBody,
+      stateAfterBody, hBodyOccurrence, hValue, hBodyElab,
+      hFrontendMem⟩
+
+end CaseListUserCall
+
 namespace ExprUserCall
 
 theorem elaborate_direct_user
