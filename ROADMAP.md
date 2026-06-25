@@ -77,6 +77,9 @@ Gasful EVM bridge checkpoint:
   `.invalid` raw-bytecode execution for the gasful invalid-instruction precheck,
   plus explicit empty-transcript OOG wrappers for memory charge, dynamic charge,
   `SSTORE` stipend, and CREATE/CREATE2 initcode-size failures.
+- [x] Compose invalid `RETURNDATACOPY` into `RunRefinesOpen`: after the ordered
+  gasful prechecks and dynamic charge, the actual return-data bounds failure
+  resolves to the open raw-bytecode `InvalidMemoryAccess` error.
 - [x] Add the matching terminal `RETURN`/`REVERT` compositions:
   stack-pop-aware actual `EVM.step` lemmas, gas/control-erased output-state
   relations, open raw-bytecode halt execution with concrete return bytes, and
@@ -88,7 +91,8 @@ Gasful EVM bridge checkpoint:
 - [ ] Prove the full `EVM.X` simulation that discharges the bridge premise for
   remaining special `EVM.step` helpers (`LOG0..4`), CALL/CREATE open-strategy
   responses with EIP-150/returned gas, and the remaining non-OOG exceptional
-  composition cases.
+  composition cases: stack underflow, stack overflow, static-mode violation,
+  and bad jump destinations.
 
 `Compiler.StackArtifact` is the sole code-body artifact and
 `Solidity.Frontend.VerifiedStackObjectArtifact` is the sole recursive object

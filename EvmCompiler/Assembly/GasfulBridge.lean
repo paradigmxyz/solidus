@@ -2247,6 +2247,96 @@ theorem raw_invalid_instruction_executes_after_charges
       (.error EvmYul.EVM.ExecutionException.InvalidInstruction :
         Except EVMException StepResult))
 
+theorem stack_get?_of_pop3
+    {α : Type} {stack rest : EvmYul.Stack α} {a b c : α}
+    (hPop : EvmYul.Stack.pop3 stack = some (rest, a, b, c)) :
+    stack[1]? = some b ∧ stack[2]? = some c := by
+  cases stack with
+  | nil => simp [EvmYul.Stack.pop3] at hPop
+  | cons x xs =>
+      cases xs with
+      | nil => simp [EvmYul.Stack.pop3] at hPop
+      | cons y ys =>
+          cases ys with
+          | nil => simp [EvmYul.Stack.pop3] at hPop
+          | cons z zs =>
+              simp [EvmYul.Stack.pop3] at hPop ⊢
+              rcases hPop with ⟨hRest, hA, hB, hC⟩
+              subst rest
+              subst a
+              subst b
+              subst c
+              simp
+
+theorem exists_pop3_of_three_le
+    {α : Type} {stack : EvmYul.Stack α}
+    (h : 3 ≤ stack.length) :
+    ∃ rest a b c, EvmYul.Stack.pop3 stack = some (rest, a, b, c) := by
+  cases stack with
+  | nil => simp at h
+  | cons a rest =>
+      cases rest with
+      | nil => simp at h
+      | cons b tail =>
+          cases tail with
+          | nil => simp at h
+          | cons c suffix => exact ⟨suffix, a, b, c, rfl⟩
+
+theorem raw_invalid_returndatacopy_executes_after_charges
+    {validJumps : Array Word} {bytes : ByteArray} {pc : Nat}
+    {state : EVMState}
+    (hPrefix : XJumpChecksPass validJumps state)
+    (hInvalid : invalidReturnDataCopyAt state)
+    (hDecode : Compact.decodeAt bytes pc (.prim .returndatacopy))
+    (hPc : (afterDynamicChargeAt state).pc = EvmYul.UInt256.ofNat pc) :
+    Interaction.Executes
+      (Compact.InteractionSemantics.openRunNResult
+        bytes 1 (afterDynamicChargeAt state))
+      []
+      (.error EvmYul.EVM.ExecutionException.InvalidMemoryAccess) := by
+  rcases hInvalid with ⟨hOp, hBounds⟩
+  have hNotLt : ¬ state.stack.length < 3 := by
+    simpa [hOp, EvmYul.EVM.δ] using hPrefix.stack.stackEnough
+  have hLen : 3 ≤ state.stack.length := by
+    omega
+  rcases exists_pop3_of_three_le (α := Word) hLen with
+    ⟨rest, μ₀, μ₁, μ₂, hPop⟩
+  have hIdx := stack_get?_of_pop3 hPop
+  have hBounds' :
+      state.returnData.size < μ₁.toNat + μ₂.toNat := by
+    simpa [hIdx.1, hIdx.2] using hBounds
+  have hPopCharged :
+      (afterDynamicChargeAt state).stack.pop3 =
+        some (rest, μ₀, μ₁, μ₂) := by
+    simpa [afterDynamicChargeAt, afterMemoryChargeAt, chargeGas] using hPop
+  have hBoundsCharged :
+      (afterDynamicChargeAt state).returnData.size <
+        μ₁.toNat + μ₂.toNat := by
+    simpa [afterDynamicChargeAt, afterMemoryChargeAt, chargeGas] using hBounds'
+  have hPrim :
+      PrimOp.returndatacopy.step (afterDynamicChargeAt state) =
+        .error EvmYul.EVM.ExecutionException.InvalidMemoryAccess := by
+    simp [PrimOp.step, PrimOp.continuingStep?, PrimStep.run,
+      hPopCharged, hBoundsCharged]
+  rw [Compact.InteractionSemantics.openRunNResult_one_eq_instr
+    (instr := .prim .returndatacopy) trivial hDecode hPc]
+  simpa [Compact.Instr.openStepResult, Compact.Instr.openStep,
+    Assembly.InteractionSemantics.Target.openStepInstrResult,
+    Assembly.Target.stepInstrResultWith,
+    Assembly.InteractionSemantics.Target.openStepInstr,
+    Assembly.Target.stepInstrWith,
+    Assembly.InteractionSemantics.PrimOp.openStep,
+    Assembly.PrimOp.toEVM,
+    Simulation.ExternalKind.ofEVMOperation?,
+    Simulation.CallKind.ofEVMOperation?,
+    Simulation.CreateKind.ofEVMOperation?, hPrim,
+    Simulation.Interaction.bind,
+    Simulation.Interaction.bind_done_error,
+    Assembly.PrimOp.haltKind?, Compact.Instr.haltKind?] using
+    (Interaction.Executes.done
+      (.error EvmYul.EVM.ExecutionException.InvalidMemoryAccess :
+        Except EVMException StepResult))
+
 theorem raw_return_executes_after_charges
     {fuel : Nat} {bytes : ByteArray} {pc : Nat}
     {state gasfulFinal : EVMState}
@@ -2683,6 +2773,32 @@ theorem runRefinesOpen_invalid_instruction_after_gas_checks
   have hOne :=
     raw_invalid_instruction_executes_after_charges
       (bytes := bytes) (pc := pc) (state := state) hDecode hPc
+  have hExec :=
+    Compact.InteractionSemantics.openRunNResult_error_add_executes
+      (extra := fuel) hOne
+  apply RunRefinesOpen.completed
+  · simpa [Nat.add_comm] using hExec
+  · exact DoneRel.sameError
+
+theorem runRefinesOpen_invalid_returndatacopy_after_jump_checks
+    {fuel : Nat} {validJumps : Array Word}
+    {bytes : ByteArray} {pc : Nat} {state : EVMState}
+    (hPrefix : XJumpChecksPass validJumps state)
+    (hInvalid : invalidReturnDataCopyAt state)
+    (hDecode : Compact.decodeAt bytes pc (.prim .returndatacopy))
+    (hPc : (afterDynamicChargeAt state).pc = EvmYul.UInt256.ofNat pc) :
+    RunRefinesOpen
+      (EvmYul.EVM.X (fuel + 1) validJumps state)
+      (Compact.InteractionSemantics.openRunNResult
+        bytes (fuel + 1) (afterDynamicChargeAt state))
+      [] := by
+  rw [x_invalid_returndatacopy_after_jump_checks
+    (fuel := fuel) (validJumps := validJumps) (state := state)
+    hPrefix hInvalid]
+  have hOne :=
+    raw_invalid_returndatacopy_executes_after_charges
+      (validJumps := validJumps) (bytes := bytes)
+      (pc := pc) (state := state) hPrefix hInvalid hDecode hPc
   have hExec :=
     Compact.InteractionSemantics.openRunNResult_error_add_executes
       (extra := fuel) hOne
