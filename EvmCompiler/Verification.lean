@@ -104,6 +104,7 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.frontendStmtListUserCall_of_mem
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.CodeElaborationRoute.retain
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.CodeElaborationRoute.liftFunctionBody
+#check EvmCompiler.Solidity.RawAst.RawOccurrence.CodeElaborationRoute.liftFunctionBodyStmt
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.CodeElaborationRoute.dispatcher_of_stmt_mem
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.CodeElaborationRoute.dispatcher_head
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.CodeElaborationRoute.dispatcher_tail
@@ -156,11 +157,14 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.hoistLocalFunctions_function_mem
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.hoistLocalFunctions_function_route_mem
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.Stmt.elaborate_retains_hoisted
+#check EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.Stmt.functionDefinition_codeRoute_of_hoist
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.Stmt.List.elaborate_retains_hoisted
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.Stmt.List.elaborate_split
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.FunctionDef.elaborate_codeRoute_of_body
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.Stmt.List.elaborateBlock_retains_hoisted
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.Stmt.List.elaborate_codeRoute_of_split
+#check EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.Stmt.List.elaborate_codeRoute_of_split_context
+#check EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.Stmt.List.elaborate_codeRoute_of_functionDefinition_split
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.Stmt.List.elaborateBlock_codeRoute_of_list
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.Stmt.List.elaborateForInitBlockWithScope_retains_hoisted
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.Stmt.List.elaborateForInitBlockWithScope_codeRoute_of_list
@@ -367,6 +371,7 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.frontendStmtListUserCall_of_mem
 #print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.CodeElaborationRoute.retain
 #print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.CodeElaborationRoute.liftFunctionBody
+#print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.CodeElaborationRoute.liftFunctionBodyStmt
 #print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.CodeElaborationRoute.dispatcher_of_stmt_mem
 #print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.CodeElaborationRoute.dispatcher_head
 #print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.CodeElaborationRoute.dispatcher_tail
@@ -418,11 +423,14 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.hoistLocalFunctions_function_mem
 #print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.hoistLocalFunctions_function_route_mem
 #print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.Stmt.elaborate_retains_hoisted
+#print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.Stmt.functionDefinition_codeRoute_of_hoist
 #print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.Stmt.List.elaborate_retains_hoisted
 #print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Stmt.List.elaborate_split
 #print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.FunctionDef.elaborate_codeRoute_of_body
 #print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.Stmt.List.elaborateBlock_retains_hoisted
 #print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.Stmt.List.elaborate_codeRoute_of_split
+#print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.Stmt.List.elaborate_codeRoute_of_split_context
+#print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.Stmt.List.elaborate_codeRoute_of_functionDefinition_split
 #print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.Stmt.List.elaborateBlock_codeRoute_of_list
 #print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.Stmt.List.elaborateForInitBlockWithScope_retains_hoisted
 #print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.Stmt.List.elaborateForInitBlockWithScope_codeRoute_of_list
