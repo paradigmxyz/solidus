@@ -3475,6 +3475,37 @@ theorem stmtListPrefixContext
     ⟨pre, stmt, suffix, hSplit, StmtContext.ofOccurrence hStmt,
       hPrefix⟩
 
+theorem stmtListRecursiveSemanticStep
+    {ordered : Yul.OrderedProgram}
+    {generated : Name}
+    {params returns : List Name} {body : List Yul.AstStmt}
+    {args : List Yul.AstExpr} {stmts : List Yul.AstStmt}
+    {prefixFuel : Nat} {code : Option Yul.AstContract}
+    {shared : EvmYul.SharedState .Yul}
+    {vars : EvmYul.Yul.VarStore}
+    (hInterface :
+      FocusedGeneratedCallSemanticInterface ordered generated params returns
+        body args stmts prefixFuel code shared vars) :
+    ∃ (pre : List Yul.AstStmt) (stmt : Yul.AstStmt)
+        (suffix : List Yul.AstStmt),
+      stmts = pre ++ stmt :: suffix ∧
+        StmtContext.RecursiveSemanticStep hInterface stmt ∧
+          Yul.InteractionSemantics.execSeq
+            (prefixFuel + pre.length + 1) stmts code (.Ok shared vars) =
+            Simulation.Interaction.bind
+              (Yul.InteractionSemantics.execSeq
+                (prefixFuel + pre.length + 1) pre code (.Ok shared vars))
+              (fun stateAfterPre =>
+                Yul.YulOccurrence.StmtListUserCall.continueAfterPrefix
+                  (prefixFuel + 1) (stmt :: suffix) code stateAfterPre) := by
+  rcases
+      StmtListContext.exists_split_stmt_recursiveSemanticStep
+        (stmtListContext hInterface) with
+    ⟨pre, stmt, suffix, hSplit, hStep, hPrefix⟩
+  exact
+    ⟨pre, stmt, suffix, hSplit, hStep,
+      hPrefix prefixFuel code shared vars⟩
+
 end FocusedGeneratedCallSemanticInterface
 
 def FocusedGeneratedStmtListCallPrefix
