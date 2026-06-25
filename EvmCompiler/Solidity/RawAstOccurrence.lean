@@ -1380,6 +1380,140 @@ theorem declareIdentifiers_retains_hoisted
               rcases hRun with ⟨_hUnit, rfl⟩
               exact hLoopMem
 
+theorem freshGeneratedFunctionNameFrom_retains_hoisted
+    {stem : Name} {fuel : Nat} {name : Name}
+    {state state' : Elab.State}
+    (hRun :
+      (Elab.freshGeneratedFunctionNameFrom stem fuel).run state =
+        .ok (name, state'))
+    {entry : Name × Frontend.FunctionDef}
+    (hMem : entry ∈ state.hoistedFunctions) :
+    entry ∈ state'.hoistedFunctions := by
+  induction fuel generalizing name state state' with
+  | zero =>
+      unfold Elab.freshGeneratedFunctionNameFrom at hRun
+      unfold Elab.throw at hRun
+      change Except.error
+          "could not allocate fresh generated Yul function name" =
+        Except.ok (name, state') at hRun
+      cases hRun
+  | succ fuel ih =>
+      unfold Elab.freshGeneratedFunctionNameFrom at hRun
+      let candidate :=
+        "__yul_gen_" ++ toString state.nextGeneratedFunctionId ++
+          "_" ++ stem
+      by_cases hUsed : candidate ∈ state.usedFunctionNames
+      · simp [candidate, hUsed] at hRun
+        have hMemNext :
+            entry ∈
+              ({ state with
+                nextGeneratedFunctionId :=
+                  state.nextGeneratedFunctionId + 1 } :
+                Elab.State).hoistedFunctions := hMem
+        exact ih hRun hMemNext
+      · simp [candidate, hUsed] at hRun
+        rcases hRun with ⟨rfl, rfl⟩
+        exact hMem
+
+theorem freshGeneratedFunctionName_retains_hoisted
+    {base name : Name} {state state' : Elab.State}
+    (hRun :
+      (Elab.freshGeneratedFunctionName base).run state =
+        .ok (name, state'))
+    {entry : Name × Frontend.FunctionDef}
+    (hMem : entry ∈ state.hoistedFunctions) :
+    entry ∈ state'.hoistedFunctions := by
+  unfold Elab.freshGeneratedFunctionName at hRun
+  exact freshGeneratedFunctionNameFrom_retains_hoisted hRun hMem
+
+theorem freshNonFunctionBindingNameFrom_retains_hoisted
+    {stem : Name} {index fuel : Nat} {name : Name}
+    {state state' : Elab.State}
+    (hRun :
+      (Elab.freshNonFunctionBindingNameFrom stem index fuel).run state =
+        .ok (name, state'))
+    {entry : Name × Frontend.FunctionDef}
+    (hMem : entry ∈ state.hoistedFunctions) :
+    entry ∈ state'.hoistedFunctions := by
+  induction fuel generalizing index name state state' with
+  | zero =>
+      unfold Elab.freshNonFunctionBindingNameFrom at hRun
+      unfold Elab.throw at hRun
+      change Except.error
+          "could not allocate fresh generated Yul binding name" =
+        Except.ok (name, state') at hRun
+      cases hRun
+  | succ fuel ih =>
+      unfold Elab.freshNonFunctionBindingNameFrom at hRun
+      let candidate :=
+        if index = 0 then "__yul_" ++ stem else
+          "__yul_" ++ stem ++ "_" ++ toString index
+      by_cases hUsed : candidate ∈ state.usedFunctionNames
+      · simp [candidate, hUsed] at hRun
+        exact ih hRun hMem
+      · simp [candidate, hUsed] at hRun
+        rcases hRun with ⟨rfl, rfl⟩
+        exact hMem
+
+theorem freshNonFunctionBindingName_retains_hoisted
+    {base name : Name} {state state' : Elab.State}
+    (hRun :
+      (Elab.freshNonFunctionBindingName base).run state =
+        .ok (name, state'))
+    {entry : Name × Frontend.FunctionDef}
+    (hMem : entry ∈ state.hoistedFunctions) :
+    entry ∈ state'.hoistedFunctions := by
+  unfold Elab.freshNonFunctionBindingName at hRun
+  exact freshNonFunctionBindingNameFrom_retains_hoisted hRun hMem
+
+theorem ensureClzHelper_retains_hoisted
+    {helper : Name} {state state' : Elab.State}
+    (hRun : Elab.ensureClzHelper.run state = .ok (helper, state'))
+    {entry : Name × Frontend.FunctionDef}
+    (hMem : entry ∈ state.hoistedFunctions) :
+    entry ∈ state'.hoistedFunctions := by
+  unfold Elab.ensureClzHelper at hRun
+  cases hClz : state.clzHelperName? with
+  | some existing =>
+      simp [hClz] at hRun
+      rcases hRun with ⟨rfl, rfl⟩
+      exact hMem
+  | none =>
+      simp [hClz] at hRun
+      cases hHelper :
+          (Elab.freshGeneratedFunctionName "clz").run state with
+      | error err =>
+          simp [hHelper] at hRun
+      | ok helperResult =>
+          rcases helperResult with ⟨generatedHelper, stateAfterHelper⟩
+          cases hArg :
+              (Elab.freshNonFunctionBindingName "clz_arg").run
+                stateAfterHelper with
+          | error err =>
+              simp [hHelper, hArg] at hRun
+          | ok argResult =>
+              rcases argResult with ⟨arg, stateAfterArg⟩
+              cases hRet :
+                  (Elab.freshNonFunctionBindingName "clz_ret").run
+                    stateAfterArg with
+              | error err =>
+                  simp [hHelper, hArg, hRet] at hRun
+              | ok retResult =>
+                  rcases retResult with ⟨ret, stateAfterRet⟩
+                  simp [hHelper, hArg, hRet] at hRun
+                  rcases hRun with ⟨rfl, rfl⟩
+                  have hHelperMem :
+                      entry ∈ stateAfterHelper.hoistedFunctions :=
+                    freshGeneratedFunctionName_retains_hoisted hHelper hMem
+                  have hArgMem :
+                      entry ∈ stateAfterArg.hoistedFunctions :=
+                    freshNonFunctionBindingName_retains_hoisted hArg
+                      hHelperMem
+                  have hRetMem :
+                      entry ∈ stateAfterRet.hoistedFunctions :=
+                    freshNonFunctionBindingName_retains_hoisted hRet hArgMem
+                  exact hRetMem
+
 theorem elaborateCodeStmts_retains_dispatcher
     {rawStmts : List Raw.Stmt}
     {dispatcherAcc dispatcherOut : List Frontend.Stmt}

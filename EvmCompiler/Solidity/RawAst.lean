@@ -710,13 +710,16 @@ def freshGeneratedFunctionNameFrom (stem : Name) : Nat → ElabM Name
       let state ← get
       let candidate :=
         "__yul_gen_" ++ toString state.nextGeneratedFunctionId ++ "_" ++ stem
-      set { state with nextGeneratedFunctionId := state.nextGeneratedFunctionId + 1 }
-      let state ← get
-      if state.usedFunctionNames.contains candidate then
-        freshGeneratedFunctionNameFrom stem fuel
-      else
-        set { state with usedFunctionNames := candidate :: state.usedFunctionNames }
-        pure candidate
+      let stateAfterNext :=
+        { state with nextGeneratedFunctionId := state.nextGeneratedFunctionId + 1 }
+      set stateAfterNext
+      match state.usedFunctionNames.contains candidate with
+      | true => freshGeneratedFunctionNameFrom stem fuel
+      | false =>
+          set
+            { stateAfterNext with
+              usedFunctionNames := candidate :: stateAfterNext.usedFunctionNames }
+          pure candidate
 
 def freshGeneratedFunctionName (base : Name) : ElabM Name :=
   freshGeneratedFunctionNameFrom (generatedIdentifierPart base) maxDecodeFuel
@@ -729,11 +732,11 @@ def freshNonFunctionBindingNameFrom (stem : Name) (index : Nat) :
         if index == 0 then "__yul_" ++ stem else
           "__yul_" ++ stem ++ "_" ++ toString index
       let state ← get
-      if state.usedFunctionNames.contains candidate then
-        freshNonFunctionBindingNameFrom stem (index + 1) fuel
-      else
-        set { state with usedFunctionNames := candidate :: state.usedFunctionNames }
-        pure candidate
+      match state.usedFunctionNames.contains candidate with
+      | true => freshNonFunctionBindingNameFrom stem (index + 1) fuel
+      | false =>
+          set { state with usedFunctionNames := candidate :: state.usedFunctionNames }
+          pure candidate
 
 def freshNonFunctionBindingName (base : Name) : ElabM Name :=
   freshNonFunctionBindingNameFrom (generatedIdentifierPart base) 0 maxDecodeFuel
