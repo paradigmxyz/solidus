@@ -599,12 +599,16 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Assembly.GasfulBridge.stack_get?_of_pop3
 #check EvmCompiler.Assembly.GasfulBridge.exists_pop3_of_three_le
 #check EvmCompiler.Assembly.GasfulBridge.raw_invalid_returndatacopy_executes_after_charges
+#check EvmCompiler.Assembly.GasfulBridge.primStep_run_stackUnderflow_of_short
+#check EvmCompiler.Assembly.GasfulBridge.continuingPrim_step_stackUnderflow_of_short
+#check EvmCompiler.Assembly.GasfulBridge.raw_continuing_prim_stackUnderflow_executes_after_charges
 #check EvmCompiler.Assembly.GasfulBridge.runRefinesOpen_of_x_after_prechecks_step_result
 #check EvmCompiler.Assembly.GasfulBridge.runRefinesOpen_of_x_after_prechecks_step_error_executes
 #check EvmCompiler.Assembly.GasfulBridge.runRefinesOpen_jumpdest_step
 #check EvmCompiler.Assembly.GasfulBridge.runRefinesOpen_stop_success
 #check EvmCompiler.Assembly.GasfulBridge.runRefinesOpen_invalid_instruction_after_gas_checks
 #check EvmCompiler.Assembly.GasfulBridge.runRefinesOpen_invalid_returndatacopy_after_jump_checks
+#check EvmCompiler.Assembly.GasfulBridge.runRefinesOpen_continuing_prim_stackUnderflow_after_gas_checks
 #check EvmCompiler.Assembly.GasfulBridge.runRefinesOpen_continuing_prim_success
 #check EvmCompiler.Assembly.GasfulBridge.CallBoundaryAccounting
 #check EvmCompiler.Assembly.GasfulBridge.CreateBoundaryAccounting
@@ -1123,6 +1127,9 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Assembly.GasfulBridge.stack_get?_of_pop3
 #print axioms EvmCompiler.Assembly.GasfulBridge.exists_pop3_of_three_le
 #print axioms EvmCompiler.Assembly.GasfulBridge.raw_invalid_returndatacopy_executes_after_charges
+#print axioms EvmCompiler.Assembly.GasfulBridge.primStep_run_stackUnderflow_of_short
+#print axioms EvmCompiler.Assembly.GasfulBridge.continuingPrim_step_stackUnderflow_of_short
+#print axioms EvmCompiler.Assembly.GasfulBridge.raw_continuing_prim_stackUnderflow_executes_after_charges
 #print axioms EvmCompiler.Assembly.GasfulBridge.SameData.hReturn_eq
 #print axioms EvmCompiler.Assembly.GasfulBridge.evm_step_return_after_charges
 #print axioms EvmCompiler.Assembly.GasfulBridge.evm_step_revert_after_charges
@@ -1145,6 +1152,7 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Assembly.GasfulBridge.runRefinesOpen_stop_success
 #print axioms EvmCompiler.Assembly.GasfulBridge.runRefinesOpen_invalid_instruction_after_gas_checks
 #print axioms EvmCompiler.Assembly.GasfulBridge.runRefinesOpen_invalid_returndatacopy_after_jump_checks
+#print axioms EvmCompiler.Assembly.GasfulBridge.runRefinesOpen_continuing_prim_stackUnderflow_after_gas_checks
 #print axioms EvmCompiler.Assembly.GasfulBridge.runRefinesOpen_return_success
 #print axioms EvmCompiler.Assembly.GasfulBridge.runRefinesOpen_revert_success
 #print axioms EvmCompiler.Assembly.GasfulBridge.runRefinesOpen_continuing_prim_success

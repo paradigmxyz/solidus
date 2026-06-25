@@ -2337,6 +2337,241 @@ theorem raw_invalid_returndatacopy_executes_after_charges
       (.error EvmYul.EVM.ExecutionException.InvalidMemoryAccess :
         Except EVMException StepResult))
 
+theorem stack_pop_none_of_length_lt_one
+    {α : Type} {stack : EvmYul.Stack α}
+    (hShort : stack.length < 1) :
+    stack.pop = none := by
+  cases hPop : stack.pop with
+  | none => rfl
+  | some popped =>
+      rcases popped with ⟨rest, a⟩
+      have hLen := PrimStep.Stack.length_of_pop_some hPop
+      omega
+
+theorem stack_pop2_none_of_length_lt_two
+    {α : Type} {stack : EvmYul.Stack α}
+    (hShort : stack.length < 2) :
+    stack.pop2 = none := by
+  cases hPop : stack.pop2 with
+  | none => rfl
+  | some popped =>
+      rcases popped with ⟨rest, a, b⟩
+      have hLen := PrimStep.Stack.length_of_pop2_some hPop
+      omega
+
+theorem stack_pop3_none_of_length_lt_three
+    {α : Type} {stack : EvmYul.Stack α}
+    (hShort : stack.length < 3) :
+    stack.pop3 = none := by
+  cases hPop : stack.pop3 with
+  | none => rfl
+  | some popped =>
+      rcases popped with ⟨rest, a, b, c⟩
+      have hLen := PrimStep.Stack.length_of_pop3_some hPop
+      omega
+
+theorem stack_pop4_none_of_length_lt_four
+    {α : Type} {stack : EvmYul.Stack α}
+    (hShort : stack.length < 4) :
+    stack.pop4 = none := by
+  cases hPop : stack.pop4 with
+  | none => rfl
+  | some popped =>
+      rcases popped with ⟨rest, a, b, c, d⟩
+      have hLen := PrimStep.Stack.length_of_pop4_some hPop
+      omega
+
+theorem stack_pop5_none_of_length_lt_five
+    {α : Type} {stack : EvmYul.Stack α}
+    (hShort : stack.length < 5) :
+    stack.pop5 = none := by
+  cases hPop : stack.pop5 with
+  | none => rfl
+  | some popped =>
+      rcases popped with ⟨rest, a, b, c, d, e⟩
+      have hLen := PrimStep.Stack.length_of_pop5_some hPop
+      omega
+
+theorem stack_pop6_none_of_length_lt_six
+    {α : Type} {stack : EvmYul.Stack α}
+    (hShort : stack.length < 6) :
+    stack.pop6 = none := by
+  cases hPop : stack.pop6 with
+  | none => rfl
+  | some popped =>
+      rcases popped with ⟨rest, a, b, c, d, e, f⟩
+      have hLen := PrimStep.Stack.length_of_pop6_some hPop
+      omega
+
+theorem primStep_run_stackUnderflow_of_short
+    {step : PrimStep} {state : EVMState}
+    (hPerm :
+      match step with
+      | .binaryState _ | .log0 | .log1 | .log2 | .log3 | .log4 =>
+          state.executionEnv.perm = true
+      | _ => True)
+    (hShort : state.stack.length < step.inputArity) :
+    step.run state = .error EvmYul.EVM.ExecutionException.StackUnderflow := by
+  cases step with
+  | bin f =>
+      simpa [PrimStep.run, PrimStep.inputArity, EvmYul.EVM.execBinOp,
+        stack_pop2_none_of_length_lt_two hShort]
+  | un f =>
+      simpa [PrimStep.run, PrimStep.inputArity, EvmYul.EVM.execUnOp,
+        stack_pop_none_of_length_lt_one hShort]
+  | tri f =>
+      simpa [PrimStep.run, PrimStep.inputArity, EvmYul.EVM.execTriOp,
+        stack_pop3_none_of_length_lt_three hShort]
+  | executionEnv f =>
+      simp [PrimStep.inputArity] at hShort
+  | unaryExecutionEnv f =>
+      simpa [PrimStep.run, PrimStep.inputArity,
+        EvmYul.EVM.unaryExecutionEnvOp,
+        stack_pop_none_of_length_lt_one hShort]
+  | machineState f =>
+      simp [PrimStep.inputArity] at hShort
+  | binaryMachineState f =>
+      simpa [PrimStep.run, PrimStep.inputArity,
+        EvmYul.EVM.binaryMachineStateOp,
+        stack_pop2_none_of_length_lt_two hShort]
+  | binaryMachineStateWithResult f =>
+      simpa [PrimStep.run, PrimStep.inputArity,
+        EvmYul.EVM.binaryMachineStateOp',
+        stack_pop2_none_of_length_lt_two hShort]
+  | ternaryMachineState f =>
+      simpa [PrimStep.run, PrimStep.inputArity,
+        EvmYul.EVM.ternaryMachineStateOp,
+        stack_pop3_none_of_length_lt_three hShort]
+  | state f =>
+      simp [PrimStep.inputArity] at hShort
+  | unaryState f =>
+      simpa [PrimStep.run, PrimStep.inputArity,
+        EvmYul.EVM.unaryStateOp,
+        stack_pop_none_of_length_lt_one hShort]
+  | binaryState f =>
+      simpa [PrimStep.run, PrimStep.inputArity, hPerm,
+        EvmYul.EVM.binaryStateOp,
+        stack_pop2_none_of_length_lt_two hShort]
+  | ternaryCopy f =>
+      simpa [PrimStep.run, PrimStep.inputArity,
+        EvmYul.EVM.ternaryCopyOp,
+        stack_pop3_none_of_length_lt_three hShort]
+  | quaternaryCopy f =>
+      simpa [PrimStep.run, PrimStep.inputArity,
+        EvmYul.EVM.quaternaryCopyOp,
+        stack_pop4_none_of_length_lt_four hShort]
+  | pop =>
+      simpa [PrimStep.run, PrimStep.inputArity,
+        stack_pop_none_of_length_lt_one hShort]
+  | mload =>
+      simpa [PrimStep.run, PrimStep.inputArity,
+        stack_pop_none_of_length_lt_one hShort]
+  | returndatacopy =>
+      simpa [PrimStep.run, PrimStep.inputArity,
+        stack_pop3_none_of_length_lt_three hShort]
+  | dup n =>
+      simp [PrimStep.inputArity] at hShort
+      have hTop :
+          (state.stack.take n).length ≠ n := by
+        simp [List.length_take]
+        omega
+      simpa [PrimStep.run, PrimStep.inputArity, EvmYul.dup, hTop]
+  | swap n =>
+      simp [PrimStep.inputArity] at hShort
+      have hTop :
+          (state.stack.take (n + 1)).length ≠ n + 1 := by
+        simp [List.length_take]
+        omega
+      simpa [PrimStep.run, PrimStep.inputArity, EvmYul.swap, hTop]
+  | log0 =>
+      simpa [PrimStep.run, PrimStep.inputArity, hPerm,
+        stack_pop2_none_of_length_lt_two hShort]
+  | log1 =>
+      simpa [PrimStep.run, PrimStep.inputArity, hPerm,
+        stack_pop3_none_of_length_lt_three hShort]
+  | log2 =>
+      simpa [PrimStep.run, PrimStep.inputArity, hPerm,
+        stack_pop4_none_of_length_lt_four hShort]
+  | log3 =>
+      simpa [PrimStep.run, PrimStep.inputArity, hPerm,
+        stack_pop5_none_of_length_lt_five hShort]
+  | log4 =>
+      simpa [PrimStep.run, PrimStep.inputArity, hPerm,
+        stack_pop6_none_of_length_lt_six hShort]
+  | invalid =>
+      simp [PrimStep.inputArity] at hShort
+
+theorem continuingPrim_step_stackUnderflow_of_short
+    {op : PrimOp} {step : PrimStep} {state : EVMState}
+    (hStep : op.continuingStep? = some step)
+    (hStaticPermits : continuingPrimStaticPermits state op)
+    (hShort : state.stack.length < (EvmYul.EVM.δ op.toEVM).getD 0) :
+    op.step state = .error EvmYul.EVM.ExecutionException.StackUnderflow := by
+  rw [PrimOp.step_eq_continuingStep_run hStep]
+  apply primStep_run_stackUnderflow_of_short
+  · cases op <;>
+      simp [PrimOp.continuingStep?, continuingPrimStaticSensitive,
+        continuingPrimStaticPermits] at hStep hStaticPermits ⊢
+    all_goals
+      subst step
+      simp [hStaticPermits]
+  · rcases PrimOp.continuingStep?_delta_alpha hStep with ⟨hDelta, _⟩
+    simpa [hDelta] using hShort
+
+theorem raw_continuing_prim_stackUnderflow_executes_after_charges
+    {op : PrimOp} {step : PrimStep}
+    {bytes : ByteArray} {pc : Nat} {state : EVMState}
+    (hStep : op.continuingStep? = some step)
+    (hMsize : op ≠ .msize)
+    (hStaticPermits : continuingPrimStaticPermits state op)
+    (hShort :
+      state.stack.length < (EvmYul.EVM.δ op.toEVM).getD 0)
+    (hDecode : Compact.decodeAt bytes pc (.prim op))
+    (hPc : (afterDynamicChargeAt state).pc = EvmYul.UInt256.ofNat pc) :
+    Interaction.Executes
+      (Compact.InteractionSemantics.openRunNResult
+        bytes 1 (afterDynamicChargeAt state))
+      []
+      (.error EvmYul.EVM.ExecutionException.StackUnderflow) := by
+  have hShortCharged :
+      (afterDynamicChargeAt state).stack.length <
+        (EvmYul.EVM.δ op.toEVM).getD 0 := by
+    simpa [afterDynamicChargeAt, afterMemoryChargeAt, chargeGas] using hShort
+  have hStaticPermitsCharged :
+      continuingPrimStaticPermits (afterDynamicChargeAt state) op := by
+    intro hSensitive
+    simpa [afterDynamicChargeAt, afterMemoryChargeAt, chargeGas] using
+      hStaticPermits hSensitive
+  have hPrim :
+      op.step (afterDynamicChargeAt state) =
+        .error EvmYul.EVM.ExecutionException.StackUnderflow :=
+    continuingPrim_step_stackUnderflow_of_short
+      hStep hStaticPermitsCharged hShortCharged
+  have hClosed :
+      Assembly.InteractionSemantics.PrimOp.openStep op
+          (afterDynamicChargeAt state) =
+        Simulation.Interaction.done
+          (.error EvmYul.EVM.ExecutionException.StackUnderflow) := by
+    rw [Assembly.InteractionSemantics.PrimOp.openStep_closed
+      (Assembly.InteractionSemantics.PrimOp.externalKind_none_of_continuingStep
+        hStep)
+      (continuingStep_not_gas hStep) hMsize]
+    simp [hPrim]
+  have hHalt := continuingStep_haltKind?_none hStep
+  rw [Compact.InteractionSemantics.openRunNResult_one_eq_instr
+    (instr := .prim op) trivial hDecode hPc]
+  simpa [Compact.Instr.openStepResult, Compact.Instr.openStep,
+    Assembly.InteractionSemantics.Target.openStepInstrResult,
+    Assembly.Target.stepInstrResultWith,
+    Assembly.InteractionSemantics.Target.openStepInstr,
+    Assembly.Target.stepInstrWith, hClosed, hHalt,
+    Simulation.Interaction.bind,
+    Simulation.Interaction.bind_done_error,
+    Compact.Instr.haltKind?] using
+    (Interaction.Executes.done
+      (.error EvmYul.EVM.ExecutionException.StackUnderflow :
+        Except EVMException StepResult))
+
 theorem raw_return_executes_after_charges
     {fuel : Nat} {bytes : ByteArray} {pc : Nat}
     {state gasfulFinal : EVMState}
@@ -2799,6 +3034,55 @@ theorem runRefinesOpen_invalid_returndatacopy_after_jump_checks
     raw_invalid_returndatacopy_executes_after_charges
       (validJumps := validJumps) (bytes := bytes)
       (pc := pc) (state := state) hPrefix hInvalid hDecode hPc
+  have hExec :=
+    Compact.InteractionSemantics.openRunNResult_error_add_executes
+      (extra := fuel) hOne
+  apply RunRefinesOpen.completed
+  · simpa [Nat.add_comm] using hExec
+  · exact DoneRel.sameError
+
+theorem runRefinesOpen_continuing_prim_stackUnderflow_after_gas_checks
+    {fuel : Nat} {validJumps : Array Word}
+    {bytes : ByteArray} {pc : Nat} {state : EVMState}
+    {op : PrimOp} {step : PrimStep} {arg : Option (Word × Nat)}
+    (hGas : XGasChecksPass state)
+    (hDecodedPair :
+      ((EvmYul.EVM.decode state.executionEnv.code state.pc).getD
+        (EvmYul.Operation.STOP, none)) = (op.toEVM, arg))
+    (hStep : op.continuingStep? = some step)
+    (hMsize : op ≠ .msize)
+    (hStaticPermits : continuingPrimStaticPermits state op)
+    (hShort :
+      state.stack.length < (EvmYul.EVM.δ op.toEVM).getD 0)
+    (hDecode : Compact.decodeAt bytes pc (.prim op))
+    (hPc : (afterDynamicChargeAt state).pc = EvmYul.UInt256.ofNat pc) :
+    RunRefinesOpen
+      (EvmYul.EVM.X (fuel + 1) validJumps state)
+      (Compact.InteractionSemantics.openRunNResult
+        bytes (fuel + 1) (afterDynamicChargeAt state))
+      [] := by
+  have hDecodedOp : decodedOperationAt state = op.toEVM := by
+    simpa [decodedOperationAt, hDecodedPair]
+  have hOpcodeValidOp :
+      EvmYul.EVM.δ op.toEVM ≠ none := by
+    cases op <;>
+      simp [PrimOp.continuingStep?, PrimOp.toEVM, EvmYul.EVM.δ]
+        at hStep hShort ⊢
+  have hOpcodeValid :
+      EvmYul.EVM.δ (decodedOperationAt state) ≠ none := by
+    simpa [hDecodedOp] using hOpcodeValidOp
+  have hShortDecoded :
+      state.stack.length <
+        (EvmYul.EVM.δ (decodedOperationAt state)).getD 0 := by
+    simpa [hDecodedOp] using hShort
+  rw [x_stack_underflow_after_gas_opcode_check
+    (fuel := fuel) (validJumps := validJumps) (state := state)
+    hGas hOpcodeValid hShortDecoded]
+  have hOne :=
+    raw_continuing_prim_stackUnderflow_executes_after_charges
+      (op := op) (step := step) (bytes := bytes)
+      (pc := pc) (state := state)
+      hStep hMsize hStaticPermits hShort hDecode hPc
   have hExec :=
     Compact.InteractionSemantics.openRunNResult_error_add_executes
       (extra := fuel) hOne
