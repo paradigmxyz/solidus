@@ -2077,6 +2077,352 @@ theorem resolveObjectBuiltinsIn?_occurrence
 
 end StmtIncomingUserCall
 
+mutual
+
+theorem StmtUserCall.resolveObjectBuiltinsIn?_occurrence
+    {stmt stmt' : Frontend.Stmt} {generated : Name}
+    {args : List Frontend.Expr}
+    {context : Frontend.ObjectBuiltinContext}
+    (hResolve :
+      Frontend.Stmt.resolveObjectBuiltinsIn? stmt context = some stmt')
+    (hOccurrence : StmtUserCall stmt generated args) :
+    ∃ args',
+      Frontend.Expr.List.resolveObjectBuiltinsIn? args context = some args' ∧
+        StmtUserCall stmt' generated args' := by
+  cases hOccurrence with
+  | incoming hIncoming =>
+      exact StmtIncomingUserCall.resolveObjectBuiltinsIn?_occurrence
+        hResolve hIncoming
+  | block hBody =>
+      rename_i stmts
+      unfold Frontend.Stmt.resolveObjectBuiltinsIn? at hResolve
+      cases hBodyResolve :
+          Frontend.Stmt.List.resolveObjectBuiltinsIn? stmts context with
+      | none =>
+          simp [hBodyResolve] at hResolve
+      | some stmts' =>
+          simp [hBodyResolve] at hResolve
+          cases hResolve
+          rcases
+              StmtListUserCall.resolveObjectBuiltinsIn?_occurrence
+                hBodyResolve hBody with
+            ⟨args', hArgs, hBody'⟩
+          exact ⟨args', hArgs, StmtUserCall.block hBody'⟩
+  | functionBody hBody =>
+      rename_i name params returns body
+      unfold Frontend.Stmt.resolveObjectBuiltinsIn? at hResolve
+      cases hBodyResolve :
+          Frontend.Stmt.List.resolveObjectBuiltinsIn? body context with
+      | none =>
+          simp [hBodyResolve] at hResolve
+      | some body' =>
+          simp [hBodyResolve] at hResolve
+          cases hResolve
+          rcases
+              StmtListUserCall.resolveObjectBuiltinsIn?_occurrence
+                hBodyResolve hBody with
+            ⟨args', hArgs, hBody'⟩
+          exact ⟨args', hArgs, StmtUserCall.functionBody hBody'⟩
+  | switchCase hCases =>
+      rename_i scrutinee cases default
+      unfold Frontend.Stmt.resolveObjectBuiltinsIn? at hResolve
+      cases hScrutinee :
+          Frontend.Expr.resolveObjectBuiltinsIn? scrutinee context with
+      | none =>
+          simp [hScrutinee] at hResolve
+      | some scrutinee' =>
+          cases hCasesResolve :
+              Frontend.Stmt.CaseList.resolveObjectBuiltinsIn? cases context with
+          | none =>
+              simp [hScrutinee, hCasesResolve] at hResolve
+          | some cases' =>
+              cases hDefault :
+                  Frontend.Stmt.List.resolveObjectBuiltinsIn? default context with
+              | none =>
+                  simp [hScrutinee, hCasesResolve, hDefault] at hResolve
+              | some default' =>
+                  simp [hScrutinee, hCasesResolve, hDefault] at hResolve
+                  cases hResolve
+                  rcases
+                      CaseListUserCall.resolveObjectBuiltinsIn?_occurrence
+                        hCasesResolve hCases with
+                    ⟨args', hArgs, hCases'⟩
+                  exact ⟨args', hArgs, StmtUserCall.switchCase hCases'⟩
+  | switchDefault hDefaultOccurrence =>
+      rename_i scrutinee cases default
+      unfold Frontend.Stmt.resolveObjectBuiltinsIn? at hResolve
+      cases hScrutinee :
+          Frontend.Expr.resolveObjectBuiltinsIn? scrutinee context with
+      | none =>
+          simp [hScrutinee] at hResolve
+      | some scrutinee' =>
+          cases hCasesResolve :
+              Frontend.Stmt.CaseList.resolveObjectBuiltinsIn? cases context with
+          | none =>
+              simp [hScrutinee, hCasesResolve] at hResolve
+          | some cases' =>
+              cases hDefault :
+                  Frontend.Stmt.List.resolveObjectBuiltinsIn? default context with
+              | none =>
+                  simp [hScrutinee, hCasesResolve, hDefault] at hResolve
+              | some default' =>
+                  simp [hScrutinee, hCasesResolve, hDefault] at hResolve
+                  cases hResolve
+                  rcases
+                      StmtListUserCall.resolveObjectBuiltinsIn?_occurrence
+                        hDefault hDefaultOccurrence with
+                    ⟨args', hArgs, hDefault'⟩
+                  exact ⟨args', hArgs, StmtUserCall.switchDefault hDefault'⟩
+  | forCondition hCondition =>
+      rename_i pre condition post body
+      unfold Frontend.Stmt.resolveObjectBuiltinsIn? at hResolve
+      cases hPre :
+          Frontend.Stmt.List.resolveObjectBuiltinsIn? pre context with
+      | none =>
+          simp [hPre] at hResolve
+      | some pre' =>
+          cases hConditionResolve :
+              Frontend.Expr.resolveObjectBuiltinsIn? condition context with
+          | none =>
+              simp [hPre, hConditionResolve] at hResolve
+          | some condition' =>
+              cases hPost :
+                  Frontend.Stmt.List.resolveObjectBuiltinsIn? post context with
+              | none =>
+                  simp [hPre, hConditionResolve, hPost] at hResolve
+              | some post' =>
+                  cases hBody :
+                      Frontend.Stmt.List.resolveObjectBuiltinsIn? body context with
+                  | none =>
+                      simp [hPre, hConditionResolve, hPost, hBody] at hResolve
+                  | some body' =>
+                      simp [hPre, hConditionResolve, hPost, hBody] at hResolve
+                      cases hResolve
+                      rcases
+                          UserCall.resolveObjectBuiltinsIn?_occurrence
+                            hConditionResolve hCondition with
+                        ⟨args', hArgs, hCondition'⟩
+                      exact ⟨args', hArgs, StmtUserCall.forCondition hCondition'⟩
+  | forPre hPreOccurrence =>
+      rename_i pre condition post body
+      unfold Frontend.Stmt.resolveObjectBuiltinsIn? at hResolve
+      cases hPre :
+          Frontend.Stmt.List.resolveObjectBuiltinsIn? pre context with
+      | none =>
+          simp [hPre] at hResolve
+      | some pre' =>
+          cases hCondition :
+              Frontend.Expr.resolveObjectBuiltinsIn? condition context with
+          | none =>
+              simp [hPre, hCondition] at hResolve
+          | some condition' =>
+              cases hPost :
+                  Frontend.Stmt.List.resolveObjectBuiltinsIn? post context with
+              | none =>
+                  simp [hPre, hCondition, hPost] at hResolve
+              | some post' =>
+                  cases hBody :
+                      Frontend.Stmt.List.resolveObjectBuiltinsIn? body context with
+                  | none =>
+                      simp [hPre, hCondition, hPost, hBody] at hResolve
+                  | some body' =>
+                      simp [hPre, hCondition, hPost, hBody] at hResolve
+                      cases hResolve
+                      rcases
+                          StmtListUserCall.resolveObjectBuiltinsIn?_occurrence
+                            hPre hPreOccurrence with
+                        ⟨args', hArgs, hPre'⟩
+                      exact ⟨args', hArgs, StmtUserCall.forPre hPre'⟩
+  | forPost hPostOccurrence =>
+      rename_i pre condition post body
+      unfold Frontend.Stmt.resolveObjectBuiltinsIn? at hResolve
+      cases hPre :
+          Frontend.Stmt.List.resolveObjectBuiltinsIn? pre context with
+      | none =>
+          simp [hPre] at hResolve
+      | some pre' =>
+          cases hCondition :
+              Frontend.Expr.resolveObjectBuiltinsIn? condition context with
+          | none =>
+              simp [hPre, hCondition] at hResolve
+          | some condition' =>
+              cases hPost :
+                  Frontend.Stmt.List.resolveObjectBuiltinsIn? post context with
+              | none =>
+                  simp [hPre, hCondition, hPost] at hResolve
+              | some post' =>
+                  cases hBody :
+                      Frontend.Stmt.List.resolveObjectBuiltinsIn? body context with
+                  | none =>
+                      simp [hPre, hCondition, hPost, hBody] at hResolve
+                  | some body' =>
+                      simp [hPre, hCondition, hPost, hBody] at hResolve
+                      cases hResolve
+                      rcases
+                          StmtListUserCall.resolveObjectBuiltinsIn?_occurrence
+                            hPost hPostOccurrence with
+                        ⟨args', hArgs, hPost'⟩
+                      exact ⟨args', hArgs, StmtUserCall.forPost hPost'⟩
+  | forBody hBodyOccurrence =>
+      rename_i pre condition post body
+      unfold Frontend.Stmt.resolveObjectBuiltinsIn? at hResolve
+      cases hPre :
+          Frontend.Stmt.List.resolveObjectBuiltinsIn? pre context with
+      | none =>
+          simp [hPre] at hResolve
+      | some pre' =>
+          cases hCondition :
+              Frontend.Expr.resolveObjectBuiltinsIn? condition context with
+          | none =>
+              simp [hPre, hCondition] at hResolve
+          | some condition' =>
+              cases hPost :
+                  Frontend.Stmt.List.resolveObjectBuiltinsIn? post context with
+              | none =>
+                  simp [hPre, hCondition, hPost] at hResolve
+              | some post' =>
+                  cases hBody :
+                      Frontend.Stmt.List.resolveObjectBuiltinsIn? body context with
+                  | none =>
+                      simp [hPre, hCondition, hPost, hBody] at hResolve
+                  | some body' =>
+                      simp [hPre, hCondition, hPost, hBody] at hResolve
+                      cases hResolve
+                      rcases
+                          StmtListUserCall.resolveObjectBuiltinsIn?_occurrence
+                            hBody hBodyOccurrence with
+                        ⟨args', hArgs, hBody'⟩
+                      exact ⟨args', hArgs, StmtUserCall.forBody hBody'⟩
+  | ifBody hBodyOccurrence =>
+      rename_i condition body
+      unfold Frontend.Stmt.resolveObjectBuiltinsIn? at hResolve
+      cases hCondition :
+          Frontend.Expr.resolveObjectBuiltinsIn? condition context with
+      | none =>
+          simp [hCondition] at hResolve
+      | some condition' =>
+          cases hBody :
+              Frontend.Stmt.List.resolveObjectBuiltinsIn? body context with
+          | none =>
+              simp [hCondition, hBody] at hResolve
+          | some body' =>
+              simp [hCondition, hBody] at hResolve
+              cases hResolve
+              rcases
+                  StmtListUserCall.resolveObjectBuiltinsIn?_occurrence
+                    hBody hBodyOccurrence with
+                ⟨args', hArgs, hBody'⟩
+              exact ⟨args', hArgs, StmtUserCall.ifBody hBody'⟩
+
+theorem StmtListUserCall.resolveObjectBuiltinsIn?_occurrence
+    {stmts stmts' : List Frontend.Stmt} {generated : Name}
+    {args : List Frontend.Expr}
+    {context : Frontend.ObjectBuiltinContext}
+    (hResolve :
+      Frontend.Stmt.List.resolveObjectBuiltinsIn? stmts context = some stmts')
+    (hOccurrence : StmtListUserCall stmts generated args) :
+    ∃ args',
+      Frontend.Expr.List.resolveObjectBuiltinsIn? args context = some args' ∧
+        StmtListUserCall stmts' generated args' := by
+  cases hOccurrence with
+  | head hHeadOccurrence =>
+      rename_i stmt rest
+      unfold Frontend.Stmt.List.resolveObjectBuiltinsIn? at hResolve
+      cases hHead :
+          Frontend.Stmt.resolveObjectBuiltinsIn? stmt context with
+      | none =>
+          simp [hHead] at hResolve
+      | some stmt' =>
+          cases hRest :
+              Frontend.Stmt.List.resolveObjectBuiltinsIn? rest context with
+          | none =>
+              simp [hHead, hRest] at hResolve
+          | some rest' =>
+              simp [hHead, hRest] at hResolve
+              cases hResolve
+              rcases
+                  StmtUserCall.resolveObjectBuiltinsIn?_occurrence
+                    hHead hHeadOccurrence with
+                ⟨args', hArgs, hHead'⟩
+              exact ⟨args', hArgs, StmtListUserCall.head hHead'⟩
+  | tail hTailOccurrence =>
+      rename_i stmt rest
+      unfold Frontend.Stmt.List.resolveObjectBuiltinsIn? at hResolve
+      cases hHead :
+          Frontend.Stmt.resolveObjectBuiltinsIn? stmt context with
+      | none =>
+          simp [hHead] at hResolve
+      | some stmt' =>
+          cases hRest :
+              Frontend.Stmt.List.resolveObjectBuiltinsIn? rest context with
+          | none =>
+              simp [hHead, hRest] at hResolve
+          | some rest' =>
+              simp [hHead, hRest] at hResolve
+              cases hResolve
+              rcases
+                  StmtListUserCall.resolveObjectBuiltinsIn?_occurrence
+                    hRest hTailOccurrence with
+                ⟨args', hArgs, hTail'⟩
+              exact ⟨args', hArgs, StmtListUserCall.tail hTail'⟩
+
+theorem CaseListUserCall.resolveObjectBuiltinsIn?_occurrence
+    {cases cases' :
+      List (Frontend.SwitchCaseValue × List Frontend.Stmt)}
+    {generated : Name} {args : List Frontend.Expr}
+    {context : Frontend.ObjectBuiltinContext}
+    (hResolve :
+      Frontend.Stmt.CaseList.resolveObjectBuiltinsIn? cases context =
+        some cases')
+    (hOccurrence : CaseListUserCall cases generated args) :
+    ∃ args',
+      Frontend.Expr.List.resolveObjectBuiltinsIn? args context = some args' ∧
+        CaseListUserCall cases' generated args' := by
+  cases hOccurrence with
+  | head hBodyOccurrence =>
+      rename_i value body rest
+      unfold Frontend.Stmt.CaseList.resolveObjectBuiltinsIn? at hResolve
+      cases hBody :
+          Frontend.Stmt.List.resolveObjectBuiltinsIn? body context with
+      | none =>
+          simp [hBody] at hResolve
+      | some body' =>
+          cases hRest :
+              Frontend.Stmt.CaseList.resolveObjectBuiltinsIn? rest context with
+          | none =>
+              simp [hBody, hRest] at hResolve
+          | some rest' =>
+              simp [hBody, hRest] at hResolve
+              cases hResolve
+              rcases
+                  StmtListUserCall.resolveObjectBuiltinsIn?_occurrence
+                    hBody hBodyOccurrence with
+                ⟨args', hArgs, hBody'⟩
+              exact ⟨args', hArgs, CaseListUserCall.head hBody'⟩
+  | tail hTailOccurrence =>
+      rename_i case rest
+      rcases case with ⟨value, body⟩
+      unfold Frontend.Stmt.CaseList.resolveObjectBuiltinsIn? at hResolve
+      cases hBody :
+          Frontend.Stmt.List.resolveObjectBuiltinsIn? body context with
+      | none =>
+          simp [hBody] at hResolve
+      | some body' =>
+          cases hRest :
+              Frontend.Stmt.CaseList.resolveObjectBuiltinsIn? rest context with
+          | none =>
+              simp [hBody, hRest] at hResolve
+          | some rest' =>
+              simp [hBody, hRest] at hResolve
+              cases hResolve
+              rcases
+                  CaseListUserCall.resolveObjectBuiltinsIn?_occurrence
+                    hRest hTailOccurrence with
+                ⟨args', hArgs, hTail'⟩
+              exact ⟨args', hArgs, CaseListUserCall.tail hTail'⟩
+
+end
+
 end FrontendOccurrence
 
 namespace YulOccurrence
@@ -4311,6 +4657,52 @@ theorem of_entries
     resolved :=
       ⟨generated, localFn, frontArgs, topFn,
         hTop, hOccurrence, hCallee⟩ }
+
+theorem resolveObjectBuiltinsPreserved
+    {topBody : List Stmt}
+    {object resolved : Frontend.Object}
+    {context : Frontend.ObjectBuiltinContext}
+    {topName name : Name}
+    {localParams localReturns : List Name}
+    {localBody : List Stmt}
+    {args : List Expr}
+    (hAlpha :
+      AlphaRenamedLocalCallPreserved topBody object.functions topName name
+        localParams localReturns localBody args)
+    (hResolve :
+      object.resolveObjectBuiltinsIn? context = some resolved) :
+    AlphaRenamedLocalCallPreserved topBody resolved.functions topName name
+      localParams localReturns localBody args := by
+  rcases hAlpha.resolved with
+    ⟨generated, localFn, frontArgs, topFn,
+      hTopMem, hOccurrence, hCalleeMem⟩
+  rcases Frontend.Object.resolveObjectBuiltinsIn?_function_entry
+      hResolve hTopMem with
+    ⟨_memoryContract, topResolvedFn, _hMemory, hTopResolve,
+      hTopResolvedMem, _hTopParams, _hTopReturns⟩
+  rcases Frontend.FunctionDef.resolveObjectBuiltinsIn?_body
+      hTopResolve with
+    ⟨topResolvedBody, hTopBodyResolve, hTopResolvedEq⟩
+  rcases
+      FrontendOccurrence.StmtListUserCall.resolveObjectBuiltinsIn?_occurrence
+        hTopBodyResolve hOccurrence with
+    ⟨resolvedArgs, _hResolvedArgs, hResolvedOccurrence⟩
+  rcases Frontend.Object.resolveObjectBuiltinsIn?_function_entry
+      hResolve hCalleeMem with
+    ⟨_localMemoryContract, localResolvedFn, _hLocalMemory,
+      _hLocalResolve, hLocalResolvedMem, _hLocalParams,
+      _hLocalReturns⟩
+  have hOccurrence' :
+      FrontendOccurrence.StmtListUserCall
+        topResolvedFn.body generated resolvedArgs := by
+    rw [hTopResolvedEq]
+    exact hResolvedOccurrence
+  exact
+    { source_local := hAlpha.source_local
+      source_call := hAlpha.source_call
+      resolved :=
+        ⟨generated, localResolvedFn, resolvedArgs, topResolvedFn,
+          hTopResolvedMem, hOccurrence', hLocalResolvedMem⟩ }
 
 theorem toSolcYulOrderedProgram?_entries
     {topBody : List Stmt}

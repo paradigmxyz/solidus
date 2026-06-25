@@ -69,6 +69,10 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.Frontend.Object.toSolcYulOrderedProgram?_function_name_entry
 #check EvmCompiler.Solidity.Frontend.Object.compileVerifiedStackCodeArtifactIn?_function_entry
 #check EvmCompiler.Solidity.Frontend.Object.compileVerifiedStackCodeArtifactIn?_function_name_entry
+#check EvmCompiler.Solidity.RawAst.FrontendOccurrence.StmtUserCall.resolveObjectBuiltinsIn?_occurrence
+#check EvmCompiler.Solidity.RawAst.FrontendOccurrence.StmtListUserCall.resolveObjectBuiltinsIn?_occurrence
+#check EvmCompiler.Solidity.RawAst.FrontendOccurrence.CaseListUserCall.resolveObjectBuiltinsIn?_occurrence
+#check EvmCompiler.Solidity.RawAst.Raw.Source.AlphaRenamedLocalCallPreserved.resolveObjectBuiltinsPreserved
 #check EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIr?_some
 #check EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIr?_parts
 #check EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIr?_objectParts
@@ -1072,7 +1076,9 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.BodyRouteEvidence.ofYulEvidence
 #print axioms EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.BodyRouteEvidence.occurrence
 #print axioms EvmCompiler.Solidity.RawAst.alphaRenamedLocalCallPreserved_bodyRouteEvidence
+#print axioms EvmCompiler.Solidity.RawAst.alphaRenamedLocalCallPreserved_resolvedBodyRouteEvidence
 #print axioms EvmCompiler.Solidity.RawAst.alphaRenamedLocalCallPreserved_focusedGeneratedCallInterface
+#print axioms EvmCompiler.Solidity.RawAst.alphaRenamedLocalCallPreserved_resolvedFocusedGeneratedCallInterface
 #print axioms EvmCompiler.Solidity.RawAst.alphaRenamedLocalCallPreserved_exprStmt_focusedRun
 #print axioms EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.FocusedGeneratedCallRun.of_parts
 #print axioms EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.FocusedGeneratedCallRun.route_occurrence

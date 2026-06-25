@@ -7684,6 +7684,30 @@ theorem alphaRenamedLocalCallPreserved_bodyRouteEvidence
     AlphaRenamedLocalCallYulEvidence.BodyRouteEvidence.ofYulEvidence
       hEvidence
 
+theorem alphaRenamedLocalCallPreserved_resolvedBodyRouteEvidence
+    {topBody : List Raw.Stmt}
+    {object resolved : Frontend.Object}
+    {context : Frontend.ObjectBuiltinContext}
+    {ordered : Yul.OrderedProgram}
+    {topName name : Frontend.Name}
+    {localParams localReturns : List Frontend.Name}
+    {localBody : List Raw.Stmt}
+    {args : List Raw.Expr}
+    (hAlpha :
+      Raw.Source.AlphaRenamedLocalCallPreserved
+        topBody object.functions topName name
+          localParams localReturns localBody args)
+    (hResolve :
+      object.resolveObjectBuiltinsIn? context = some resolved)
+    (hConvert :
+      resolved.toSolcYulOrderedProgram? = some ordered) :
+    Nonempty
+      (AlphaRenamedLocalCallYulEvidence.BodyRouteEvidence
+        resolved ordered topName) :=
+  alphaRenamedLocalCallPreserved_bodyRouteEvidence
+    (Raw.Source.AlphaRenamedLocalCallPreserved.resolveObjectBuiltinsPreserved
+      hAlpha hResolve) hConvert
+
 /-- Source-facing constructor for the bundled generated-call interface.
 
 Successful source alpha-preservation and ordered-Yul conversion derive the
@@ -7709,6 +7733,33 @@ theorem alphaRenamedLocalCallPreserved_focusedGeneratedCallInterface
         object ordered topName) := by
   rcases alphaRenamedLocalCallPreserved_bodyRouteEvidence
       hAlpha hConvert with
+    ⟨routeEvidence⟩
+  exact
+    ⟨AlphaRenamedLocalCallYulEvidence.FocusedGeneratedCallInterface.ofRouteEvidence
+      routeEvidence⟩
+
+theorem alphaRenamedLocalCallPreserved_resolvedFocusedGeneratedCallInterface
+    {topBody : List Raw.Stmt}
+    {object resolved : Frontend.Object}
+    {context : Frontend.ObjectBuiltinContext}
+    {ordered : Yul.OrderedProgram}
+    {topName name : Frontend.Name}
+    {localParams localReturns : List Frontend.Name}
+    {localBody : List Raw.Stmt}
+    {args : List Raw.Expr}
+    (hAlpha :
+      Raw.Source.AlphaRenamedLocalCallPreserved
+        topBody object.functions topName name
+          localParams localReturns localBody args)
+    (hResolve :
+      object.resolveObjectBuiltinsIn? context = some resolved)
+    (hConvert :
+      resolved.toSolcYulOrderedProgram? = some ordered) :
+    Nonempty
+      (AlphaRenamedLocalCallYulEvidence.FocusedGeneratedCallInterface
+        resolved ordered topName) := by
+  rcases alphaRenamedLocalCallPreserved_resolvedBodyRouteEvidence
+      hAlpha hResolve hConvert with
     ⟨routeEvidence⟩
   exact
     ⟨AlphaRenamedLocalCallYulEvidence.FocusedGeneratedCallInterface.ofRouteEvidence
