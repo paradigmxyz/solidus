@@ -656,12 +656,24 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Assembly.GasfulBridge.runRefinesOpen_continuing_prim_success
 #check EvmCompiler.Assembly.GasfulBridge.CallBoundaryAccounting
 #check EvmCompiler.Assembly.GasfulBridge.CreateBoundaryAccounting
+#check EvmCompiler.Assembly.GasfulBridge.OpenSameData
+#check EvmCompiler.Assembly.GasfulBridge.OpenSameData.of_sameData
 #check EvmCompiler.Assembly.GasfulBridge.callResponseFinalGas
 #check EvmCompiler.Assembly.GasfulBridge.CallResponseGasAccounting
 #check EvmCompiler.Assembly.GasfulBridge.callResponseGasAccounting_canonical
 #check EvmCompiler.Assembly.GasfulBridge.callResponseGasAccounting_finalGas_eq
 #check EvmCompiler.Assembly.GasfulBridge.CallResponseStateRel
+#check EvmCompiler.Assembly.GasfulBridge.callResponseStateRel_of_openSameData
 #check EvmCompiler.Assembly.GasfulBridge.callResponseStateRel_of_sameData
+#check EvmCompiler.Assembly.GasfulBridge.call_result_status_bool
+#check EvmCompiler.Assembly.GasfulBridge.callResponseFromResult
+#check EvmCompiler.Assembly.GasfulBridge.callResponseFromResult_finalGas
+#check EvmCompiler.Assembly.GasfulBridge.call_result_openSameData
+#check EvmCompiler.Assembly.GasfulBridge.callResponseStateRel_of_call_result
+#check EvmCompiler.Assembly.GasfulBridge.evm_step_call_eq_concreteCallStep
+#check EvmCompiler.Assembly.GasfulBridge.concreteCall_responseStateRel
+#check EvmCompiler.Assembly.GasfulBridge.evm_step_call_responseStateRel
+#check EvmCompiler.Assembly.GasfulBridge.evm_step_call_responseStateRel_at
 #check EvmCompiler.Assembly.GasfulBridge.callPrimOp
 #check EvmCompiler.Assembly.GasfulBridge.callStep_external_executes
 #check EvmCompiler.Assembly.GasfulBridge.raw_call_external_executes_after_charges
@@ -676,6 +688,7 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Assembly.GasfulBridge.raw_create_external_executes_after_charges
 #check EvmCompiler.Assembly.GasfulBridge.runRefinesOpen_bind_running_prefix
 #check EvmCompiler.Assembly.GasfulBridge.runRefinesOpen_call_external_success
+#check EvmCompiler.Assembly.GasfulBridge.runRefinesOpen_call_external_success_actual
 #check EvmCompiler.Assembly.GasfulBridge.runRefinesOpen_create_external_success
 
 #print axioms EvmCompiler.Functions.StackRecursivePreservation.compiledProgramBodyAt
@@ -1279,7 +1292,17 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Assembly.GasfulBridge.dynamicGasCostAt_create_args_eq_parentGasCost
 #print axioms EvmCompiler.Assembly.GasfulBridge.callResponseGasAccounting_canonical
 #print axioms EvmCompiler.Assembly.GasfulBridge.callResponseGasAccounting_finalGas_eq
+#print axioms EvmCompiler.Assembly.GasfulBridge.OpenSameData.of_sameData
+#print axioms EvmCompiler.Assembly.GasfulBridge.callResponseStateRel_of_openSameData
 #print axioms EvmCompiler.Assembly.GasfulBridge.callResponseStateRel_of_sameData
+#print axioms EvmCompiler.Assembly.GasfulBridge.call_result_status_bool
+#print axioms EvmCompiler.Assembly.GasfulBridge.callResponseFromResult_finalGas
+#print axioms EvmCompiler.Assembly.GasfulBridge.call_result_openSameData
+#print axioms EvmCompiler.Assembly.GasfulBridge.callResponseStateRel_of_call_result
+#print axioms EvmCompiler.Assembly.GasfulBridge.evm_step_call_eq_concreteCallStep
+#print axioms EvmCompiler.Assembly.GasfulBridge.concreteCall_responseStateRel
+#print axioms EvmCompiler.Assembly.GasfulBridge.evm_step_call_responseStateRel
+#print axioms EvmCompiler.Assembly.GasfulBridge.evm_step_call_responseStateRel_at
 #print axioms EvmCompiler.Assembly.GasfulBridge.callStep_external_executes
 #print axioms EvmCompiler.Assembly.GasfulBridge.raw_call_external_executes_after_charges
 #print axioms EvmCompiler.Assembly.GasfulBridge.createResponseGasAccounting_canonical
@@ -1289,6 +1312,7 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Assembly.GasfulBridge.raw_create_external_executes_after_charges
 #print axioms EvmCompiler.Assembly.GasfulBridge.runRefinesOpen_bind_running_prefix
 #print axioms EvmCompiler.Assembly.GasfulBridge.runRefinesOpen_call_external_success
+#print axioms EvmCompiler.Assembly.GasfulBridge.runRefinesOpen_call_external_success_actual
 #print axioms EvmCompiler.Assembly.GasfulBridge.runRefinesOpen_create_external_success
 #print axioms EvmCompiler.Yul.EndToEnd.optimizedSolcYulToRawBytecodeFinished
 #print axioms EvmCompiler.Yul.EndToEnd.optimizedSolcYulToRawBytecodeFinishedLegacy

@@ -134,6 +134,12 @@ Gasful EVM bridge checkpoint:
   `GasfulBridge.runRefinesOpen_create_external_success` bind the actual gasful
   parent-frame step to the open strategy response relation; the child response
   relation, EIP-150 accounting, and returned gas remain explicit bridge data.
+- [x] Derive the CALL-family response relation from actual `EVM.call` and
+  `EVM.step` results: `OpenSameData` compares the code-erased open-world
+  projection plus frame-local data, and
+  `runRefinesOpen_call_external_success_actual` existentially supplies the
+  concrete response, parent gas credit, return data, and post-call world
+  without a caller-provided response-relation premise.
 - [x] Add the matching terminal `RETURN`/`REVERT` compositions:
   stack-pop-aware actual `EVM.step` lemmas, gas/control-erased output-state
   relations, open raw-bytecode halt execution with concrete return bytes, and
