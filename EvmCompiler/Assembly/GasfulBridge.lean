@@ -3909,6 +3909,106 @@ theorem callBoundaryAccounting_canonical
   forwardedGas_eq := rfl
   finalGas_eq := rfl
 
+def callResponseFinalGas (kind : CallKind) (preCostState : EVMState)
+    (operands : CallOperands) (response : CallResponse) : Word :=
+  callFinalGas preCostState (callParentGasCost kind preCostState operands)
+    response.returnedGas
+
+def CallResponseGasAccounting
+    (kind : CallKind) (preCostState : EVMState)
+    (operands : CallOperands) (response : CallResponse)
+    (finalGas : Word) : Prop :=
+  CallBoundaryAccounting kind preCostState operands
+    (callParentGasCost kind preCostState operands)
+    (callForwardedGas kind preCostState operands)
+    response.returnedGas
+    finalGas
+
+theorem callResponseGasAccounting_canonical
+    (kind : CallKind) (preCostState : EVMState)
+    (operands : CallOperands) (response : CallResponse) :
+    CallResponseGasAccounting kind preCostState operands response
+      (callResponseFinalGas kind preCostState operands response) := by
+  simpa [CallResponseGasAccounting, callResponseFinalGas] using
+    callBoundaryAccounting_canonical kind preCostState operands
+      response.returnedGas
+
+theorem callResponseGasAccounting_finalGas_eq
+    {kind : CallKind} {preCostState : EVMState}
+    {operands : CallOperands} {response : CallResponse}
+    {finalGas : Word}
+    (hGas :
+      CallResponseGasAccounting kind preCostState operands response
+        finalGas) :
+    finalGas = callResponseFinalGas kind preCostState operands response := by
+  simpa [CallResponseGasAccounting, callResponseFinalGas] using
+    hGas.finalGas_eq
+
+/-- Relates the concrete post-CALL parent frame to the open post-CALL frame.
+The open frame keeps source/Yul semantics cost-model-free; the concrete frame's
+gas is checked against the response's returned child gas here. -/
+structure CallResponseStateRel
+    (kind : CallKind) (preCostState : EVMState)
+    (operands : CallOperands) (response : CallResponse)
+    (gasfulState openState : EVMState) : Prop where
+  sameData : SameData gasfulState openState
+  gasAccounting :
+    CallResponseGasAccounting kind preCostState operands response
+      gasfulState.gasAvailable
+
+theorem callResponseStateRel_of_sameData
+    {kind : CallKind} {preCostState : EVMState}
+    {operands : CallOperands} {response : CallResponse}
+    {gasfulState openState : EVMState}
+    (hSame : SameData gasfulState openState)
+    (hGas :
+      gasfulState.gasAvailable =
+        callResponseFinalGas kind preCostState operands response) :
+    CallResponseStateRel kind preCostState operands response
+      gasfulState openState := by
+  refine ⟨hSame, ?_⟩
+  rw [hGas]
+  exact
+    callResponseGasAccounting_canonical kind preCostState operands
+      response
+
+def callExternalQuery (kind : CallKind) (state : EVMState)
+    (operands : CallOperands) : Query :=
+    .external (OpenWorld.ofEVMShared state.toSharedState)
+      (.call
+        ((ExternalFrame.ofShared state.toSharedState).callRequest
+          kind operands))
+
+def callExternalExchange (kind : CallKind) (state : EVMState)
+    (operands : CallOperands) (response : CallResponse) :
+    Interaction.Exchange where
+  query := callExternalQuery kind state operands
+  answer := response
+
+theorem callStep_external_executes
+    {kind : CallKind} {state : EVMState}
+    {rest : EvmYul.Stack Word} {operands : CallOperands}
+    {response : CallResponse}
+    (hOperands : kind.evmOperands? state.stack = some (rest, operands))
+    (hAllowed :
+      kind.allowedIn (ExternalFrame.ofShared state.toSharedState)
+        operands = true) :
+    Interaction.Executes
+      (InteractionSemantics.PrimOp.callStep kind state)
+      [callExternalExchange kind state operands response]
+      (.ok
+        (InteractionSemantics.EVMState.finishCall
+          state rest operands.callLocal response)) := by
+  unfold InteractionSemantics.PrimOp.callStep
+  simpa [hOperands, hAllowed, callExternalExchange, callExternalQuery] using
+    (Interaction.Executes.request
+      (query := callExternalQuery kind state operands)
+      response
+      (Interaction.Executes.done
+        (.ok
+          (InteractionSemantics.EVMState.finishCall
+            state rest operands.callLocal response))))
+
 def createParentGasCost (kind : CreateKind)
     (operands : CreateOperands) : Nat :=
   match kind with
@@ -3974,6 +4074,105 @@ theorem createBoundaryAccounting_canonical
   parentGasCost_eq := rfl
   forwardedGas_eq := rfl
   finalGas_eq := rfl
+
+def createResponseFinalGas (kind : CreateKind) (preCostState : EVMState)
+    (operands : CreateOperands) (response : CreateResponse) : Word :=
+  createFinalGas preCostState (createParentGasCost kind operands)
+    response.returnedGas
+
+def CreateResponseGasAccounting
+    (kind : CreateKind) (preCostState : EVMState)
+    (operands : CreateOperands) (response : CreateResponse)
+    (finalGas : Word) : Prop :=
+  CreateBoundaryAccounting kind preCostState operands
+    (createParentGasCost kind operands)
+    (createForwardedGas preCostState (createParentGasCost kind operands))
+    response.returnedGas
+    finalGas
+
+theorem createResponseGasAccounting_canonical
+    (kind : CreateKind) (preCostState : EVMState)
+    (operands : CreateOperands) (response : CreateResponse) :
+    CreateResponseGasAccounting kind preCostState operands response
+      (createResponseFinalGas kind preCostState operands response) := by
+  simpa [CreateResponseGasAccounting, createResponseFinalGas] using
+    createBoundaryAccounting_canonical kind preCostState operands
+      response.returnedGas
+
+theorem createResponseGasAccounting_finalGas_eq
+    {kind : CreateKind} {preCostState : EVMState}
+    {operands : CreateOperands} {response : CreateResponse}
+    {finalGas : Word}
+    (hGas :
+      CreateResponseGasAccounting kind preCostState operands response
+        finalGas) :
+    finalGas = createResponseFinalGas kind preCostState operands response := by
+  simpa [CreateResponseGasAccounting, createResponseFinalGas] using
+    hGas.finalGas_eq
+
+/-- Relates the concrete post-CREATE parent frame to the open post-CREATE
+frame. As for CALL, returned child gas is response metadata, not persistent
+open-world state. -/
+structure CreateResponseStateRel
+    (kind : CreateKind) (preCostState : EVMState)
+    (operands : CreateOperands) (response : CreateResponse)
+    (gasfulState openState : EVMState) : Prop where
+  sameData : SameData gasfulState openState
+  gasAccounting :
+    CreateResponseGasAccounting kind preCostState operands response
+      gasfulState.gasAvailable
+
+theorem createResponseStateRel_of_sameData
+    {kind : CreateKind} {preCostState : EVMState}
+    {operands : CreateOperands} {response : CreateResponse}
+    {gasfulState openState : EVMState}
+    (hSame : SameData gasfulState openState)
+    (hGas :
+      gasfulState.gasAvailable =
+        createResponseFinalGas kind preCostState operands response) :
+    CreateResponseStateRel kind preCostState operands response
+      gasfulState openState := by
+  refine ⟨hSame, ?_⟩
+  rw [hGas]
+  exact
+    createResponseGasAccounting_canonical kind preCostState operands
+      response
+
+def createExternalQuery (kind : CreateKind) (state : EVMState)
+    (operands : CreateOperands) : Query :=
+    .external (OpenWorld.ofEVMShared state.toSharedState)
+      (.create
+        ((ExternalFrame.ofShared state.toSharedState).createRequest
+          kind operands))
+
+def createExternalExchange (kind : CreateKind) (state : EVMState)
+    (operands : CreateOperands) (response : CreateResponse) :
+    Interaction.Exchange where
+  query := createExternalQuery kind state operands
+  answer := response
+
+theorem createStep_external_executes
+    {kind : CreateKind} {state : EVMState}
+    {rest : EvmYul.Stack Word} {operands : CreateOperands}
+    {response : CreateResponse}
+    (hOperands : kind.evmOperands? state.stack = some (rest, operands))
+    (hPermission :
+      (ExternalFrame.ofShared state.toSharedState).permission = true) :
+    Interaction.Executes
+      (InteractionSemantics.PrimOp.createStep kind state)
+      [createExternalExchange kind state operands response]
+      (.ok
+        (InteractionSemantics.EVMState.finishCreate
+          state rest operands.createLocal response)) := by
+  unfold InteractionSemantics.PrimOp.createStep
+  simpa [hOperands, hPermission, createExternalExchange, createExternalQuery] using
+    (Interaction.Executes.request
+      (query := createExternalQuery kind state operands)
+      response
+      (Interaction.Executes.done
+        (.ok
+          (InteractionSemantics.EVMState.finishCreate
+            state rest operands.createLocal response))))
 
 inductive DoneRel :
     Except EVMException (EvmYul.EVM.ExecutionResult EVMState) →

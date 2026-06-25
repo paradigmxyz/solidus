@@ -124,6 +124,10 @@ Gasful EVM bridge checkpoint:
   lemmas show CALL-family `dynamicGasCostAt` is exactly EVMYulLean `Ccall`
   parent gas, and CREATE/CREATE2 parent gas is recorded explicitly beside the
   existing EIP-150 forwarded/returned-gas formulas.
+- [x] Expose returned child gas on open CALL/CREATE responses and add checked
+  response-gas bridge helpers: the open parent frame remains cost-model-free,
+  while `GasfulBridge` relates `response.returnedGas` to the concrete
+  post-CALL/CREATE parent gas and records the one-exchange open transcript.
 - [x] Add the matching terminal `RETURN`/`REVERT` compositions:
   stack-pop-aware actual `EVM.step` lemmas, gas/control-erased output-state
   relations, open raw-bytecode halt execution with concrete return bytes, and

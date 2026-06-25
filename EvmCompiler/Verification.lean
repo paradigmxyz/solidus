@@ -656,6 +656,20 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Assembly.GasfulBridge.runRefinesOpen_continuing_prim_success
 #check EvmCompiler.Assembly.GasfulBridge.CallBoundaryAccounting
 #check EvmCompiler.Assembly.GasfulBridge.CreateBoundaryAccounting
+#check EvmCompiler.Assembly.GasfulBridge.callResponseFinalGas
+#check EvmCompiler.Assembly.GasfulBridge.CallResponseGasAccounting
+#check EvmCompiler.Assembly.GasfulBridge.callResponseGasAccounting_canonical
+#check EvmCompiler.Assembly.GasfulBridge.callResponseGasAccounting_finalGas_eq
+#check EvmCompiler.Assembly.GasfulBridge.CallResponseStateRel
+#check EvmCompiler.Assembly.GasfulBridge.callResponseStateRel_of_sameData
+#check EvmCompiler.Assembly.GasfulBridge.callStep_external_executes
+#check EvmCompiler.Assembly.GasfulBridge.createResponseFinalGas
+#check EvmCompiler.Assembly.GasfulBridge.CreateResponseGasAccounting
+#check EvmCompiler.Assembly.GasfulBridge.createResponseGasAccounting_canonical
+#check EvmCompiler.Assembly.GasfulBridge.createResponseGasAccounting_finalGas_eq
+#check EvmCompiler.Assembly.GasfulBridge.CreateResponseStateRel
+#check EvmCompiler.Assembly.GasfulBridge.createResponseStateRel_of_sameData
+#check EvmCompiler.Assembly.GasfulBridge.createStep_external_executes
 
 #print axioms EvmCompiler.Functions.StackRecursivePreservation.compiledProgramBodyAt
 #print axioms EvmCompiler.Functions.StackRecursivePreservation.compiledProgramBodyForward
@@ -1256,5 +1270,13 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Assembly.GasfulBridge.runRefinesOpen_continuing_prim_success
 #print axioms EvmCompiler.Assembly.GasfulBridge.dynamicGasCostAt_call_args_eq_parentGasCost
 #print axioms EvmCompiler.Assembly.GasfulBridge.dynamicGasCostAt_create_args_eq_parentGasCost
+#print axioms EvmCompiler.Assembly.GasfulBridge.callResponseGasAccounting_canonical
+#print axioms EvmCompiler.Assembly.GasfulBridge.callResponseGasAccounting_finalGas_eq
+#print axioms EvmCompiler.Assembly.GasfulBridge.callResponseStateRel_of_sameData
+#print axioms EvmCompiler.Assembly.GasfulBridge.callStep_external_executes
+#print axioms EvmCompiler.Assembly.GasfulBridge.createResponseGasAccounting_canonical
+#print axioms EvmCompiler.Assembly.GasfulBridge.createResponseGasAccounting_finalGas_eq
+#print axioms EvmCompiler.Assembly.GasfulBridge.createResponseStateRel_of_sameData
+#print axioms EvmCompiler.Assembly.GasfulBridge.createStep_external_executes
 #print axioms EvmCompiler.Yul.EndToEnd.optimizedSolcYulToRawBytecodeFinished
 #print axioms EvmCompiler.Yul.EndToEnd.optimizedSolcYulToRawBytecodeFinishedLegacy
