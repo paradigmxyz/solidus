@@ -167,8 +167,11 @@ Next raw frontend layer:
   `RawAstSemantics.clzHelperYulInterface_call_succ` connects that lookup to
   the Yul internal-call evaluator, exposing execution of the generated helper
   body under `initcall` and caller-frame restoration after return. Arithmetic
-  correctness of the helper body and nested hoist/alpha-renaming semantic
-  preservation remain open.
+  correctness now has a checked zero-input base theorem,
+  `Elab.clzHelperAstBody_zero_exec`, which proves the generated body returns
+  256 and skips the nonzero schedule when the helper argument is zero. The
+  full scheduled-step `clzHelperValue` theorem and nested
+  hoist/alpha-renaming semantic preservation remain open.
 - [x] Expose the production interface
   `decodeAndElaborateSolcIr? rawJson selection = some frontendProgram` without
   public certificate premises, and expose artifact-facing raw wrappers whose

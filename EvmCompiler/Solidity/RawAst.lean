@@ -783,37 +783,49 @@ theorem clzHelperFunctionDef_shape (argName returnName : Name) :
       (clzHelperFunctionDef argName returnName).returns = [returnName] := by
   simp [clzHelperFunctionDef]
 
+def clzHelperAstPrim (op : EvmYul.Operation .Yul)
+    (args : List Yul.AstExpr) : Yul.AstExpr :=
+  EvmYul.Yul.Ast.Expr.Call (.inl op) args
+
+def clzHelperAstValue (name : Name) : Yul.AstExpr :=
+  EvmYul.Yul.Ast.Expr.Var name
+
+def clzHelperAstWord (value : Nat) : Yul.AstExpr :=
+  EvmYul.Yul.Ast.Expr.Lit (EvmYul.UInt256.ofNat value)
+
+def clzHelperAstStepBody (argName returnName : Name)
+    (step : Nat × Nat) : List Yul.AstStmt :=
+  let checkShift := step.fst
+  let addend := step.snd
+  let stepBody : List Yul.AstStmt :=
+    [EvmYul.Yul.Ast.Stmt.Assign [returnName]
+      (clzHelperAstPrim .ADD
+        [clzHelperAstValue returnName, clzHelperAstWord addend])]
+  let stepBody :=
+    if addend == 1 then
+      stepBody
+    else
+      stepBody ++
+        [EvmYul.Yul.Ast.Stmt.Assign [argName]
+          (clzHelperAstPrim .SHL
+            [clzHelperAstWord addend, clzHelperAstValue argName])]
+  [EvmYul.Yul.Ast.Stmt.If
+    (clzHelperAstPrim .ISZERO
+      [clzHelperAstPrim .SHR
+        [clzHelperAstWord checkShift, clzHelperAstValue argName]])
+    stepBody]
+
+def clzHelperAstNonzeroBody (argName returnName : Name) :
+    List Yul.AstStmt :=
+  clzHelperStepSchedule.foldl
+    (fun body step => body ++ clzHelperAstStepBody argName returnName step)
+    [EvmYul.Yul.Ast.Stmt.Assign [returnName] (clzHelperAstWord 0)]
+
 def clzHelperAstBody (argName returnName : Name) : List Yul.AstStmt :=
-  let prim (op : EvmYul.Operation .Yul) (args : List Yul.AstExpr) :=
-    EvmYul.Yul.Ast.Expr.Call (.inl op) args
-  let value (name : Name) := EvmYul.Yul.Ast.Expr.Var name
-  let word (value : Nat) :=
-    EvmYul.Yul.Ast.Expr.Lit (EvmYul.UInt256.ofNat value)
-  let nonzeroBody :=
-    let init : List Yul.AstStmt :=
-      [EvmYul.Yul.Ast.Stmt.Assign [returnName] (word 0)]
-    clzHelperStepSchedule.foldl
-      (fun body step =>
-        let checkShift := step.fst
-        let addend := step.snd
-        let stepBody : List Yul.AstStmt :=
-          [EvmYul.Yul.Ast.Stmt.Assign [returnName]
-            (prim .ADD [value returnName, word addend])]
-        let stepBody :=
-          if addend == 1 then
-            stepBody
-          else
-            stepBody ++
-              [EvmYul.Yul.Ast.Stmt.Assign [argName]
-                (prim .SHL [word addend, value argName])]
-        body ++
-          [EvmYul.Yul.Ast.Stmt.If
-            (prim .ISZERO
-              [prim .SHR [word checkShift, value argName]])
-            stepBody])
-      init
-  [EvmYul.Yul.Ast.Stmt.Assign [returnName] (word 256),
-    EvmYul.Yul.Ast.Stmt.If (value argName) nonzeroBody]
+  [EvmYul.Yul.Ast.Stmt.Assign [returnName] (clzHelperAstWord 256),
+    EvmYul.Yul.Ast.Stmt.If
+      (clzHelperAstValue argName)
+      (clzHelperAstNonzeroBody argName returnName)]
 
 def clzHelperAstFunctionDef (argName returnName : Name) :
     Yul.AstFunctionDefinition :=
@@ -854,7 +866,9 @@ theorem clzHelperFunctionDef_toYul?
     Frontend.FunctionDef.toYul? (clzHelperFunctionDef argName returnName) =
       some (clzHelperAstFunctionDef argName returnName) := by
   simp [clzHelperFunctionDef, clzHelperAstFunctionDef,
-    clzHelperAstBody, clzHelperStepSchedule, Frontend.FunctionDef.toYul?,
+    clzHelperAstBody, clzHelperAstNonzeroBody, clzHelperAstStepBody,
+    clzHelperAstPrim, clzHelperAstValue, clzHelperAstWord,
+    clzHelperStepSchedule, Frontend.FunctionDef.toYul?,
     Frontend.Stmt.List.toYul?, Frontend.Stmt.toYul?,
     Frontend.Expr.toYul?, Frontend.Expr.List.toYul?,
     Frontend.Primitive.ofName?]
