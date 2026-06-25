@@ -117,7 +117,6 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedCallSemanticInterface.StmtContext.RecursiveSemanticStep.execution
 #check EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedCallSemanticInterface.StmtContext.recursiveSemanticStep
 #check EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedCallSemanticInterface.RecursiveExecution
-#check EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedCallSemanticInterface.recursiveExecution_of_recursiveStepEvidence
 #check EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedCallSemanticInterface.recursiveExecution_of_interface
 #check EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedCallSemanticInterface.stmtListContext
 #check EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedCallSemanticInterface.splitStmtContext
@@ -400,7 +399,6 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedCallSemanticInterface.StmtContext.directCallExecution_of_exprSlot
 #print axioms EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedCallSemanticInterface.StmtContext.recursiveSemanticStep
 #print axioms EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedCallSemanticInterface.StmtContext.RecursiveSemanticStep.execution
-#print axioms EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedCallSemanticInterface.recursiveExecution_of_recursiveStepEvidence
 #print axioms EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedCallSemanticInterface.recursiveExecution_of_interface
 #print axioms EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedCallSemanticInterface.stmtListContext
 #print axioms EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedCallSemanticInterface.splitStmtContext
