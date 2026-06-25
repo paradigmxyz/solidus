@@ -293,6 +293,7 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.RawAst.Elab.Stmt.List.localFunctionScope_sourceLocalFunction_bindingNameOk
 #check EvmCompiler.Solidity.RawAst.Elab.bindingNameOk_classifyCall_user
 #check EvmCompiler.Solidity.RawAst.Elab.Stmt.List.localFunctionScope_sourceLocalFunction_classifyCall_user
+#check EvmCompiler.Solidity.RawAst.Elab.Stmt.List.hoistLocalFunctions_functionDefinition_compilation
 #check EvmCompiler.Solidity.RawAst.Elab.Stmt.List.hoistLocalFunctions_functionDefinition_entry
 #check EvmCompiler.Solidity.RawAst.Elab.Stmt.List.localFunctionScope_hoistLocalFunctions_lookup_entry
 #check EvmCompiler.Solidity.RawAst.Elab.Stmt.List.resolveFunctionIn_of_scope_lookup
@@ -817,6 +818,7 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.RawAst.Elab.Stmt.List.localFunctionScope_sourceLocalFunction_bindingNameOk
 #print axioms EvmCompiler.Solidity.RawAst.Elab.bindingNameOk_classifyCall_user
 #print axioms EvmCompiler.Solidity.RawAst.Elab.Stmt.List.localFunctionScope_sourceLocalFunction_classifyCall_user
+#print axioms EvmCompiler.Solidity.RawAst.Elab.Stmt.List.hoistLocalFunctions_functionDefinition_compilation
 #print axioms EvmCompiler.Solidity.RawAst.Elab.Stmt.List.hoistLocalFunctions_functionDefinition_entry
 #print axioms EvmCompiler.Solidity.RawAst.Elab.Stmt.List.localFunctionScope_hoistLocalFunctions_lookup_entry
 #print axioms EvmCompiler.Solidity.RawAst.Elab.Stmt.List.resolveFunctionIn_of_scope_lookup

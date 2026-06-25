@@ -10614,7 +10614,7 @@ theorem localFunctionScope_sourceLocalFunction_classifyCall_user
     bindingNameOk_classifyCall_user
       (localFunctionScope_sourceLocalFunction_bindingNameOk hScope hLocal)
 
-theorem hoistLocalFunctions_functionDefinition_entry
+theorem hoistLocalFunctions_functionDefinition_compilation
     {stmts : List Raw.Stmt} {scope : List (Name × Name)}
     {state finalState : State}
     {name generated : Name} {params returns : List Name}
@@ -10625,7 +10625,11 @@ theorem hoistLocalFunctions_functionDefinition_entry
     (hHoist :
       (Stmt.List.hoistLocalFunctions stmts scope).run state =
         .ok ((), finalState)) :
-    ∃ fn, (generated, fn) ∈ finalState.hoistedFunctions := by
+    ∃ functionState functionFinalState fn,
+      functionState.functionScopes = state.functionScopes ∧
+        (FunctionDef.elaborate params returns body).run functionState =
+          .ok (fn, functionFinalState) ∧
+        (generated, fn) ∈ finalState.hoistedFunctions := by
   induction stmts generalizing state finalState with
   | nil =>
       simp at hMem
@@ -10649,11 +10653,10 @@ theorem hoistLocalFunctions_functionDefinition_entry
             | ok fnResult =>
                 rcases fnResult with ⟨fn, fnState⟩
                 simp [hFn, StateT.run_modify] at hHoist
-                refine ⟨fn, ?_⟩
+                refine ⟨state, fnState, fn, rfl, hFn, ?_⟩
                 exact
                   Stmt.List.hoistLocalFunctions_preserves_hoistedFunction_mem
-                    rest scope hHoist
-                    (by simp)
+                    rest scope hHoist (by simp)
           · unfold Stmt.List.hoistLocalFunctions at hHoist
             simp [StateT.run_bind] at hHoist
             cases hHeadLookup : lookupFunctionInScope head scope with
@@ -10672,7 +10675,16 @@ theorem hoistLocalFunctions_functionDefinition_entry
                 | ok fnResult =>
                     rcases fnResult with ⟨fn, fnState⟩
                     simp [hFn, StateT.run_modify] at hHoist
-                    exact ih hTail hHoist
+                    rcases ih hTail hHoist with
+                      ⟨functionState, functionFinalState, targetFn,
+                        hFunctionScopes, hFunction, hEntry⟩
+                    have hFnScopes :
+                        fnState.functionScopes = state.functionScopes :=
+                      FunctionDef.elaborate_preserves_functionScopes
+                        headParams headReturns headBody hFn
+                    exact
+                      ⟨functionState, functionFinalState, targetFn,
+                        hFunctionScopes.trans hFnScopes, hFunction, hEntry⟩
       | block stmts =>
           unfold Stmt.List.hoistLocalFunctions at hHoist
           simp at hMem
@@ -10713,6 +10725,24 @@ theorem hoistLocalFunctions_functionDefinition_entry
           unfold Stmt.List.hoistLocalFunctions at hHoist
           simp at hMem
           exact ih hMem hHoist
+
+theorem hoistLocalFunctions_functionDefinition_entry
+    {stmts : List Raw.Stmt} {scope : List (Name × Name)}
+    {state finalState : State}
+    {name generated : Name} {params returns : List Name}
+    {body : List Raw.Stmt}
+    (hMem :
+      .functionDefinition name params returns body ∈ stmts)
+    (hLookup : lookupFunctionInScope name scope = some generated)
+    (hHoist :
+      (Stmt.List.hoistLocalFunctions stmts scope).run state =
+        .ok ((), finalState)) :
+    ∃ fn, (generated, fn) ∈ finalState.hoistedFunctions := by
+  rcases hoistLocalFunctions_functionDefinition_compilation
+      hMem hLookup hHoist with
+    ⟨_functionState, _functionFinalState, fn,
+      _hScopes, _hFunction, hEntry⟩
+  exact ⟨fn, hEntry⟩
 
 theorem localFunctionScope_hoistLocalFunctions_lookup_entry
     {stmts : List Raw.Stmt} {state scopeState finalState : State}
