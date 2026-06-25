@@ -1700,6 +1700,383 @@ theorem patchStmts?_value
 
 end ImmutablePatchOccurrence
 
+namespace StmtIncomingUserCall
+
+private theorem findImmutableReferences?_some_nonempty
+    {context : Frontend.ObjectBuiltinContext} {name : Name}
+    {references : List Frontend.ImmutableReference}
+    (hRefs :
+      context.findImmutableReferences? name = some references) :
+    references ≠ [] := by
+  intro hNil
+  subst references
+  unfold Frontend.ObjectBuiltinContext.findImmutableReferences? at hRefs
+  cases hCollect :
+      Frontend.ObjectBuiltinContext.collectImmutableReferences
+        context.immutableReferences name <;>
+    simp [hCollect] at hRefs
+
+theorem resolveObjectBuiltinsIn?_occurrence
+    {stmt stmt' : Frontend.Stmt} {generated : Name}
+    {args : List Frontend.Expr}
+    {context : Frontend.ObjectBuiltinContext}
+    (hResolve :
+      Frontend.Stmt.resolveObjectBuiltinsIn? stmt context = some stmt')
+    (hOccurrence : StmtIncomingUserCall stmt generated args) :
+    ∃ args',
+      Frontend.Expr.List.resolveObjectBuiltinsIn? args context = some args' ∧
+        StmtUserCall stmt' generated args' := by
+  cases hOccurrence with
+  | letValue hValue =>
+      rename_i names value
+      unfold Frontend.Stmt.resolveObjectBuiltinsIn? at hResolve
+      cases hValueResolve :
+          Frontend.Expr.resolveObjectBuiltinsIn? value context with
+      | none =>
+          simp [hValueResolve] at hResolve
+      | some value' =>
+          simp [hValueResolve] at hResolve
+          cases hResolve
+          rcases
+              UserCall.resolveObjectBuiltinsIn?_occurrence
+                hValueResolve hValue with
+            ⟨args', hArgs, hValue'⟩
+          exact
+            ⟨args', hArgs,
+              StmtUserCall.ofIncoming
+                (StmtIncomingUserCall.letValue hValue')⟩
+  | assignmentValue hValue =>
+      rename_i names value
+      unfold Frontend.Stmt.resolveObjectBuiltinsIn? at hResolve
+      cases hValueResolve :
+          Frontend.Expr.resolveObjectBuiltinsIn? value context with
+      | none =>
+          simp [hValueResolve] at hResolve
+      | some value' =>
+          simp [hValueResolve] at hResolve
+          cases hResolve
+          rcases
+              UserCall.resolveObjectBuiltinsIn?_occurrence
+                hValueResolve hValue with
+            ⟨args', hArgs, hValue'⟩
+          exact
+            ⟨args', hArgs,
+              StmtUserCall.ofIncoming
+                (StmtIncomingUserCall.assignmentValue hValue')⟩
+  | expressionStatement hExpr =>
+      rename_i expr
+      cases expr with
+      | lit value =>
+          cases hExpr
+      | stringLit value =>
+          cases hExpr
+      | bytesLit bytes =>
+          cases hExpr
+      | var name =>
+          cases hExpr
+      | call kind callee callArgs =>
+          cases kind with
+          | primitive =>
+              unfold Frontend.Stmt.resolveObjectBuiltinsIn? at hResolve
+              cases hExprResolve :
+                  Frontend.Expr.resolveObjectBuiltinsIn?
+                    (.call .primitive callee callArgs) context with
+              | none =>
+                  simp [hExprResolve] at hResolve
+              | some expr' =>
+                  simp [hExprResolve] at hResolve
+                  cases hResolve
+                  rcases
+                      UserCall.resolveObjectBuiltinsIn?_occurrence
+                        hExprResolve hExpr with
+                    ⟨args', hArgs, hExpr'⟩
+                  exact
+                    ⟨args', hArgs,
+                      StmtUserCall.ofIncoming
+                        (StmtIncomingUserCall.expressionStatement hExpr')⟩
+          | user =>
+              unfold Frontend.Stmt.resolveObjectBuiltinsIn? at hResolve
+              cases hExprResolve :
+                  Frontend.Expr.resolveObjectBuiltinsIn?
+                    (.call .user callee callArgs) context with
+              | none =>
+                  simp [hExprResolve] at hResolve
+              | some expr' =>
+                  simp [hExprResolve] at hResolve
+                  cases hResolve
+                  rcases
+                      UserCall.resolveObjectBuiltinsIn?_occurrence
+                        hExprResolve hExpr with
+                    ⟨args', hArgs, hExpr'⟩
+                  exact
+                    ⟨args', hArgs,
+                      StmtUserCall.ofIncoming
+                        (StmtIncomingUserCall.expressionStatement hExpr')⟩
+          | dialectBuiltin =>
+              unfold Frontend.Stmt.resolveObjectBuiltinsIn? at hResolve
+              cases hExprResolve :
+                  Frontend.Expr.resolveObjectBuiltinsIn?
+                    (.call .dialectBuiltin callee callArgs) context with
+              | none =>
+                  simp [hExprResolve] at hResolve
+              | some expr' =>
+                  simp [hExprResolve] at hResolve
+                  cases hResolve
+                  rcases
+                      UserCall.resolveObjectBuiltinsIn?_occurrence
+                        hExprResolve hExpr with
+                    ⟨args', hArgs, hExpr'⟩
+                  exact
+                    ⟨args', hArgs,
+                      StmtUserCall.ofIncoming
+                        (StmtIncomingUserCall.expressionStatement hExpr')⟩
+          | objectBuiltin =>
+              cases callArgs with
+              | nil =>
+                  unfold Frontend.Stmt.resolveObjectBuiltinsIn? at hResolve
+                  cases hExprResolve :
+                      Frontend.Expr.resolveObjectBuiltinsIn?
+                        (.call .objectBuiltin callee []) context with
+                  | none =>
+                      simp [hExprResolve] at hResolve
+                  | some expr' =>
+                      simp [hExprResolve] at hResolve
+                      cases hResolve
+                      rcases
+                          UserCall.resolveObjectBuiltinsIn?_occurrence
+                            hExprResolve hExpr with
+                        ⟨args', hArgs, hExpr'⟩
+                      exact
+                        ⟨args', hArgs,
+                          StmtUserCall.ofIncoming
+                            (StmtIncomingUserCall.expressionStatement hExpr')⟩
+              | cons first rest =>
+                  cases rest with
+                  | nil =>
+                      unfold Frontend.Stmt.resolveObjectBuiltinsIn? at hResolve
+                      cases hExprResolve :
+                          Frontend.Expr.resolveObjectBuiltinsIn?
+                            (.call .objectBuiltin callee [first]) context with
+                      | none =>
+                          simp [hExprResolve] at hResolve
+                      | some expr' =>
+                          simp [hExprResolve] at hResolve
+                          cases hResolve
+                          rcases
+                              UserCall.resolveObjectBuiltinsIn?_occurrence
+                                hExprResolve hExpr with
+                            ⟨args', hArgs, hExpr'⟩
+                          exact
+                            ⟨args', hArgs,
+                              StmtUserCall.ofIncoming
+                                (StmtIncomingUserCall.expressionStatement
+                                  hExpr')⟩
+                  | cons second rest' =>
+                      cases rest' with
+                      | nil =>
+                          unfold Frontend.Stmt.resolveObjectBuiltinsIn?
+                            at hResolve
+                          cases hExprResolve :
+                              Frontend.Expr.resolveObjectBuiltinsIn?
+                                (.call .objectBuiltin callee [first, second])
+                                context with
+                          | none =>
+                              simp [hExprResolve] at hResolve
+                          | some expr' =>
+                              simp [hExprResolve] at hResolve
+                              cases hResolve
+                              rcases
+                                  UserCall.resolveObjectBuiltinsIn?_occurrence
+                                    hExprResolve hExpr with
+                                ⟨args', hArgs, hExpr'⟩
+                              exact
+                                ⟨args', hArgs,
+                                  StmtUserCall.ofIncoming
+                                    (StmtIncomingUserCall.expressionStatement
+                                      hExpr')⟩
+                      | cons third rest'' =>
+                          cases rest'' with
+                          | nil =>
+                              by_cases hSet : callee = "setimmutable"
+                              · subst callee
+                                unfold Frontend.Stmt.resolveObjectBuiltinsIn?
+                                  at hResolve
+                                cases hName :
+                                    Frontend.Expr.objectBuiltinNameArg?
+                                      second with
+                                | none =>
+                                    simp [hName] at hResolve
+                                | some immutableName =>
+                                    cases hBase :
+                                        Frontend.Expr.resolveObjectBuiltinsIn?
+                                          first context with
+                                    | none =>
+                                        simp [hName, hBase] at hResolve
+                                    | some base' =>
+                                        cases hValue :
+                                            Frontend.Expr.resolveObjectBuiltinsIn?
+                                              third context with
+                                        | none =>
+                                            simp [hName, hBase, hValue]
+                                              at hResolve
+                                        | some value' =>
+                                            cases hRefs :
+                                                context.findImmutableReferences?
+                                                  immutableName with
+                                            | none =>
+                                                simp [hName, hBase, hValue,
+                                                  hRefs] at hResolve
+                                            | some references =>
+                                                cases hPatch :
+                                                    Frontend.ImmutableReference.List.patchStmts?
+                                                      references base' value' with
+                                                | none =>
+                                                    simp [hName, hBase,
+                                                      hValue, hRefs, hPatch]
+                                                      at hResolve
+                                                | some stmts =>
+                                                    simp [hName, hBase,
+                                                      hValue, hRefs, hPatch]
+                                                      at hResolve
+                                                    cases hResolve
+                                                    cases hExpr with
+                                                    | arg hMem hArg =>
+                                                        simp at hMem
+                                                        rcases hMem with
+                                                          hBaseMem |
+                                                          hNameMem |
+                                                          hValueMem
+                                                        · subst_vars
+                                                          rcases
+                                                              UserCall.resolveObjectBuiltinsIn?_occurrence
+                                                                hBase hArg with
+                                                            ⟨args', hArgs,
+                                                              hBase'⟩
+                                                          exact
+                                                            ⟨args', hArgs,
+                                                              StmtUserCall.block
+                                                                (ImmutablePatchOccurrence.patchStmts?_base
+                                                                  hPatch
+                                                                  (findImmutableReferences?_some_nonempty
+                                                                    hRefs)
+                                                                  hBase')⟩
+                                                        · subst_vars
+                                                          have hNone :=
+                                                            UserCall.objectBuiltinNameArg?_none
+                                                              hArg
+                                                          rw [hName] at hNone
+                                                          simp at hNone
+                                                        · subst_vars
+                                                          rcases
+                                                              UserCall.resolveObjectBuiltinsIn?_occurrence
+                                                                hValue hArg with
+                                                            ⟨args', hArgs,
+                                                              hValue'⟩
+                                                          exact
+                                                            ⟨args', hArgs,
+                                                              StmtUserCall.block
+                                                                (ImmutablePatchOccurrence.patchStmts?_value
+                                                                  hPatch
+                                                                  (findImmutableReferences?_some_nonempty
+                                                                    hRefs)
+                                                                  hValue')⟩
+                              · unfold Frontend.Stmt.resolveObjectBuiltinsIn?
+                                  at hResolve
+                                cases hExprResolve :
+                                    Frontend.Expr.resolveObjectBuiltinsIn?
+                                      (.call .objectBuiltin callee
+                                        [first, second, third]) context with
+                                | none =>
+                                    simp [hSet, hExprResolve] at hResolve
+                                | some expr' =>
+                                    simp [hSet, hExprResolve] at hResolve
+                                    cases hResolve
+                                    rcases
+                                        UserCall.resolveObjectBuiltinsIn?_occurrence
+                                          hExprResolve hExpr with
+                                      ⟨args', hArgs, hExpr'⟩
+                                    exact
+                                      ⟨args', hArgs,
+                                        StmtUserCall.ofIncoming
+                                          (StmtIncomingUserCall.expressionStatement
+                                            hExpr')⟩
+                          | cons fourth rest''' =>
+                              unfold Frontend.Stmt.resolveObjectBuiltinsIn?
+                                at hResolve
+                              cases hExprResolve :
+                                  Frontend.Expr.resolveObjectBuiltinsIn?
+                                    (.call .objectBuiltin callee
+                                      (first :: second :: third ::
+                                        fourth :: rest''')) context with
+                              | none =>
+                                  simp [hExprResolve] at hResolve
+                              | some expr' =>
+                                  simp [hExprResolve] at hResolve
+                                  cases hResolve
+                                  rcases
+                                      UserCall.resolveObjectBuiltinsIn?_occurrence
+                                        hExprResolve hExpr with
+                                    ⟨args', hArgs, hExpr'⟩
+                                  exact
+                                    ⟨args', hArgs,
+                                      StmtUserCall.ofIncoming
+                                        (StmtIncomingUserCall.expressionStatement
+                                          hExpr')⟩
+  | switchScrutinee hScrutinee =>
+      rename_i scrutinee cases default
+      unfold Frontend.Stmt.resolveObjectBuiltinsIn? at hResolve
+      cases hScrutineeResolve :
+          Frontend.Expr.resolveObjectBuiltinsIn? scrutinee context with
+      | none =>
+          simp [hScrutineeResolve] at hResolve
+      | some scrutinee' =>
+          cases hCases :
+              Frontend.Stmt.CaseList.resolveObjectBuiltinsIn? cases context with
+          | none =>
+              simp [hScrutineeResolve, hCases] at hResolve
+          | some cases' =>
+              cases hDefault :
+                  Frontend.Stmt.List.resolveObjectBuiltinsIn? default context with
+              | none =>
+                  simp [hScrutineeResolve, hCases, hDefault] at hResolve
+              | some default' =>
+                  simp [hScrutineeResolve, hCases, hDefault] at hResolve
+                  cases hResolve
+                  rcases
+                      UserCall.resolveObjectBuiltinsIn?_occurrence
+                        hScrutineeResolve hScrutinee with
+                    ⟨args', hArgs, hScrutinee'⟩
+                  exact
+                    ⟨args', hArgs,
+                      StmtUserCall.ofIncoming
+                        (StmtIncomingUserCall.switchScrutinee
+                          hScrutinee')⟩
+  | ifCondition hCondition =>
+      rename_i condition body
+      unfold Frontend.Stmt.resolveObjectBuiltinsIn? at hResolve
+      cases hConditionResolve :
+          Frontend.Expr.resolveObjectBuiltinsIn? condition context with
+      | none =>
+          simp [hConditionResolve] at hResolve
+      | some condition' =>
+          cases hBody :
+              Frontend.Stmt.List.resolveObjectBuiltinsIn? body context with
+          | none =>
+              simp [hConditionResolve, hBody] at hResolve
+          | some body' =>
+              simp [hConditionResolve, hBody] at hResolve
+              cases hResolve
+              rcases
+                  UserCall.resolveObjectBuiltinsIn?_occurrence
+                    hConditionResolve hCondition with
+                ⟨args', hArgs, hCondition'⟩
+              exact
+                ⟨args', hArgs,
+                  StmtUserCall.ofIncoming
+                    (StmtIncomingUserCall.ifCondition hCondition')⟩
+
+end StmtIncomingUserCall
+
 end FrontendOccurrence
 
 namespace YulOccurrence
