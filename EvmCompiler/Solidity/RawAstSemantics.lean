@@ -2363,6 +2363,85 @@ theorem switchScrutineeCall_succ
   rw [open_bind_pure_left]
   rfl
 
+theorem forConditionCall_succ
+    {ordered : Yul.OrderedProgram}
+    {generated : Name}
+    {params returns : List Name} {body : List Yul.AstStmt}
+    {args : List Yul.AstExpr} {stmts : List Yul.AstStmt}
+    {prefixFuel : Nat} {code : Option Yul.AstContract}
+    {shared : EvmYul.SharedState .Yul}
+    {vars : EvmYul.Yul.VarStore}
+    (hInterface :
+      FocusedGeneratedCallSemanticInterface ordered generated params returns
+        body args stmts prefixFuel code shared vars)
+    (fuel : Nat) (post loopBody : List Yul.AstStmt)
+    (entryShared : EvmYul.SharedState .Yul)
+    (entryVars : EvmYul.Yul.VarStore) :
+    Yul.InteractionSemantics.exec (fuel + 5)
+        (.For (.Call (.inr generated) args) post loopBody)
+        (some ordered.program.contract) (.Ok entryShared entryVars) =
+      Simulation.Interaction.bind
+        (Simulation.Interaction.bind
+          (Simulation.Interaction.bind
+            (Yul.InteractionSemantics.evalArgs (fuel + 1)
+              args.reverse (some ordered.program.contract)
+              (.Ok entryShared entryVars))
+            (fun argsResult =>
+              Simulation.Interaction.bind
+                (Yul.InteractionSemantics.exec fuel
+                  (.Block body) (some ordered.program.contract)
+                  (EvmYul.Yul.State.mkOk
+                    (argsResult.1.initcall params returns
+                      argsResult.2.reverse)))
+                (fun stateAfterBody =>
+                  pure
+                    ((stateAfterBody.reviveJump.overwrite?
+                        argsResult.1).setStore argsResult.1,
+                      List.map stateAfterBody.lookup! returns))))
+          (fun result =>
+            if result.2.head! = EvmYul.UInt256.ofNat 0 then
+              Simulation.Interaction.pure (.inl result.1)
+            else
+              Simulation.Interaction.map Sum.inr
+                (Yul.InteractionSemantics.exec (fuel + 2)
+                  (.Block loopBody) (some ordered.program.contract)
+                  result.1)))
+        (fun guarded =>
+          match guarded with
+          | .inl stateAfterCond =>
+              Simulation.Interaction.pure stateAfterCond
+          | .inr stateAfterBody =>
+              match stateAfterBody with
+              | .OutOfFuel => Simulation.Interaction.pure .OutOfFuel
+              | .Checkpoint (.Break shared vars) =>
+                  Simulation.Interaction.pure (.Ok shared vars)
+              | .Checkpoint (.Leave shared vars) =>
+                  Simulation.Interaction.pure (.Checkpoint (.Leave shared vars))
+              | .Checkpoint (.Continue shared vars) | .Ok shared vars =>
+                  Simulation.Interaction.bind
+                    (Yul.InteractionSemantics.exec (fuel + 2)
+                      (.Block post) (some ordered.program.contract)
+                      (.Ok shared vars))
+                    (fun stateAfterPost =>
+                      match stateAfterPost with
+                      | .OutOfFuel =>
+                          Simulation.Interaction.pure .OutOfFuel
+                      | .Checkpoint (.Leave shared vars) =>
+                          Simulation.Interaction.pure
+                            (.Checkpoint (.Leave shared vars))
+                      | _ =>
+                          Yul.InteractionSemantics.exec (fuel + 2)
+                            (.For (.Call (.inr generated) args) post
+                              loopBody)
+                            (some ordered.program.contract)
+                            stateAfterPost)) := by
+  rw [show fuel + 5 = (fuel + 4) + 1 by omega]
+  rw [Yul.InteractionSemantics.Exec.for_succ]
+  rw [show fuel + 4 = (fuel + 2) + 1 + 1 by omega]
+  rw [Yul.InteractionSemantics.Exec.loop_succ_succ_guarded]
+  rw [hInterface.evalValues_succ fuel (.Ok entryShared entryVars)]
+  rfl
+
 structure ExprContext
     {ordered : Yul.OrderedProgram}
     {generated : Name}

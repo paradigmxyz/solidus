@@ -81,6 +81,7 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedCallSemanticInterface.assignCall_succ
 #check EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedCallSemanticInterface.ifConditionCall_succ
 #check EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedCallSemanticInterface.switchScrutineeCall_succ
+#check EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedCallSemanticInterface.forConditionCall_succ
 #check EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedCallSemanticInterface.ExprContext
 #check EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedCallSemanticInterface.ExprContext.ofOccurrence
 #check EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedCallSemanticInterface.ExprContext.directOrCallArgPrefix
@@ -371,6 +372,7 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedCallSemanticInterface.assignCall_succ
 #print axioms EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedCallSemanticInterface.ifConditionCall_succ
 #print axioms EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedCallSemanticInterface.switchScrutineeCall_succ
+#print axioms EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedCallSemanticInterface.forConditionCall_succ
 #print axioms EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedCallSemanticInterface.ExprContext.ofOccurrence
 #print axioms EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedCallSemanticInterface.ExprContext.directOrCallArgPrefix
 #print axioms EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedCallSemanticInterface.StmtContext.ofOccurrence
