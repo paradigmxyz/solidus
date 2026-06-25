@@ -100,6 +100,9 @@ Gasful EVM bridge checkpoint:
 - [x] Compose terminal `RETURN`/`REVERT` stack underflow into `RunRefinesOpen`:
   short-stack open raw-bytecode execution returns the same `StackUnderflow`
   error as the gasful `EVM.X` stack precheck before terminal halt handling.
+- [x] Compose `JUMP`/`JUMPI` stack underflow into `RunRefinesOpen`: short-stack
+  open raw-bytecode execution returns the same `StackUnderflow` error as the
+  gasful `EVM.X` stack precheck before bad-jump validation.
 - [x] Add the matching terminal `RETURN`/`REVERT` compositions:
   stack-pop-aware actual `EVM.step` lemmas, gas/control-erased output-state
   relations, open raw-bytecode halt execution with concrete return bytes, and
@@ -111,9 +114,8 @@ Gasful EVM bridge checkpoint:
 - [ ] Prove the full `EVM.X` simulation that discharges the bridge premise for
   remaining special `EVM.step` helpers (`LOG0..4`), CALL/CREATE open-strategy
   responses with EIP-150/returned gas, and the remaining non-OOG exceptional
-  composition cases: residual stack underflow outside the static-permitted
-  continuing-primitive and terminal `RETURN`/`REVERT` slices, stack overflow,
-  and bad jump destinations.
+  composition cases: residual stack underflow for CALL/CREATE-family and
+  SELFDESTRUCT, stack overflow, and bad jump destinations.
 
 `Compiler.StackArtifact` is the sole code-body artifact and
 `Solidity.Frontend.VerifiedStackObjectArtifact` is the sole recursive object
