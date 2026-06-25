@@ -184,7 +184,12 @@ Next raw frontend layer:
   `decodeAndElaborateSolcIr?_clzPrefixAndValueOfRawOccurrence` theorem now
   derives the generated helper/argument/return names from checked raw
   elaboration and proves the focused helper call returns `clzHelperValue`.
-  Nested hoist/alpha-renaming semantic preservation remains open.
+  `decodeAndElaborateSolcIr?_functionBodyRecursiveExecutionOfRawOccurrence`
+  now derives generated-call prefix, semantic-interface, and recursive
+  execution evidence for raw user calls located inside raw function-definition
+  bodies after Lean hoisting/alpha-renaming, without a public generated-name,
+  layout, replay, or certificate premise. Remaining work is final raw-input
+  theorem composition and release validation.
 - [x] Expose the production interface
   `decodeAndElaborateSolcIr? rawJson selection = some frontendProgram` without
   public certificate premises, and expose artifact-facing raw wrappers whose

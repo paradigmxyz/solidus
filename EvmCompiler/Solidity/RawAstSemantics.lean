@@ -4136,6 +4136,78 @@ theorem codeGeneratedNormalizationEvidence_prefixEvidenceOfCodeRoute
               FocusedGeneratedCallPrefixEvidence.of_yulOccurrence
                 hLookup hYulOccurrence⟩
 
+theorem codeGeneratedNormalizationEvidence_functionBodyPrefixOfRawOccurrence
+    {code : List Raw.Stmt} {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    (hEvidence :
+      Raw.Object.CodeGeneratedNormalizationEvidence code object)
+    (hConvert : object.toSolcYulOrderedProgram? = some ordered) :
+    ∃ (coreDispatcher : List Frontend.Stmt) (state : State)
+        (helper? arg? ret? : Option Name),
+      elaborateCodeCore code = .ok (coreDispatcher, state) ∧
+        elaborateCode code =
+          .ok (object.dispatcher, object.functions,
+            helper?, arg?, ret?) ∧
+          ∀ {name : Name} {fnParams fnReturns : List Name}
+              {fnBody : List Raw.Stmt} {functionName : Name}
+              {rawArgs : List Raw.Expr},
+            Raw.Stmt.functionDefinition name fnParams fnReturns fnBody ∈
+              code →
+              RawOccurrence.StmtListUserCall functionName rawArgs fnBody →
+                functionName ≠ "memoryguard" →
+                  functionName ≠ "clz" →
+                    CallClass.classifyCall functionName = .user →
+                      ∃ (generated : Name)
+                        (frontendArgs : List Frontend.Expr),
+                        ∀ {fuel : Nat}
+                            {shared : EvmYul.SharedState .Yul}
+                            {vars : EvmYul.Yul.VarStore},
+                          ∃ (params returns : List Name)
+                            (body : List Yul.AstStmt)
+                            (yulArgs : List Yul.AstExpr)
+                            (stmts : List Yul.AstStmt),
+                            FocusedGeneratedCallPrefixEvidence ordered
+                              generated params returns body yulArgs stmts
+                              fuel (some ordered.program.contract) shared
+                              vars := by
+  have hPrefixAll :=
+    codeGeneratedNormalizationEvidence_prefixEvidenceOfCodeRoute
+      hEvidence hConvert
+  rcases hEvidence with
+    ⟨coreDispatcher, state, helper?, arg?, ret?, hCore, hElab,
+      _hFunctions, _hHelper, _hArg, _hRet, _hDistinct, _hClz,
+      _hInterface, _hHoistedRetained⟩
+  have hDispatcherEq : object.dispatcher = coreDispatcher := by
+    rcases elaborateCode_parts hElab with
+      ⟨stateFromElab, hCoreFromElab, _hFunctions, _hHelper,
+        _hArg, _hRet⟩
+    rw [hCore] at hCoreFromElab
+    simp at hCoreFromElab
+    exact hCoreFromElab.1.symm
+  rcases hPrefixAll with
+    ⟨coreDispatcherPrefix, statePrefix, helperPrefix?, argPrefix?,
+      retPrefix?, hCorePrefix, hPrefixRest⟩
+  rcases hPrefixRest with ⟨hElabPrefix, hPrefixRoute⟩
+  rw [hCore] at hCorePrefix
+  simp at hCorePrefix
+  rcases hCorePrefix with ⟨hCoreDispatcherEq, hStateEq⟩
+  subst coreDispatcherPrefix
+  subst statePrefix
+  refine ⟨coreDispatcher, state, helper?, arg?, ret?, hCore, hElab, ?_⟩
+  intro name fnParams fnReturns fnBody functionName rawArgs hMem
+    hOccurrence hNotMemoryguard hNotClz hKind
+  rcases
+      RawOccurrence.Elab.elaborateCodeCore_functionBody_codeRoute_of_mem
+        hCore hMem hOccurrence hNotMemoryguard hNotClz hKind with
+    ⟨generated, frontendArgs, hRoute⟩
+  have hRouteObject :
+      RawOccurrence.CodeElaborationRoute state generated frontendArgs
+        object.dispatcher := by
+    simpa [hDispatcherEq] using hRoute
+  exact
+    ⟨generated, frontendArgs,
+      fun {fuel shared vars} => hPrefixRoute hRouteObject⟩
+
 theorem codeGeneratedNormalizationEvidence_codeRouteOfRawOccurrence
     {code : List Raw.Stmt} {object : Frontend.Object}
     (hEvidence :
@@ -4914,6 +4986,286 @@ theorem decodeAndElaborateSolcIr?_recursiveExecutionOfRawOccurrence
       intro functionName rawArgs hOccurrence hNotMemoryguard hNotClz
         hKind
       rcases hOccurrenceSemantic hOccurrence hNotMemoryguard hNotClz hKind with
+        ⟨generated, frontendArgs, hGenerated⟩
+      refine ⟨generated, frontendArgs, ?_⟩
+      intro fuel shared vars
+      rcases hGenerated with
+        ⟨params, returns, body, yulArgs, stmts, hInterface⟩
+      exact
+        ⟨params, returns, body, yulArgs, stmts,
+          FocusedGeneratedCallSemanticInterface.recursiveExecution_of_interface
+            hInterface⟩
+
+theorem generatedNormalizationEvidence_functionBodyPrefixOfRawOccurrence
+    {raw : Raw.Object} {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    (hEvidence : Raw.Object.GeneratedNormalizationEvidence raw object)
+    (hConvert : object.toSolcYulOrderedProgram? = some ordered) :
+    match raw.code? with
+    | none => True
+    | some code =>
+        ∃ (coreDispatcher : List Frontend.Stmt) (state : State)
+            (helper? arg? ret? : Option Name),
+          elaborateCodeCore code = .ok (coreDispatcher, state) ∧
+            elaborateCode code =
+              .ok (object.dispatcher, object.functions,
+                helper?, arg?, ret?) ∧
+              ∀ {name : Name} {fnParams fnReturns : List Name}
+                  {fnBody : List Raw.Stmt} {functionName : Name}
+                  {rawArgs : List Raw.Expr},
+                Raw.Stmt.functionDefinition name fnParams fnReturns fnBody ∈
+                  code →
+                  RawOccurrence.StmtListUserCall functionName rawArgs
+                    fnBody →
+                    functionName ≠ "memoryguard" →
+                      functionName ≠ "clz" →
+                        CallClass.classifyCall functionName = .user →
+                          ∃ (generated : Name)
+                            (frontendArgs : List Frontend.Expr),
+                            ∀ {fuel : Nat}
+                                {shared : EvmYul.SharedState .Yul}
+                                {vars : EvmYul.Yul.VarStore},
+                              ∃ (params returns : List Name)
+                                (body : List Yul.AstStmt)
+                                (yulArgs : List Yul.AstExpr)
+                                (stmts : List Yul.AstStmt),
+                                FocusedGeneratedCallPrefixEvidence ordered
+                                  generated params returns body yulArgs stmts
+                                  fuel (some ordered.program.contract)
+                                  shared vars := by
+  cases hRawCode : raw.code? with
+  | none =>
+      simp [hRawCode]
+  | some code =>
+      have hCodeEvidence :
+          Raw.Object.CodeGeneratedNormalizationEvidence code object := by
+        simpa [Raw.Object.GeneratedNormalizationEvidence, hRawCode]
+          using hEvidence.2.2.2
+      exact
+        codeGeneratedNormalizationEvidence_functionBodyPrefixOfRawOccurrence
+          hCodeEvidence hConvert
+
+theorem decodeAndElaborateSolcIr?_functionBodyPrefixOfRawOccurrence
+    {rawJson : String} {selection : Selection}
+    {program : Frontend.Program} {ordered : Yul.OrderedProgram}
+    (hDecode :
+      decodeAndElaborateSolcIr? rawJson selection = some program)
+    (hConvert : program.object.toSolcYulOrderedProgram? = some ordered) :
+    ∃ (json : Lean.Json) (selected : SelectedIr)
+        (object : Frontend.Object),
+      Lean.Json.parse rawJson = .ok json ∧
+        decodeSelectedIr json selection = .ok selected ∧
+          selected.root.elaborate? selected.evmVersion = .ok object ∧
+            program =
+              { source := selected.source
+                contract := selected.contract
+                object := object } ∧
+              match selected.root.code? with
+              | none => True
+              | some code =>
+                  ∃ (coreDispatcher : List Frontend.Stmt) (state : State)
+                      (helper? arg? ret? : Option Name),
+                    elaborateCodeCore code = .ok (coreDispatcher, state) ∧
+                      elaborateCode code =
+                        .ok (object.dispatcher, object.functions,
+                          helper?, arg?, ret?) ∧
+                        ∀ {name : Name}
+                            {fnParams fnReturns : List Name}
+                            {fnBody : List Raw.Stmt}
+                            {functionName : Name}
+                            {rawArgs : List Raw.Expr},
+                          Raw.Stmt.functionDefinition name fnParams
+                            fnReturns fnBody ∈ code →
+                            RawOccurrence.StmtListUserCall functionName
+                              rawArgs fnBody →
+                              functionName ≠ "memoryguard" →
+                                functionName ≠ "clz" →
+                                  CallClass.classifyCall functionName =
+                                    .user →
+                                    ∃ (generated : Name)
+                                      (frontendArgs : List Frontend.Expr),
+                                      ∀ {fuel : Nat}
+                                          {shared :
+                                            EvmYul.SharedState .Yul}
+                                          {vars : EvmYul.Yul.VarStore},
+                                        ∃ (params returns : List Name)
+                                          (body : List Yul.AstStmt)
+                                          (yulArgs : List Yul.AstExpr)
+                                          (stmts : List Yul.AstStmt),
+                                          FocusedGeneratedCallPrefixEvidence
+                                            ordered generated params returns
+                                            body yulArgs stmts fuel
+                                            (some
+                                              ordered.program.contract)
+                                            shared vars := by
+  rcases decodeAndElaborateSolcIr?_generatedNormalizationEvidence
+      hDecode with
+    ⟨json, selected, object, hParse, hSelected, hObject, hEvidence,
+      hProgram⟩
+  have hObjectConvert :
+      object.toSolcYulOrderedProgram? = some ordered := by
+    simpa [hProgram] using hConvert
+  exact
+    ⟨json, selected, object, hParse, hSelected, hObject, hProgram,
+      generatedNormalizationEvidence_functionBodyPrefixOfRawOccurrence
+        hEvidence hObjectConvert⟩
+
+theorem decodeAndElaborateSolcIr?_functionBodySemanticInterfaceOfRawOccurrence
+    {rawJson : String} {selection : Selection}
+    {program : Frontend.Program} {ordered : Yul.OrderedProgram}
+    (hDecode :
+      decodeAndElaborateSolcIr? rawJson selection = some program)
+    (hConvert : program.object.toSolcYulOrderedProgram? = some ordered) :
+    ∃ (json : Lean.Json) (selected : SelectedIr)
+        (object : Frontend.Object),
+      Lean.Json.parse rawJson = .ok json ∧
+        decodeSelectedIr json selection = .ok selected ∧
+          selected.root.elaborate? selected.evmVersion = .ok object ∧
+            program =
+              { source := selected.source
+                contract := selected.contract
+                object := object } ∧
+              match selected.root.code? with
+              | none => True
+              | some code =>
+                  ∃ (coreDispatcher : List Frontend.Stmt) (state : State)
+                      (helper? arg? ret? : Option Name),
+                    elaborateCodeCore code = .ok (coreDispatcher, state) ∧
+                      elaborateCode code =
+                        .ok (object.dispatcher, object.functions,
+                          helper?, arg?, ret?) ∧
+                        ∀ {name : Name}
+                            {fnParams fnReturns : List Name}
+                            {fnBody : List Raw.Stmt}
+                            {functionName : Name}
+                            {rawArgs : List Raw.Expr},
+                          Raw.Stmt.functionDefinition name fnParams
+                            fnReturns fnBody ∈ code →
+                            RawOccurrence.StmtListUserCall functionName
+                              rawArgs fnBody →
+                              functionName ≠ "memoryguard" →
+                                functionName ≠ "clz" →
+                                  CallClass.classifyCall functionName =
+                                    .user →
+                                    ∃ (generated : Name)
+                                      (frontendArgs : List Frontend.Expr),
+                                      ∀ {fuel : Nat}
+                                          {shared :
+                                            EvmYul.SharedState .Yul}
+                                          {vars : EvmYul.Yul.VarStore},
+                                        ∃ (params returns : List Name)
+                                          (body : List Yul.AstStmt)
+                                          (yulArgs : List Yul.AstExpr)
+                                          (stmts : List Yul.AstStmt),
+                                          FocusedGeneratedCallSemanticInterface
+                                            ordered generated params returns
+                                            body yulArgs stmts fuel
+                                            (some
+                                              ordered.program.contract)
+                                            shared vars := by
+  rcases
+      decodeAndElaborateSolcIr?_functionBodyPrefixOfRawOccurrence
+        hDecode hConvert with
+    ⟨json, selected, object, hParse, hSelected, hObject, hProgram,
+      hPrefix⟩
+  refine ⟨json, selected, object, hParse, hSelected, hObject, hProgram, ?_⟩
+  cases hRawCode : selected.root.code? with
+  | none =>
+      simp [hRawCode]
+  | some code =>
+      rw [hRawCode] at hPrefix
+      rcases hPrefix with
+        ⟨coreDispatcher, state, helper?, arg?, ret?, hCore, hElab,
+          hOccurrencePrefix⟩
+      refine
+        ⟨coreDispatcher, state, helper?, arg?, ret?, hCore, hElab, ?_⟩
+      intro name fnParams fnReturns fnBody functionName rawArgs hMem
+        hOccurrence hNotMemoryguard hNotClz hKind
+      rcases hOccurrencePrefix hMem hOccurrence hNotMemoryguard hNotClz
+          hKind with
+        ⟨generated, frontendArgs, hGenerated⟩
+      refine ⟨generated, frontendArgs, ?_⟩
+      intro fuel shared vars
+      rcases hGenerated with
+        ⟨params, returns, body, yulArgs, stmts, hEvidence⟩
+      exact
+        ⟨params, returns, body, yulArgs, stmts,
+          FocusedGeneratedCallSemanticInterface.of_prefixEvidence
+            hEvidence⟩
+
+theorem decodeAndElaborateSolcIr?_functionBodyRecursiveExecutionOfRawOccurrence
+    {rawJson : String} {selection : Selection}
+    {program : Frontend.Program} {ordered : Yul.OrderedProgram}
+    (hDecode :
+      decodeAndElaborateSolcIr? rawJson selection = some program)
+    (hConvert : program.object.toSolcYulOrderedProgram? = some ordered) :
+    ∃ (json : Lean.Json) (selected : SelectedIr)
+        (object : Frontend.Object),
+      Lean.Json.parse rawJson = .ok json ∧
+        decodeSelectedIr json selection = .ok selected ∧
+          selected.root.elaborate? selected.evmVersion = .ok object ∧
+            program =
+              { source := selected.source
+                contract := selected.contract
+                object := object } ∧
+              match selected.root.code? with
+              | none => True
+              | some code =>
+                  ∃ (coreDispatcher : List Frontend.Stmt) (state : State)
+                      (helper? arg? ret? : Option Name),
+                    elaborateCodeCore code = .ok (coreDispatcher, state) ∧
+                      elaborateCode code =
+                        .ok (object.dispatcher, object.functions,
+                          helper?, arg?, ret?) ∧
+                        ∀ {name : Name}
+                            {fnParams fnReturns : List Name}
+                            {fnBody : List Raw.Stmt}
+                            {functionName : Name}
+                            {rawArgs : List Raw.Expr},
+                          Raw.Stmt.functionDefinition name fnParams
+                            fnReturns fnBody ∈ code →
+                            RawOccurrence.StmtListUserCall functionName
+                              rawArgs fnBody →
+                              functionName ≠ "memoryguard" →
+                                functionName ≠ "clz" →
+                                  CallClass.classifyCall functionName =
+                                    .user →
+                                    ∃ (generated : Name)
+                                      (frontendArgs : List Frontend.Expr),
+                                      ∀ {fuel : Nat}
+                                          {shared :
+                                            EvmYul.SharedState .Yul}
+                                          {vars : EvmYul.Yul.VarStore},
+                                        ∃ (params returns : List Name)
+                                          (body : List Yul.AstStmt)
+                                          (yulArgs : List Yul.AstExpr)
+                                          (stmts : List Yul.AstStmt),
+                                          FocusedGeneratedCallSemanticInterface.RecursiveExecution
+                                            ordered generated params returns
+                                            body yulArgs stmts fuel
+                                            (some
+                                              ordered.program.contract)
+                                            shared vars := by
+  rcases
+      decodeAndElaborateSolcIr?_functionBodySemanticInterfaceOfRawOccurrence
+        hDecode hConvert with
+    ⟨json, selected, object, hParse, hSelected, hObject, hProgram,
+      hSemantic⟩
+  refine ⟨json, selected, object, hParse, hSelected, hObject, hProgram, ?_⟩
+  cases hRawCode : selected.root.code? with
+  | none =>
+      simp [hRawCode]
+  | some code =>
+      rw [hRawCode] at hSemantic
+      rcases hSemantic with
+        ⟨coreDispatcher, state, helper?, arg?, ret?, hCore, hElab,
+          hOccurrenceSemantic⟩
+      refine
+        ⟨coreDispatcher, state, helper?, arg?, ret?, hCore, hElab, ?_⟩
+      intro name fnParams fnReturns fnBody functionName rawArgs hMem
+        hOccurrence hNotMemoryguard hNotClz hKind
+      rcases hOccurrenceSemantic hMem hOccurrence hNotMemoryguard hNotClz
+          hKind with
         ⟨generated, frontendArgs, hGenerated⟩
       refine ⟨generated, frontendArgs, ?_⟩
       intro fuel shared vars
