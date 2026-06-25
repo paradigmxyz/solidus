@@ -180,9 +180,11 @@ Next raw frontend layer:
   statement lists, switch cases, blocks, loops, and nested function bodies.
   `decodeAndElaborateSolcIr?_clzRecursiveExecutionOfRawOccurrence` composes
   raw `clz(arg)` occurrences from successful raw decode into the generic
-  generated-call recursive execution interface. The stronger value-level
-  composition with `clzHelperValue` and nested hoist/alpha-renaming semantic
-  preservation remain open.
+  generated-call recursive execution interface. The non-vacuous
+  `decodeAndElaborateSolcIr?_clzPrefixAndValueOfRawOccurrence` theorem now
+  derives the generated helper/argument/return names from checked raw
+  elaboration and proves the focused helper call returns `clzHelperValue`.
+  Nested hoist/alpha-renaming semantic preservation remains open.
 - [x] Expose the production interface
   `decodeAndElaborateSolcIr? rawJson selection = some frontendProgram` without
   public certificate premises, and expose artifact-facing raw wrappers whose

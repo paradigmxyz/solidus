@@ -1571,6 +1571,36 @@ theorem codeGeneratedNormalizationEvidence_clzHelper_call_value_succ
     clzHelperYulInterface_call_value_succ
       hInterface hConvert hDistinct fuel argValue shared vars
 
+theorem codeGeneratedNormalizationEvidence_clzGeneratedNamesPresent
+    {code : List Raw.Stmt} {object : Frontend.Object}
+    (hEvidence :
+      Raw.Object.CodeGeneratedNormalizationEvidence code object) :
+    ∃ (coreDispatcher : List Frontend.Stmt) (state : State)
+        (helper? arg? ret? : Option Name),
+      elaborateCodeCore code = .ok (coreDispatcher, state) ∧
+        elaborateCode code =
+          .ok (object.dispatcher, object.functions,
+            helper?, arg?, ret?) ∧
+          ∀ {helper : Name},
+            helper? = some helper →
+              ∃ arg ret, arg? = some arg ∧ ret? = some ret := by
+  rcases hEvidence with
+    ⟨coreDispatcher, state, helper?, arg?, ret?, hCore, hElab,
+      _hFunctions, hHelper, hArg, hRet, _hDistinct, _hClz,
+      _hInterface, _hHoisted⟩
+  refine ⟨coreDispatcher, state, helper?, arg?, ret?, hCore, hElab, ?_⟩
+  intro helper hHelperSome
+  have hPresent :
+      RawOccurrence.Elab.ClzGeneratedNamesPresent state :=
+    RawOccurrence.Elab.elaborateCodeCore_clzGeneratedNamesPresent hCore
+  have hStateHelper : state.clzHelperName? = some helper := by
+    rw [← hHelper]
+    exact hHelperSome
+  rcases hPresent hStateHelper with ⟨arg, ret, hStateArg, hStateRet⟩
+  exact
+    ⟨arg, ret, by rw [hArg]; exact hStateArg,
+      by rw [hRet]; exact hStateRet⟩
+
 theorem generatedNormalizationEvidence_clzHelper_call_value_succ
     {raw : Raw.Object} {object : Frontend.Object}
     {ordered : Yul.OrderedProgram}
@@ -1604,6 +1634,33 @@ theorem generatedNormalizationEvidence_clzHelper_call_value_succ
       exact
         codeGeneratedNormalizationEvidence_clzHelper_call_value_succ
           hCodeEvidence hConvert
+
+theorem generatedNormalizationEvidence_clzGeneratedNamesPresent
+    {raw : Raw.Object} {object : Frontend.Object}
+    (hEvidence : Raw.Object.GeneratedNormalizationEvidence raw object) :
+    match raw.code? with
+    | none => True
+    | some code =>
+        ∃ (coreDispatcher : List Frontend.Stmt) (state : State)
+            (helper? arg? ret? : Option Name),
+          elaborateCodeCore code = .ok (coreDispatcher, state) ∧
+            elaborateCode code =
+              .ok (object.dispatcher, object.functions,
+                helper?, arg?, ret?) ∧
+              ∀ {helper : Name},
+                helper? = some helper →
+                  ∃ arg ret, arg? = some arg ∧ ret? = some ret := by
+  cases hRawCode : raw.code? with
+  | none =>
+      simp [hRawCode]
+  | some code =>
+      have hCodeEvidence :
+          Raw.Object.CodeGeneratedNormalizationEvidence code object := by
+        simpa [Raw.Object.GeneratedNormalizationEvidence, hRawCode]
+          using hEvidence.2.2.2
+      exact
+        codeGeneratedNormalizationEvidence_clzGeneratedNamesPresent
+          hCodeEvidence
 
 theorem decodeAndElaborateSolcIr?_clzHelper_call_value_succ
     {rawJson : String} {selection : Selection}
@@ -1649,6 +1706,43 @@ theorem decodeAndElaborateSolcIr?_clzHelper_call_value_succ
     ⟨json, selected, object, hParse, hSelected, hObject, hProgram,
       generatedNormalizationEvidence_clzHelper_call_value_succ
         hEvidence hObjectConvert⟩
+
+theorem decodeAndElaborateSolcIr?_clzGeneratedNamesPresent
+    {rawJson : String} {selection : Selection}
+    {program : Frontend.Program}
+    (hDecode :
+      decodeAndElaborateSolcIr? rawJson selection = some program) :
+    ∃ (json : Lean.Json) (selected : SelectedIr)
+        (object : Frontend.Object),
+      Lean.Json.parse rawJson = .ok json ∧
+        decodeSelectedIr json selection = .ok selected ∧
+          selected.root.elaborate? selected.evmVersion = .ok object ∧
+            program =
+              { source := selected.source
+                contract := selected.contract
+                object := object } ∧
+              match selected.root.code? with
+              | none => True
+              | some code =>
+                  ∃ (coreDispatcher : List Frontend.Stmt)
+                      (state : State)
+                      (helper? arg? ret? : Option Name),
+                    elaborateCodeCore code =
+                      .ok (coreDispatcher, state) ∧
+                      elaborateCode code =
+                        .ok (object.dispatcher, object.functions,
+                          helper?, arg?, ret?) ∧
+                        ∀ {helper : Name},
+                          helper? = some helper →
+                            ∃ arg ret,
+                              arg? = some arg ∧ ret? = some ret := by
+  rcases decodeAndElaborateSolcIr?_generatedNormalizationEvidence
+      hDecode with
+    ⟨json, selected, object, hParse, hSelected, hObject, hEvidence,
+      hProgram⟩
+  exact
+    ⟨json, selected, object, hParse, hSelected, hObject, hProgram,
+      generatedNormalizationEvidence_clzGeneratedNamesPresent hEvidence⟩
 
 theorem yulExprUserCall_lookup_of_exprOk
     {profile : Yul.SolcValidation.DialectProfile}
@@ -4266,6 +4360,165 @@ theorem codeGeneratedNormalizationEvidence_clzPrefixOfRawOccurrence
     ⟨helper, frontendArg, hHelperRoute,
       fun {fuel shared vars} => hPrefixRoute hRoute⟩
 
+theorem codeGeneratedNormalizationEvidence_clzPrefixAndValueOfRawOccurrence
+    {code : List Raw.Stmt} {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    (hEvidence :
+      Raw.Object.CodeGeneratedNormalizationEvidence code object)
+    (hConvert : object.toSolcYulOrderedProgram? = some ordered) :
+    ∃ (coreDispatcher : List Frontend.Stmt) (state : State)
+        (helper? arg? ret? : Option Name),
+      elaborateCodeCore code = .ok (coreDispatcher, state) ∧
+        elaborateCode code =
+          .ok (object.dispatcher, object.functions,
+            helper?, arg?, ret?) ∧
+          ∀ {rawArg : Raw.Expr},
+            RawOccurrence.StmtListClzCall rawArg code →
+              ∃ (helper : Name) (frontendArg : Frontend.Expr)
+                  (arg ret : Name),
+                helper? = some helper ∧
+                  arg? = some arg ∧
+                    ret? = some ret ∧
+                      (∀ {fuel : Nat}
+                          {shared : EvmYul.SharedState .Yul}
+                          {vars : EvmYul.Yul.VarStore},
+                        ∃ (params returns : List Name)
+                          (body : List Yul.AstStmt)
+                          (yulArgs : List Yul.AstExpr)
+                          (stmts : List Yul.AstStmt),
+                          FocusedGeneratedCallPrefixEvidence
+                            ordered helper params returns body yulArgs stmts
+                            fuel (some ordered.program.contract)
+                            shared vars) ∧
+                        ∀ (fuel : Nat) (argValue : Word)
+                          (shared : EvmYul.SharedState .Yul)
+                          (vars : EvmYul.Yul.VarStore),
+                          ∃ finalState,
+                            Yul.InteractionSemantics.call
+                                (fuel + clzHelperStepSchedule.length + 51)
+                                [argValue] (some helper)
+                                (some ordered.program.contract)
+                                (.Ok shared vars) =
+                              pure (finalState, [clzHelperValue argValue]) := by
+  have hPrefixAll :=
+    codeGeneratedNormalizationEvidence_prefixEvidenceOfCodeRoute
+      hEvidence hConvert
+  rcases hEvidence with
+    ⟨coreDispatcher, state, helper?, arg?, ret?, hCore, hElab,
+      _hFunctions, hHelper, hArg, hRet, hDistinct, _hClz,
+      hInterface, _hHoistedRetained⟩
+  have hDispatcherEq : object.dispatcher = coreDispatcher := by
+    rcases elaborateCode_parts hElab with
+      ⟨stateFromElab, hCoreFromElab, _hFunctions, _hHelper,
+        _hArg, _hRet⟩
+    rw [hCore] at hCoreFromElab
+    simp at hCoreFromElab
+    exact hCoreFromElab.1.symm
+  rcases hPrefixAll with
+    ⟨coreDispatcherPrefix, statePrefix, helperPrefix?, argPrefix?,
+      retPrefix?, hCorePrefix, hPrefixRest⟩
+  rcases hPrefixRest with ⟨hElabPrefix, hPrefixRoute⟩
+  rw [hCore] at hCorePrefix
+  simp at hCorePrefix
+  rcases hCorePrefix with ⟨hCoreDispatcherEq, hStateEq⟩
+  subst coreDispatcherPrefix
+  subst statePrefix
+  refine ⟨coreDispatcher, state, helper?, arg?, ret?, hCore, hElab, ?_⟩
+  intro rawArg hOccurrence
+  rcases RawOccurrence.Elab.elaborateCodeCore_clzCodeRoute hCore
+      hOccurrence with
+    ⟨helper, frontendArg, hStateHelper, hRoute⟩
+  have hHelperOpt : helper? = some helper :=
+    hHelper.trans hStateHelper
+  have hPresent :
+      RawOccurrence.Elab.ClzGeneratedNamesPresent state :=
+    RawOccurrence.Elab.elaborateCodeCore_clzGeneratedNamesPresent hCore
+  rcases hPresent hStateHelper with ⟨arg, ret, hStateArg, hStateRet⟩
+  have hArgOpt : arg? = some arg :=
+    hArg.trans hStateArg
+  have hRetOpt : ret? = some ret :=
+    hRet.trans hStateRet
+  have hRouteObject :
+      RawOccurrence.CodeElaborationRoute state helper [frontendArg]
+        object.dispatcher := by
+    simpa [hDispatcherEq] using hRoute
+  have hInterfaceSome :
+      ClzHelperYulInterface object.functions (some helper) (some arg)
+        (some ret) := by
+    rw [← hHelperOpt, ← hArgOpt, ← hRetOpt]
+    exact hInterface
+  have hArgRet : arg ≠ ret := by
+    have hDistinctSome :
+        ClzNamesDistinct (some arg) (some ret) := by
+      rw [← hArgOpt, ← hRetOpt]
+      exact hDistinct
+    simpa [ClzNamesDistinct] using hDistinctSome
+  refine
+    ⟨helper, frontendArg, arg, ret, hHelperOpt, hArgOpt, hRetOpt, ?_,
+      ?_⟩
+  · intro fuel shared vars
+    exact hPrefixRoute hRouteObject
+  · intro fuel argValue shared vars
+    exact
+      clzHelperYulInterface_call_value_succ
+        hInterfaceSome hConvert hArgRet fuel argValue shared vars
+
+theorem generatedNormalizationEvidence_clzPrefixAndValueOfRawOccurrence
+    {raw : Raw.Object} {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    (hEvidence : Raw.Object.GeneratedNormalizationEvidence raw object)
+    (hConvert : object.toSolcYulOrderedProgram? = some ordered) :
+    match raw.code? with
+    | none => True
+    | some code =>
+        ∃ (coreDispatcher : List Frontend.Stmt) (state : State)
+            (helper? arg? ret? : Option Name),
+          elaborateCodeCore code = .ok (coreDispatcher, state) ∧
+            elaborateCode code =
+              .ok (object.dispatcher, object.functions,
+                helper?, arg?, ret?) ∧
+              ∀ {rawArg : Raw.Expr},
+                RawOccurrence.StmtListClzCall rawArg code →
+                  ∃ (helper : Name) (frontendArg : Frontend.Expr)
+                      (arg ret : Name),
+                    helper? = some helper ∧
+                      arg? = some arg ∧
+                        ret? = some ret ∧
+                          (∀ {fuel : Nat}
+                              {shared : EvmYul.SharedState .Yul}
+                              {vars : EvmYul.Yul.VarStore},
+                            ∃ (params returns : List Name)
+                              (body : List Yul.AstStmt)
+                              (yulArgs : List Yul.AstExpr)
+                              (stmts : List Yul.AstStmt),
+                              FocusedGeneratedCallPrefixEvidence
+                                ordered helper params returns body yulArgs
+                                stmts fuel
+                                (some ordered.program.contract)
+                                shared vars) ∧
+                            ∀ (fuel : Nat) (argValue : Word)
+                              (shared : EvmYul.SharedState .Yul)
+                              (vars : EvmYul.Yul.VarStore),
+                              ∃ finalState,
+                                Yul.InteractionSemantics.call
+                                    (fuel + clzHelperStepSchedule.length + 51)
+                                    [argValue] (some helper)
+                                    (some ordered.program.contract)
+                                    (.Ok shared vars) =
+                                  pure (finalState,
+                                    [clzHelperValue argValue]) := by
+  cases hRawCode : raw.code? with
+  | none =>
+      simp [hRawCode]
+  | some code =>
+      have hCodeEvidence :
+          Raw.Object.CodeGeneratedNormalizationEvidence code object := by
+        simpa [Raw.Object.GeneratedNormalizationEvidence, hRawCode]
+          using hEvidence.2.2.2
+      exact
+        codeGeneratedNormalizationEvidence_clzPrefixAndValueOfRawOccurrence
+          hCodeEvidence hConvert
+
 theorem generatedNormalizationEvidence_prefixOfRawOccurrence
     {raw : Raw.Object} {object : Frontend.Object}
     {ordered : Yul.OrderedProgram}
@@ -4723,6 +4976,78 @@ theorem decodeAndElaborateSolcIr?_clzPrefixOfRawOccurrence
     ⟨json, selected, object, hParse, hSelected, hObject, hProgram,
       generatedNormalizationEvidence_clzPrefixOfRawOccurrence hEvidence
         hObjectConvert⟩
+
+theorem decodeAndElaborateSolcIr?_clzPrefixAndValueOfRawOccurrence
+    {rawJson : String} {selection : Selection}
+    {program : Frontend.Program} {ordered : Yul.OrderedProgram}
+    (hDecode :
+      decodeAndElaborateSolcIr? rawJson selection = some program)
+    (hConvert : program.object.toSolcYulOrderedProgram? = some ordered) :
+    ∃ (json : Lean.Json) (selected : SelectedIr)
+        (object : Frontend.Object),
+      Lean.Json.parse rawJson = .ok json ∧
+        decodeSelectedIr json selection = .ok selected ∧
+          selected.root.elaborate? selected.evmVersion = .ok object ∧
+            program =
+              { source := selected.source
+                contract := selected.contract
+                object := object } ∧
+              match selected.root.code? with
+              | none => True
+              | some code =>
+                  ∃ (coreDispatcher : List Frontend.Stmt)
+                      (state : State)
+                      (helper? arg? ret? : Option Name),
+                    elaborateCodeCore code = .ok (coreDispatcher, state) ∧
+                      elaborateCode code =
+                        .ok (object.dispatcher, object.functions,
+                          helper?, arg?, ret?) ∧
+                        ∀ {rawArg : Raw.Expr},
+                          RawOccurrence.StmtListClzCall rawArg code →
+                            ∃ (helper : Name)
+                                (frontendArg : Frontend.Expr)
+                                (arg ret : Name),
+                              helper? = some helper ∧
+                                arg? = some arg ∧
+                                  ret? = some ret ∧
+                                    (∀ {fuel : Nat}
+                                        {shared :
+                                          EvmYul.SharedState .Yul}
+                                        {vars : EvmYul.Yul.VarStore},
+                                      ∃ (params returns : List Name)
+                                        (body : List Yul.AstStmt)
+                                        (yulArgs : List Yul.AstExpr)
+                                        (stmts : List Yul.AstStmt),
+                                        FocusedGeneratedCallPrefixEvidence
+                                          ordered helper params returns body
+                                          yulArgs stmts fuel
+                                          (some ordered.program.contract)
+                                          shared vars) ∧
+                                      ∀ (fuel : Nat) (argValue : Word)
+                                        (shared :
+                                          EvmYul.SharedState .Yul)
+                                        (vars : EvmYul.Yul.VarStore),
+                                        ∃ finalState,
+                                          Yul.InteractionSemantics.call
+                                              (fuel +
+                                                clzHelperStepSchedule.length +
+                                                51)
+                                              [argValue] (some helper)
+                                              (some ordered.program.contract)
+                                              (.Ok shared vars) =
+                                            pure (finalState,
+                                              [clzHelperValue argValue]) := by
+  rcases decodeAndElaborateSolcIr?_generatedNormalizationEvidence
+      hDecode with
+    ⟨json, selected, object, hParse, hSelected, hObject, hEvidence,
+      hProgram⟩
+  have hObjectConvert :
+      object.toSolcYulOrderedProgram? = some ordered := by
+    simpa [hProgram] using hConvert
+  exact
+    ⟨json, selected, object, hParse, hSelected, hObject, hProgram,
+      generatedNormalizationEvidence_clzPrefixAndValueOfRawOccurrence
+        hEvidence hObjectConvert⟩
 
 theorem decodeAndElaborateSolcIr?_clzSemanticInterfaceOfRawOccurrence
     {rawJson : String} {selection : Selection}
