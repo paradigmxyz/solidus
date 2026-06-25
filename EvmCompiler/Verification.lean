@@ -68,6 +68,8 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.RawAst.Elab.clzHelperAstBody_zero_exec
 #check EvmCompiler.Solidity.RawAst.Elab.clzHelperYulInterface_call_succ
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.StmtElaborationOccurrence
+#check EvmCompiler.Solidity.RawAst.RawOccurrence.StmtListElaborationOccurrence
+#check EvmCompiler.Solidity.RawAst.RawOccurrence.CaseListElaborationOccurrence
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.Expr.List.elaborate_mem
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.ExprUserCall.elaborate
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.Stmt.List.elaborate_mem

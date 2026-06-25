@@ -117,17 +117,81 @@ mutual
           CaseListUserCall functionName args (head :: rest)
 end
 
-inductive StmtElaborationOccurrence (functionName : Name)
-    (args : List Frontend.Expr) : Frontend.Stmt → Prop where
-  | executable {stmt : Frontend.Stmt} :
-      FrontendOccurrence.StmtUserCall functionName args stmt →
-        StmtElaborationOccurrence functionName args stmt
-  | functionBody
-      {name : Name} {params returns : List Name}
-      {body : List Frontend.Stmt} :
-      FrontendOccurrence.StmtListUserCall functionName args body →
-        StmtElaborationOccurrence functionName args
-          (.functionDef name params returns body)
+mutual
+  inductive StmtElaborationOccurrence (functionName : Name)
+      (args : List Frontend.Expr) : Frontend.Stmt → Prop where
+    | executable {stmt : Frontend.Stmt} :
+        FrontendOccurrence.StmtUserCall functionName args stmt →
+          StmtElaborationOccurrence functionName args stmt
+    | block {body : List Frontend.Stmt} :
+        StmtListElaborationOccurrence functionName args body →
+          StmtElaborationOccurrence functionName args (.block body)
+    | functionBody
+        {name : Name} {params returns : List Name}
+        {body : List Frontend.Stmt} :
+        StmtListElaborationOccurrence functionName args body →
+          StmtElaborationOccurrence functionName args
+            (.functionDef name params returns body)
+    | switchCase
+        {scrutinee : Frontend.Expr}
+        {cases : List (Frontend.SwitchCaseValue × List Frontend.Stmt)}
+        {defaultBody : List Frontend.Stmt} :
+        CaseListElaborationOccurrence functionName args cases →
+          StmtElaborationOccurrence functionName args
+            (.switch scrutinee cases defaultBody)
+    | switchDefault
+        {scrutinee : Frontend.Expr}
+        {cases : List (Frontend.SwitchCaseValue × List Frontend.Stmt)}
+        {defaultBody : List Frontend.Stmt} :
+        StmtListElaborationOccurrence functionName args defaultBody →
+          StmtElaborationOccurrence functionName args
+            (.switch scrutinee cases defaultBody)
+    | forPre
+        {pre post body : List Frontend.Stmt}
+        {condition : Frontend.Expr} :
+        StmtListElaborationOccurrence functionName args pre →
+          StmtElaborationOccurrence functionName args
+            (.forLoop pre condition post body)
+    | forPost
+        {pre post body : List Frontend.Stmt}
+        {condition : Frontend.Expr} :
+        StmtListElaborationOccurrence functionName args post →
+          StmtElaborationOccurrence functionName args
+            (.forLoop pre condition post body)
+    | forBody
+        {pre post body : List Frontend.Stmt}
+        {condition : Frontend.Expr} :
+        StmtListElaborationOccurrence functionName args body →
+          StmtElaborationOccurrence functionName args
+            (.forLoop pre condition post body)
+    | ifBody {condition : Frontend.Expr}
+        {body : List Frontend.Stmt} :
+        StmtListElaborationOccurrence functionName args body →
+          StmtElaborationOccurrence functionName args (.ifThen condition body)
+
+  inductive StmtListElaborationOccurrence (functionName : Name)
+      (args : List Frontend.Expr) : List Frontend.Stmt → Prop where
+    | head {stmt : Frontend.Stmt} {rest : List Frontend.Stmt} :
+        StmtElaborationOccurrence functionName args stmt →
+          StmtListElaborationOccurrence functionName args (stmt :: rest)
+    | tail {stmt : Frontend.Stmt} {rest : List Frontend.Stmt} :
+        StmtListElaborationOccurrence functionName args rest →
+          StmtListElaborationOccurrence functionName args (stmt :: rest)
+
+  inductive CaseListElaborationOccurrence (functionName : Name)
+      (args : List Frontend.Expr) :
+      List (Frontend.SwitchCaseValue × List Frontend.Stmt) → Prop where
+    | head {value : Frontend.SwitchCaseValue}
+        {body : List Frontend.Stmt}
+        {rest : List (Frontend.SwitchCaseValue × List Frontend.Stmt)} :
+        StmtListElaborationOccurrence functionName args body →
+          CaseListElaborationOccurrence functionName args
+            ((value, body) :: rest)
+    | tail {head : Frontend.SwitchCaseValue × List Frontend.Stmt}
+        {rest : List (Frontend.SwitchCaseValue × List Frontend.Stmt)} :
+        CaseListElaborationOccurrence functionName args rest →
+          CaseListElaborationOccurrence functionName args (head :: rest)
+end
 
 namespace StmtListUserCall
 
