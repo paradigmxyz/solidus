@@ -434,10 +434,12 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.BlockContextRun.exec
 #check EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.BlockContextRun.focusedStmt
 #check EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.SwitchContextRun
+#check EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.SwitchContextRun.ofSplitFocused
 #check EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.SwitchContextRun.context
 #check EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.SwitchContextRun.exec
 #check EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.SwitchContextRun.focusedStmt
 #check EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.IfContextRun
+#check EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.IfContextRun.ofSplitFocused
 #check EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.IfContextRun.context
 #check EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.IfContextRun.exec
 #check EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.IfContextRun.focusedStmt
@@ -947,9 +949,11 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.BlockContextRun.context
 #print axioms EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.BlockContextRun.exec
 #print axioms EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.BlockContextRun.focusedStmt
+#print axioms EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.SwitchContextRun.ofSplitFocused
 #print axioms EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.SwitchContextRun.context
 #print axioms EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.SwitchContextRun.exec
 #print axioms EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.SwitchContextRun.focusedStmt
+#print axioms EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.IfContextRun.ofSplitFocused
 #print axioms EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.IfContextRun.context
 #print axioms EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.IfContextRun.exec
 #print axioms EvmCompiler.Solidity.RawAst.AlphaRenamedLocalCallYulEvidence.IfContextRun.focusedStmt

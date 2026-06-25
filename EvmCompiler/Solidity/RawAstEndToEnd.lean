@@ -2419,6 +2419,49 @@ structure SwitchContextRun
 
 namespace SwitchContextRun
 
+def ofSplitFocused
+    {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    {topName : Frontend.Name}
+    {hEvidence : AlphaRenamedLocalCallYulEvidence object ordered topName}
+    {σ : Type}
+    {model : Yul.Source.Effectful.StateModel σ}
+    {prim : Yul.Source.Effectful.PrimitiveSemantics σ}
+    {prefixFuel : Nat}
+    {scrutinee : Frontend.AstExpr}
+    {cases : List (Frontend.Word × List Frontend.AstStmt)}
+    {defaultBody selectedBody : List Frontend.AstStmt}
+    {state stateAfterScrutinee : σ}
+    {scrutineeValue : Frontend.Word}
+    (bodyRun :
+      StmtListOccurrenceRun.SplitFocusedRun hEvidence model prim
+        prefixFuel selectedBody stateAfterScrutinee)
+    (hEval :
+      Yul.Source.Effectful.eval model prim
+          (((prefixFuel + 1) + bodyRun.pre.length) + 1)
+          scrutinee (some ordered.program.contract) state =
+        .ok (stateAfterScrutinee, scrutineeValue))
+    (hSelected :
+      EvmYul.Yul.selectSwitchCase scrutineeValue defaultBody cases =
+        selectedBody)
+    (hContext :
+      YulOccurrence.StmtUserCall.Context
+        (.Switch scrutinee cases defaultBody)
+        hEvidence.generated hEvidence.yulArgs) :
+    SwitchContextRun hEvidence model prim prefixFuel
+      scrutinee cases defaultBody selectedBody state where
+  stateAfterScrutinee := stateAfterScrutinee
+  scrutineeValue := scrutineeValue
+  bodyRun := bodyRun.toStmtListOccurrenceRun
+  hEval := hEval
+  hSelected := hSelected
+  hContext := hContext
+  afterSwitch :=
+    model.withSource bodyRun.afterRest
+      ((model.source bodyRun.afterRest).restrictStoreTo
+        (model.source stateAfterScrutinee).store)
+  hAfterSwitch := rfl
+
 theorem context
     {object : Frontend.Object}
     {ordered : Yul.OrderedProgram}
@@ -2537,6 +2580,41 @@ structure IfContextRun
           (model.source stateAfterCondition).store)
 
 namespace IfContextRun
+
+def ofSplitFocused
+    {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    {topName : Frontend.Name}
+    {hEvidence : AlphaRenamedLocalCallYulEvidence object ordered topName}
+    {σ : Type}
+    {model : Yul.Source.Effectful.StateModel σ}
+    {prim : Yul.Source.Effectful.PrimitiveSemantics σ}
+    {prefixFuel : Nat}
+    {condition : Frontend.AstExpr}
+    {body : List Frontend.AstStmt}
+    {state stateAfterCondition : σ}
+    {conditionValue : Frontend.Word}
+    (bodyRun :
+      StmtListOccurrenceRun.SplitFocusedRun hEvidence model prim
+        prefixFuel body stateAfterCondition)
+    (hEval :
+      Yul.Source.Effectful.eval model prim
+          (((prefixFuel + 1) + bodyRun.pre.length) + 1)
+          condition (some ordered.program.contract) state =
+        .ok (stateAfterCondition, conditionValue))
+    (hNonzero :
+      conditionValue ≠ EvmYul.UInt256.ofNat 0) :
+    IfContextRun hEvidence model prim prefixFuel condition body state where
+  stateAfterCondition := stateAfterCondition
+  conditionValue := conditionValue
+  bodyRun := bodyRun.toStmtListOccurrenceRun
+  hEval := hEval
+  hNonzero := hNonzero
+  afterIf :=
+    model.withSource bodyRun.afterRest
+      ((model.source bodyRun.afterRest).restrictStoreTo
+        (model.source stateAfterCondition).store)
+  hAfterIf := rfl
 
 theorem context
     {object : Frontend.Object}
