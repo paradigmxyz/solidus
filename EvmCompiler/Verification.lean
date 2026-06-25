@@ -45,8 +45,10 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Compiler.StackArtifact.compile?_decodingCorrect
 #check EvmCompiler.Solidity.Frontend.Expr.resolveObjectBuiltins_memoryguard
 #check EvmCompiler.Solidity.Frontend.FunctionDef.List.toYul?_mem
+#check EvmCompiler.Solidity.Frontend.FunctionDef.List.toYul?_mem_exists
 #check EvmCompiler.Solidity.Frontend.Object.functionMap_lookup_of_mem
 #check EvmCompiler.Solidity.Frontend.Object.toSolcYulOrderedProgram?_functionLookup_of_mem
+#check EvmCompiler.Solidity.Frontend.Object.toSolcYulOrderedProgram?_functionToYul_of_mem
 #check EvmCompiler.Solidity.Frontend.Object.compileVerifiedStackCodeArtifactIn?_parts
 #check EvmCompiler.Solidity.Frontend.Object.compileVerifiedStackObjectArtifactWithLinkerSymbols?_valid
 #check EvmCompiler.Solidity.Frontend.Object.compileVerifiedStackObjectArtifactWithLinkerSymbols?_decodingCorrect
@@ -84,16 +86,20 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.RawAst.Elab.generatedNormalizationEvidence_dispatcherPrefixOfFrontendOccurrence
 #check EvmCompiler.Solidity.RawAst.Elab.generatedNormalizationEvidence_functionBodyPrefix
 #check EvmCompiler.Solidity.RawAst.Elab.generatedNormalizationEvidence_functionBodyPrefixOfFrontendOccurrence
+#check EvmCompiler.Solidity.RawAst.Elab.generatedNormalizationEvidence_prefixOfCodeRoute
 #check EvmCompiler.Solidity.RawAst.Elab.decodeAndElaborateSolcIr?_dispatcherPrefix
 #check EvmCompiler.Solidity.RawAst.Elab.decodeAndElaborateSolcIr?_dispatcherPrefixOfFrontendOccurrence
 #check EvmCompiler.Solidity.RawAst.Elab.decodeAndElaborateSolcIr?_functionBodyPrefix
 #check EvmCompiler.Solidity.RawAst.Elab.decodeAndElaborateSolcIr?_functionBodyPrefixOfFrontendOccurrence
+#check EvmCompiler.Solidity.RawAst.Elab.decodeAndElaborateSolcIr?_prefixOfCodeRoute
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.StmtElaborationOccurrence
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.StmtListElaborationOccurrence
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.CaseListElaborationOccurrence
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.StmtElaborationRoute
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.StmtListElaborationRoute
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.CaseListElaborationRoute
+#check EvmCompiler.Solidity.RawAst.RawOccurrence.CodeElaborationRoute
+#check EvmCompiler.Solidity.RawAst.RawOccurrence.StmtListElaborationRoute.toCodeRoute
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.Expr.List.elaborate_mem
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.ExprUserCall.elaborate
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.Stmt.assignment_elaborate_value_exists
@@ -119,6 +125,7 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.StmtUserCall.elaborate_route
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.StmtListUserCall.elaborate_route
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.CaseListUserCall.elaborate_route
+#check EvmCompiler.Solidity.RawAst.Elab.codeGeneratedNormalizationEvidence_prefixOfCodeRoute
 #check EvmCompiler.Solidity.RawAst.Elab.elaborateCode_hoistedFunction_mem
 #check EvmCompiler.Solidity.RawAst.Raw.Object.elaborate?_clzExpansionOk
 #check EvmCompiler.Solidity.RawAst.Raw.Object.elaborate?_hoistedFunctionsRetained
@@ -182,8 +189,10 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Compiler.StackArtifact.compile?_decodingCorrect
 #print axioms EvmCompiler.Solidity.Frontend.Expr.resolveObjectBuiltins_memoryguard
 #print axioms EvmCompiler.Solidity.Frontend.FunctionDef.List.toYul?_mem
+#print axioms EvmCompiler.Solidity.Frontend.FunctionDef.List.toYul?_mem_exists
 #print axioms EvmCompiler.Solidity.Frontend.Object.functionMap_lookup_of_mem
 #print axioms EvmCompiler.Solidity.Frontend.Object.toSolcYulOrderedProgram?_functionLookup_of_mem
+#print axioms EvmCompiler.Solidity.Frontend.Object.toSolcYulOrderedProgram?_functionToYul_of_mem
 #print axioms EvmCompiler.Solidity.Frontend.Object.compileVerifiedStackObjectArtifactWithLinkerSymbols?_valid
 #print axioms EvmCompiler.Solidity.Frontend.Object.compileVerifiedStackObjectArtifactWithLinkerSymbols?_sentinelImage
 #print axioms EvmCompiler.Solidity.RawAst.decodeAndElaborateSolcIr?_some
@@ -229,10 +238,12 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.RawAst.Elab.generatedNormalizationEvidence_dispatcherPrefixOfFrontendOccurrence
 #print axioms EvmCompiler.Solidity.RawAst.Elab.generatedNormalizationEvidence_functionBodyPrefix
 #print axioms EvmCompiler.Solidity.RawAst.Elab.generatedNormalizationEvidence_functionBodyPrefixOfFrontendOccurrence
+#print axioms EvmCompiler.Solidity.RawAst.Elab.generatedNormalizationEvidence_prefixOfCodeRoute
 #print axioms EvmCompiler.Solidity.RawAst.Elab.decodeAndElaborateSolcIr?_dispatcherPrefix
 #print axioms EvmCompiler.Solidity.RawAst.Elab.decodeAndElaborateSolcIr?_dispatcherPrefixOfFrontendOccurrence
 #print axioms EvmCompiler.Solidity.RawAst.Elab.decodeAndElaborateSolcIr?_functionBodyPrefix
 #print axioms EvmCompiler.Solidity.RawAst.Elab.decodeAndElaborateSolcIr?_functionBodyPrefixOfFrontendOccurrence
+#print axioms EvmCompiler.Solidity.RawAst.Elab.decodeAndElaborateSolcIr?_prefixOfCodeRoute
 #print axioms EvmCompiler.Solidity.RawAst.Elab.codeGeneratedNormalizationEvidence_focusedGeneratedCallOccurrence
 #print axioms EvmCompiler.Solidity.RawAst.Elab.generatedNormalizationEvidence_focusedGeneratedCallOccurrence
 #print axioms EvmCompiler.Solidity.RawAst.Elab.decodeAndElaborateSolcIr?_focusedGeneratedCallOccurrence
@@ -281,6 +292,8 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.StmtUserCall.elaborate_route
 #print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.StmtListUserCall.elaborate_route
 #print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.CaseListUserCall.elaborate_route
+#print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.StmtListElaborationRoute.toCodeRoute
+#print axioms EvmCompiler.Solidity.RawAst.Elab.codeGeneratedNormalizationEvidence_prefixOfCodeRoute
 #print axioms EvmCompiler.Solidity.RawAst.Elab.elaborateCode_hoistedFunction_mem
 #print axioms EvmCompiler.Solidity.RawAst.Raw.Object.elaborate?_clzExpansionOk
 #print axioms EvmCompiler.Solidity.RawAst.Raw.Object.elaborate?_hoistedFunctionsRetained
