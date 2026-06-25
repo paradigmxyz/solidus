@@ -65,6 +65,20 @@ def DispatcherSeqRunForward (rawFuel orderedFuel : Nat)
       [ordered.program.contract.dispatcher]
       (some ordered.program.contract) state)
 
+theorem dispatcherSeqRunForward_zero
+    {orderedFuel : Nat}
+    {context : Frontend.ObjectBuiltinContext}
+    {scope : Raw.SourceSemantics.FunctionScope}
+    {code : List Raw.Stmt} {ordered : Yul.OrderedProgram}
+    {state : State} :
+    DispatcherSeqRunForward 0 orderedFuel context scope code ordered state := by
+  unfold DispatcherSeqRunForward
+  rw [Raw.SourceSemantics.execSeq_zero]
+  exact
+    Simulation.Interaction.ForwardRel.truncated
+      (by
+        simp [Yul.FunctionsInteractionPrimitive.Truncated])
+
 theorem blockRunForward_of_scope_seq
     {rawFuel orderedFuel : Nat}
     {context : Frontend.ObjectBuiltinContext}
@@ -853,6 +867,48 @@ theorem rawSourceCodePreservedToRawBytecode
               pc := EvmYul.UInt256.ofNat 0 }) :=
   rawSourcePreservedToRawBytecode
     (ctx.withSourceCodePreserved hCode hCodeRun)
+
+theorem rawSourceDispatcherSeqPreservedToRawBytecode
+    {rawJson : String} {selection : Selection}
+    {artifact : Frontend.Program.Artifact}
+    {rawFuel : Nat}
+    {baseSource : EvmYul.SharedState .Yul}
+    (ctx : ArtifactRawSourceContext rawJson selection artifact)
+    {code : List Raw.Stmt}
+    (hCode : ctx.selected.root.code? = some code)
+    (hSeq :
+      ∀ rawScope,
+        Raw.SourceSemantics.functionScope? code = some rawScope →
+          ∀ (rawFuel : Nat) (state : State),
+            ∃ orderedFuel,
+              DispatcherSeqRunForward rawFuel orderedFuel
+                ctx.context rawScope code artifact.codeArtifact.ordered state) :
+    ∃ structuredFuel : Nat,
+      Assembly.Accepted artifact.codeArtifact.compiled.certified.target ∧
+        Simulation.Interaction.ForwardRel
+          Yul.FunctionsInteractionPrimitive.Truncated
+          (RawSourceBytecodePrefixDoneRel artifact)
+          (rawObjectRun (rawFuel + 1) ctx.context ctx.selected.root
+            (Yul.EndToEnd.installedSourceState artifact baseSource))
+          (Assembly.Compact.InteractionSemantics.openRunNResult
+            (Assembly.Bytecode.ofList artifact.image.bytes)
+            (2 *
+              ((Structured.InteractionStaticCost.blockBudget
+                  artifact.codeArtifact.compiled.expressions.toStructured
+                  structuredFuel
+                  artifact.codeArtifact.compiled.expressions.toStructured.body +
+                    1) *
+                TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
+                  artifact.codeArtifact.compiled.cfg))
+            { (Yul.EndToEnd.initialExpressionsState artifact baseSource).evm with
+              pc := EvmYul.UInt256.ofNat 0 }) := by
+  rcases ctx.code_functionScope hCode with ⟨rawScope, hScope⟩
+  exact
+    rawSourceCodePreservedToRawBytecode
+      (rawFuel := rawFuel) (baseSource := baseSource)
+      ctx hCode
+      (CodePositivePreserved.of_scope_dispatcher_seq
+        hScope (hSeq rawScope hScope))
 
 theorem rawSourceCodeEquivalentToRawBytecode
     {rawJson : String} {selection : Selection}
