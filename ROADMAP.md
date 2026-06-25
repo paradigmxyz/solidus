@@ -84,6 +84,10 @@ Gasful EVM bridge checkpoint:
   `RunRefinesOpen`: short-stack open raw-bytecode execution returns the same
   `StackUnderflow` error as the gasful `EVM.X` stack precheck, with the
   static-permission ordering caveat explicit in the theorem boundary.
+- [x] Compose static-mode violations for continuing static-sensitive primitives
+  (`SSTORE`, `TSTORE`, `LOG0..4`) into `RunRefinesOpen`: both gasful `EVM.X`
+  and open raw-bytecode execution report `StaticModeViolation` before the
+  primitive mutates state.
 - [x] Add the matching terminal `RETURN`/`REVERT` compositions:
   stack-pop-aware actual `EVM.step` lemmas, gas/control-erased output-state
   relations, open raw-bytecode halt execution with concrete return bytes, and
@@ -96,8 +100,8 @@ Gasful EVM bridge checkpoint:
   remaining special `EVM.step` helpers (`LOG0..4`), CALL/CREATE open-strategy
   responses with EIP-150/returned gas, and the remaining non-OOG exceptional
   composition cases: residual stack underflow outside the static-permitted
-  continuing-primitive slice, stack overflow, static-mode violation, and bad
-  jump destinations.
+  continuing-primitive slice, stack overflow, CALL/CREATE-family static-mode
+  violation, and bad jump destinations.
 
 `Compiler.StackArtifact` is the sole code-body artifact and
 `Solidity.Frontend.VerifiedStackObjectArtifact` is the sole recursive object

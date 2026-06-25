@@ -2572,6 +2572,84 @@ theorem raw_continuing_prim_stackUnderflow_executes_after_charges
       (.error EvmYul.EVM.ExecutionException.StackUnderflow :
         Except EVMException StepResult))
 
+theorem continuingPrimStaticSensitive_not_msize
+    {op : PrimOp}
+    (hSensitive : continuingPrimStaticSensitive op) :
+    op ≠ .msize := by
+  cases op <;> simp [continuingPrimStaticSensitive] at hSensitive ⊢
+
+theorem continuingPrim_step_staticModeViolation_of_static
+    {op : PrimOp} {step : PrimStep} {state : EVMState}
+    (hStep : op.continuingStep? = some step)
+    (hSensitive : continuingPrimStaticSensitive op)
+    (hPerm : state.executionEnv.perm = false) :
+    op.step state =
+      .error EvmYul.EVM.ExecutionException.StaticModeViolation := by
+  rw [PrimOp.step_eq_continuingStep_run hStep]
+  cases op <;>
+    simp [PrimOp.continuingStep?, continuingPrimStaticSensitive]
+      at hStep hSensitive
+  all_goals
+    cases hStep
+    simp [PrimStep.run, hPerm]
+
+theorem staticModeViolationAt_of_continuingPrim_static
+    {op : PrimOp} {state : EVMState}
+    (hDecodedOp : decodedOperationAt state = op.toEVM)
+    (hSensitive : continuingPrimStaticSensitive op)
+    (hPerm : state.executionEnv.perm = false) :
+    staticModeViolationAt state := by
+  cases op <;>
+    simp [continuingPrimStaticSensitive, staticModeViolationAt,
+      PrimOp.toEVM, hDecodedOp, hPerm] at hSensitive ⊢
+
+theorem raw_continuing_prim_staticModeViolation_executes_after_charges
+    {op : PrimOp} {step : PrimStep}
+    {bytes : ByteArray} {pc : Nat} {state : EVMState}
+    (hStep : op.continuingStep? = some step)
+    (hSensitive : continuingPrimStaticSensitive op)
+    (hPerm : state.executionEnv.perm = false)
+    (hDecode : Compact.decodeAt bytes pc (.prim op))
+    (hPc : (afterDynamicChargeAt state).pc = EvmYul.UInt256.ofNat pc) :
+    Interaction.Executes
+      (Compact.InteractionSemantics.openRunNResult
+        bytes 1 (afterDynamicChargeAt state))
+      []
+      (.error EvmYul.EVM.ExecutionException.StaticModeViolation) := by
+  have hPermCharged :
+      (afterDynamicChargeAt state).executionEnv.perm = false := by
+    simpa [afterDynamicChargeAt, afterMemoryChargeAt, chargeGas] using hPerm
+  have hPrim :
+      op.step (afterDynamicChargeAt state) =
+        .error EvmYul.EVM.ExecutionException.StaticModeViolation :=
+    continuingPrim_step_staticModeViolation_of_static
+      hStep hSensitive hPermCharged
+  have hClosed :
+      Assembly.InteractionSemantics.PrimOp.openStep op
+          (afterDynamicChargeAt state) =
+        Simulation.Interaction.done
+          (.error EvmYul.EVM.ExecutionException.StaticModeViolation) := by
+    rw [Assembly.InteractionSemantics.PrimOp.openStep_closed
+      (Assembly.InteractionSemantics.PrimOp.externalKind_none_of_continuingStep
+        hStep)
+      (continuingStep_not_gas hStep)
+      (continuingPrimStaticSensitive_not_msize hSensitive)]
+    simp [hPrim]
+  have hHalt := continuingStep_haltKind?_none hStep
+  rw [Compact.InteractionSemantics.openRunNResult_one_eq_instr
+    (instr := .prim op) trivial hDecode hPc]
+  simpa [Compact.Instr.openStepResult, Compact.Instr.openStep,
+    Assembly.InteractionSemantics.Target.openStepInstrResult,
+    Assembly.Target.stepInstrResultWith,
+    Assembly.InteractionSemantics.Target.openStepInstr,
+    Assembly.Target.stepInstrWith, hClosed, hHalt,
+    Simulation.Interaction.bind,
+    Simulation.Interaction.bind_done_error,
+    Compact.Instr.haltKind?] using
+    (Interaction.Executes.done
+      (.error EvmYul.EVM.ExecutionException.StaticModeViolation :
+        Except EVMException StepResult))
+
 theorem raw_return_executes_after_charges
     {fuel : Nat} {bytes : ByteArray} {pc : Nat}
     {state gasfulFinal : EVMState}
@@ -3083,6 +3161,45 @@ theorem runRefinesOpen_continuing_prim_stackUnderflow_after_gas_checks
       (op := op) (step := step) (bytes := bytes)
       (pc := pc) (state := state)
       hStep hMsize hStaticPermits hShort hDecode hPc
+  have hExec :=
+    Compact.InteractionSemantics.openRunNResult_error_add_executes
+      (extra := fuel) hOne
+  apply RunRefinesOpen.completed
+  · simpa [Nat.add_comm] using hExec
+  · exact DoneRel.sameError
+
+theorem runRefinesOpen_continuing_prim_staticModeViolation_after_stack_limit_checks
+    {fuel : Nat} {validJumps : Array Word}
+    {bytes : ByteArray} {pc : Nat} {state : EVMState}
+    {op : PrimOp} {step : PrimStep} {arg : Option (Word × Nat)}
+    (hPrefix : XStackLimitChecksPass validJumps state)
+    (hDecodedPair :
+      ((EvmYul.EVM.decode state.executionEnv.code state.pc).getD
+        (EvmYul.Operation.STOP, none)) = (op.toEVM, arg))
+    (hStep : op.continuingStep? = some step)
+    (hSensitive : continuingPrimStaticSensitive op)
+    (hPerm : state.executionEnv.perm = false)
+    (hDecode : Compact.decodeAt bytes pc (.prim op))
+    (hPc : (afterDynamicChargeAt state).pc = EvmYul.UInt256.ofNat pc) :
+    RunRefinesOpen
+      (EvmYul.EVM.X (fuel + 1) validJumps state)
+      (Compact.InteractionSemantics.openRunNResult
+        bytes (fuel + 1) (afterDynamicChargeAt state))
+      [] := by
+  have hDecodedOp : decodedOperationAt state = op.toEVM := by
+    simpa [decodedOperationAt, hDecodedPair]
+  have hStatic :
+      staticModeViolationAt state :=
+    staticModeViolationAt_of_continuingPrim_static
+      hDecodedOp hSensitive hPerm
+  rw [x_static_mode_violation_after_stack_limit_checks
+    (fuel := fuel) (validJumps := validJumps) (state := state)
+    hPrefix hStatic]
+  have hOne :=
+    raw_continuing_prim_staticModeViolation_executes_after_charges
+      (op := op) (step := step) (bytes := bytes)
+      (pc := pc) (state := state)
+      hStep hSensitive hPerm hDecode hPc
   have hExec :=
     Compact.InteractionSemantics.openRunNResult_error_add_executes
       (extra := fuel) hOne
