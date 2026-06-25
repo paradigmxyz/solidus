@@ -526,6 +526,24 @@ theorem toStmtRoute_switchCase
         StmtCodeElaborationRoute.functionBody contextName contextFn
           hContext hBody
 
+theorem tail
+    {state : Elab.State} {functionName : Name}
+    {args : List Frontend.Expr}
+    {head : Frontend.SwitchCaseValue × List Frontend.Stmt}
+    {cases : List (Frontend.SwitchCaseValue × List Frontend.Stmt)}
+    (hRoute :
+      CaseListCodeElaborationRoute state functionName args cases) :
+    CaseListCodeElaborationRoute state functionName args (head :: cases) := by
+  cases hRoute with
+  | current hCurrent =>
+      exact
+        CaseListCodeElaborationRoute.current
+          (FrontendOccurrence.CaseListUserCall.tail hCurrent)
+  | functionBody contextName contextFn hContext hBody =>
+      exact
+        CaseListCodeElaborationRoute.functionBody contextName contextFn
+          hContext hBody
+
 end CaseListCodeElaborationRoute
 
 namespace CodeElaborationRoute
@@ -729,6 +747,24 @@ theorem toStmtRoute_ifBody
   | functionBody contextName contextFn hContext hBody =>
       exact
         StmtCodeElaborationRoute.functionBody contextName contextFn
+          hContext hBody
+
+theorem toCaseListRoute_head
+    {state : Elab.State} {functionName : Name}
+    {args : List Frontend.Expr} {value : Frontend.SwitchCaseValue}
+    {body : List Frontend.Stmt}
+    {rest : List (Frontend.SwitchCaseValue × List Frontend.Stmt)}
+    (hRoute : CodeElaborationRoute state functionName args body) :
+    CaseListCodeElaborationRoute state functionName args
+      ((value, body) :: rest) := by
+  cases hRoute with
+  | dispatcher hCurrent =>
+      exact
+        CaseListCodeElaborationRoute.current
+          (FrontendOccurrence.CaseListUserCall.head hCurrent)
+  | functionBody contextName contextFn hContext hBody =>
+      exact
+        CaseListCodeElaborationRoute.functionBody contextName contextFn
           hContext hBody
 
 end CodeElaborationRoute
@@ -4796,6 +4832,95 @@ theorem elaborate_retains_hoisted
     entry ∈ state'.hoistedFunctions := by
   have hBelow := retainsHoistedBelow (rawCaseListSize rawCases + 1)
   exact hBelow.caseList (Nat.lt_succ_self _) hRun hMem
+
+theorem elaborate_codeRoute_of_head
+    {value : Raw.SwitchCaseValue} {body : List Raw.Stmt}
+    {rest : List (Raw.SwitchCaseValue × List Raw.Stmt)}
+    {frontendCases : List (Frontend.SwitchCaseValue × List Frontend.Stmt)}
+    {state state' : Elab.State}
+    {functionName : Name} {args : List Frontend.Expr}
+    (hRun :
+      (Elab.Stmt.CaseList.elaborate ((value, body) :: rest)).run state =
+        .ok (frontendCases, state'))
+    (hBodyRoute :
+      ∀ {frontendBody : List Frontend.Stmt}
+        {stateAfterBody : Elab.State},
+        (Elab.Stmt.List.elaborateBlock body true).run state =
+          .ok (frontendBody, stateAfterBody) →
+        CodeElaborationRoute stateAfterBody functionName args
+          frontendBody) :
+    CaseListCodeElaborationRoute state' functionName args
+      frontendCases := by
+  simp only [Elab.Stmt.CaseList.elaborate] at hRun
+  cases hValue : Elab.SwitchCaseValue.elaborate value with
+  | error err =>
+      simp [hValue] at hRun
+      unfold Elab.throw at hRun
+      cases hRun
+  | ok frontendValue =>
+      cases hBody :
+          (Elab.Stmt.List.elaborateBlock body true).run state with
+      | error err =>
+          simp [hValue, hBody] at hRun
+      | ok bodyResult =>
+          rcases bodyResult with ⟨frontendBody, stateAfterBody⟩
+          cases hTail :
+              (Elab.Stmt.CaseList.elaborate rest).run stateAfterBody with
+          | error err =>
+              simp [hValue, hBody, hTail] at hRun
+          | ok tailResult =>
+              rcases tailResult with ⟨frontendRest, stateAfterTail⟩
+              simp [hValue, hBody, hTail] at hRun
+              rcases hRun with ⟨rfl, rfl⟩
+              exact
+                CaseListCodeElaborationRoute.retain
+                  (CodeElaborationRoute.toCaseListRoute_head
+                    (hBodyRoute hBody))
+                  (fun {entry} hMem =>
+                    elaborate_retains_hoisted hTail hMem)
+
+theorem elaborate_codeRoute_of_tail
+    {value : Raw.SwitchCaseValue} {body : List Raw.Stmt}
+    {rest : List (Raw.SwitchCaseValue × List Raw.Stmt)}
+    {frontendCases : List (Frontend.SwitchCaseValue × List Frontend.Stmt)}
+    {state state' : Elab.State}
+    {functionName : Name} {args : List Frontend.Expr}
+    (hRun :
+      (Elab.Stmt.CaseList.elaborate ((value, body) :: rest)).run state =
+        .ok (frontendCases, state'))
+    (hTailRoute :
+      ∀ {frontendRest : List (Frontend.SwitchCaseValue × List Frontend.Stmt)}
+        {stateAfterBody : Elab.State},
+        (Elab.Stmt.CaseList.elaborate rest).run stateAfterBody =
+          .ok (frontendRest, state') →
+        CaseListCodeElaborationRoute state' functionName args
+          frontendRest) :
+    CaseListCodeElaborationRoute state' functionName args
+      frontendCases := by
+  simp only [Elab.Stmt.CaseList.elaborate] at hRun
+  cases hValue : Elab.SwitchCaseValue.elaborate value with
+  | error err =>
+      simp [hValue] at hRun
+      unfold Elab.throw at hRun
+      cases hRun
+  | ok frontendValue =>
+      cases hBody :
+          (Elab.Stmt.List.elaborateBlock body true).run state with
+      | error err =>
+          simp [hValue, hBody] at hRun
+      | ok bodyResult =>
+          rcases bodyResult with ⟨frontendBody, stateAfterBody⟩
+          cases hTail :
+              (Elab.Stmt.CaseList.elaborate rest).run stateAfterBody with
+          | error err =>
+              simp [hValue, hBody, hTail] at hRun
+          | ok tailResult =>
+              rcases tailResult with ⟨frontendRest, stateAfterTail⟩
+              simp [hValue, hBody, hTail] at hRun
+              rcases hRun with ⟨rfl, rfl⟩
+              exact
+                CaseListCodeElaborationRoute.tail
+                  (hTailRoute hTail)
 
 end CaseList
 
