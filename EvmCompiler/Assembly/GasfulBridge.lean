@@ -148,6 +148,23 @@ theorem OpenStateRel.replaceStackAndIncrPC
   · simpa [EvmYul.EVM.State.replaceStackAndIncrPC,
       EvmYul.EVM.State.incrPC, hRel.pc_eq]
 
+theorem OpenStateRel.withPcStack
+    {left right : EVMState} {leftPc rightPc : Word}
+    {leftStack rightStack : EvmYul.Stack Word}
+    (hRel : OpenStateRel left right)
+    (hPc : leftPc = rightPc) (hStack : leftStack = rightStack) :
+    OpenStateRel { left with pc := leftPc, stack := leftStack }
+      { right with pc := rightPc, stack := rightStack } := by
+  constructor
+  · constructor
+    · simpa using hRel.openData.world
+    · have hFrame := hRel.openData.frame
+      cases left
+      cases right
+      simp [eraseOpenWorldData, eraseControl, eraseGas] at hFrame ⊢
+      exact ⟨hFrame.1, hStack⟩
+  · exact hPc
+
 /-- A concrete exchange answers a resource query with the value read from the
 given gasful/open frame state. External exchanges are intentionally left to the
 existing open-world strategy relation. -/
@@ -1559,6 +1576,43 @@ theorem pcNext_openStateRel (state : EVMState) :
     rfl
   · rfl
 
+def openPcNextAt (state : EVMState) : EVMState :=
+  state.replaceStackAndIncrPC (state.stack.push state.pc)
+
+theorem pcNext_openStateRel_rel
+    {gasful openState : EVMState}
+    (hRel : OpenStateRel gasful openState) :
+    OpenStateRel (gasfulPcNext gasful) (openPcNextAt openState) := by
+  apply OpenStateRel.replaceStackAndIncrPC
+    (afterEVMInstructionChargeAt_openStateRel_left hRel)
+  have hCharged := afterEVMInstructionChargeAt_openStateRel_left hRel
+  rw [hCharged.stack_eq, hCharged.pc_eq]
+
+theorem raw_pc_success_executes_at
+    {bytes : ByteArray} {pc : Nat} {state : EVMState}
+    (hDecode : Compact.decodeAt bytes pc (.prim .pc))
+    (hPc : state.pc = EvmYul.UInt256.ofNat pc) :
+    Interaction.Executes
+      (Compact.InteractionSemantics.openRunNResult bytes 1 state)
+      [] (.ok (.running (openPcNextAt state))) := by
+  rw [Compact.InteractionSemantics.openRunNResult_one_eq_instr
+    (instr := .prim .pc) trivial hDecode hPc]
+  have hOpen :
+      Compact.Instr.openStepResult (.prim .pc) state =
+        .done (.ok (.running (openPcNextAt state))) := by
+    simp [Compact.Instr.openStepResult, Compact.Instr.openStep,
+      Assembly.InteractionSemantics.Target.openStepInstr,
+      Assembly.Target.stepInstrWith,
+      Assembly.InteractionSemantics.PrimOp.openStep,
+      Assembly.PrimOp.step, Assembly.PrimOp.toEVM,
+      Assembly.PrimOp.continuingStep?, Assembly.PrimOp.haltKind?,
+      Compact.Instr.haltKind?,
+      Simulation.ExternalKind.ofEVMOperation?,
+      Simulation.Interaction.bind, evmyul_step_pc, openPcNextAt]
+    rfl
+  rw [hOpen]
+  exact Interaction.Executes.done _
+
 def gasfulPushNext (width : Nat) (value : Word)
     (state : EVMState) : EVMState :=
   let charged := afterEVMInstructionChargeAt state
@@ -1656,6 +1710,33 @@ theorem pushNext_openStateRel (width : Nat) (value : Word)
     rfl
   · rfl
 
+def openPushNextAt (width : Nat) (value : Word)
+    (state : EVMState) : EVMState :=
+  state.replaceStackAndIncrPC (state.stack.push value)
+    (pcΔ := width + 1)
+
+theorem pushNext_openStateRel_rel
+    (width : Nat) (value : Word) {gasful openState : EVMState}
+    (hRel : OpenStateRel gasful openState) :
+    OpenStateRel (gasfulPushNext width value gasful)
+      (openPushNextAt width value openState) := by
+  apply OpenStateRel.replaceStackAndIncrPC
+    (afterEVMInstructionChargeAt_openStateRel_left hRel)
+  have hCharged := afterEVMInstructionChargeAt_openStateRel_left hRel
+  rw [hCharged.stack_eq]
+
+theorem raw_push_success_executes_at
+    {bytes : ByteArray} {pc width : Nat} {state : EVMState} {value : Word}
+    (hFits : Compact.FitsWidth width value.toNat)
+    (hDecode : Compact.decodeAt bytes pc (.push width value))
+    (hPc : state.pc = EvmYul.UInt256.ofNat pc) :
+    Interaction.Executes
+      (Compact.InteractionSemantics.openRunNResult bytes 1 state)
+      [] (.ok (.running (openPushNextAt width value state))) := by
+  rw [Compact.InteractionSemantics.openRunNResult_one_eq_instr
+    (instr := .push width value) hFits hDecode hPc]
+  exact Interaction.Executes.done _
+
 def gasfulJumpNext (state : EVMState)
     (rest : EvmYul.Stack Word) (dest : Word) : EVMState :=
   { afterEVMInstructionChargeAt state with pc := dest, stack := rest }
@@ -1719,6 +1800,40 @@ theorem jumpNext_openStateRel
   · cases state
     rfl
   · rfl
+
+def openJumpNextAt (state : EVMState)
+    (rest : EvmYul.Stack Word) (dest : Word) : EVMState :=
+  { state with pc := dest, stack := rest }
+
+theorem jumpNext_openStateRel_rel
+    {gasful openState : EVMState} (rest : EvmYul.Stack Word) (dest : Word)
+    (hRel : OpenStateRel gasful openState) :
+    OpenStateRel (gasfulJumpNext gasful rest dest)
+      (openJumpNextAt openState rest dest) := by
+  apply OpenStateRel.withPcStack
+    (afterEVMInstructionChargeAt_openStateRel_left hRel) rfl rfl
+
+theorem raw_jump_success_executes_at
+    {bytes : ByteArray} {pc : Nat} {state : EVMState}
+    {rest : EvmYul.Stack Word} {dest : Word}
+    (hStack : state.stack = dest :: rest)
+    (hDecode : Compact.decodeAt bytes pc .jump)
+    (hPc : state.pc = EvmYul.UInt256.ofNat pc) :
+    Interaction.Executes
+      (Compact.InteractionSemantics.openRunNResult bytes 1 state)
+      [] (.ok (.running (openJumpNextAt state rest dest))) := by
+  rw [Compact.InteractionSemantics.openRunNResult_one_eq_instr
+    (instr := .jump) trivial hDecode hPc]
+  have hOpen :
+      Compact.Instr.openStepResult .jump state =
+        .done (.ok (.running (openJumpNextAt state rest dest))) := by
+    simp [Compact.Instr.openStepResult, Compact.Instr.openStep,
+      Assembly.InteractionSemantics.Target.openStepInstr,
+      Assembly.Target.stepInstrWith, openJumpNextAt, hStack,
+      EvmYul.Stack.pop]
+    rfl
+  rw [hOpen]
+  exact Interaction.Executes.done _
 
 def gasfulJumpiNext (state : EVMState)
     (rest : EvmYul.Stack Word) (dest cond : Word) : EVMState :=
@@ -1793,6 +1908,78 @@ theorem jumpiNext_openStateRel
   · cases state
     rfl
   · rfl
+
+def openJumpiNextAt (state : EVMState)
+    (rest : EvmYul.Stack Word) (dest cond : Word) : EVMState :=
+  { state with
+    pc := if cond != EvmYul.UInt256.ofNat 0 then dest
+      else state.pc + EvmYul.UInt256.ofNat 1
+    stack := rest }
+
+theorem jumpiNext_openStateRel_rel
+    {gasful openState : EVMState} (rest : EvmYul.Stack Word)
+    (dest cond : Word) (hRel : OpenStateRel gasful openState) :
+    OpenStateRel (gasfulJumpiNext gasful rest dest cond)
+      (openJumpiNextAt openState rest dest cond) := by
+  apply OpenStateRel.withPcStack
+    (afterEVMInstructionChargeAt_openStateRel_left hRel)
+  · simp [hRel.pc_eq]
+  · rfl
+
+theorem raw_jumpi_success_executes_at
+    {bytes : ByteArray} {pc : Nat} {state : EVMState}
+    {rest : EvmYul.Stack Word} {dest cond : Word}
+    (hStack : state.stack = dest :: cond :: rest)
+    (hDecode : Compact.decodeAt bytes pc .jumpi)
+    (hPc : state.pc = EvmYul.UInt256.ofNat pc) :
+    Interaction.Executes
+      (Compact.InteractionSemantics.openRunNResult bytes 1 state)
+      [] (.ok (.running (openJumpiNextAt state rest dest cond))) := by
+  rw [Compact.InteractionSemantics.openRunNResult_one_eq_instr
+    (instr := .jumpi) trivial hDecode hPc]
+  have hOpen :
+      Compact.Instr.openStepResult .jumpi state =
+        .done (.ok (.running (openJumpiNextAt state rest dest cond))) := by
+    simp [Compact.Instr.openStepResult, Compact.Instr.openStep,
+      Assembly.InteractionSemantics.Target.openStepInstr,
+      Assembly.Target.stepInstrWith, openJumpiNextAt, hStack,
+      EvmYul.Stack.pop2]
+    rfl
+  rw [hOpen]
+  exact Interaction.Executes.done _
+
+def openJumpdestNextAt (state : EVMState) : EVMState := state.incrPC
+
+theorem evm_step_jumpdest_eq_next
+    (fuel : Nat) (state : EVMState) (arg : Option (Word × Nat)) :
+    EvmYul.EVM.step (fuel + 1) (dynamicGasCostAt state)
+        (some (EvmYul.Operation.JUMPDEST, arg)) (afterMemoryChargeAt state) =
+      .ok (afterEVMInstructionChargeAt state).incrPC := by
+  simp [EvmYul.EVM.step, afterEVMInstructionChargeAt,
+    afterMemoryChargeAt, afterDynamicChargeAt, chargeGas]
+  rfl
+
+theorem jumpdestNext_openStateRel_rel
+    {gasful openState : EVMState}
+    (hRel : OpenStateRel gasful openState) :
+    OpenStateRel (afterEVMInstructionChargeAt gasful).incrPC
+      (openJumpdestNextAt openState) := by
+  have hCharged := afterEVMInstructionChargeAt_openStateRel_left hRel
+  have hNext := OpenStateRel.replaceStackAndIncrPC
+    (pcDelta := 1) hCharged hCharged.stack_eq
+  simpa [openJumpdestNextAt,
+    EvmYul.EVM.State.replaceStackAndIncrPC] using hNext
+
+theorem raw_jumpdest_executes_at
+    {bytes : ByteArray} {pc : Nat} {state : EVMState}
+    (hDecode : Compact.decodeAt bytes pc .jumpdest)
+    (hPc : state.pc = EvmYul.UInt256.ofNat pc) :
+    Interaction.Executes
+      (Compact.InteractionSemantics.openRunNResult bytes 1 state)
+      [] (.ok (.running (openJumpdestNextAt state))) := by
+  rw [Compact.InteractionSemantics.openRunNResult_one_eq_instr
+    (instr := .jumpdest) trivial hDecode hPc]
+  exact Interaction.Executes.done _
 
 /-- The open raw-bytecode `JUMPDEST` step is closed and emits no external or
 resource observations when run from the actual post-charge erased state. -/
@@ -6422,6 +6609,337 @@ theorem runRefinesOpen_of_x_after_prechecks_step_error_executes
     (fuel := fuel) (validJumps := validJumps) (state := state)
     (stepResult := .error err) hPrefix hCreateOk hStep
   exact runRefinesOpen_of_executes hExec DoneRel.sameError
+
+theorem runRefinesOpen_running_step_rel
+    {stepFuel : Nat} {validJumps : Array Word}
+    {bytes : ByteArray} {gasful gasfulNext openState openNext : EVMState}
+    {op : EvmYul.Operation .EVM}
+    {firstTranscript tailTranscript : Interaction.Transcript}
+    (hPrefix : XSstoreStipendChecksPass validJumps gasful)
+    (hCreateOk :
+      ¬ (EvmYul.Operation.isCreate (decodedOperationAt gasful) = true ∧
+        (EvmYul.UInt256.ofNat 49152) <
+          gasful.stack[2]?.getD (EvmYul.UInt256.ofNat 0)))
+    (hDecodedOp : decodedOperationAt gasful = op)
+    (hStep :
+      EvmYul.EVM.step stepFuel (dynamicGasCostAt gasful)
+        (some
+          ((EvmYul.EVM.decode gasful.executionEnv.code gasful.pc).getD
+            (EvmYul.Operation.STOP, none)))
+        (afterMemoryChargeAt gasful) = .ok gasfulNext)
+    (hHalt : haltOutputAt gasfulNext op = none)
+    (hFirst :
+      Interaction.Executes
+        (Compact.InteractionSemantics.openRunNResult bytes 1 openState)
+        firstTranscript (.ok (.running openNext)))
+    (hCont :
+      RunRefinesOpen
+        (EvmYul.EVM.X stepFuel validJumps gasfulNext)
+        (Compact.InteractionSemantics.openRunNResult
+          bytes stepFuel openNext)
+        tailTranscript) :
+    RunRefinesOpen
+      (EvmYul.EVM.X (stepFuel + 1) validJumps gasful)
+      (Compact.InteractionSemantics.openRunNResult
+        bytes (stepFuel + 1) openState)
+      (firstTranscript ++ tailTranscript) := by
+  have hPostRun :
+      RunRefinesOpen
+        (EvmYul.EVM.X stepFuel validJumps gasfulNext)
+        (Compact.InteractionSemantics.openRunNResult
+          bytes (stepFuel + 1) openState)
+        (firstTranscript ++ tailTranscript) := by
+    rw [show stepFuel + 1 = 1 + stepFuel by omega]
+    rw [Compact.InteractionSemantics.openRunNResult_add]
+    exact
+      runRefinesOpen_bind_running_prefix
+        (gasful := EvmYul.EVM.X stepFuel validJumps gasfulNext)
+        (tailGasful := EvmYul.EVM.X stepFuel validJumps gasfulNext)
+        (first := Compact.InteractionSemantics.openRunNResult
+          bytes 1 openState)
+        (nextState := openNext)
+        (tail := fun state =>
+          Compact.InteractionSemantics.openRunNResult bytes stepFuel state)
+        (firstTranscript := firstTranscript)
+        (tailTranscript := tailTranscript)
+        rfl hFirst hCont
+  have hPostBridge :
+      RunRefinesOpen
+        (xPostStepExceptResult stepFuel validJumps
+          (decodedOperationAt gasful) (.ok gasfulNext))
+        (Compact.InteractionSemantics.openRunNResult
+          bytes (stepFuel + 1) openState)
+        (firstTranscript ++ tailTranscript) := by
+    simpa [xPostStepExceptResult, xPostStepResult, hDecodedOp,
+      hHalt] using hPostRun
+  exact
+    runRefinesOpen_of_x_after_prechecks_step_result
+      (fuel := stepFuel) (validJumps := validJumps) (state := gasful)
+      (stepResult := .ok gasfulNext)
+      hPrefix hCreateOk hStep hPostBridge
+
+theorem runRefinesOpen_pc_success_rel
+    {fuel : Nat} {validJumps : Array Word}
+    {bytes : ByteArray} {pc : Nat} {gasful openState : EVMState}
+    {arg : Option (Word × Nat)}
+    {tailTranscript : Interaction.Transcript}
+    (hPrefix : XSstoreStipendChecksPass validJumps gasful)
+    (hDecodedPair :
+      ((EvmYul.EVM.decode gasful.executionEnv.code gasful.pc).getD
+        (EvmYul.Operation.STOP, none)) = (EvmYul.Operation.PC, arg))
+    (hDecode : Compact.decodeAt bytes pc (.prim .pc))
+    (hPc : openState.pc = EvmYul.UInt256.ofNat pc)
+    (hCont :
+      RunRefinesOpen
+        (EvmYul.EVM.X (fuel + 1) validJumps (gasfulPcNext gasful))
+        (Compact.InteractionSemantics.openRunNResult
+          bytes (fuel + 1) (openPcNextAt openState))
+        tailTranscript) :
+    RunRefinesOpen
+      (EvmYul.EVM.X (fuel + 1 + 1) validJumps gasful)
+      (Compact.InteractionSemantics.openRunNResult
+        bytes (fuel + 1 + 1) openState)
+      tailTranscript := by
+  have hDecodedOp : decodedOperationAt gasful = EvmYul.Operation.PC := by
+    simpa [decodedOperationAt, hDecodedPair]
+  have hCreateOk :
+      ¬ (EvmYul.Operation.isCreate (decodedOperationAt gasful) = true ∧
+        (EvmYul.UInt256.ofNat 49152) <
+          gasful.stack[2]?.getD (EvmYul.UInt256.ofNat 0)) := by
+    simp [hDecodedOp, EvmYul.Operation.isCreate]
+  have hStepActual :
+      EvmYul.EVM.step (fuel + 1) (dynamicGasCostAt gasful)
+        (some
+          ((EvmYul.EVM.decode gasful.executionEnv.code gasful.pc).getD
+            (EvmYul.Operation.STOP, none)))
+        (afterMemoryChargeAt gasful) = .ok (gasfulPcNext gasful) := by
+    simpa [hDecodedPair] using evm_step_pc_eq_next fuel gasful arg
+  have hFirst := raw_pc_success_executes_at hDecode hPc
+  simpa using
+    (runRefinesOpen_running_step_rel
+      (stepFuel := fuel + 1) (validJumps := validJumps)
+      (bytes := bytes) (gasful := gasful)
+      (gasfulNext := gasfulPcNext gasful)
+      (openState := openState) (openNext := openPcNextAt openState)
+      (op := EvmYul.Operation.PC)
+      hPrefix hCreateOk hDecodedOp hStepActual
+      (by simp [haltOutputAt]) hFirst hCont)
+
+theorem runRefinesOpen_push_success_rel
+    {fuel : Nat} {validJumps : Array Word}
+    {bytes : ByteArray} {pc width : Nat} {gasful openState : EVMState}
+    {value : Word} {op : EvmYul.Operation .EVM}
+    {tailTranscript : Interaction.Transcript}
+    (hPrefix : XSstoreStipendChecksPass validJumps gasful)
+    (hFits : Compact.FitsWidth width value.toNat)
+    (hOp : Compact.pushOp? width = some op)
+    (hDecodedPair :
+      ((EvmYul.EVM.decode gasful.executionEnv.code gasful.pc).getD
+        (EvmYul.Operation.STOP, none)) = (op, some (value, width)))
+    (hDecode : Compact.decodeAt bytes pc (.push width value))
+    (hPc : openState.pc = EvmYul.UInt256.ofNat pc)
+    (hCont :
+      RunRefinesOpen
+        (EvmYul.EVM.X (fuel + 1) validJumps
+          (gasfulPushNext width value gasful))
+        (Compact.InteractionSemantics.openRunNResult
+          bytes (fuel + 1) (openPushNextAt width value openState))
+        tailTranscript) :
+    RunRefinesOpen
+      (EvmYul.EVM.X (fuel + 1 + 1) validJumps gasful)
+      (Compact.InteractionSemantics.openRunNResult
+        bytes (fuel + 1 + 1) openState)
+      tailTranscript := by
+  have hDecodedOp : decodedOperationAt gasful = op := by
+    simpa [decodedOperationAt, hDecodedPair]
+  have hCreateFalse : EvmYul.Operation.isCreate op = false :=
+    pushOp_isCreate_false hFits hOp
+  have hCreateOk :
+      ¬ (EvmYul.Operation.isCreate (decodedOperationAt gasful) = true ∧
+        (EvmYul.UInt256.ofNat 49152) <
+          gasful.stack[2]?.getD (EvmYul.UInt256.ofNat 0)) := by
+    simp [hDecodedOp, hCreateFalse]
+  have hStepActual :
+      EvmYul.EVM.step (fuel + 1) (dynamicGasCostAt gasful)
+        (some
+          ((EvmYul.EVM.decode gasful.executionEnv.code gasful.pc).getD
+            (EvmYul.Operation.STOP, none)))
+        (afterMemoryChargeAt gasful) =
+          .ok (gasfulPushNext width value gasful) := by
+    simpa [hDecodedPair] using
+      evm_step_push_eq_next fuel gasful value hFits hOp
+  have hHalt :
+      haltOutputAt (gasfulPushNext width value gasful) op = none :=
+    pushOp_haltOutputAt_none _ hFits hOp
+  have hFirst := raw_push_success_executes_at hFits hDecode hPc
+  simpa using
+    (runRefinesOpen_running_step_rel
+      (stepFuel := fuel + 1) (validJumps := validJumps)
+      (bytes := bytes) (gasful := gasful)
+      (gasfulNext := gasfulPushNext width value gasful)
+      (openState := openState)
+      (openNext := openPushNextAt width value openState)
+      (op := op)
+      hPrefix hCreateOk hDecodedOp hStepActual hHalt hFirst hCont)
+
+theorem runRefinesOpen_jump_success_rel
+    {fuel : Nat} {validJumps : Array Word}
+    {bytes : ByteArray} {pc : Nat} {gasful openState : EVMState}
+    {arg : Option (Word × Nat)} {rest : EvmYul.Stack Word} {dest : Word}
+    {tailTranscript : Interaction.Transcript}
+    (hPrefix : XSstoreStipendChecksPass validJumps gasful)
+    (hDecodedPair :
+      ((EvmYul.EVM.decode gasful.executionEnv.code gasful.pc).getD
+        (EvmYul.Operation.STOP, none)) = (EvmYul.Operation.JUMP, arg))
+    (hGasfulStack : gasful.stack = dest :: rest)
+    (hOpenStack : openState.stack = dest :: rest)
+    (hDecode : Compact.decodeAt bytes pc .jump)
+    (hPc : openState.pc = EvmYul.UInt256.ofNat pc)
+    (hCont :
+      RunRefinesOpen
+        (EvmYul.EVM.X (fuel + 1) validJumps
+          (gasfulJumpNext gasful rest dest))
+        (Compact.InteractionSemantics.openRunNResult
+          bytes (fuel + 1) (openJumpNextAt openState rest dest))
+        tailTranscript) :
+    RunRefinesOpen
+      (EvmYul.EVM.X (fuel + 1 + 1) validJumps gasful)
+      (Compact.InteractionSemantics.openRunNResult
+        bytes (fuel + 1 + 1) openState)
+      tailTranscript := by
+  have hDecodedOp : decodedOperationAt gasful = EvmYul.Operation.JUMP := by
+    simpa [decodedOperationAt, hDecodedPair]
+  have hCreateOk :
+      ¬ (EvmYul.Operation.isCreate (decodedOperationAt gasful) = true ∧
+        (EvmYul.UInt256.ofNat 49152) <
+          gasful.stack[2]?.getD (EvmYul.UInt256.ofNat 0)) := by
+    simp [hDecodedOp, EvmYul.Operation.isCreate]
+  have hStepActual :
+      EvmYul.EVM.step (fuel + 1) (dynamicGasCostAt gasful)
+        (some
+          ((EvmYul.EVM.decode gasful.executionEnv.code gasful.pc).getD
+            (EvmYul.Operation.STOP, none)))
+        (afterMemoryChargeAt gasful) =
+          .ok (gasfulJumpNext gasful rest dest) := by
+    simpa [hDecodedPair] using
+      evm_step_jump_eq_next fuel gasful arg rest dest hGasfulStack
+  have hFirst :=
+    raw_jump_success_executes_at hOpenStack hDecode hPc
+  simpa using
+    (runRefinesOpen_running_step_rel
+      (stepFuel := fuel + 1) (validJumps := validJumps)
+      (bytes := bytes) (gasful := gasful)
+      (gasfulNext := gasfulJumpNext gasful rest dest)
+      (openState := openState)
+      (openNext := openJumpNextAt openState rest dest)
+      (op := EvmYul.Operation.JUMP)
+      hPrefix hCreateOk hDecodedOp hStepActual
+      (by simp [haltOutputAt]) hFirst hCont)
+
+theorem runRefinesOpen_jumpi_success_rel
+    {fuel : Nat} {validJumps : Array Word}
+    {bytes : ByteArray} {pc : Nat} {gasful openState : EVMState}
+    {arg : Option (Word × Nat)} {rest : EvmYul.Stack Word}
+    {dest cond : Word} {tailTranscript : Interaction.Transcript}
+    (hPrefix : XSstoreStipendChecksPass validJumps gasful)
+    (hDecodedPair :
+      ((EvmYul.EVM.decode gasful.executionEnv.code gasful.pc).getD
+        (EvmYul.Operation.STOP, none)) = (EvmYul.Operation.JUMPI, arg))
+    (hGasfulStack : gasful.stack = dest :: cond :: rest)
+    (hOpenStack : openState.stack = dest :: cond :: rest)
+    (hDecode : Compact.decodeAt bytes pc .jumpi)
+    (hPc : openState.pc = EvmYul.UInt256.ofNat pc)
+    (hCont :
+      RunRefinesOpen
+        (EvmYul.EVM.X (fuel + 1) validJumps
+          (gasfulJumpiNext gasful rest dest cond))
+        (Compact.InteractionSemantics.openRunNResult
+          bytes (fuel + 1) (openJumpiNextAt openState rest dest cond))
+        tailTranscript) :
+    RunRefinesOpen
+      (EvmYul.EVM.X (fuel + 1 + 1) validJumps gasful)
+      (Compact.InteractionSemantics.openRunNResult
+        bytes (fuel + 1 + 1) openState)
+      tailTranscript := by
+  have hDecodedOp : decodedOperationAt gasful = EvmYul.Operation.JUMPI := by
+    simpa [decodedOperationAt, hDecodedPair]
+  have hCreateOk :
+      ¬ (EvmYul.Operation.isCreate (decodedOperationAt gasful) = true ∧
+        (EvmYul.UInt256.ofNat 49152) <
+          gasful.stack[2]?.getD (EvmYul.UInt256.ofNat 0)) := by
+    simp [hDecodedOp, EvmYul.Operation.isCreate]
+  have hStepActual :
+      EvmYul.EVM.step (fuel + 1) (dynamicGasCostAt gasful)
+        (some
+          ((EvmYul.EVM.decode gasful.executionEnv.code gasful.pc).getD
+            (EvmYul.Operation.STOP, none)))
+        (afterMemoryChargeAt gasful) =
+          .ok (gasfulJumpiNext gasful rest dest cond) := by
+    simpa [hDecodedPair] using
+      evm_step_jumpi_eq_next fuel gasful arg rest dest cond hGasfulStack
+  have hFirst :=
+    raw_jumpi_success_executes_at hOpenStack hDecode hPc
+  simpa using
+    (runRefinesOpen_running_step_rel
+      (stepFuel := fuel + 1) (validJumps := validJumps)
+      (bytes := bytes) (gasful := gasful)
+      (gasfulNext := gasfulJumpiNext gasful rest dest cond)
+      (openState := openState)
+      (openNext := openJumpiNextAt openState rest dest cond)
+      (op := EvmYul.Operation.JUMPI)
+      hPrefix hCreateOk hDecodedOp hStepActual
+      (by simp [haltOutputAt]) hFirst hCont)
+
+theorem runRefinesOpen_jumpdest_success_rel
+    {fuel : Nat} {validJumps : Array Word}
+    {bytes : ByteArray} {pc : Nat} {gasful openState : EVMState}
+    {arg : Option (Word × Nat)}
+    {tailTranscript : Interaction.Transcript}
+    (hPrefix : XSstoreStipendChecksPass validJumps gasful)
+    (hDecodedPair :
+      ((EvmYul.EVM.decode gasful.executionEnv.code gasful.pc).getD
+        (EvmYul.Operation.STOP, none)) =
+          (EvmYul.Operation.JUMPDEST, arg))
+    (hDecode : Compact.decodeAt bytes pc .jumpdest)
+    (hPc : openState.pc = EvmYul.UInt256.ofNat pc)
+    (hCont :
+      RunRefinesOpen
+        (EvmYul.EVM.X (fuel + 1) validJumps
+          (afterEVMInstructionChargeAt gasful).incrPC)
+        (Compact.InteractionSemantics.openRunNResult
+          bytes (fuel + 1) (openJumpdestNextAt openState))
+        tailTranscript) :
+    RunRefinesOpen
+      (EvmYul.EVM.X (fuel + 1 + 1) validJumps gasful)
+      (Compact.InteractionSemantics.openRunNResult
+        bytes (fuel + 1 + 1) openState)
+      tailTranscript := by
+  have hDecodedOp : decodedOperationAt gasful = EvmYul.Operation.JUMPDEST := by
+    simpa [decodedOperationAt, hDecodedPair]
+  have hCreateOk :
+      ¬ (EvmYul.Operation.isCreate (decodedOperationAt gasful) = true ∧
+        (EvmYul.UInt256.ofNat 49152) <
+          gasful.stack[2]?.getD (EvmYul.UInt256.ofNat 0)) := by
+    simp [hDecodedOp, EvmYul.Operation.isCreate]
+  have hStepActual :
+      EvmYul.EVM.step (fuel + 1) (dynamicGasCostAt gasful)
+        (some
+          ((EvmYul.EVM.decode gasful.executionEnv.code gasful.pc).getD
+            (EvmYul.Operation.STOP, none)))
+        (afterMemoryChargeAt gasful) =
+          .ok (afterEVMInstructionChargeAt gasful).incrPC := by
+    simpa [hDecodedPair] using evm_step_jumpdest_eq_next fuel gasful arg
+  have hFirst := raw_jumpdest_executes_at hDecode hPc
+  simpa using
+    (runRefinesOpen_running_step_rel
+      (stepFuel := fuel + 1) (validJumps := validJumps)
+      (bytes := bytes) (gasful := gasful)
+      (gasfulNext := (afterEVMInstructionChargeAt gasful).incrPC)
+      (openState := openState)
+      (openNext := openJumpdestNextAt openState)
+      (op := EvmYul.Operation.JUMPDEST)
+      hPrefix hCreateOk hDecodedOp hStepActual
+      (by simp [haltOutputAt]) hFirst hCont)
 
 /-- Compose one actual charged `GAS` or `MSIZE` step. The first transcript
 exchange is the concrete value observed after memory and dynamic gas charges. -/

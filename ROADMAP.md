@@ -172,6 +172,9 @@ Gasful EVM bridge checkpoint:
   interpreter charging and stack/PC replacement, and GAS/MSIZE now execute
   from an arbitrary related open state while consuming the actual gasful
   observation before the related continuation.
+- [x] Lift closed control/sequential successes over `OpenStateRel`: one generic
+  running-step composition now drives related `PC`, `PUSH1..PUSH32`, `JUMP`,
+  `JUMPI`, and `JUMPDEST` continuations from arbitrary related open states.
 - [x] Compose the existing Yul-to-open-raw-bytecode theorem with the named
   gasful target bridge premise in
   `Yul.EndToEnd.optimizedSolcYulToGasfulRawBytecodeOfOpenRunBridge`.
