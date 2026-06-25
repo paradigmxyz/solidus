@@ -5027,9 +5027,148 @@ theorem elaborate_codeRoute_of_tail
                 CaseListCodeElaborationRoute.tail
                   (hTailRoute hTail)
 
+theorem elaborate_codeRoute_exists_of_head
+    {value : Raw.SwitchCaseValue} {body : List Raw.Stmt}
+    {rest : List (Raw.SwitchCaseValue × List Raw.Stmt)}
+    {frontendCases : List (Frontend.SwitchCaseValue × List Frontend.Stmt)}
+    {state state' : Elab.State}
+    (hRun :
+      (Elab.Stmt.CaseList.elaborate ((value, body) :: rest)).run state =
+        .ok (frontendCases, state'))
+    (hBodyRoute :
+      ∀ {frontendBody : List Frontend.Stmt}
+        {stateAfterBody : Elab.State},
+        (Elab.Stmt.List.elaborateBlock body true).run state =
+          .ok (frontendBody, stateAfterBody) →
+        ∃ (generated : Name) (frontendArgs : List Frontend.Expr),
+          CodeElaborationRoute stateAfterBody generated frontendArgs
+            frontendBody) :
+    ∃ (generated : Name) (frontendArgs : List Frontend.Expr),
+      CaseListCodeElaborationRoute state' generated frontendArgs
+        frontendCases := by
+  simp only [Elab.Stmt.CaseList.elaborate] at hRun
+  cases hValue : Elab.SwitchCaseValue.elaborate value with
+  | error err =>
+      simp [hValue] at hRun
+      unfold Elab.throw at hRun
+      cases hRun
+  | ok frontendValue =>
+      cases hBody :
+          (Elab.Stmt.List.elaborateBlock body true).run state with
+      | error err =>
+          simp [hValue, hBody] at hRun
+      | ok bodyResult =>
+          rcases bodyResult with ⟨frontendBody, stateAfterBody⟩
+          cases hTail :
+              (Elab.Stmt.CaseList.elaborate rest).run stateAfterBody with
+          | error err =>
+              simp [hValue, hBody, hTail] at hRun
+          | ok tailResult =>
+              rcases tailResult with ⟨frontendRest, stateAfterTail⟩
+              simp [hValue, hBody, hTail] at hRun
+              rcases hRun with ⟨rfl, rfl⟩
+              rcases hBodyRoute hBody with
+                ⟨generated, frontendArgs, hRoute⟩
+              exact
+                ⟨generated, frontendArgs,
+                  CaseListCodeElaborationRoute.retain
+                    (CodeElaborationRoute.toCaseListRoute_head hRoute)
+                    (fun {entry} hMem =>
+                      elaborate_retains_hoisted hTail hMem)⟩
+
+theorem elaborate_codeRoute_exists_of_tail
+    {value : Raw.SwitchCaseValue} {body : List Raw.Stmt}
+    {rest : List (Raw.SwitchCaseValue × List Raw.Stmt)}
+    {frontendCases : List (Frontend.SwitchCaseValue × List Frontend.Stmt)}
+    {state state' : Elab.State}
+    (hRun :
+      (Elab.Stmt.CaseList.elaborate ((value, body) :: rest)).run state =
+        .ok (frontendCases, state'))
+    (hTailRoute :
+      ∀ {frontendRest : List (Frontend.SwitchCaseValue × List Frontend.Stmt)}
+        {stateAfterBody : Elab.State},
+        (Elab.Stmt.CaseList.elaborate rest).run stateAfterBody =
+          .ok (frontendRest, state') →
+        ∃ (generated : Name) (frontendArgs : List Frontend.Expr),
+          CaseListCodeElaborationRoute state' generated frontendArgs
+            frontendRest) :
+    ∃ (generated : Name) (frontendArgs : List Frontend.Expr),
+      CaseListCodeElaborationRoute state' generated frontendArgs
+        frontendCases := by
+  simp only [Elab.Stmt.CaseList.elaborate] at hRun
+  cases hValue : Elab.SwitchCaseValue.elaborate value with
+  | error err =>
+      simp [hValue] at hRun
+      unfold Elab.throw at hRun
+      cases hRun
+  | ok frontendValue =>
+      cases hBody :
+          (Elab.Stmt.List.elaborateBlock body true).run state with
+      | error err =>
+          simp [hValue, hBody] at hRun
+      | ok bodyResult =>
+          rcases bodyResult with ⟨frontendBody, stateAfterBody⟩
+          cases hTail :
+              (Elab.Stmt.CaseList.elaborate rest).run stateAfterBody with
+          | error err =>
+              simp [hValue, hBody, hTail] at hRun
+          | ok tailResult =>
+              rcases tailResult with ⟨frontendRest, stateAfterTail⟩
+              simp [hValue, hBody, hTail] at hRun
+              rcases hRun with ⟨rfl, rfl⟩
+              rcases hTailRoute hTail with
+                ⟨generated, frontendArgs, hRoute⟩
+              exact
+                ⟨generated, frontendArgs,
+                  CaseListCodeElaborationRoute.tail hRoute⟩
+
 end CaseList
 
 end Stmt
+
+theorem codeRouteBelow_caseList_succ
+    {fuel : Nat} (ih : CodeRouteBelow fuel) :
+    ∀ {functionName : Name} {rawArgs : List Raw.Expr}
+      {rawCases : List (Raw.SwitchCaseValue × List Raw.Stmt)}
+      {frontendCases :
+        List (Frontend.SwitchCaseValue × List Frontend.Stmt)}
+      {state state' : Elab.State},
+      rawCaseListSize rawCases < fuel + 1 →
+      CaseListUserCall functionName rawArgs rawCases →
+      functionName ≠ "memoryguard" →
+      functionName ≠ "clz" →
+      CallClass.classifyCall functionName = .user →
+      (Elab.Stmt.CaseList.elaborate rawCases).run state =
+        .ok (frontendCases, state') →
+      ∃ (generated : Name) (frontendArgs : List Frontend.Expr),
+        CaseListCodeElaborationRoute state' generated frontendArgs
+          frontendCases := by
+  intro functionName rawArgs rawCases frontendCases state state' hSize
+    hOccurrence hNotMemoryguard hNotClz hKind hRun
+  cases rawCases with
+  | nil =>
+      cases hOccurrence
+  | cons head rest =>
+      rcases head with ⟨value, body⟩
+      have hBodySize : rawStmtListSize body < fuel := by
+        simp [rawCaseListSize] at hSize
+        omega
+      have hRestSize : rawCaseListSize rest < fuel := by
+        simp [rawCaseListSize] at hSize
+        omega
+      cases hOccurrence with
+      | head hBodyOccurrence =>
+          exact
+            Stmt.CaseList.elaborate_codeRoute_exists_of_head hRun
+              (fun {frontendBody stateAfterBody} hBodyRun =>
+                ih.block hBodySize hBodyOccurrence hNotMemoryguard
+                  hNotClz hKind hBodyRun)
+      | tail hTailOccurrence =>
+          exact
+            Stmt.CaseList.elaborate_codeRoute_exists_of_tail hRun
+              (fun {frontendRest stateAfterBody} hTailRun =>
+                ih.caseList hRestSize hTailOccurrence hNotMemoryguard
+                  hNotClz hKind hTailRun)
 
 namespace FunctionDef
 
