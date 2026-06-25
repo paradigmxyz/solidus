@@ -851,6 +851,49 @@ theorem code_elaborates
   rw [hDispatcher, hFunctions]
   exact hElab
 
+/-- Recover the exact frontend and canonical dispatcher lists executed by the
+artifact from successful raw-code elaboration, object-builtin resolution, and
+ordered-Yul conversion. All generated memoryguard context remains internal. -/
+theorem dispatcher_parts
+    {rawJson : String} {selection : Selection}
+    {artifact : Frontend.Program.Artifact}
+    (ctx : ArtifactRawSourceContext rawJson selection artifact)
+    {code : List Raw.Stmt}
+    (hCode : ctx.selected.root.code? = some code) :
+    ∃ helper? arg? ret? memoryContract resolvedDispatcher orderedDispatcher,
+      Elab.elaborateCode code =
+          .ok (ctx.program.object.dispatcher, ctx.program.object.functions,
+            helper?, arg?, ret?) ∧
+        Frontend.MemoryGuard.Object.inferredContract? ctx.program.object =
+          some memoryContract ∧
+        Frontend.Stmt.List.resolveObjectBuiltinsIn?
+            ctx.program.object.dispatcher
+            { ctx.context with memoryContract := memoryContract } =
+          some resolvedDispatcher ∧
+        artifact.codeArtifact.resolved.dispatcher = resolvedDispatcher ∧
+        Frontend.Stmt.List.toYul? resolvedDispatcher =
+          some orderedDispatcher ∧
+        artifact.codeArtifact.ordered.program.contract.dispatcher =
+          .Block orderedDispatcher := by
+  rcases ctx.code_elaborates hCode with
+    ⟨helper?, arg?, ret?, hElab⟩
+  rcases
+      Frontend.Object.resolveObjectBuiltinsIn?_dispatcher ctx.resolved with
+    ⟨memoryContract, resolvedDispatcher,
+      hMemory, hResolveDispatcher, hResolvedDispatcher⟩
+  rcases
+      Frontend.Object.toSolcYulOrderedProgram?_dispatcher ctx.ordered with
+    ⟨orderedDispatcher, hToYul, hOrderedDispatcher⟩
+  have hResolvedToYul :
+      Frontend.Stmt.List.toYul? resolvedDispatcher =
+        some orderedDispatcher := by
+    rw [← hResolvedDispatcher]
+    exact hToYul
+  exact
+    ⟨helper?, arg?, ret?, memoryContract, resolvedDispatcher,
+      orderedDispatcher, hElab, hMemory, hResolveDispatcher,
+      hResolvedDispatcher, hResolvedToYul, hOrderedDispatcher⟩
+
 theorem code_functionScope
     {rawJson : String} {selection : Selection}
     {artifact : Frontend.Program.Artifact}

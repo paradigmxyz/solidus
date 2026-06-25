@@ -64,7 +64,9 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.Frontend.FunctionEntries.containsLoweredStub?_mem
 #check EvmCompiler.Solidity.Frontend.Stmt.functionDefStubsLoweredToEntries?_functionDef_entry
 #check EvmCompiler.Solidity.Frontend.Object.resolveObjectBuiltinsIn?_function_entry
+#check EvmCompiler.Solidity.Frontend.Object.resolveObjectBuiltinsIn?_dispatcher
 #check EvmCompiler.Solidity.Frontend.Object.toSolcYulOrderedProgram?_functionDefStubsLoweredToEntries
+#check EvmCompiler.Solidity.Frontend.Object.toSolcYulOrderedProgram?_dispatcher
 #check EvmCompiler.Solidity.Frontend.Object.toSolcYulOrderedProgram?_function_entry
 #check EvmCompiler.Solidity.Frontend.Object.toSolcYulOrderedProgram?_function_name_entry
 #check EvmCompiler.Solidity.Frontend.Object.compileVerifiedStackCodeArtifactIn?_function_entry
@@ -144,6 +146,7 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.ArtifactRawSourceContext
 #check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.ArtifactRawSourceContext.nonempty_of_compile
 #check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.ArtifactRawSourceContext.code_elaborates
+#check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.ArtifactRawSourceContext.dispatcher_parts
 #check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.ArtifactRawSourceContext.code_functionScope
 #check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.ArtifactRawSourceContext.withSourceRun
 #check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.ArtifactRawSourceContext.withSourcePreserved
@@ -713,7 +716,9 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.Frontend.FunctionEntries.containsLoweredStub?_mem
 #print axioms EvmCompiler.Solidity.Frontend.Stmt.functionDefStubsLoweredToEntries?_functionDef_entry
 #print axioms EvmCompiler.Solidity.Frontend.Object.resolveObjectBuiltinsIn?_function_entry
+#print axioms EvmCompiler.Solidity.Frontend.Object.resolveObjectBuiltinsIn?_dispatcher
 #print axioms EvmCompiler.Solidity.Frontend.Object.toSolcYulOrderedProgram?_functionDefStubsLoweredToEntries
+#print axioms EvmCompiler.Solidity.Frontend.Object.toSolcYulOrderedProgram?_dispatcher
 #print axioms EvmCompiler.Solidity.Frontend.Object.toSolcYulOrderedProgram?_function_entry
 #print axioms EvmCompiler.Solidity.Frontend.Object.toSolcYulOrderedProgram?_function_name_entry
 #print axioms EvmCompiler.Solidity.Frontend.Object.compileVerifiedStackCodeArtifactIn?_function_entry
@@ -926,6 +931,7 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.seqRunForward_cons_functionDefinition_omitted_ok
 #print axioms EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.dispatcherSeqRunForward_of_seq
 #print axioms EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.blockRunForward_of_scope_seq
+#print axioms EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.ArtifactRawSourceContext.dispatcher_parts
 #print axioms EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.rawObjectRun_some_code
 #print axioms EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.rawObjectRun_some_code_succ
 #print axioms EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.blockRunForward_of_eq

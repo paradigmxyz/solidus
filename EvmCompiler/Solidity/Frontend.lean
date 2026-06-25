@@ -2845,6 +2845,37 @@ def resolveObjectBuiltinsWithLocalDataBaseAndLinkerSymbols? (object : Object)
     (object.builtinContextWithLocalDataBaseAndLinkerSymbols
       layout base linkerSymbols)
 
+theorem resolveObjectBuiltinsIn?_dispatcher
+    {object resolved : Object} {context : ObjectBuiltinContext}
+    (hResolve : object.resolveObjectBuiltinsIn? context = some resolved) :
+    ∃ memoryContract dispatcher,
+      MemoryGuard.Object.inferredContract? object = some memoryContract ∧
+        Stmt.List.resolveObjectBuiltinsIn? object.dispatcher
+            { context with memoryContract := memoryContract } =
+          some dispatcher ∧
+        resolved.dispatcher = dispatcher := by
+  unfold resolveObjectBuiltinsIn? at hResolve
+  cases hMemory : MemoryGuard.Object.inferredContract? object with
+  | none =>
+      simp [hMemory] at hResolve
+  | some memoryContract =>
+      cases hDispatcher :
+          Stmt.List.resolveObjectBuiltinsIn? object.dispatcher
+            { context with memoryContract := memoryContract } with
+      | none =>
+          simp [hMemory, hDispatcher] at hResolve
+      | some dispatcher =>
+          cases hFunctions :
+              FunctionDef.List.resolveObjectBuiltinsIn?
+                object.functions
+                  { context with memoryContract := memoryContract } with
+          | none =>
+              simp [hMemory, hDispatcher, hFunctions] at hResolve
+          | some functions =>
+              simp [hMemory, hDispatcher, hFunctions] at hResolve
+              cases hResolve
+              exact ⟨memoryContract, dispatcher, rfl, hDispatcher, rfl⟩
+
 theorem resolveObjectBuiltinsIn?_function_entry
     {object resolved : Object} {context : ObjectBuiltinContext}
     {name : Name} {fn : FunctionDef}
@@ -3248,6 +3279,32 @@ theorem toSolcYulOrderedProgram?_functionDefStubsLoweredToEntries
       rcases hConvert with ⟨hStubs, _hSpelling, hConvert⟩
       subst ordered
       exact hStubs
+
+theorem toSolcYulOrderedProgram?_dispatcher
+    {object : Object} {ordered : Yul.OrderedProgram}
+    (hConvert : object.toSolcYulOrderedProgram? = some ordered) :
+    ∃ dispatcher,
+      Stmt.List.toYul? object.dispatcher = some dispatcher ∧
+        ordered.program.contract.dispatcher = .Block dispatcher := by
+  unfold toSolcYulOrderedProgram? toYulContractWithFunctionEntries? at hConvert
+  cases hDispatcher : Stmt.List.toYul? object.dispatcher with
+  | none =>
+      simp [Stmt.toYul?, hDispatcher] at hConvert
+  | some dispatcher =>
+      cases hFunctions : FunctionDef.List.toYul? object.functions with
+      | none =>
+          simp [Stmt.toYul?, hDispatcher, hFunctions] at hConvert
+      | some functions =>
+          cases hValid :
+              Yul.SolcValidation.ContractOkWithEntries?
+                object.dialectProfile
+                { dispatcher := .Block dispatcher
+                  functions := functionMap functions }
+                functions <;>
+            simp [Stmt.toYul?, hDispatcher, hFunctions, hValid] at hConvert
+          rcases hConvert with ⟨_hStubs, _hSpelling, hConvert⟩
+          subst ordered
+          exact ⟨dispatcher, rfl, rfl⟩
 
 theorem toSolcYulOrderedProgram?_function_entry
     {object : Object} {ordered : Yul.OrderedProgram}
