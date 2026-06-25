@@ -1886,6 +1886,25 @@ def StmtListElaborateRetainsHoisted : Prop :=
       entry ∈ state.hoistedFunctions →
         entry ∈ state'.hoistedFunctions
 
+def StmtElaborateRetainsHoisted : Prop :=
+  ∀ {rawStmt : Raw.Stmt} {frontendStmt : Frontend.Stmt}
+    {state state' : Elab.State},
+    (Elab.Stmt.elaborate rawStmt).run state =
+      .ok (frontendStmt, state') →
+    ∀ {entry : Name × Frontend.FunctionDef},
+      entry ∈ state.hoistedFunctions →
+        entry ∈ state'.hoistedFunctions
+
+def CaseListElaborateRetainsHoisted : Prop :=
+  ∀ {rawCases : List (Raw.SwitchCaseValue × List Raw.Stmt)}
+    {frontendCases : List (Frontend.SwitchCaseValue × List Frontend.Stmt)}
+    {state state' : Elab.State},
+    (Elab.Stmt.CaseList.elaborate rawCases).run state =
+      .ok (frontendCases, state') →
+    ∀ {entry : Name × Frontend.FunctionDef},
+      entry ∈ state.hoistedFunctions →
+        entry ∈ state'.hoistedFunctions
+
 def StmtListElaborateBlockRetainsHoisted : Prop :=
   ∀ {rawStmts : List Raw.Stmt} {createsScope : Bool}
     {frontendStmts : List Frontend.Stmt} {state state' : Elab.State},
@@ -1975,6 +1994,398 @@ theorem hoistLocalFunctions_retains_hoisted_of_function
           exact ih hRun hMem
       | «leave» =>
           exact ih hRun hMem
+
+theorem stmtListElaborate_retains_hoisted_of_stmt
+    (hStmt : StmtElaborateRetainsHoisted) :
+    StmtListElaborateRetainsHoisted := by
+  intro rawStmts frontendStmts state state' hRun entry hMem
+  induction rawStmts generalizing frontendStmts state state' with
+  | nil =>
+      simp [Elab.Stmt.List.elaborate] at hRun
+      rcases hRun with ⟨rfl, rfl⟩
+      exact hMem
+  | cons head rest ih =>
+      simp only [Elab.Stmt.List.elaborate] at hRun
+      cases hHead : (Elab.Stmt.elaborate head).run state with
+      | error err =>
+          simp [hHead] at hRun
+      | ok headResult =>
+          rcases headResult with ⟨frontendHead, stateAfterHead⟩
+          cases hTail :
+              (Elab.Stmt.List.elaborate rest).run stateAfterHead with
+          | error err =>
+              simp [hHead, hTail] at hRun
+          | ok tailResult =>
+              rcases tailResult with ⟨frontendTail, stateAfterTail⟩
+              simp [hHead, hTail] at hRun
+              rcases hRun with ⟨rfl, rfl⟩
+              have hHeadMem :
+                  entry ∈ stateAfterHead.hoistedFunctions :=
+                hStmt hHead hMem
+              exact ih hTail hHeadMem
+
+theorem caseListElaborate_retains_hoisted_of_block
+    (hBlock : StmtListElaborateBlockRetainsHoisted) :
+    CaseListElaborateRetainsHoisted := by
+  intro rawCases frontendCases state state' hRun entry hMem
+  induction rawCases generalizing frontendCases state state' with
+  | nil =>
+      simp [Elab.Stmt.CaseList.elaborate] at hRun
+      rcases hRun with ⟨rfl, rfl⟩
+      exact hMem
+  | cons head rest ih =>
+      rcases head with ⟨value, body⟩
+      simp only [Elab.Stmt.CaseList.elaborate] at hRun
+      cases hValue : Elab.SwitchCaseValue.elaborate value with
+      | error err =>
+          simp [hValue] at hRun
+          unfold Elab.throw at hRun
+          cases hRun
+      | ok frontendValue =>
+          cases hBody :
+              (Elab.Stmt.List.elaborateBlock body true).run state with
+          | error err =>
+              simp [hValue, hBody] at hRun
+          | ok bodyResult =>
+              rcases bodyResult with ⟨frontendBody, stateAfterBody⟩
+              cases hTail :
+                  (Elab.Stmt.CaseList.elaborate rest).run
+                    stateAfterBody with
+              | error err =>
+                  simp [hValue, hBody, hTail] at hRun
+              | ok tailResult =>
+                  rcases tailResult with ⟨frontendTail, stateAfterTail⟩
+                  simp [hValue, hBody, hTail] at hRun
+                  rcases hRun with ⟨rfl, rfl⟩
+                  have hBodyMem :
+                      entry ∈ stateAfterBody.hoistedFunctions :=
+                    hBlock hBody hMem
+                  exact ih hTail hBodyMem
+
+theorem stmtElaborate_retains_hoisted_of_interfaces
+    (hFunction : FunctionElaborateRetainsHoisted)
+    (hBlock : StmtListElaborateBlockRetainsHoisted)
+    (hForInit : StmtListElaborateForInitRetainsHoisted)
+    (hCase : CaseListElaborateRetainsHoisted) :
+    StmtElaborateRetainsHoisted := by
+  intro rawStmt frontendStmt state state' hRun entry hMem
+  cases rawStmt with
+  | block body =>
+      cases hBody :
+          (Elab.Stmt.List.elaborateBlock body true).run state with
+      | error err =>
+          simp [Elab.Stmt.elaborate, hBody] at hRun
+      | ok bodyResult =>
+          rcases bodyResult with ⟨frontendBody, stateAfterBody⟩
+          simp [Elab.Stmt.elaborate, hBody] at hRun
+          rcases hRun with ⟨rfl, rfl⟩
+          exact hBlock hBody hMem
+  | variableDeclaration names value? =>
+      cases value? with
+      | none =>
+          cases hDeclare :
+              (Elab.declareIdentifiers names "variable").run state with
+          | error err =>
+              simp [Elab.Stmt.elaborate, hDeclare] at hRun
+          | ok declareResult =>
+              rcases declareResult with ⟨unitDeclare, stateAfterDeclare⟩
+              simp [Elab.Stmt.elaborate, hDeclare] at hRun
+              rcases hRun with ⟨rfl, rfl⟩
+              exact declareIdentifiers_retains_hoisted hDeclare hMem
+      | some value =>
+          cases hValue : (Elab.Expr.elaborate value).run state with
+          | error err =>
+              simp [Elab.Stmt.elaborate, hValue] at hRun
+          | ok valueResult =>
+              rcases valueResult with ⟨frontendValue, stateAfterValue⟩
+              cases hDeclare :
+                  (Elab.declareIdentifiers names "variable").run
+                    stateAfterValue with
+              | error err =>
+                  simp [Elab.Stmt.elaborate, hValue, hDeclare] at hRun
+              | ok declareResult =>
+                  rcases declareResult with
+                    ⟨unitDeclare, stateAfterDeclare⟩
+                  simp [Elab.Stmt.elaborate, hValue, hDeclare] at hRun
+                  rcases hRun with ⟨rfl, rfl⟩
+                  have hValueMem :
+                      entry ∈ stateAfterValue.hoistedFunctions :=
+                    Expr.elaborate_retains_hoisted hValue hMem
+                  exact declareIdentifiers_retains_hoisted hDeclare hValueMem
+  | assignment names value =>
+      cases hRequire :
+          (Elab.requireIdentifiersVisible names "assignment").run state with
+      | error err =>
+          simp [Elab.Stmt.elaborate, hRequire] at hRun
+      | ok requireResult =>
+          rcases requireResult with ⟨unitRequire, stateAfterRequire⟩
+          cases hValue :
+              (Elab.Expr.elaborate value).run stateAfterRequire with
+          | error err =>
+              simp [Elab.Stmt.elaborate, hRequire, hValue] at hRun
+          | ok valueResult =>
+              rcases valueResult with ⟨frontendValue, stateAfterValue⟩
+              simp [Elab.Stmt.elaborate, hRequire, hValue] at hRun
+              rcases hRun with ⟨rfl, rfl⟩
+              have hRequireMem :
+                  entry ∈ stateAfterRequire.hoistedFunctions :=
+                requireIdentifiersVisible_retains_hoisted hRequire hMem
+              exact Expr.elaborate_retains_hoisted hValue hRequireMem
+  | expressionStatement value =>
+      cases hValue : (Elab.Expr.elaborate value).run state with
+      | error err =>
+          simp [Elab.Stmt.elaborate, hValue] at hRun
+      | ok valueResult =>
+          rcases valueResult with ⟨frontendValue, stateAfterValue⟩
+          simp [Elab.Stmt.elaborate, hValue] at hRun
+          rcases hRun with ⟨rfl, rfl⟩
+          exact Expr.elaborate_retains_hoisted hValue hMem
+  | functionDefinition name params returns body =>
+      cases hFn :
+          (Elab.FunctionDef.elaborate params returns body).run state with
+      | error err =>
+          simp [Elab.Stmt.elaborate, hFn] at hRun
+      | ok fnResult =>
+          rcases fnResult with ⟨fn, stateAfterFn⟩
+          simp [Elab.Stmt.elaborate, hFn] at hRun
+          rcases hRun with ⟨rfl, rfl⟩
+          exact hFunction hFn hMem
+  | switch scrutinee cases defaultBody =>
+      cases hScrutinee : (Elab.Expr.elaborate scrutinee).run state with
+      | error err =>
+          simp [Elab.Stmt.elaborate, hScrutinee] at hRun
+      | ok scrutineeResult =>
+          rcases scrutineeResult with
+            ⟨frontendScrutinee, stateAfterScrutinee⟩
+          cases hCases :
+              (Elab.Stmt.CaseList.elaborate cases).run
+                stateAfterScrutinee with
+          | error err =>
+              simp [Elab.Stmt.elaborate, hScrutinee, hCases] at hRun
+          | ok casesResult =>
+              rcases casesResult with ⟨frontendCases, stateAfterCases⟩
+              cases hDefault :
+                  (Elab.Stmt.List.elaborateBlock defaultBody true).run
+                    stateAfterCases with
+              | error err =>
+                  simp [Elab.Stmt.elaborate, hScrutinee, hCases, hDefault]
+                    at hRun
+              | ok defaultResult =>
+                  rcases defaultResult with
+                    ⟨frontendDefault, stateAfterDefault⟩
+                  simp [Elab.Stmt.elaborate, hScrutinee, hCases, hDefault]
+                    at hRun
+                  rcases hRun with ⟨rfl, rfl⟩
+                  have hScrutineeMem :
+                      entry ∈ stateAfterScrutinee.hoistedFunctions :=
+                    Expr.elaborate_retains_hoisted hScrutinee hMem
+                  have hCasesMem :
+                      entry ∈ stateAfterCases.hoistedFunctions :=
+                    hCase hCases hScrutineeMem
+                  exact hBlock hDefault hCasesMem
+  | forLoop pre condition post body =>
+      cases hPush : Elab.pushIdentifierScope.run state with
+      | error err =>
+          simp [Elab.Stmt.elaborate, hPush] at hRun
+      | ok pushResult =>
+          rcases pushResult with ⟨unitPush, stateAfterPush⟩
+          cases hPreHas :
+              Elab.Stmt.List.hasImmediateFunctionDefinition pre with
+          | false =>
+              cases hPre :
+                  (Elab.Stmt.List.elaborateBlock pre false).run
+                    stateAfterPush with
+              | error err =>
+                  simp [Elab.Stmt.elaborate, hPush, hPreHas, hPre]
+                    at hRun
+              | ok preResult =>
+                  rcases preResult with ⟨frontendPre, stateAfterPre⟩
+                  cases hCondition :
+                      (Elab.Expr.elaborate condition).run stateAfterPre with
+                  | error err =>
+                      simp [Elab.Stmt.elaborate, hPush, hPreHas, hPre,
+                        hCondition] at hRun
+                  | ok conditionResult =>
+                      rcases conditionResult with
+                        ⟨frontendCondition, stateAfterCondition⟩
+                      cases hPost :
+                          (Elab.Stmt.List.elaborateBlock post true).run
+                            stateAfterCondition with
+                      | error err =>
+                          simp [Elab.Stmt.elaborate, hPush, hPreHas, hPre,
+                            hCondition, hPost] at hRun
+                      | ok postResult =>
+                          rcases postResult with
+                            ⟨frontendPost, stateAfterPost⟩
+                          cases hBody :
+                              (Elab.Stmt.List.elaborateBlock body true).run
+                                stateAfterPost with
+                          | error err =>
+                              simp [Elab.Stmt.elaborate, hPush, hPreHas,
+                                hPre, hCondition, hPost, hBody] at hRun
+                          | ok bodyResult =>
+                              rcases bodyResult with
+                                ⟨frontendBody, stateAfterBody⟩
+                              cases hPop :
+                                  Elab.popIdentifierScope.run
+                                    stateAfterBody with
+                              | error err =>
+                                  simp [Elab.Stmt.elaborate, hPush, hPreHas,
+                                    hPre, hCondition, hPost, hBody, hPop]
+                                    at hRun
+                              | ok popResult =>
+                                  rcases popResult with
+                                    ⟨unitPop, stateAfterPop⟩
+                                  simp [Elab.Stmt.elaborate, hPush, hPreHas,
+                                    hPre, hCondition, hPost, hBody, hPop]
+                                    at hRun
+                                  rcases hRun with ⟨rfl, rfl⟩
+                                  have hPushMem :
+                                      entry ∈
+                                        stateAfterPush.hoistedFunctions :=
+                                    pushIdentifierScope_retains_hoisted
+                                      hPush hMem
+                                  have hPreMem :
+                                      entry ∈ stateAfterPre.hoistedFunctions :=
+                                    hBlock hPre hPushMem
+                                  have hConditionMem :
+                                      entry ∈
+                                        stateAfterCondition.hoistedFunctions :=
+                                    Expr.elaborate_retains_hoisted hCondition
+                                      hPreMem
+                                  have hPostMem :
+                                      entry ∈ stateAfterPost.hoistedFunctions :=
+                                    hBlock hPost hConditionMem
+                                  have hBodyMem :
+                                      entry ∈ stateAfterBody.hoistedFunctions :=
+                                    hBlock hBody hPostMem
+                                  exact
+                                    popIdentifierScope_retains_hoisted hPop
+                                      hBodyMem
+          | true =>
+              cases hPre :
+                  (Elab.Stmt.List.elaborateForInitBlockWithScope pre).run
+                    stateAfterPush with
+              | error err =>
+                  simp [Elab.Stmt.elaborate, hPush, hPreHas, hPre]
+                    at hRun
+              | ok preResult =>
+                  rcases preResult with ⟨frontendPre, stateAfterPre⟩
+                  cases hCondition :
+                      (Elab.Expr.elaborate condition).run stateAfterPre with
+                  | error err =>
+                      simp [Elab.Stmt.elaborate, hPush, hPreHas, hPre,
+                        hCondition] at hRun
+                  | ok conditionResult =>
+                      rcases conditionResult with
+                        ⟨frontendCondition, stateAfterCondition⟩
+                      cases hPost :
+                          (Elab.Stmt.List.elaborateBlock post true).run
+                            stateAfterCondition with
+                      | error err =>
+                          simp [Elab.Stmt.elaborate, hPush, hPreHas, hPre,
+                            hCondition, hPost] at hRun
+                      | ok postResult =>
+                          rcases postResult with
+                            ⟨frontendPost, stateAfterPost⟩
+                          cases hBody :
+                              (Elab.Stmt.List.elaborateBlock body true).run
+                                stateAfterPost with
+                          | error err =>
+                              simp [Elab.Stmt.elaborate, hPush, hPreHas,
+                                hPre, hCondition, hPost, hBody] at hRun
+                          | ok bodyResult =>
+                              rcases bodyResult with
+                                ⟨frontendBody, stateAfterBody⟩
+                              cases hPopFunction :
+                                  Elab.popFunctionScope.run stateAfterBody with
+                              | error err =>
+                                  simp [Elab.Stmt.elaborate, hPush, hPreHas,
+                                    hPre, hCondition, hPost, hBody,
+                                    hPopFunction] at hRun
+                              | ok popFunctionResult =>
+                                  rcases popFunctionResult with
+                                    ⟨unitPopFunction, stateAfterPopFunction⟩
+                                  cases hPopIdentifier :
+                                      Elab.popIdentifierScope.run
+                                        stateAfterPopFunction with
+                                  | error err =>
+                                      simp [Elab.Stmt.elaborate, hPush,
+                                        hPreHas, hPre, hCondition, hPost,
+                                        hBody, hPopFunction, hPopIdentifier]
+                                        at hRun
+                                  | ok popIdentifierResult =>
+                                      rcases popIdentifierResult with
+                                        ⟨unitPopIdentifier,
+                                          stateAfterPopIdentifier⟩
+                                      simp [Elab.Stmt.elaborate, hPush,
+                                        hPreHas, hPre, hCondition, hPost,
+                                        hBody, hPopFunction, hPopIdentifier]
+                                        at hRun
+                                      rcases hRun with ⟨rfl, rfl⟩
+                                      have hPushMem :
+                                          entry ∈
+                                            stateAfterPush.hoistedFunctions :=
+                                        pushIdentifierScope_retains_hoisted
+                                          hPush hMem
+                                      have hPreMem :
+                                          entry ∈
+                                            stateAfterPre.hoistedFunctions :=
+                                        hForInit hPre hPushMem
+                                      have hConditionMem :
+                                          entry ∈
+                                            stateAfterCondition.hoistedFunctions :=
+                                        Expr.elaborate_retains_hoisted
+                                          hCondition hPreMem
+                                      have hPostMem :
+                                          entry ∈
+                                            stateAfterPost.hoistedFunctions :=
+                                        hBlock hPost hConditionMem
+                                      have hBodyMem :
+                                          entry ∈
+                                            stateAfterBody.hoistedFunctions :=
+                                        hBlock hBody hPostMem
+                                      have hPopFunctionMem :
+                                          entry ∈
+                                            stateAfterPopFunction.hoistedFunctions :=
+                                        popFunctionScope_retains_hoisted
+                                          hPopFunction hBodyMem
+                                      exact
+                                        popIdentifierScope_retains_hoisted
+                                          hPopIdentifier hPopFunctionMem
+  | ifThen condition body =>
+      cases hCondition :
+          (Elab.Expr.elaborate condition).run state with
+      | error err =>
+          simp [Elab.Stmt.elaborate, hCondition] at hRun
+      | ok conditionResult =>
+          rcases conditionResult with
+            ⟨frontendCondition, stateAfterCondition⟩
+          cases hBody :
+              (Elab.Stmt.List.elaborateBlock body true).run
+                stateAfterCondition with
+          | error err =>
+              simp [Elab.Stmt.elaborate, hCondition, hBody] at hRun
+          | ok bodyResult =>
+              rcases bodyResult with ⟨frontendBody, stateAfterBody⟩
+              simp [Elab.Stmt.elaborate, hCondition, hBody] at hRun
+              rcases hRun with ⟨rfl, rfl⟩
+              have hConditionMem :
+                  entry ∈ stateAfterCondition.hoistedFunctions :=
+                Expr.elaborate_retains_hoisted hCondition hMem
+              exact hBlock hBody hConditionMem
+  | «break» =>
+      simp [Elab.Stmt.elaborate] at hRun
+      rcases hRun with ⟨rfl, rfl⟩
+      exact hMem
+  | «continue» =>
+      simp [Elab.Stmt.elaborate] at hRun
+      rcases hRun with ⟨rfl, rfl⟩
+      exact hMem
+  | «leave» =>
+      simp [Elab.Stmt.elaborate] at hRun
+      rcases hRun with ⟨rfl, rfl⟩
+      exact hMem
 
 theorem elaborateBlock_retains_hoisted_of_interfaces
     (hFunction : FunctionElaborateRetainsHoisted)
