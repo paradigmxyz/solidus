@@ -188,8 +188,13 @@ Next raw frontend layer:
   now derives generated-call prefix, semantic-interface, and recursive
   execution evidence for raw user calls located inside raw function-definition
   bodies after Lean hoisting/alpha-renaming, without a public generated-name,
-  layout, replay, or certificate premise. Remaining work is final raw-input
-  theorem composition and release validation.
+  layout, replay, or certificate premise.
+  `decodeAndElaborateSolcIr?_rawObjectSemanticEvidence` bundles the raw
+  user-call recursive execution theorem, nested function-body recursive
+  execution theorem, raw `clz` recursive execution theorem, and non-vacuous
+  raw `clz` helper-value theorem behind one decode-derived Prop evidence
+  boundary. Remaining work is release/corpus validation and final integration
+  audit before updating production assumptions.
 - [x] Expose the production interface
   `decodeAndElaborateSolcIr? rawJson selection = some frontendProgram` without
   public certificate premises, and expose artifact-facing raw wrappers whose

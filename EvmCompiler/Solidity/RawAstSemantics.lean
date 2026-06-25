@@ -5622,6 +5622,210 @@ theorem decodeAndElaborateSolcIr?_clzCodeRouteOfRawOccurrence
       generatedNormalizationEvidence_clzCodeRouteOfRawOccurrence
         hEvidence⟩
 
+def RawCodeUserCallRecursiveEvidence
+    (code : List Raw.Stmt) (object : Frontend.Object)
+    (ordered : Yul.OrderedProgram) : Prop :=
+  ∃ (coreDispatcher : List Frontend.Stmt) (state : State)
+      (helper? arg? ret? : Option Name),
+    elaborateCodeCore code = .ok (coreDispatcher, state) ∧
+      elaborateCode code =
+        .ok (object.dispatcher, object.functions,
+          helper?, arg?, ret?) ∧
+        ∀ {functionName : Name} {rawArgs : List Raw.Expr},
+          RawOccurrence.StmtListUserCall functionName rawArgs code →
+            functionName ≠ "memoryguard" →
+              functionName ≠ "clz" →
+                CallClass.classifyCall functionName = .user →
+                  ∃ (generated : Name)
+                    (frontendArgs : List Frontend.Expr),
+                    ∀ {fuel : Nat}
+                        {shared : EvmYul.SharedState .Yul}
+                        {vars : EvmYul.Yul.VarStore},
+                      ∃ (params returns : List Name)
+                        (body : List Yul.AstStmt)
+                        (yulArgs : List Yul.AstExpr)
+                        (stmts : List Yul.AstStmt),
+                        FocusedGeneratedCallSemanticInterface.RecursiveExecution
+                          ordered generated params returns body yulArgs
+                          stmts fuel (some ordered.program.contract)
+                          shared vars
+
+def RawCodeFunctionBodyRecursiveEvidence
+    (code : List Raw.Stmt) (object : Frontend.Object)
+    (ordered : Yul.OrderedProgram) : Prop :=
+  ∃ (coreDispatcher : List Frontend.Stmt) (state : State)
+      (helper? arg? ret? : Option Name),
+    elaborateCodeCore code = .ok (coreDispatcher, state) ∧
+      elaborateCode code =
+        .ok (object.dispatcher, object.functions,
+          helper?, arg?, ret?) ∧
+        ∀ {name : Name} {fnParams fnReturns : List Name}
+            {fnBody : List Raw.Stmt} {functionName : Name}
+            {rawArgs : List Raw.Expr},
+          Raw.Stmt.functionDefinition name fnParams fnReturns fnBody ∈
+            code →
+            RawOccurrence.StmtListUserCall functionName rawArgs fnBody →
+              functionName ≠ "memoryguard" →
+                functionName ≠ "clz" →
+                  CallClass.classifyCall functionName = .user →
+                    ∃ (generated : Name)
+                      (frontendArgs : List Frontend.Expr),
+                      ∀ {fuel : Nat}
+                          {shared : EvmYul.SharedState .Yul}
+                          {vars : EvmYul.Yul.VarStore},
+                        ∃ (params returns : List Name)
+                          (body : List Yul.AstStmt)
+                          (yulArgs : List Yul.AstExpr)
+                          (stmts : List Yul.AstStmt),
+                          FocusedGeneratedCallSemanticInterface.RecursiveExecution
+                            ordered generated params returns body yulArgs
+                            stmts fuel (some ordered.program.contract)
+                            shared vars
+
+def RawCodeClzRecursiveEvidence
+    (code : List Raw.Stmt) (object : Frontend.Object)
+    (ordered : Yul.OrderedProgram) : Prop :=
+  ∃ (coreDispatcher : List Frontend.Stmt) (state : State)
+      (helper? arg? ret? : Option Name),
+    elaborateCodeCore code = .ok (coreDispatcher, state) ∧
+      elaborateCode code =
+        .ok (object.dispatcher, object.functions,
+          helper?, arg?, ret?) ∧
+        ∀ {rawArg : Raw.Expr},
+          RawOccurrence.StmtListClzCall rawArg code →
+            ∃ (helper : Name) (frontendArg : Frontend.Expr),
+              helper? = some helper ∧
+                ∀ {fuel : Nat}
+                    {shared : EvmYul.SharedState .Yul}
+                    {vars : EvmYul.Yul.VarStore},
+                  ∃ (params returns : List Name)
+                    (body : List Yul.AstStmt)
+                    (yulArgs : List Yul.AstExpr)
+                    (stmts : List Yul.AstStmt),
+                    FocusedGeneratedCallSemanticInterface.RecursiveExecution
+                      ordered helper params returns body yulArgs stmts fuel
+                      (some ordered.program.contract) shared vars
+
+def RawCodeClzPrefixAndValueEvidence
+    (code : List Raw.Stmt) (object : Frontend.Object)
+    (ordered : Yul.OrderedProgram) : Prop :=
+  ∃ (coreDispatcher : List Frontend.Stmt) (state : State)
+      (helper? arg? ret? : Option Name),
+    elaborateCodeCore code = .ok (coreDispatcher, state) ∧
+      elaborateCode code =
+        .ok (object.dispatcher, object.functions,
+          helper?, arg?, ret?) ∧
+        ∀ {rawArg : Raw.Expr},
+          RawOccurrence.StmtListClzCall rawArg code →
+            ∃ (helper : Name) (frontendArg : Frontend.Expr)
+                (arg ret : Name),
+              helper? = some helper ∧
+                arg? = some arg ∧
+                  ret? = some ret ∧
+                    (∀ {fuel : Nat}
+                        {shared : EvmYul.SharedState .Yul}
+                        {vars : EvmYul.Yul.VarStore},
+                      ∃ (params returns : List Name)
+                        (body : List Yul.AstStmt)
+                        (yulArgs : List Yul.AstExpr)
+                        (stmts : List Yul.AstStmt),
+                        FocusedGeneratedCallPrefixEvidence ordered helper
+                          params returns body yulArgs stmts fuel
+                          (some ordered.program.contract) shared vars) ∧
+                      ∀ (fuel : Nat) (argValue : Word)
+                        (shared : EvmYul.SharedState .Yul)
+                        (vars : EvmYul.Yul.VarStore),
+                        ∃ finalState,
+                          Yul.InteractionSemantics.call
+                              (fuel + clzHelperStepSchedule.length + 51)
+                              [argValue] (some helper)
+                              (some ordered.program.contract)
+                              (.Ok shared vars) =
+                            pure (finalState, [clzHelperValue argValue])
+
+def RawObjectSemanticEvidence
+    (raw : Raw.Object) (object : Frontend.Object)
+    (ordered : Yul.OrderedProgram) : Prop :=
+  match raw.code? with
+  | none => True
+  | some code =>
+      RawCodeUserCallRecursiveEvidence code object ordered ∧
+        RawCodeFunctionBodyRecursiveEvidence code object ordered ∧
+          RawCodeClzRecursiveEvidence code object ordered ∧
+            RawCodeClzPrefixAndValueEvidence code object ordered
+
+theorem decodeAndElaborateSolcIr?_rawObjectSemanticEvidence
+    {rawJson : String} {selection : Selection}
+    {program : Frontend.Program} {ordered : Yul.OrderedProgram}
+    (hDecode :
+      decodeAndElaborateSolcIr? rawJson selection = some program)
+    (hConvert : program.object.toSolcYulOrderedProgram? = some ordered) :
+    ∃ (json : Lean.Json) (selected : SelectedIr)
+        (object : Frontend.Object),
+      Lean.Json.parse rawJson = .ok json ∧
+        decodeSelectedIr json selection = .ok selected ∧
+          selected.root.elaborate? selected.evmVersion = .ok object ∧
+            program =
+              { source := selected.source
+                contract := selected.contract
+                object := object } ∧
+              RawObjectSemanticEvidence selected.root object ordered := by
+  rcases
+      decodeAndElaborateSolcIr?_recursiveExecutionOfRawOccurrence
+        hDecode hConvert with
+    ⟨json, selected, object, hParse, hSelected, hObject, hProgram,
+      hUser⟩
+  rcases
+      decodeAndElaborateSolcIr?_functionBodyRecursiveExecutionOfRawOccurrence
+        hDecode hConvert with
+    ⟨jsonFn, selectedFn, objectFn, hParseFn, hSelectedFn, hObjectFn,
+      hProgramFn, hFunctionBody⟩
+  rcases
+      decodeAndElaborateSolcIr?_clzRecursiveExecutionOfRawOccurrence
+        hDecode hConvert with
+    ⟨jsonClz, selectedClz, objectClz, hParseClz, hSelectedClz,
+      hObjectClz, hProgramClz, hClzRecursive⟩
+  rcases
+      decodeAndElaborateSolcIr?_clzPrefixAndValueOfRawOccurrence
+        hDecode hConvert with
+    ⟨jsonValue, selectedValue, objectValue, hParseValue, hSelectedValue,
+      hObjectValue, hProgramValue, hClzValue⟩
+  rw [hParse] at hParseFn
+  simp at hParseFn
+  subst jsonFn
+  rw [hSelected] at hSelectedFn
+  simp at hSelectedFn
+  subst selectedFn
+  rw [hObject] at hObjectFn
+  simp at hObjectFn
+  subst objectFn
+  rw [hParse] at hParseClz
+  simp at hParseClz
+  subst jsonClz
+  rw [hSelected] at hSelectedClz
+  simp at hSelectedClz
+  subst selectedClz
+  rw [hObject] at hObjectClz
+  simp at hObjectClz
+  subst objectClz
+  rw [hParse] at hParseValue
+  simp at hParseValue
+  subst jsonValue
+  rw [hSelected] at hSelectedValue
+  simp at hSelectedValue
+  subst selectedValue
+  rw [hObject] at hObjectValue
+  simp at hObjectValue
+  subst objectValue
+  refine ⟨json, selected, object, hParse, hSelected, hObject, hProgram, ?_⟩
+  unfold RawObjectSemanticEvidence
+  cases hRawCode : selected.root.code? with
+  | none =>
+      simp [hRawCode]
+  | some code =>
+      rw [hRawCode] at hUser hFunctionBody hClzRecursive hClzValue
+      exact ⟨hUser, hFunctionBody, hClzRecursive, hClzValue⟩
+
 end Elab
 end RawAst
 end Solidity

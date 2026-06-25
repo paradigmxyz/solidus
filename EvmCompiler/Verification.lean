@@ -186,6 +186,12 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.RawAst.Elab.decodeAndElaborateSolcIr?_recursiveExecutionOfRawOccurrence
 #check EvmCompiler.Solidity.RawAst.Elab.decodeAndElaborateSolcIr?_functionBodyRecursiveExecutionOfRawOccurrence
 #check EvmCompiler.Solidity.RawAst.Elab.decodeAndElaborateSolcIr?_clzRecursiveExecutionOfRawOccurrence
+#check EvmCompiler.Solidity.RawAst.Elab.RawCodeUserCallRecursiveEvidence
+#check EvmCompiler.Solidity.RawAst.Elab.RawCodeFunctionBodyRecursiveEvidence
+#check EvmCompiler.Solidity.RawAst.Elab.RawCodeClzRecursiveEvidence
+#check EvmCompiler.Solidity.RawAst.Elab.RawCodeClzPrefixAndValueEvidence
+#check EvmCompiler.Solidity.RawAst.Elab.RawObjectSemanticEvidence
+#check EvmCompiler.Solidity.RawAst.Elab.decodeAndElaborateSolcIr?_rawObjectSemanticEvidence
 #check EvmCompiler.Solidity.RawAst.Elab.decodeAndElaborateSolcIr?_codeRouteOfRawOccurrence
 #check EvmCompiler.Solidity.RawAst.Elab.decodeAndElaborateSolcIr?_clzCodeRouteOfRawOccurrence
 #check EvmCompiler.Yul.InteractionSemantics.EvalValues.call_succ
@@ -544,6 +550,7 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.RawAst.Elab.decodeAndElaborateSolcIr?_recursiveExecutionOfRawOccurrence
 #print axioms EvmCompiler.Solidity.RawAst.Elab.decodeAndElaborateSolcIr?_functionBodyRecursiveExecutionOfRawOccurrence
 #print axioms EvmCompiler.Solidity.RawAst.Elab.decodeAndElaborateSolcIr?_clzRecursiveExecutionOfRawOccurrence
+#print axioms EvmCompiler.Solidity.RawAst.Elab.decodeAndElaborateSolcIr?_rawObjectSemanticEvidence
 #print axioms EvmCompiler.Yul.InteractionSemantics.EvalValues.call_succ
 #print axioms EvmCompiler.Yul.YulOccurrence.ExprUserCall.evalArgContext
 #print axioms EvmCompiler.Yul.YulOccurrence.ExprUserCall.evalArgs_prefix_cons_succ
