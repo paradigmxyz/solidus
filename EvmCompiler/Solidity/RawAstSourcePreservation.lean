@@ -1226,6 +1226,63 @@ theorem exprValuesRunForward_userCall_succ
       | ok stateAfterBody =>
           exact Simulation.Interaction.ForwardRel.done rfl
 
+/-- Frontend-owned provider for a direct elaborated user call. The recursive
+source-fuel proof will construct it from lexical compilation evidence; callers
+see neither generated names nor callee layouts. -/
+def UserCallElaborationRunForward
+    (slack : Nat)
+    (rawContext : Raw.SourceSemantics.Context)
+    (builtinContext : Frontend.ObjectBuiltinContext)
+    (contract : Frontend.AstContract) : Prop :=
+  ∀ (rawBase : Nat)
+    {name : Name} {rawArgs : List Raw.Expr}
+    {elabState finalElabState : Elab.State}
+    {front : Frontend.Expr} {ordered : Frontend.AstExpr}
+    {state : State},
+    (Elab.Expr.elaborate (.functionCall name rawArgs)).run elabState =
+        .ok (front, finalElabState) →
+      ExprNormalized builtinContext front ordered →
+        ∃ generated orderedArgs,
+          ordered = .Call (.inr generated) orderedArgs ∧
+            Nonempty
+              (GeneratedUserCallRun
+                (rawBase + 2 * rawArgs.length)
+                ((rawBase + slack) + 2 * rawArgs.length)
+                rawContext name rawArgs generated orderedArgs contract state)
+
+theorem exprValuesRunForward_of_elaborated_userCall
+    {slack rawBase : Nat}
+    {rawContext : Raw.SourceSemantics.Context}
+    {builtinContext : Frontend.ObjectBuiltinContext}
+    {name : Name} {rawArgs : List Raw.Expr}
+    {elabState finalElabState : Elab.State}
+    {front : Frontend.Expr} {ordered : Frontend.AstExpr}
+    {contract : Frontend.AstContract} {state : State}
+    (hUser :
+      UserCallElaborationRunForward
+        slack rawContext builtinContext contract)
+    (hElab :
+      (Elab.Expr.elaborate (.functionCall name rawArgs)).run elabState =
+        .ok (front, finalElabState))
+    (hNormalized : ExprNormalized builtinContext front ordered) :
+    ExprValuesRunForward
+      (rawBase + 2 * rawArgs.length + 2)
+      ((rawBase + slack) + 2 * rawArgs.length + 2)
+      rawContext (.functionCall name rawArgs) ordered contract state := by
+  rcases hUser rawBase hElab hNormalized with
+    ⟨generated, orderedArgs, rfl, ⟨hRun⟩⟩
+  have hCall := exprValuesRunForward_userCall_succ hRun
+  have hRawFuel :
+      rawBase + 2 * rawArgs.length + 2 =
+        (rawBase + 2 * rawArgs.length) + 2 := by
+    omega
+  have hOrderedFuel :
+      (rawBase + slack) + 2 * rawArgs.length + 2 =
+        ((rawBase + slack) + 2 * rawArgs.length) + 2 := by
+    omega
+  rw [hRawFuel, hOrderedFuel]
+  exact hCall
+
 theorem exprValuesRunForward_datasize_succ
     {rawFuel orderedFuel : Nat}
     {context : Raw.SourceSemantics.Context}
