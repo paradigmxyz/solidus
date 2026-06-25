@@ -3557,6 +3557,139 @@ theorem occurrence
 
 end BodyRouteEvidence
 
+/-- Bundled semantic interface for one focused generated local-call occurrence.
+
+This is the small proof handle that later recursive statement/list
+preservation should consume.  It keeps together the compiler-derived generated
+callee and body route (`BodyRouteEvidence`) with the dynamic Yul execution of
+that generated call (`GeneratedCallRun`): argument evaluation, callee-body
+execution, revive/store-restored return state, returned values, and the
+resulting `evalValues`/`eval` facts. -/
+structure FocusedGeneratedCallRun
+    {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    {topName : Frontend.Name}
+    {σ : Type}
+    (model : Yul.Source.Effectful.StateModel σ)
+    (prim : Yul.Source.Effectful.PrimitiveSemantics σ)
+    (bodyFuel : Nat)
+    (state : σ) where
+  routeEvidence : BodyRouteEvidence object ordered topName
+  run :
+    GeneratedCallRun routeEvidence.yulEvidence model prim bodyFuel state
+
+namespace FocusedGeneratedCallRun
+
+def of_parts
+    {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    {topName : Frontend.Name}
+    {σ : Type}
+    (model : Yul.Source.Effectful.StateModel σ)
+    (prim : Yul.Source.Effectful.PrimitiveSemantics σ)
+    {bodyFuel : Nat}
+    {state stateAfterArgs stateAfterBody : σ}
+    {reversedValues : List Frontend.Word}
+    (routeEvidence : BodyRouteEvidence object ordered topName)
+    (hArgs :
+      Yul.Source.Effectful.evalArgs model prim (bodyFuel + 1)
+          routeEvidence.yulEvidence.yulArgs.reverse
+          (some ordered.program.contract) state =
+        .ok (stateAfterArgs, reversedValues))
+    (hBody :
+      Yul.Source.Effectful.exec model prim bodyFuel
+          (.Block routeEvidence.yulEvidence.localYulBody)
+          (some ordered.program.contract)
+          (model.withSource stateAfterArgs
+            (EvmYul.Yul.State.mkOk
+              ((model.source stateAfterArgs).initcall
+                routeEvidence.yulEvidence.localFn.params
+                routeEvidence.yulEvidence.localFn.returns
+                reversedValues.reverse))) =
+        .ok stateAfterBody) :
+    FocusedGeneratedCallRun (object := object) (ordered := ordered)
+      (topName := topName) model prim bodyFuel state where
+  routeEvidence := routeEvidence
+  run :=
+    generatedCallRun_of_parts routeEvidence.yulEvidence
+      model prim hArgs hBody
+
+theorem route_occurrence
+    {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    {topName : Frontend.Name}
+    {σ : Type}
+    {model : Yul.Source.Effectful.StateModel σ}
+    {prim : Yul.Source.Effectful.PrimitiveSemantics σ}
+    {bodyFuel : Nat}
+    {state : σ}
+    (hRun :
+      FocusedGeneratedCallRun (object := object) (ordered := ordered)
+        (topName := topName) model prim bodyFuel state) :
+    YulOccurrence.StmtListUserCall hRun.routeEvidence.yulBody
+      hRun.routeEvidence.yulEvidence.generated
+      hRun.routeEvidence.yulEvidence.yulArgs :=
+  hRun.routeEvidence.occurrence
+
+theorem evalValues
+    {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    {topName : Frontend.Name}
+    {σ : Type}
+    {model : Yul.Source.Effectful.StateModel σ}
+    {prim : Yul.Source.Effectful.PrimitiveSemantics σ}
+    {bodyFuel : Nat}
+    {state : σ}
+    (hRun :
+      FocusedGeneratedCallRun (object := object) (ordered := ordered)
+        (topName := topName) model prim bodyFuel state) :
+    Yul.Source.Effectful.evalValues model prim (bodyFuel + 2)
+        (.Call (.inr hRun.routeEvidence.yulEvidence.generated)
+          hRun.routeEvidence.yulEvidence.yulArgs)
+        (some ordered.program.contract) state =
+      .ok (hRun.run.postState, hRun.run.returns) :=
+  hRun.run.hEvalValues
+
+theorem eval
+    {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    {topName : Frontend.Name}
+    {σ : Type}
+    {model : Yul.Source.Effectful.StateModel σ}
+    {prim : Yul.Source.Effectful.PrimitiveSemantics σ}
+    {bodyFuel : Nat}
+    {state : σ}
+    (hRun :
+      FocusedGeneratedCallRun (object := object) (ordered := ordered)
+        (topName := topName) model prim bodyFuel state) :
+    Yul.Source.Effectful.eval model prim (bodyFuel + 2)
+        (.Call (.inr hRun.routeEvidence.yulEvidence.generated)
+          hRun.routeEvidence.yulEvidence.yulArgs)
+        (some ordered.program.contract) state =
+      .ok (hRun.run.postState, hRun.run.returns.head!) :=
+  hRun.run.hEval
+
+def focusedExpr
+    {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    {topName : Frontend.Name}
+    {σ : Type}
+    {model : Yul.Source.Effectful.StateModel σ}
+    {prim : Yul.Source.Effectful.PrimitiveSemantics σ}
+    {bodyFuel : Nat}
+    {state : σ}
+    (hRun :
+      FocusedGeneratedCallRun (object := object) (ordered := ordered)
+        (topName := topName) model prim bodyFuel state) :
+    FocusedExprRun hRun.routeEvidence.yulEvidence model prim
+      (bodyFuel + 2)
+      (.Call (.inr hRun.routeEvidence.yulEvidence.generated)
+        hRun.routeEvidence.yulEvidence.yulArgs)
+      state :=
+  FocusedExprRun.ofGenerated hRun.run
+
+end FocusedGeneratedCallRun
+
 /-- Semantic execution package for the concrete route body selected by
 `AlphaRenamedLocalCallYulEvidence.routes`.
 
