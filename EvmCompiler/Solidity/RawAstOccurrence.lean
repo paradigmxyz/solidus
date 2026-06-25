@@ -117,6 +117,18 @@ mutual
           CaseListUserCall functionName args (head :: rest)
 end
 
+inductive StmtElaborationOccurrence (functionName : Name)
+    (args : List Frontend.Expr) : Frontend.Stmt → Prop where
+  | executable {stmt : Frontend.Stmt} :
+      FrontendOccurrence.StmtUserCall functionName args stmt →
+        StmtElaborationOccurrence functionName args stmt
+  | functionBody
+      {name : Name} {params returns : List Name}
+      {body : List Frontend.Stmt} :
+      FrontendOccurrence.StmtListUserCall functionName args body →
+        StmtElaborationOccurrence functionName args
+          (.functionDef name params returns body)
+
 namespace StmtListUserCall
 
 theorem exists_split_stmt
@@ -244,6 +256,148 @@ theorem elaborate_mem
                   ⟨frontendStmt, stateBefore, stateAfter, hStmt,
                     Or.inr hFrontendMem⟩
 
+theorem elaborateBlock_elaborate_exists
+    {rawStmts : List Raw.Stmt} {frontendStmts : List Frontend.Stmt}
+    {state state' : Elab.State} {createsScope : Bool}
+    (hElab :
+      (Elab.Stmt.List.elaborateBlock rawStmts createsScope).run state =
+        .ok (frontendStmts, state')) :
+    ∃ (stateBefore stateAfter : Elab.State),
+      (Elab.Stmt.List.elaborate rawStmts).run stateBefore =
+        .ok (frontendStmts, stateAfter) := by
+  unfold Elab.Stmt.List.elaborateBlock at hElab
+  cases hCreate : createsScope
+  · simp [hCreate] at hElab
+    cases hScope :
+        (Elab.Stmt.List.localFunctionScope rawStmts).run state with
+    | error err =>
+        simp [hScope] at hElab
+    | ok scopeResult =>
+        rcases scopeResult with ⟨scope, stateAfterScope⟩
+        cases hPush :
+            (Elab.pushFunctionScope scope).run stateAfterScope with
+        | error err =>
+            simp [hScope, hPush] at hElab
+        | ok pushResult =>
+            rcases pushResult with ⟨unitPush, stateAfterPush⟩
+            cases hHoist :
+                (Elab.Stmt.List.hoistLocalFunctions rawStmts scope).run
+                  stateAfterPush with
+            | error err =>
+                simp [hScope, hPush, hHoist] at hElab
+            | ok hoistResult =>
+                rcases hoistResult with ⟨unitHoist, stateAfterHoist⟩
+                cases hList :
+                    (Elab.Stmt.List.elaborate rawStmts).run
+                      stateAfterHoist with
+                | error err =>
+                    simp [hScope, hPush, hHoist, hList] at hElab
+                | ok listResult =>
+                    rcases listResult with ⟨frontendStmts', stateAfterList⟩
+                    cases hPop :
+                        Elab.popFunctionScope.run stateAfterList with
+                    | error err =>
+                        simp [hScope, hPush, hHoist, hList, hPop] at hElab
+                    | ok popResult =>
+                        rcases popResult with ⟨unitPop, stateAfterPop⟩
+                        simp [hScope, hPush, hHoist, hList, hPop] at hElab
+                        rcases hElab with ⟨rfl, _hState⟩
+                        exact ⟨stateAfterHoist, stateAfterList, hList⟩
+  · simp [hCreate] at hElab
+    cases hIdent :
+        Elab.pushIdentifierScope.run state with
+    | error err =>
+        simp [hIdent] at hElab
+    | ok identResult =>
+        rcases identResult with ⟨unitIdent, stateAfterIdent⟩
+        cases hScope :
+            (Elab.Stmt.List.localFunctionScope rawStmts).run
+              stateAfterIdent with
+        | error err =>
+            simp [hIdent, hScope] at hElab
+        | ok scopeResult =>
+            rcases scopeResult with ⟨scope, stateAfterScope⟩
+            cases hPush :
+                (Elab.pushFunctionScope scope).run stateAfterScope with
+            | error err =>
+                simp [hIdent, hScope, hPush] at hElab
+            | ok pushResult =>
+                rcases pushResult with ⟨unitPush, stateAfterPush⟩
+                cases hHoist :
+                    (Elab.Stmt.List.hoistLocalFunctions rawStmts scope).run
+                      stateAfterPush with
+                | error err =>
+                    simp [hIdent, hScope, hPush, hHoist] at hElab
+                | ok hoistResult =>
+                    rcases hoistResult with ⟨unitHoist, stateAfterHoist⟩
+                    cases hList :
+                        (Elab.Stmt.List.elaborate rawStmts).run
+                          stateAfterHoist with
+                    | error err =>
+                        simp [hIdent, hScope, hPush, hHoist, hList] at hElab
+                    | ok listResult =>
+                        rcases listResult with
+                          ⟨frontendStmts', stateAfterList⟩
+                        cases hPop :
+                            Elab.popFunctionScope.run stateAfterList with
+                        | error err =>
+                            simp [hIdent, hScope, hPush, hHoist, hList,
+                              hPop] at hElab
+                        | ok popResult =>
+                            rcases popResult with ⟨unitPop, stateAfterPop⟩
+                            cases hPopIdent :
+                                Elab.popIdentifierScope.run stateAfterPop with
+                            | error err =>
+                                simp [hIdent, hScope, hPush, hHoist, hList,
+                                  hPop, hPopIdent] at hElab
+                            | ok identPopResult =>
+                                rcases identPopResult with
+                                  ⟨unitIdentPop, stateAfterIdentPop⟩
+                                simp [hIdent, hScope, hPush, hHoist, hList,
+                                  hPop, hPopIdent] at hElab
+                                rcases hElab with ⟨rfl, _hState⟩
+                                exact ⟨stateAfterHoist, stateAfterList, hList⟩
+
+theorem elaborateForInitBlockWithScope_elaborate_exists
+    {rawStmts : List Raw.Stmt} {frontendStmts : List Frontend.Stmt}
+    {state state' : Elab.State}
+    (hElab :
+      (Elab.Stmt.List.elaborateForInitBlockWithScope rawStmts).run state =
+        .ok (frontendStmts, state')) :
+    ∃ (stateBefore stateAfter : Elab.State),
+      (Elab.Stmt.List.elaborate rawStmts).run stateBefore =
+        .ok (frontendStmts, stateAfter) := by
+  unfold Elab.Stmt.List.elaborateForInitBlockWithScope at hElab
+  cases hScope :
+      (Elab.Stmt.List.localFunctionScope rawStmts).run state with
+  | error err =>
+      simp [hScope] at hElab
+  | ok scopeResult =>
+      rcases scopeResult with ⟨scope, stateAfterScope⟩
+      cases hPush :
+          (Elab.pushFunctionScope scope).run stateAfterScope with
+      | error err =>
+          simp [hScope, hPush] at hElab
+      | ok pushResult =>
+          rcases pushResult with ⟨unitPush, stateAfterPush⟩
+          cases hHoist :
+              (Elab.Stmt.List.hoistLocalFunctions rawStmts scope).run
+                stateAfterPush with
+          | error err =>
+              simp [hScope, hPush, hHoist] at hElab
+          | ok hoistResult =>
+              rcases hoistResult with ⟨unitHoist, stateAfterHoist⟩
+              cases hList :
+                  (Elab.Stmt.List.elaborate rawStmts).run
+                    stateAfterHoist with
+              | error err =>
+                  simp [hScope, hPush, hHoist, hList] at hElab
+              | ok listResult =>
+                  rcases listResult with ⟨frontendStmts', stateAfterList⟩
+                  simp [hScope, hPush, hHoist, hList] at hElab
+                  rcases hElab with ⟨rfl, _hState⟩
+                  exact ⟨stateAfterHoist, stateAfterList, hList⟩
+
 end List
 
 namespace CaseList
@@ -334,6 +488,43 @@ theorem elaborate_exists_stmt
   exact
     ⟨stmt, frontendStmt, stateBefore, stateAfter,
       hStmt, hStmtElab, hFrontendMem⟩
+
+theorem elaborateBlock_exists_stmt
+    {functionName : Name} {args : List Raw.Expr}
+    {rawStmts : List Raw.Stmt} {frontendStmts : List Frontend.Stmt}
+    {state state' : Elab.State} {createsScope : Bool}
+    (hOccurrence : StmtListUserCall functionName args rawStmts)
+    (hElab :
+      (Elab.Stmt.List.elaborateBlock rawStmts createsScope).run state =
+        .ok (frontendStmts, state')) :
+    ∃ (rawStmt : Raw.Stmt) (frontendStmt : Frontend.Stmt)
+      (stateBefore stateAfter : Elab.State),
+      StmtUserCall functionName args rawStmt ∧
+        (Elab.Stmt.elaborate rawStmt).run stateBefore =
+          .ok (frontendStmt, stateAfter) ∧
+        frontendStmt ∈ frontendStmts := by
+  rcases Stmt.List.elaborateBlock_elaborate_exists hElab with
+    ⟨stateBeforeList, stateAfterList, hList⟩
+  exact elaborate_exists_stmt hOccurrence hList
+
+theorem elaborateForInitBlockWithScope_exists_stmt
+    {functionName : Name} {args : List Raw.Expr}
+    {rawStmts : List Raw.Stmt} {frontendStmts : List Frontend.Stmt}
+    {state state' : Elab.State}
+    (hOccurrence : StmtListUserCall functionName args rawStmts)
+    (hElab :
+      (Elab.Stmt.List.elaborateForInitBlockWithScope rawStmts).run state =
+        .ok (frontendStmts, state')) :
+    ∃ (rawStmt : Raw.Stmt) (frontendStmt : Frontend.Stmt)
+      (stateBefore stateAfter : Elab.State),
+      StmtUserCall functionName args rawStmt ∧
+        (Elab.Stmt.elaborate rawStmt).run stateBefore =
+          .ok (frontendStmt, stateAfter) ∧
+        frontendStmt ∈ frontendStmts := by
+  rcases Stmt.List.elaborateForInitBlockWithScope_elaborate_exists
+      hElab with
+    ⟨stateBeforeList, stateAfterList, hList⟩
+  exact elaborate_exists_stmt hOccurrence hList
 
 end StmtListUserCall
 

@@ -67,11 +67,16 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.RawAst.Elab.clzHelperYulInterface_orderedLookup
 #check EvmCompiler.Solidity.RawAst.Elab.clzHelperAstBody_zero_exec
 #check EvmCompiler.Solidity.RawAst.Elab.clzHelperYulInterface_call_succ
+#check EvmCompiler.Solidity.RawAst.RawOccurrence.StmtElaborationOccurrence
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.Expr.List.elaborate_mem
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.ExprUserCall.elaborate
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.Stmt.List.elaborate_mem
+#check EvmCompiler.Solidity.RawAst.RawOccurrence.Stmt.List.elaborateBlock_elaborate_exists
+#check EvmCompiler.Solidity.RawAst.RawOccurrence.Stmt.List.elaborateForInitBlockWithScope_elaborate_exists
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.Stmt.CaseList.elaborate_mem
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.StmtListUserCall.elaborate_exists_stmt
+#check EvmCompiler.Solidity.RawAst.RawOccurrence.StmtListUserCall.elaborateBlock_exists_stmt
+#check EvmCompiler.Solidity.RawAst.RawOccurrence.StmtListUserCall.elaborateForInitBlockWithScope_exists_stmt
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.CaseListUserCall.exists_split_case
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.CaseListUserCall.elaborate_exists_case
 #check EvmCompiler.Solidity.RawAst.Elab.elaborateCode_hoistedFunction_mem
@@ -188,8 +193,12 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.ExprUserCall.elaborate_direct_user
 #print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.ExprUserCall.elaborate
 #print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Stmt.List.elaborate_mem
+#print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Stmt.List.elaborateBlock_elaborate_exists
+#print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Stmt.List.elaborateForInitBlockWithScope_elaborate_exists
 #print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Stmt.CaseList.elaborate_mem
 #print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.StmtListUserCall.elaborate_exists_stmt
+#print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.StmtListUserCall.elaborateBlock_exists_stmt
+#print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.StmtListUserCall.elaborateForInitBlockWithScope_exists_stmt
 #print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.CaseListUserCall.exists_split_case
 #print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.CaseListUserCall.elaborate_exists_case
 #print axioms EvmCompiler.Solidity.RawAst.Elab.elaborateCode_hoistedFunction_mem
