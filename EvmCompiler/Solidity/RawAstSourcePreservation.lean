@@ -626,6 +626,127 @@ theorem leave_ordered
 
 end StmtNormalized
 
+/-- Static compiler evidence for one raw function binding. It records the
+checked function elaboration and its canonical ordered target, but no semantic
+preservation premise. `generatedScopes` is the definition-site lexical suffix
+under which the function body was elaborated. -/
+structure CompiledFunctionBinding
+    (builtinContext : Frontend.ObjectBuiltinContext)
+    (contract : Frontend.AstContract)
+    (generated : Name)
+    (rawFn : Raw.SourceSemantics.FunctionDef)
+    (generatedScopes : List (List (Name × Name))) where
+  frontFn : Frontend.FunctionDef
+  functionState : Elab.State
+  finalFunctionState : Elab.State
+  orderedBody : List Frontend.AstStmt
+  functionScopes : functionState.functionScopes = generatedScopes
+  elaborates :
+    (Elab.FunctionDef.elaborate rawFn.params rawFn.returns rawFn.body).run
+        functionState = .ok (frontFn, finalFunctionState)
+  bodyNormalized :
+    StmtListNormalized builtinContext frontFn.body orderedBody
+  orderedLookup :
+    contract.functions.lookup generated =
+      some (.Def rawFn.params rawFn.returns orderedBody)
+
+/-- One raw function scope and the generated-name scope produced for the same
+block. Generated lookup is complete with respect to raw lookup; each resolved
+binding carries its checked canonical target. -/
+structure CompiledFunctionScope
+    (builtinContext : Frontend.ObjectBuiltinContext)
+    (contract : Frontend.AstContract)
+    (rawScope : Raw.SourceSemantics.FunctionScope)
+    (generatedScope : List (Name × Name))
+    (generatedScopes : List (List (Name × Name))) : Prop where
+  binding :
+    ∀ {rawName generated},
+      Elab.lookupFunctionInScope rawName generatedScope = some generated →
+        ∃ rawFn,
+          Raw.SourceSemantics.lookupFunctionInScope rawName rawScope =
+              some rawFn ∧
+            Nonempty
+              (CompiledFunctionBinding builtinContext contract
+                generated rawFn generatedScopes)
+  rawLookupNone :
+    ∀ {rawName},
+      Elab.lookupFunctionInScope rawName generatedScope = none →
+        Raw.SourceSemantics.lookupFunctionInScope rawName rawScope = none
+
+/-- Lexically aligned raw and generated function-scope stacks. The head scope
+stores definition-site evidence against the entire generated suffix. -/
+inductive CompiledFunctionScopes
+    (builtinContext : Frontend.ObjectBuiltinContext)
+    (contract : Frontend.AstContract) :
+    List Raw.SourceSemantics.FunctionScope →
+      List (List (Name × Name)) → Prop where
+  | nil : CompiledFunctionScopes builtinContext contract [] []
+  | cons
+      {rawScope : Raw.SourceSemantics.FunctionScope}
+      {rawRest : List Raw.SourceSemantics.FunctionScope}
+      {generatedScope : List (Name × Name)}
+      {generatedRest : List (List (Name × Name))}
+      (head :
+        CompiledFunctionScope builtinContext contract rawScope generatedScope
+          (generatedScope :: generatedRest))
+      (tail :
+        CompiledFunctionScopes builtinContext contract rawRest generatedRest) :
+      CompiledFunctionScopes builtinContext contract
+        (rawScope :: rawRest) (generatedScope :: generatedRest)
+
+namespace CompiledFunctionScopes
+
+/-- Resolve an elaborator user-function lookup to the corresponding raw
+definition-site lexical suffix and checked ordered function binding. -/
+theorem resolve
+    {builtinContext : Frontend.ObjectBuiltinContext}
+    {contract : Frontend.AstContract}
+    {rawScopes : List Raw.SourceSemantics.FunctionScope}
+    {generatedScopes : List (List (Name × Name))}
+    (hScopes :
+      CompiledFunctionScopes builtinContext contract rawScopes generatedScopes)
+    {rawName generated : Name}
+    (hResolve :
+      Elab.resolveFunctionIn rawName generatedScopes = some generated) :
+    ∃ rawFn rawLexical generatedLexical,
+      Raw.SourceSemantics.lookupFunctionWithLexicalScopesIn
+          rawName rawScopes = some (rawFn, rawLexical) ∧
+        Nonempty
+          (CompiledFunctionBinding builtinContext contract
+            generated rawFn generatedLexical) ∧
+        CompiledFunctionScopes builtinContext contract
+          rawLexical generatedLexical := by
+  induction hScopes with
+  | nil =>
+      simp [Elab.resolveFunctionIn] at hResolve
+  | @cons rawScope rawRest generatedScope generatedRest hHead hTail ih =>
+      cases hLookup : Elab.lookupFunctionInScope rawName generatedScope with
+      | none =>
+          have hRawNone := hHead.rawLookupNone hLookup
+          have hOuter :
+              Elab.resolveFunctionIn rawName generatedRest = some generated := by
+            simpa [Elab.resolveFunctionIn, hLookup] using hResolve
+          rcases ih hOuter with
+            ⟨rawFn, rawLexical, generatedLexical,
+              hRawResolve, hBinding, hLexical⟩
+          refine
+            ⟨rawFn, rawLexical, generatedLexical, ?_, hBinding, hLexical⟩
+          simp [Raw.SourceSemantics.lookupFunctionWithLexicalScopesIn,
+            hRawNone, hRawResolve]
+      | some resolved =>
+          have hGenerated : resolved = generated := by
+            simpa [Elab.resolveFunctionIn, hLookup] using hResolve
+          subst resolved
+          rcases hHead.binding hLookup with
+            ⟨rawFn, hRawLookup, hBinding⟩
+          refine
+            ⟨rawFn, rawScope :: rawRest, generatedScope :: generatedRest,
+              ?_, hBinding, .cons hHead hTail⟩
+          simp [Raw.SourceSemantics.lookupFunctionWithLexicalScopesIn,
+            hRawLookup]
+
+end CompiledFunctionScopes
+
 /-- Bundled semantic evidence for one elaborated raw user call. The frontend
 derivation supplies the generated callee lookup; recursive preservation
 supplies the callee body for every argument result. -/
