@@ -95,6 +95,8 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.forward_refl
 #check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.runForward_of_eq
 #check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.ObjectRunEquivalent.preserved
+#check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.ArtifactRawSourceEquivalent
+#check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.rawSourceEquivalentToRawBytecode
 #check EvmCompiler.Solidity.RawAst.FrontendOccurrence.ResolvedLocalCall
 #check EvmCompiler.Solidity.RawAst.FrontendOccurrence.UserCall.objectBuiltinNameArg?_none
 #check EvmCompiler.Solidity.RawAst.FrontendOccurrence.UserCall.not_lit
