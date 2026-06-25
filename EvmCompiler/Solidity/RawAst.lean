@@ -883,6 +883,27 @@ def ClzHelperYulInterface (functions : List (Name × Frontend.FunctionDef))
             some (clzHelperAstFunctionDef arg ret)
   | _, _, _ => True
 
+def clzNamesDistinct? (arg? ret? : Option Name) : Bool :=
+  match arg?, ret? with
+  | some arg, some ret => !(arg == ret)
+  | _, _ => true
+
+def ClzNamesDistinct (arg? ret? : Option Name) : Prop :=
+  match arg?, ret? with
+  | some arg, some ret => arg ≠ ret
+  | _, _ => True
+
+theorem clzNamesDistinct?_sound
+    {arg? ret? : Option Name}
+    (hDistinct : clzNamesDistinct? arg? ret? = true) :
+    ClzNamesDistinct arg? ret? := by
+  cases arg? <;> cases ret? <;>
+    simp [clzNamesDistinct?, ClzNamesDistinct] at hDistinct ⊢
+  rename_i arg ret
+  intro hEq
+  subst ret
+  simp at hDistinct
+
 mutual
   def Literal.elaborate : Raw.Literal → DecodeM Frontend.Expr
     | .number value => .ok (.lit value)
@@ -1198,8 +1219,11 @@ def elaborateCode (stmts : List Raw.Stmt) :
       Option Name × Option Name × Option Name) := do
   let (dispatcher, state) ← elaborateCodeCore stmts
   let functions := finalFunctions state
-  pure (dispatcher, functions, state.clzHelperName?, state.clzArgName?,
-    state.clzReturnName?)
+  if clzNamesDistinct? state.clzArgName? state.clzReturnName? then
+    pure (dispatcher, functions, state.clzHelperName?, state.clzArgName?,
+      state.clzReturnName?)
+  else
+    Except.error "generated clz helper argument and return names collide"
 
 theorem elaborateCode_parts
     {stmts : List Raw.Stmt} {dispatcher : List Frontend.Stmt}
@@ -1219,11 +1243,37 @@ theorem elaborateCode_parts
       simp [hRun] at hElab
   | ok result =>
       rcases result with ⟨dispatcher', state⟩
+      cases hDistinct :
+          clzNamesDistinct? state.clzArgName? state.clzReturnName? with
+      | false =>
+          simp [hRun, hDistinct] at hElab
+      | true =>
+          simp [hRun, hDistinct] at hElab
+          cases hElab
+          refine ⟨state, ?_, rfl, rfl, rfl, rfl⟩
+          simp
+
+theorem elaborateCode_clzNamesDistinct
+    {stmts : List Raw.Stmt} {dispatcher : List Frontend.Stmt}
+    {functions : List (Name × Frontend.FunctionDef)}
+    {helper? arg? ret? : Option Name}
+    (hElab :
+      elaborateCode stmts = .ok (dispatcher, functions, helper?, arg?, ret?)) :
+    ClzNamesDistinct arg? ret? := by
+  unfold elaborateCode at hElab
+  cases hRun : elaborateCodeCore stmts with
+  | error err =>
       simp [hRun] at hElab
-      rcases hElab with ⟨hDispatcher, hFunctions, hHelper, hArg, hRet⟩
-      refine
-        ⟨state, ?_, hFunctions.symm, hHelper.symm, hArg.symm, hRet.symm⟩
-      simp [hDispatcher]
+  | ok result =>
+      rcases result with ⟨dispatcher', state⟩
+      cases hDistinct :
+          clzNamesDistinct? state.clzArgName? state.clzReturnName? with
+      | false =>
+          simp [hRun, hDistinct] at hElab
+      | true =>
+          simp [hRun, hDistinct] at hElab
+          cases hElab
+          exact clzNamesDistinct?_sound hDistinct
 
 theorem elaborateCode_clzExpansionOk
     {stmts : List Raw.Stmt} {dispatcher : List Frontend.Stmt}
@@ -1474,16 +1524,17 @@ def Object.CodeGeneratedNormalizationEvidence
       Elab.elaborateCode code =
         .ok (frontend.dispatcher, frontend.functions,
           helper?, arg?, ret?) ∧
-        frontend.functions = Elab.finalFunctions state ∧
+          frontend.functions = Elab.finalFunctions state ∧
           helper? = state.clzHelperName? ∧
             arg? = state.clzArgName? ∧
               ret? = state.clzReturnName? ∧
-                Elab.ClzExpansionOk frontend.functions
-                  helper? arg? ret? ∧
-                  Elab.ClzHelperYulInterface frontend.functions
+                Elab.ClzNamesDistinct arg? ret? ∧
+                  Elab.ClzExpansionOk frontend.functions
                     helper? arg? ret? ∧
-                    ∀ entry, entry ∈ state.hoistedFunctions →
-                      entry ∈ frontend.functions
+                    Elab.ClzHelperYulInterface frontend.functions
+                      helper? arg? ret? ∧
+                      ∀ entry, entry ∈ state.hoistedFunctions →
+                        entry ∈ frontend.functions
 
 theorem Object.elaborate?_clzExpansionOk
     {obj : Object} {evmVersion : Yul.SolcValidation.EvmVersion}
@@ -1681,6 +1732,7 @@ theorem Object.elaboratePreservingOrder?_generatedNormalizationEvidence
       exact
         ⟨dispatcher, state, helper?, arg?, ret?, hCore, hCodeElab,
           hFunctions, hHelper, hArg, hRet,
+          Elab.elaborateCode_clzNamesDistinct hCodeElab,
           Elab.elaborateCode_clzExpansionOk hCodeElab,
           Elab.clzExpansionOk_yulInterface
             (Elab.elaborateCode_clzExpansionOk hCodeElab), by
