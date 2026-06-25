@@ -92,14 +92,20 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.RawAst.Raw.SourceSemantics.Exec.assignment_succ
 #check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.RunForward
 #check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.ObjectPreserved
+#check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.ObjectPositivePreserved
 #check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.forward_refl
 #check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.runForward_of_eq
 #check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.ObjectRunEquivalent.preserved
+#check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.ObjectPositiveRunEquivalent.preserved
 #check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.ArtifactRawSourceContext
 #check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.ArtifactRawSourceContext.nonempty_of_compile
 #check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.ArtifactRawSourceContext.withSourceRun
+#check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.ArtifactRawSourceContext.withSourcePreserved
 #check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.ArtifactRawSourceEquivalent
+#check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.ArtifactRawSourcePreserved
+#check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.ArtifactRawSourceEquivalent.preserved
 #check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.rawSourceEquivalentToRawBytecode
+#check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.rawSourcePreservedToRawBytecode
 #check EvmCompiler.Solidity.RawAst.FrontendOccurrence.ResolvedLocalCall
 #check EvmCompiler.Solidity.RawAst.FrontendOccurrence.UserCall.objectBuiltinNameArg?_none
 #check EvmCompiler.Solidity.RawAst.FrontendOccurrence.UserCall.not_lit
@@ -890,6 +896,9 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.RawAst.compileArtifactFromRawSolcIr?_resolved_ordered
 #print axioms EvmCompiler.Solidity.RawAst.compileArtifactFromRawSolcIr?_sourceLocalFunction_noShadow_program_entries
 #print axioms EvmCompiler.Solidity.RawAst.compileArtifactFromRawSolcIr?_sourceLocalFunction_noShadow_alphaPreserved
+#print axioms EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.ObjectPositiveRunEquivalent.preserved
+#print axioms EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.ArtifactRawSourceEquivalent.preserved
+#print axioms EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.rawSourcePreservedToRawBytecode
 #print axioms EvmCompiler.Solidity.RawAst.compileArtifactFromRawSolcIr?_decodingCorrect
 #print axioms EvmCompiler.Solidity.RawAst.compileArtifactFromRawSolcIrWithLinkerSymbols?_valid
 #print axioms EvmCompiler.Solidity.RawAst.compileArtifactFromRawSolcIrWithLinkerSymbols?_rawParts

@@ -118,6 +118,29 @@ structure ObjectPositiveRunEquivalent
         rawObjectRun (rawFuel + 1) context object state =
           orderedRun (orderedFuel + 1) ordered state
 
+structure ObjectPositivePreserved
+    (context : Frontend.ObjectBuiltinContext)
+    (object : Raw.Object) (ordered : Yul.OrderedProgram) : Prop where
+  forward :
+    ∀ (rawFuel : Nat) (state : State),
+      ∃ orderedFuel,
+        RunForward (rawFuel + 1) (orderedFuel + 1)
+          context object ordered state
+
+namespace ObjectPositiveRunEquivalent
+
+theorem preserved
+    {context : Frontend.ObjectBuiltinContext}
+    {object : Raw.Object} {ordered : Yul.OrderedProgram}
+    (hEq : ObjectPositiveRunEquivalent context object ordered) :
+    ObjectPositivePreserved context object ordered where
+  forward := by
+    intro rawFuel state
+    rcases hEq.run_eq rawFuel state with ⟨orderedFuel, hRun⟩
+    exact ⟨orderedFuel, runForward_of_eq hRun⟩
+
+end ObjectPositiveRunEquivalent
+
 structure ArtifactRawSourceContext
     (rawJson : String) (selection : Selection)
     (artifact : Frontend.Program.Artifact) where
@@ -201,6 +224,14 @@ structure ArtifactRawSourceEquivalent
     ObjectPositiveRunEquivalent context selected.root
       artifact.codeArtifact.ordered
 
+structure ArtifactRawSourcePreserved
+    (rawJson : String) (selection : Selection)
+    (artifact : Frontend.Program.Artifact)
+    extends ArtifactRawSourceContext rawJson selection artifact where
+  sourceRun :
+    ObjectPositivePreserved context selected.root
+      artifact.codeArtifact.ordered
+
 namespace ArtifactRawSourceContext
 
 def withSourceRun
@@ -214,7 +245,31 @@ def withSourceRun
   { ctx with
     sourceRun := sourceRun }
 
+def withSourcePreserved
+    {rawJson : String} {selection : Selection}
+    {artifact : Frontend.Program.Artifact}
+    (ctx : ArtifactRawSourceContext rawJson selection artifact)
+    (sourceRun :
+      ObjectPositivePreserved ctx.context ctx.selected.root
+        artifact.codeArtifact.ordered) :
+    ArtifactRawSourcePreserved rawJson selection artifact :=
+  { ctx with
+    sourceRun := sourceRun }
+
 end ArtifactRawSourceContext
+
+namespace ArtifactRawSourceEquivalent
+
+def preserved
+    {rawJson : String} {selection : Selection}
+    {artifact : Frontend.Program.Artifact}
+    (hSource :
+      ArtifactRawSourceEquivalent rawJson selection artifact) :
+    ArtifactRawSourcePreserved rawJson selection artifact :=
+  { hSource.toArtifactRawSourceContext with
+    sourceRun := hSource.sourceRun.preserved }
+
+end ArtifactRawSourceEquivalent
 
 theorem rawSourceEquivalentToRawBytecode
     {rawJson : String} {selection : Selection}
@@ -262,6 +317,53 @@ theorem rawSourceEquivalentToRawBytecode
         (orderedRun (orderedFuel + 1) artifact.codeArtifact.ordered
           (Yul.EndToEnd.installedSourceState artifact baseSource)) :=
     runForward_of_eq hRawOrdered
+  refine ⟨structuredFuel, hAccepted, ?_⟩
+  exact
+    Simulation.Interaction.ForwardRel.trans
+      hRawOrderedForward hOrderedBytecode
+      (by
+        intro rawDone orderedError hSame hTruncated
+        subst rawDone
+        exact ⟨orderedError, rfl, hTruncated⟩)
+
+theorem rawSourcePreservedToRawBytecode
+    {rawJson : String} {selection : Selection}
+    {artifact : Frontend.Program.Artifact}
+    {rawFuel : Nat}
+    {baseSource : EvmYul.SharedState .Yul}
+    (hSource :
+      ArtifactRawSourcePreserved rawJson selection artifact) :
+    ∃ structuredFuel : Nat,
+      Assembly.Accepted artifact.codeArtifact.compiled.certified.target ∧
+        Simulation.Interaction.ForwardRel
+          Yul.FunctionsInteractionPrimitive.Truncated
+          (RawSourceBytecodePrefixDoneRel artifact)
+          (rawObjectRun (rawFuel + 1) hSource.context hSource.selected.root
+            (Yul.EndToEnd.installedSourceState artifact baseSource))
+          (Assembly.Compact.InteractionSemantics.openRunNResult
+            (Assembly.Bytecode.ofList artifact.image.bytes)
+            (2 *
+              ((Structured.InteractionStaticCost.blockBudget
+                  artifact.codeArtifact.compiled.expressions.toStructured
+                  structuredFuel
+                  artifact.codeArtifact.compiled.expressions.toStructured.body +
+                    1) *
+                TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
+                  artifact.codeArtifact.compiled.cfg))
+            { (Yul.EndToEnd.initialExpressionsState artifact baseSource).evm with
+              pc := EvmYul.UInt256.ofNat 0 }) := by
+  rcases hSource.sourceRun.forward rawFuel
+      (Yul.EndToEnd.installedSourceState artifact baseSource) with
+    ⟨orderedFuel, hRawOrderedForward⟩
+  rcases
+      Yul.EndToEnd.optimizedSolcYulToRawBytecode
+        (object := hSource.program.object)
+        (linkerSymbols := hSource.linkerSymbols)
+        (artifact := artifact)
+        (sourceFuel := orderedFuel)
+        (baseSource := baseSource)
+        hSource.compile with
+    ⟨structuredFuel, hAccepted, hOrderedBytecode⟩
   refine ⟨structuredFuel, hAccepted, ?_⟩
   exact
     Simulation.Interaction.ForwardRel.trans
