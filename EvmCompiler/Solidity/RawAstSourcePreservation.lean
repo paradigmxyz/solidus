@@ -35,6 +35,16 @@ def PendingBlockDoneRel (entryStore : EvmYul.Yul.VarStore) :
   Simulation.Interaction.ExceptRel Eq
     (fun raw ordered => ordered = raw.restrictStoreTo entryStore)
 
+/-- Intermediate statement-list outcomes inside one lexical block. Most
+statements preserve exact state; administrative empty-block stubs may apply the
+block-entry restriction early on abrupt states. The enclosing block erases
+that distinction. -/
+def BlockSeqDoneRel (entryStore : EvmYul.Yul.VarStore) :
+    Except Failure State → Except Failure State → Prop :=
+  Simulation.Interaction.ExceptRel Eq
+    (fun raw ordered =>
+      ordered = raw ∨ ordered = raw.restrictStoreTo entryStore)
+
 theorem forward_refl {α : Type}
     (truncated : Failure → Prop)
     (run : Open α) :
@@ -1295,6 +1305,40 @@ def SeqRunForward (rawFuel orderedFuel : Nat)
     (Yul.InteractionSemantics.execSeq orderedFuel orderedCode
       (some contract) state)
 
+def ScopedSeqRunForward (entryStore : EvmYul.Yul.VarStore)
+    (rawFuel orderedFuel : Nat)
+    (context : Raw.SourceSemantics.Context)
+    (rawCode : List Raw.Stmt) (orderedCode : List Frontend.AstStmt)
+    (contract : Frontend.AstContract) (state : State) : Prop :=
+  Simulation.Interaction.ForwardRel
+    Yul.FunctionsInteractionPrimitive.Truncated
+    (BlockSeqDoneRel entryStore)
+    (Raw.SourceSemantics.execSeq rawFuel context rawCode state)
+    (Yul.InteractionSemantics.execSeq orderedFuel orderedCode
+      (some contract) state)
+
+theorem scopedSeqRunForward_of_exact
+    {entryStore : EvmYul.Yul.VarStore}
+    {rawFuel orderedFuel : Nat}
+    {context : Raw.SourceSemantics.Context}
+    {rawCode : List Raw.Stmt} {orderedCode : List Frontend.AstStmt}
+    {contract : Frontend.AstContract} {state : State}
+    (hExact :
+      SeqRunForward rawFuel orderedFuel
+        context rawCode orderedCode contract state) :
+    ScopedSeqRunForward entryStore rawFuel orderedFuel
+      context rawCode orderedCode contract state := by
+  unfold SeqRunForward ScopedSeqRunForward at *
+  apply Simulation.Interaction.ForwardRel.mono hExact
+  intro rawDone orderedDone hDone
+  unfold SameDoneRel at hDone
+  subst orderedDone
+  cases rawDone with
+  | error error =>
+      exact Simulation.Interaction.ExceptRel.error rfl
+  | ok rawState =>
+      exact Simulation.Interaction.ExceptRel.ok (.inl rfl)
+
 theorem seqRunForward_zero
     {orderedFuel : Nat}
     {context : Raw.SourceSemantics.Context}
@@ -1470,6 +1514,43 @@ theorem blockCodeRunForward_of_scope_seq
       exact Simulation.Interaction.ForwardRel.done rfl
   | ok stateAfterBody =>
       exact Simulation.Interaction.ForwardRel.done rfl
+
+theorem blockCodeRunForward_of_scope_scopedSeq
+    {rawFuel orderedFuel : Nat}
+    {context : Raw.SourceSemantics.Context}
+    {scope : Raw.SourceSemantics.FunctionScope}
+    {rawCode : List Raw.Stmt} {orderedCode : List Frontend.AstStmt}
+    {contract : Frontend.AstContract} {state : State}
+    (hScope : Raw.SourceSemantics.functionScope? rawCode = some scope)
+    (hSeq :
+      ScopedSeqRunForward state.store rawFuel orderedFuel
+        (context.withFunctionScope scope)
+        rawCode orderedCode contract state) :
+    BlockCodeRunForward (rawFuel + 1) (orderedFuel + 1)
+      context rawCode orderedCode contract state := by
+  unfold BlockCodeRunForward ScopedSeqRunForward at *
+  rw [Raw.SourceSemantics.ExecBlock.succ]
+  rw [Yul.InteractionSemantics.Exec.block_succ]
+  simp only [hScope]
+  refine Simulation.Interaction.ForwardRel.bind_custom hSeq ?_
+  intro rawDone orderedDone hDone
+  cases hDone with
+  | error hError =>
+      subst_vars
+      exact Simulation.Interaction.ForwardRel.done rfl
+  | @ok rawState orderedState hState =>
+      cases hState with
+      | inl hExact =>
+          subst orderedState
+          exact Simulation.Interaction.ForwardRel.done rfl
+      | inr hRestricted =>
+          subst orderedState
+          apply Simulation.Interaction.ForwardRel.done
+          unfold SameDoneRel
+          congr 1
+          exact
+            (Yul.InteractionSemantics.State.restrictStoreTo_idem
+              rawState state.store).symm
 
 /-- Raw block-body sequence preservation against the ordered dispatcher
 sequence, before both sides apply their lexical block store restriction. -/

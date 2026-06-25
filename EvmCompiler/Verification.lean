@@ -114,6 +114,7 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.RawAst.Raw.SourceSemantics.Loop.succ_succ
 #check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.BlockRunForward
 #check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.PendingBlockDoneRel
+#check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.BlockSeqDoneRel
 #check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.ExprValuesRunForward
 #check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.ExprRunForward
 #check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.ArgsRunForward
@@ -165,12 +166,15 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.stmtRunForward_functionDefinition_stub_succ
 #check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.StmtElaborationRunForward
 #check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.SeqRunForward
+#check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.ScopedSeqRunForward
+#check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.scopedSeqRunForward_of_exact
 #check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.seqRunForward_zero
 #check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.seqRunForward_nil_succ
 #check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.seqRunForward_cons
 #check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.seqRunForward_of_elaboration
 #check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.seqRunForward_cons_functionDefinition_omitted_ok
 #check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.blockCodeRunForward_of_scope_seq
+#check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.blockCodeRunForward_of_scope_scopedSeq
 #check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.DispatcherSeqRunForward
 #check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.dispatcherSeqRunForward_of_seq
 #check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.dispatcherSeqRunForward_zero
@@ -1010,11 +1014,13 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.stmtRunForward_leave_succ
 #print axioms EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.stmtRunForward_functionDefinition_stub_succ
 #print axioms EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.seqRunForward_of_elaboration
+#print axioms EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.scopedSeqRunForward_of_exact
 #print axioms EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.seqRunForward_zero
 #print axioms EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.seqRunForward_nil_succ
 #print axioms EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.seqRunForward_cons
 #print axioms EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.seqRunForward_cons_functionDefinition_omitted_ok
 #print axioms EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.blockCodeRunForward_of_scope_seq
+#print axioms EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.blockCodeRunForward_of_scope_scopedSeq
 #print axioms EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.dispatcherSeqRunForward_of_seq
 #print axioms EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.blockRunForward_of_scope_seq
 #print axioms EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.ArtifactRawSourceContext.dispatcher_parts
