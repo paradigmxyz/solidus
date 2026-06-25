@@ -2584,6 +2584,45 @@ mutual
         exact CaseListContext.tail (CaseListContext.ofOccurrence hTail)
 end
 
+theorem stmtListContext
+    {ordered : Yul.OrderedProgram}
+    {generated : Name}
+    {params returns : List Name} {body : List Yul.AstStmt}
+    {args : List Yul.AstExpr} {stmts : List Yul.AstStmt}
+    {prefixFuel : Nat} {code : Option Yul.AstContract}
+    {shared : EvmYul.SharedState .Yul}
+    {vars : EvmYul.Yul.VarStore}
+    (hInterface :
+      FocusedGeneratedCallSemanticInterface ordered generated params returns
+        body args stmts prefixFuel code shared vars) :
+    StmtListContext hInterface stmts := by
+  rcases hInterface.prefixEvidence.splitPrefix with
+    ⟨pre, stmt, suffix, hSplit, hStmt, _hPrefix⟩
+  subst stmts
+  exact
+    StmtListContext.ofOccurrence
+      (Yul.YulOccurrence.StmtListUserCall.of_split_stmt hStmt)
+
+theorem splitStmtContext
+    {ordered : Yul.OrderedProgram}
+    {generated : Name}
+    {params returns : List Name} {body : List Yul.AstStmt}
+    {args : List Yul.AstExpr} {stmts : List Yul.AstStmt}
+    {prefixFuel : Nat} {code : Option Yul.AstContract}
+    {shared : EvmYul.SharedState .Yul}
+    {vars : EvmYul.Yul.VarStore}
+    (hInterface :
+      FocusedGeneratedCallSemanticInterface ordered generated params returns
+        body args stmts prefixFuel code shared vars) :
+    ∃ (pre : List Yul.AstStmt) (stmt : Yul.AstStmt)
+        (suffix : List Yul.AstStmt),
+      stmts = pre ++ stmt :: suffix ∧
+        StmtContext hInterface stmt := by
+  rcases hInterface.prefixEvidence.splitPrefix with
+    ⟨pre, stmt, suffix, hSplit, hStmt, _hPrefix⟩
+  exact
+    ⟨pre, stmt, suffix, hSplit, StmtContext.ofOccurrence hStmt⟩
+
 end FocusedGeneratedCallSemanticInterface
 
 def FocusedGeneratedStmtListCallPrefix
