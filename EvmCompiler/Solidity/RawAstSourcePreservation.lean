@@ -128,6 +128,91 @@ def PrimitiveRunForward (rawFuel orderedFuel : Nat)
     (Yul.InteractionSemantics.primitiveSemantics.eval
       orderedFuel state op args)
 
+theorem primitiveOpenEval_succ_succ_eq
+    (left right : Nat) (state : State)
+    (op : EvmYul.Operation .Yul) (args : List Frontend.Word) :
+    Yul.InteractionSemantics.Primitive.openEval (left + 2) state op args =
+      Yul.InteractionSemantics.Primitive.openEval (right + 2) state op args := by
+  cases op <;> rename_i inner <;> cases inner <;>
+    simp [Yul.InteractionSemantics.Primitive.openEval,
+      Yul.InteractionSemantics.Primitive.closedEval,
+      Simulation.ExternalKind.ofYulOperation?,
+      Simulation.CallKind.ofYulOperation?,
+      Simulation.CreateKind.ofYulOperation?,
+      EvmYul.Yul.primCall]
+
+theorem primitiveOpenEval_one_eq_or_truncated
+    (right : Nat) (state : State)
+    (op : EvmYul.Operation .Yul) (args : List Frontend.Word) :
+    Yul.InteractionSemantics.Primitive.openEval 1 state op args =
+        Yul.InteractionSemantics.Primitive.openEval (right + 2) state op args ∨
+      ∃ failure,
+        Yul.InteractionSemantics.Primitive.openEval 1 state op args =
+            .done (.error failure) ∧
+          Yul.FunctionsInteractionPrimitive.Truncated failure := by
+  cases op <;> rename_i inner <;> cases inner <;>
+    simp [Yul.InteractionSemantics.Primitive.openEval,
+      Yul.InteractionSemantics.Primitive.closedEval,
+      Yul.InteractionSemantics.Primitive.fail,
+      Yul.FunctionsInteractionPrimitive.Truncated,
+      Simulation.ExternalKind.ofYulOperation?,
+      Simulation.CallKind.ofYulOperation?,
+      Simulation.CreateKind.ofYulOperation?,
+      EvmYul.Yul.primCall]
+
+/-- Widening only the target primitive fuel preserves every source run. At
+fuel zero, and at the one-fuel `EXTCODEHASH` edge, source exhaustion is the
+declared truncation relation; all other positive runs are definitionally
+fuel-insensitive after the primitive dispatcher is classified. -/
+theorem primitiveRunForward_slack
+    (rawFuel slack : Nat) (state : State)
+    (op : EvmYul.Operation .Yul) (args : List Frontend.Word) :
+    PrimitiveRunForward rawFuel (rawFuel + slack) state op args := by
+  unfold PrimitiveRunForward
+  change
+    Simulation.Interaction.ForwardRel
+      Yul.FunctionsInteractionPrimitive.Truncated SameDoneRel
+      (Yul.InteractionSemantics.Primitive.openEval rawFuel state op args)
+      (Yul.InteractionSemantics.Primitive.openEval
+        (rawFuel + slack) state op args)
+  cases rawFuel with
+  | zero =>
+      simp only [Yul.InteractionSemantics.Primitive.openEval]
+      exact
+        Simulation.Interaction.ForwardRel.truncated
+          (by simp [Yul.FunctionsInteractionPrimitive.Truncated])
+  | succ predecessor =>
+      cases predecessor with
+      | zero =>
+          cases slack with
+          | zero =>
+              simpa using
+                (forward_refl Yul.FunctionsInteractionPrimitive.Truncated
+                  (Yul.InteractionSemantics.Primitive.openEval
+                    1 state op args))
+          | succ extra =>
+              rcases primitiveOpenEval_one_eq_or_truncated
+                  extra state op args with hEq | hTruncated
+              · rw [show 1 + (extra + 1) = extra + 2 by omega]
+                rw [hEq]
+                exact
+                  forward_refl Yul.FunctionsInteractionPrimitive.Truncated _
+              · rcases hTruncated with ⟨failure, hRun, hFailure⟩
+                rw [show 1 + (extra + 1) = extra + 2 by omega]
+                rw [hRun]
+                exact
+                  Simulation.Interaction.ForwardRel.truncated hFailure
+      | succ residual =>
+          have hEq :=
+            primitiveOpenEval_succ_succ_eq
+              residual (residual + slack) state op args
+          rw [show residual + 1 + 1 = residual + 2 by omega]
+          rw [show residual + 1 + 1 + slack =
+            (residual + slack) + 2 by omega]
+          rw [hEq]
+          exact
+            forward_refl Yul.FunctionsInteractionPrimitive.Truncated _
+
 /-- Generic lexical-block preservation under an explicit raw function context
 and active ordered contract. -/
 def BlockCodeRunForward (rawFuel orderedFuel : Nat)
