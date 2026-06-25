@@ -2016,6 +2016,137 @@ theorem sameRuntimeData_afterEVMInstructionCharge_afterDynamic
   cases state
   rfl
 
+inductive PureStackStep : PrimStep -> Prop where
+  | bin (f : EvmYul.Primop.Binary) : PureStackStep (.bin f)
+  | un (f : EvmYul.Primop.Unary) : PureStackStep (.un f)
+  | tri (f : EvmYul.Primop.Ternary) : PureStackStep (.tri f)
+  | pop : PureStackStep .pop
+  | dup (n : Nat) : PureStackStep (.dup n)
+  | swap (n : Nat) : PureStackStep (.swap n)
+
+theorem PureStackStep.run_openStateRel
+    {step : PrimStep} (hPure : PureStackStep step)
+    {left right leftNext : EVMState}
+    (hRel : OpenStateRel left right)
+    (hLeft : step.run left = .ok leftNext) :
+    ∃ rightNext,
+      step.run right = .ok rightNext ∧ OpenStateRel leftNext rightNext := by
+  have hStack := hRel.stack_eq
+  cases hPure with
+  | bin f =>
+      cases hPop : right.stack.pop2 with
+      | none =>
+          have hLeftPop : left.stack.pop2 = none := by simpa [hStack]
+          simp [PrimStep.run, EvmYul.EVM.execBinOp, hLeftPop] at hLeft
+      | some values =>
+          rcases values with ⟨rest, a, b⟩
+          have hLeftPop : left.stack.pop2 = some (rest, a, b) := by
+            simpa [hStack] using hPop
+          simp [PrimStep.run, EvmYul.EVM.execBinOp, hLeftPop] at hLeft
+          simp only [Id.run, Except.ok.injEq] at hLeft
+          subst leftNext
+          refine ⟨right.replaceStackAndIncrPC (rest.push (f a b)), ?_, ?_⟩
+          · simp [PrimStep.run, EvmYul.EVM.execBinOp, hPop]
+            rfl
+          · exact OpenStateRel.replaceStackAndIncrPC hRel rfl
+  | un f =>
+      cases hPop : right.stack.pop with
+      | none =>
+          have hLeftPop : left.stack.pop = none := by simpa [hStack]
+          simp [PrimStep.run, EvmYul.EVM.execUnOp, hLeftPop] at hLeft
+      | some values =>
+          rcases values with ⟨rest, a⟩
+          have hLeftPop : left.stack.pop = some (rest, a) := by
+            simpa [hStack] using hPop
+          simp [PrimStep.run, EvmYul.EVM.execUnOp, hLeftPop] at hLeft
+          simp only [Id.run, Except.ok.injEq] at hLeft
+          subst leftNext
+          refine ⟨right.replaceStackAndIncrPC (rest.push (f a)), ?_, ?_⟩
+          · simp [PrimStep.run, EvmYul.EVM.execUnOp, hPop]
+            rfl
+          · exact OpenStateRel.replaceStackAndIncrPC hRel rfl
+  | tri f =>
+      cases hPop : right.stack.pop3 with
+      | none =>
+          have hLeftPop : left.stack.pop3 = none := by simpa [hStack]
+          simp [PrimStep.run, EvmYul.EVM.execTriOp, hLeftPop] at hLeft
+      | some values =>
+          rcases values with ⟨rest, a, b, c⟩
+          have hLeftPop : left.stack.pop3 = some (rest, a, b, c) := by
+            simpa [hStack] using hPop
+          simp [PrimStep.run, EvmYul.EVM.execTriOp, hLeftPop] at hLeft
+          simp only [Id.run, Except.ok.injEq] at hLeft
+          subst leftNext
+          refine ⟨right.replaceStackAndIncrPC (rest.push (f a b c)), ?_, ?_⟩
+          · simp [PrimStep.run, EvmYul.EVM.execTriOp, hPop]
+            rfl
+          · exact OpenStateRel.replaceStackAndIncrPC hRel rfl
+  | pop =>
+      cases hPop : right.stack.pop with
+      | none =>
+          have hLeftPop : left.stack.pop = none := by simpa [hStack]
+          simp [PrimStep.run, hLeftPop] at hLeft
+      | some values =>
+          rcases values with ⟨rest, a⟩
+          have hLeftPop : left.stack.pop = some (rest, a) := by
+            simpa [hStack] using hPop
+          simp [PrimStep.run, hLeftPop] at hLeft
+          subst leftNext
+          refine ⟨right.replaceStackAndIncrPC rest, ?_, ?_⟩
+          · simp [PrimStep.run, hPop]
+          · exact OpenStateRel.replaceStackAndIncrPC hRel rfl
+  | dup n =>
+      by_cases hLength : n ≤ right.stack.length
+      · have hLeftLength : n ≤ left.stack.length := by simpa [hStack]
+        simp [PrimStep.run, EvmYul.dup, hLeftLength] at hLeft
+        subst leftNext
+        let newStack :=
+          (right.stack.take n).getLast?.getD default :: right.stack
+        refine ⟨right.replaceStackAndIncrPC newStack, ?_, ?_⟩
+        · simp [PrimStep.run, EvmYul.dup, hLength, newStack]
+        · apply OpenStateRel.replaceStackAndIncrPC hRel
+          simp [newStack, hStack]
+      · have hShort : right.stack.length < n := Nat.lt_of_not_ge hLength
+        have hLeftLength : ¬ n ≤ left.stack.length := by simpa [hStack]
+        have hLeftShort : left.stack.length < n := by simpa [hStack]
+        simp [PrimStep.run, EvmYul.dup, hLength, hLeftLength,
+          hShort, hLeftShort] at hLeft
+  | swap n =>
+      by_cases hLength : n + 1 ≤ right.stack.length
+      · have hLeftLength : n + 1 ≤ left.stack.length := by simpa [hStack]
+        simp [PrimStep.run, EvmYul.swap, hLeftLength] at hLeft
+        subst leftNext
+        let pref := right.stack.take (n + 1)
+        let newStack := pref.getLast?.getD default ::
+          (pref.tail!.dropLast ++
+            pref.head! :: right.stack.drop (n + 1))
+        refine ⟨right.replaceStackAndIncrPC newStack, ?_, ?_⟩
+        · simp [PrimStep.run, EvmYul.swap, hLength, pref, newStack]
+        · apply OpenStateRel.replaceStackAndIncrPC hRel
+          simp [pref, newStack, hStack]
+      · have hShort : right.stack.length < n + 1 :=
+          Nat.lt_of_not_ge hLength
+        have hLeftLength : ¬ n + 1 ≤ left.stack.length := by
+          simpa [hStack]
+        have hLeftShort : left.stack.length < n + 1 := by simpa [hStack]
+        simp [PrimStep.run, EvmYul.swap, hLength, hLeftLength,
+          hShort, hLeftShort] at hLeft
+
+theorem continuingPrim_open_success_rel_of_pureStack
+    {op : PrimOp} {step : PrimStep}
+    {gasful openState gasfulNext : EVMState}
+    (hStep : op.continuingStep? = some step)
+    (hPure : PureStackStep step)
+    (hRel : OpenStateRel gasful openState)
+    (hGasful :
+      op.step (afterEVMInstructionChargeAt gasful) = .ok gasfulNext) :
+    ∃ openNext,
+      op.step openState = .ok openNext ∧
+        OpenStateRel gasfulNext openNext := by
+  rw [PrimOp.step_eq_continuingStep_run hStep] at hGasful ⊢
+  exact hPure.run_openStateRel
+    (afterEVMInstructionChargeAt_openStateRel_left hRel) hGasful
+
 theorem continuingStep_stackArity?_exists
     {op : PrimOp} {step : PrimStep}
     (hStep : op.continuingStep? = some step) :
@@ -2114,6 +2245,38 @@ theorem raw_continuing_prim_executes_after_charges
   have hClosed :
       Assembly.InteractionSemantics.PrimOp.openStep op
           (afterDynamicChargeAt state) =
+        Simulation.Interaction.done (.ok openNext) := by
+    rw [Assembly.InteractionSemantics.PrimOp.openStep_closed
+      (Assembly.InteractionSemantics.PrimOp.externalKind_none_of_continuingStep
+        hStep)
+      hGas hMsize]
+    simp [hOpen]
+  have hHalt := continuingStep_haltKind?_none hStep
+  rw [Compact.InteractionSemantics.openRunNResult_one_eq_instr
+    (instr := .prim op) trivial hDecode hPc]
+  simpa [Compact.Instr.openStepResult, Compact.Instr.openStep,
+    Assembly.InteractionSemantics.Target.openStepInstrResult,
+    Assembly.Target.stepInstrResultWith,
+    Assembly.InteractionSemantics.Target.openStepInstr,
+    Assembly.Target.stepInstrWith, hClosed, hHalt,
+    Simulation.Interaction.bind, Simulation.Interaction.pure,
+    Compact.Instr.haltKind?] using
+    (Interaction.Executes.done (.ok (StepResult.running openNext)))
+
+theorem raw_continuing_prim_executes_at
+    {op : PrimOp} {step : PrimStep}
+    {bytes : ByteArray} {pc : Nat} {state openNext : EVMState}
+    (hStep : op.continuingStep? = some step)
+    (hMsize : op ≠ .msize)
+    (hDecode : Compact.decodeAt bytes pc (.prim op))
+    (hPc : state.pc = EvmYul.UInt256.ofNat pc)
+    (hOpen : op.step state = .ok openNext) :
+    Interaction.Executes
+      (Compact.InteractionSemantics.openRunNResult bytes 1 state)
+      [] (.ok (.running openNext)) := by
+  have hGas := continuingStep_not_gas hStep
+  have hClosed :
+      Assembly.InteractionSemantics.PrimOp.openStep op state =
         Simulation.Interaction.done (.ok openNext) := by
     rw [Assembly.InteractionSemantics.PrimOp.openStep_closed
       (Assembly.InteractionSemantics.PrimOp.externalKind_none_of_continuingStep
@@ -6677,6 +6840,80 @@ theorem runRefinesOpen_running_step_rel
       (fuel := stepFuel) (validJumps := validJumps) (state := gasful)
       (stepResult := .ok gasfulNext)
       hPrefix hCreateOk hStep hPostBridge
+
+theorem runRefinesOpen_continuing_pureStack_success_rel
+    {fuel : Nat} {validJumps : Array Word}
+    {bytes : ByteArray} {pc : Nat} {gasful openState gasfulNext : EVMState}
+    {op : PrimOp} {step : PrimStep} {arg : Option (Word × Nat)}
+    {tailTranscript : Interaction.Transcript}
+    (hRel : OpenStateRel gasful openState)
+    (hPrefix : XSstoreStipendChecksPass validJumps gasful)
+    (hDecodedPair :
+      ((EvmYul.EVM.decode gasful.executionEnv.code gasful.pc).getD
+        (EvmYul.Operation.STOP, none)) = (op.toEVM, arg))
+    (hStep : op.continuingStep? = some step)
+    (hPure : PureStackStep step)
+    (hMsize : op ≠ .msize)
+    (hTransparent : continuingPrimEVMStepTransparent op)
+    (hDecode : Compact.decodeAt bytes pc (.prim op))
+    (hPc : openState.pc = EvmYul.UInt256.ofNat pc)
+    (hGasful :
+      EvmYul.EVM.step (fuel + 1) (dynamicGasCostAt gasful)
+        (some (op.toEVM, arg)) (afterMemoryChargeAt gasful) =
+          .ok gasfulNext)
+    (hCont :
+      ∀ openNext,
+        OpenStateRel gasfulNext openNext →
+          RunRefinesOpen
+            (EvmYul.EVM.X (fuel + 1) validJumps gasfulNext)
+            (Compact.InteractionSemantics.openRunNResult
+              bytes (fuel + 1) openNext)
+            tailTranscript) :
+    RunRefinesOpen
+      (EvmYul.EVM.X (fuel + 1 + 1) validJumps gasful)
+      (Compact.InteractionSemantics.openRunNResult
+        bytes (fuel + 1 + 1) openState)
+      tailTranscript := by
+  have hDecodedOp : decodedOperationAt gasful = op.toEVM := by
+    simpa [decodedOperationAt, hDecodedPair]
+  have hCreateOk :
+      ¬ (EvmYul.Operation.isCreate (decodedOperationAt gasful) = true ∧
+        (EvmYul.UInt256.ofNat 49152) <
+          gasful.stack[2]?.getD (EvmYul.UInt256.ofNat 0)) := by
+    intro hBad
+    have hCreateFalse :
+        EvmYul.Operation.isCreate (decodedOperationAt gasful) = false := by
+      simpa [hDecodedOp] using continuingStep_toEVM_isCreate_false hStep
+    simp [hCreateFalse] at hBad
+  have hStaticPermits : continuingPrimStaticPermits gasful op :=
+    continuingPrimStaticPermits_of_static_check hPrefix.static hDecodedOp
+  have hPrimGasful :
+      op.step (afterEVMInstructionChargeAt gasful) = .ok gasfulNext := by
+    rw [← hGasful]
+    exact (evm_step_continuing_prim_after_charges
+      (fuel := fuel) (arg := arg)
+      hStep hTransparent hStaticPermits).symm
+  rcases continuingPrim_open_success_rel_of_pureStack
+      hStep hPure hRel hPrimGasful with
+    ⟨openNext, hOpen, hNextRel⟩
+  have hFirst := raw_continuing_prim_executes_at
+    hStep hMsize hDecode hPc hOpen
+  have hStepActual :
+      EvmYul.EVM.step (fuel + 1) (dynamicGasCostAt gasful)
+        (some
+          ((EvmYul.EVM.decode gasful.executionEnv.code gasful.pc).getD
+            (EvmYul.Operation.STOP, none)))
+        (afterMemoryChargeAt gasful) = .ok gasfulNext := by
+    simpa [hDecodedPair] using hGasful
+  have hHalt := haltOutputAt_none_of_continuingStep gasfulNext hStep
+  simpa using
+    (runRefinesOpen_running_step_rel
+      (stepFuel := fuel + 1) (validJumps := validJumps)
+      (bytes := bytes) (gasful := gasful) (gasfulNext := gasfulNext)
+      (openState := openState) (openNext := openNext)
+      (op := op.toEVM)
+      hPrefix hCreateOk hDecodedOp hStepActual hHalt hFirst
+      (hCont openNext hNextRel))
 
 theorem runRefinesOpen_pc_success_rel
     {fuel : Nat} {validJumps : Array Word}

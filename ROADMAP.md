@@ -175,6 +175,9 @@ Gasful EVM bridge checkpoint:
 - [x] Lift closed control/sequential successes over `OpenStateRel`: one generic
   running-step composition now drives related `PC`, `PUSH1..PUSH32`, `JUMP`,
   `JUMPI`, and `JUMPDEST` continuations from arbitrary related open states.
+- [x] Lift the pure-stack primitive family over `OpenStateRel`: binary, unary,
+  ternary, `POP`, `DUP`, and `SWAP` charged successes now supply related open
+  successors to the recursive continuation without requiring identical states.
 - [x] Compose the existing Yul-to-open-raw-bytecode theorem with the named
   gasful target bridge premise in
   `Yul.EndToEnd.optimizedSolcYulToGasfulRawBytecodeOfOpenRunBridge`.
