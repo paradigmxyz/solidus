@@ -22,6 +22,302 @@ abbrev State := Yul.InteractionSemantics.State
 abbrev Failure := Yul.InteractionSemantics.Failure
 abbrev Open (α : Type) := Yul.InteractionSemantics.Open α
 
+theorem classifyCall_objectBuiltin_mem
+    {name : Name}
+    (hClass : CallClass.classifyCall name = .objectBuiltin) :
+    name ∈ CallClass.objectBuiltins := by
+  unfold CallClass.classifyCall at hClass
+  cases hPrimitive : Frontend.Primitive.ofName? name with
+  | some op => simp [hPrimitive] at hClass
+  | none =>
+      simp [hPrimitive] at hClass
+      by_cases hObject : name ∈ CallClass.objectBuiltins
+      · exact hObject
+      · cases hDialect : CallClass.unsupportedDialectBuiltin? name <;>
+          simp [hObject, hDialect] at hClass
+
+theorem rawObjectBuiltinNameArg_of_elaboration
+    {rawExpr : Raw.Expr} {front : Frontend.Expr}
+    {elabState finalElabState : Elab.State} {name : Name}
+    (hElab :
+      (Elab.Expr.elaborate rawExpr).run elabState =
+        .ok (front, finalElabState))
+    (hName : Frontend.Expr.objectBuiltinNameArg? front = some name) :
+    Raw.SourceSemantics.objectBuiltinNameArg? rawExpr = some name := by
+  cases rawExpr with
+  | literal literal =>
+      cases literal with
+      | number value =>
+          simp [Elab.Expr.elaborate, Elab.Literal.elaborate] at hElab
+          rcases hElab with ⟨rfl, rfl⟩
+          simp [Frontend.Expr.objectBuiltinNameArg?] at hName
+      | bool value =>
+          simp [Elab.Expr.elaborate, Elab.Literal.elaborate] at hElab
+          rcases hElab with ⟨rfl, rfl⟩
+          simp [Frontend.Expr.objectBuiltinNameArg?] at hName
+      | stringLit value =>
+          simp [Elab.Expr.elaborate, Elab.Literal.elaborate] at hElab
+          rcases hElab with ⟨rfl, rfl⟩
+          simp [Frontend.Expr.objectBuiltinNameArg?] at hName
+          subst name
+          rfl
+      | bytesLit bytes =>
+          simp [Elab.Expr.elaborate, Elab.Literal.elaborate] at hElab
+          rcases hElab with ⟨rfl, rfl⟩
+          simp [Frontend.Expr.objectBuiltinNameArg?] at hName
+          subst name
+          rfl
+  | identifier ident =>
+      unfold Elab.Expr.elaborate at hElab
+      cases hVisible :
+          (Elab.requireIdentifierVisible ident "expression").run elabState with
+      | error err => simp [hVisible] at hElab
+      | ok visibleResult =>
+          rcases visibleResult with ⟨_, visibleState⟩
+          simp [hVisible] at hElab
+          rcases hElab with ⟨rfl, rfl⟩
+          simp [Frontend.Expr.objectBuiltinNameArg?] at hName
+  | functionCall callee args =>
+      by_cases hMemoryguard : callee = "memoryguard"
+      · subst callee
+        cases args with
+        | nil =>
+            simp [Elab.Expr.elaborate] at hElab
+            unfold Elab.throw at hElab
+            change
+              (Except.error _ : Except String (Frontend.Expr × Elab.State)) =
+                .ok (front, finalElabState) at hElab
+            cases hElab
+        | cons arg rest =>
+            cases rest with
+            | nil =>
+                unfold Elab.Expr.elaborate at hElab
+                cases hArg : (Elab.Expr.elaborate arg).run elabState with
+                | error err => simp [hArg] at hElab
+                | ok argResult =>
+                    rcases argResult with ⟨frontArg, argState⟩
+                    simp [hArg] at hElab
+                    rcases hElab with ⟨rfl, rfl⟩
+                    simp [Frontend.Expr.objectBuiltinNameArg?] at hName
+            | cons extra tail =>
+                simp [Elab.Expr.elaborate] at hElab
+                unfold Elab.throw at hElab
+                change
+                  (Except.error _ :
+                    Except String (Frontend.Expr × Elab.State)) =
+                    .ok (front, finalElabState) at hElab
+                cases hElab
+      · by_cases hClz : callee = "clz"
+        · subst callee
+          cases args with
+          | nil =>
+              simp [Elab.Expr.elaborate] at hElab
+              unfold Elab.throw at hElab
+              change
+                (Except.error _ :
+                  Except String (Frontend.Expr × Elab.State)) =
+                  .ok (front, finalElabState) at hElab
+              cases hElab
+          | cons arg rest =>
+              cases rest with
+              | nil =>
+                  unfold Elab.Expr.elaborate at hElab
+                  cases hArg : (Elab.Expr.elaborate arg).run elabState with
+                  | error err => simp [hArg] at hElab
+                  | ok argResult =>
+                      rcases argResult with ⟨frontArg, argState⟩
+                      simp [hArg] at hElab
+                      cases hHelper : Elab.ensureClzHelper.run argState with
+                      | error err => simp [hHelper] at hElab
+                      | ok helperResult =>
+                          rcases helperResult with ⟨helper, helperState⟩
+                          simp [hHelper] at hElab
+                          rcases hElab with ⟨rfl, rfl⟩
+                          simp [Frontend.Expr.objectBuiltinNameArg?] at hName
+              | cons extra tail =>
+                  simp [Elab.Expr.elaborate] at hElab
+                  unfold Elab.throw at hElab
+                  change
+                    (Except.error _ :
+                      Except String (Frontend.Expr × Elab.State)) =
+                      .ok (front, finalElabState) at hElab
+                  cases hElab
+        · unfold Elab.Expr.elaborate at hElab
+          simp [StateT.run_bind] at hElab
+          cases hArgs : (Elab.Expr.List.elaborate args).run elabState with
+          | error err => simp [hArgs] at hElab
+          | ok argsResult =>
+              rcases argsResult with ⟨frontArgs, argsState⟩
+              simp [hArgs] at hElab
+              cases hKind : CallClass.classifyCall callee with
+              | primitive =>
+                  simp [hKind] at hElab
+                  rcases hElab with ⟨rfl, rfl⟩
+                  simp [Frontend.Expr.objectBuiltinNameArg?] at hName
+              | objectBuiltin =>
+                  simp [hKind] at hElab
+                  rcases hElab with ⟨rfl, rfl⟩
+                  simp [Frontend.Expr.objectBuiltinNameArg?] at hName
+              | dialectBuiltin =>
+                  simp [hKind] at hElab
+                  rcases hElab with ⟨rfl, rfl⟩
+                  simp [Frontend.Expr.objectBuiltinNameArg?] at hName
+              | user =>
+                  simp [hKind] at hElab
+                  cases hResolve :
+                      Elab.resolveFunctionIn callee argsState.functionScopes with
+                  | none =>
+                      simp [Elab.resolveFunction, hResolve] at hElab
+                      unfold Elab.throw at hElab
+                      change
+                        (Except.error _ :
+                          Except String (Frontend.Expr × Elab.State)) =
+                          .ok (front, finalElabState) at hElab
+                      cases hElab
+                  | some generated =>
+                      simp [Elab.resolveFunction, hResolve] at hElab
+                      rcases hElab with ⟨rfl, rfl⟩
+                      simp [Frontend.Expr.objectBuiltinNameArg?] at hName
+
+theorem exprList_elaborate_length
+    {rawExprs : List Raw.Expr} {fronts : List Frontend.Expr}
+    {elabState finalElabState : Elab.State}
+    (hElab :
+      (Elab.Expr.List.elaborate rawExprs).run elabState =
+        .ok (fronts, finalElabState)) :
+    fronts.length = rawExprs.length := by
+  induction rawExprs generalizing elabState finalElabState fronts with
+  | nil =>
+      simp [Elab.Expr.List.elaborate] at hElab
+      rcases hElab with ⟨rfl, rfl⟩
+      rfl
+  | cons rawHead rawTail ih =>
+      unfold Elab.Expr.List.elaborate at hElab
+      simp [StateT.run_bind] at hElab
+      cases hHead : (Elab.Expr.elaborate rawHead).run elabState with
+      | error err => simp [hHead] at hElab
+      | ok headResult =>
+          rcases headResult with ⟨frontHead, headState⟩
+          simp [hHead] at hElab
+          cases hTail :
+              (Elab.Expr.List.elaborate rawTail).run headState with
+          | error err => simp [hTail] at hElab
+          | ok tailResult =>
+              rcases tailResult with ⟨frontTail, tailState⟩
+              simp [hTail] at hElab
+              rcases hElab with ⟨rfl, rfl⟩
+              simp [ih hTail]
+
+theorem exprList_elaborate_single_head
+    {rawExpr : Raw.Expr} {front : Frontend.Expr}
+    {elabState finalElabState : Elab.State}
+    (hElab :
+      (Elab.Expr.List.elaborate [rawExpr]).run elabState =
+        .ok ([front], finalElabState)) :
+    ∃ headState,
+      (Elab.Expr.elaborate rawExpr).run elabState =
+        .ok (front, headState) := by
+  unfold Elab.Expr.List.elaborate at hElab
+  simp [StateT.run_bind] at hElab
+  cases hHead : (Elab.Expr.elaborate rawExpr).run elabState with
+  | error err => simp [hHead] at hElab
+  | ok headResult =>
+      rcases headResult with ⟨frontHead, headState⟩
+      simp [hHead, Elab.Expr.List.elaborate] at hElab
+      rcases hElab with ⟨hFront, _hFinal⟩
+      subst frontHead
+      refine ⟨headState, ?_⟩
+      rfl
+
+theorem rawSingleObjectBuiltinNameArg_of_list_elaboration
+    {rawArgs : List Raw.Expr} {frontArgs : List Frontend.Expr}
+    {elabState finalElabState : Elab.State}
+    {frontNameArg : Frontend.Expr} {dataName : Name}
+    (hElab :
+      (Elab.Expr.List.elaborate rawArgs).run elabState =
+        .ok (frontArgs, finalElabState))
+    (hFrontArgs : frontArgs = [frontNameArg])
+    (hFrontName :
+      Frontend.Expr.objectBuiltinNameArg? frontNameArg = some dataName) :
+    ∃ rawNameArg,
+      rawArgs = [rawNameArg] ∧
+        Raw.SourceSemantics.objectBuiltinNameArg? rawNameArg = some dataName := by
+  have hLengths := exprList_elaborate_length hElab
+  rw [hFrontArgs] at hLengths hElab
+  have hRawLength : rawArgs.length = 1 := by simpa using hLengths.symm
+  rw [List.length_eq_one_iff] at hRawLength
+  rcases hRawLength with ⟨rawNameArg, rfl⟩
+  rcases exprList_elaborate_single_head hElab with
+    ⟨nameState, hNameElab⟩
+  exact
+    ⟨rawNameArg, rfl,
+      rawObjectBuiltinNameArg_of_elaboration hNameElab hFrontName⟩
+
+theorem objectBuiltinCall_elaboration_parts
+    {name : Name} {rawArgs : List Raw.Expr}
+    {elabState finalElabState : Elab.State}
+    {front : Frontend.Expr}
+    (hNotMemoryguard : name ≠ "memoryguard")
+    (hNotClz : name ≠ "clz")
+    (hClass : CallClass.classifyCall name = .objectBuiltin)
+    (hElab :
+      (Elab.Expr.elaborate (.functionCall name rawArgs)).run elabState =
+        .ok (front, finalElabState)) :
+    ∃ frontArgs argsState,
+      (Elab.Expr.List.elaborate rawArgs).run elabState =
+          .ok (frontArgs, argsState) ∧
+        front = .call .objectBuiltin name frontArgs ∧
+        finalElabState = argsState := by
+  unfold Elab.Expr.elaborate at hElab
+  simp [StateT.run_bind] at hElab
+  cases hArgs : (Elab.Expr.List.elaborate rawArgs).run elabState with
+  | error err => simp [hArgs] at hElab
+  | ok argsResult =>
+      rcases argsResult with ⟨frontArgs, argsState⟩
+      simp [hArgs, hClass] at hElab
+      rcases hElab with ⟨rfl, rfl⟩
+      exact ⟨frontArgs, argsState, by rfl, rfl, rfl⟩
+
+theorem memoryguard_elaboration_parts
+    {rawArgs : List Raw.Expr}
+    {elabState finalElabState : Elab.State}
+    {front : Frontend.Expr}
+    (hElab :
+      (Elab.Expr.elaborate (.functionCall "memoryguard" rawArgs)).run
+        elabState = .ok (front, finalElabState)) :
+    ∃ rawValue frontValue valueState,
+      rawArgs = [rawValue] ∧
+        front = .call .objectBuiltin "memoryguard" [frontValue] ∧
+        (Elab.Expr.elaborate rawValue).run elabState =
+          .ok (frontValue, valueState) ∧
+        finalElabState = valueState := by
+  cases rawArgs with
+  | nil =>
+      simp [Elab.Expr.elaborate] at hElab
+      unfold Elab.throw at hElab
+      change
+        (Except.error _ : Except String (Frontend.Expr × Elab.State)) =
+          .ok (front, finalElabState) at hElab
+      cases hElab
+  | cons rawValue rest =>
+      cases rest with
+      | nil =>
+          unfold Elab.Expr.elaborate at hElab
+          cases hValue : (Elab.Expr.elaborate rawValue).run elabState with
+          | error err => simp [hValue] at hElab
+          | ok valueResult =>
+              rcases valueResult with ⟨frontValue, valueState⟩
+              simp [hValue] at hElab
+              rcases hElab with ⟨rfl, rfl⟩
+              exact ⟨rawValue, frontValue, valueState, rfl, rfl, hValue, rfl⟩
+      | cons extra tail =>
+          simp [Elab.Expr.elaborate] at hElab
+          unfold Elab.throw at hElab
+          change
+            (Except.error _ : Except String (Frontend.Expr × Elab.State)) =
+              .ok (front, finalElabState) at hElab
+          cases hElab
+
 def SameDoneRel {α : Type} :
     Except Failure α → Except Failure α → Prop :=
   Eq
@@ -2116,6 +2412,319 @@ theorem exprValuesRunForward_of_scoped_elaborated_userCall
           have hCall := exprValuesRunForward_userCall_succ hRun
           exact hCall
 
+namespace ExprNormalized
+
+theorem datasize_parts
+    {context : Frontend.ObjectBuiltinContext}
+    {args : List Frontend.Expr} {ordered : Frontend.AstExpr}
+    (hNormalized :
+      ExprNormalized context
+        (.call .objectBuiltin "datasize" args) ordered) :
+    ∃ nameArg dataName size,
+      args = [nameArg] ∧
+        Frontend.Expr.objectBuiltinNameArg? nameArg = some dataName ∧
+        context.size? dataName = some size ∧
+        ordered = .Lit size := by
+  rcases hNormalized with ⟨resolved, hResolve, hToYul⟩
+  unfold Frontend.Expr.resolveObjectBuiltinsIn? at hResolve
+  cases args with
+  | nil =>
+      simp [Frontend.Expr.List.resolveObjectBuiltinsIn?] at hResolve
+      subst resolved
+      simp [Frontend.Expr.toYul?] at hToYul
+  | cons nameArg rest =>
+      cases rest with
+      | nil =>
+          cases hName : Frontend.Expr.objectBuiltinNameArg? nameArg with
+          | none => simp [hName] at hResolve
+          | some dataName =>
+              cases hSize : context.size? dataName with
+              | none => simp [hName, hSize] at hResolve
+              | some size =>
+                  simp [hName, hSize] at hResolve
+                  subst resolved
+                  simp [Frontend.Expr.toYul?] at hToYul
+                  exact ⟨nameArg, dataName, size, rfl, hName, hSize,
+                    hToYul.symm⟩
+      | cons extra tail =>
+          cases hArgsResolve :
+              Frontend.Expr.List.resolveObjectBuiltinsIn?
+                (nameArg :: extra :: tail) context with
+          | none => simp [hArgsResolve] at hResolve
+          | some resolvedArgs =>
+              simp [hArgsResolve] at hResolve
+              subst resolved
+              simp [Frontend.Expr.toYul?] at hToYul
+
+theorem dataoffset_parts
+    {context : Frontend.ObjectBuiltinContext}
+    {args : List Frontend.Expr} {ordered : Frontend.AstExpr}
+    (hNormalized :
+      ExprNormalized context
+        (.call .objectBuiltin "dataoffset" args) ordered) :
+    ∃ nameArg dataName offset,
+      args = [nameArg] ∧
+        Frontend.Expr.objectBuiltinNameArg? nameArg = some dataName ∧
+        context.offset? dataName = some offset ∧
+        ordered = .Lit offset := by
+  rcases hNormalized with ⟨resolved, hResolve, hToYul⟩
+  unfold Frontend.Expr.resolveObjectBuiltinsIn? at hResolve
+  cases args with
+  | nil =>
+      simp [Frontend.Expr.List.resolveObjectBuiltinsIn?] at hResolve
+      subst resolved
+      simp [Frontend.Expr.toYul?] at hToYul
+  | cons nameArg rest =>
+      cases rest with
+      | nil =>
+          cases hName : Frontend.Expr.objectBuiltinNameArg? nameArg with
+          | none => simp [hName] at hResolve
+          | some dataName =>
+              cases hOffset : context.offset? dataName with
+              | none => simp [hName, hOffset] at hResolve
+              | some offset =>
+                  simp [hName, hOffset] at hResolve
+                  subst resolved
+                  simp [Frontend.Expr.toYul?] at hToYul
+                  exact ⟨nameArg, dataName, offset, rfl, hName, hOffset,
+                    hToYul.symm⟩
+      | cons extra tail =>
+          cases hArgsResolve :
+              Frontend.Expr.List.resolveObjectBuiltinsIn?
+                (nameArg :: extra :: tail) context with
+          | none => simp [hArgsResolve] at hResolve
+          | some resolvedArgs =>
+              simp [hArgsResolve] at hResolve
+              subst resolved
+              simp [Frontend.Expr.toYul?] at hToYul
+
+theorem linkersymbol_parts
+    {context : Frontend.ObjectBuiltinContext}
+    {args : List Frontend.Expr} {ordered : Frontend.AstExpr}
+    (hNormalized :
+      ExprNormalized context
+        (.call .objectBuiltin "linkersymbol" args) ordered) :
+    ∃ nameArg linkerName value,
+      args = [nameArg] ∧
+        Frontend.Expr.objectBuiltinNameArg? nameArg = some linkerName ∧
+        context.findLinkerSymbol? linkerName = some value ∧
+        ordered = .Lit value := by
+  rcases hNormalized with ⟨resolved, hResolve, hToYul⟩
+  unfold Frontend.Expr.resolveObjectBuiltinsIn? at hResolve
+  cases args with
+  | nil =>
+      simp [Frontend.Expr.List.resolveObjectBuiltinsIn?] at hResolve
+      subst resolved
+      simp [Frontend.Expr.toYul?] at hToYul
+  | cons nameArg rest =>
+      cases rest with
+      | nil =>
+          cases hName : Frontend.Expr.objectBuiltinNameArg? nameArg with
+          | none => simp [hName] at hResolve
+          | some linkerName =>
+              cases hValue : context.findLinkerSymbol? linkerName with
+              | none => simp [hName, hValue] at hResolve
+              | some value =>
+                  simp [hName, hValue] at hResolve
+                  subst resolved
+                  simp [Frontend.Expr.toYul?] at hToYul
+                  exact ⟨nameArg, linkerName, value, rfl, hName, hValue,
+                    hToYul.symm⟩
+      | cons extra tail =>
+          cases hArgsResolve :
+              Frontend.Expr.List.resolveObjectBuiltinsIn?
+                (nameArg :: extra :: tail) context with
+          | none => simp [hArgsResolve] at hResolve
+          | some resolvedArgs =>
+              simp [hArgsResolve] at hResolve
+              subst resolved
+              simp [Frontend.Expr.toYul?] at hToYul
+
+theorem loadimmutable_parts
+    {context : Frontend.ObjectBuiltinContext}
+    {args : List Frontend.Expr} {ordered : Frontend.AstExpr}
+    (hNormalized :
+      ExprNormalized context
+        (.call .objectBuiltin "loadimmutable" args) ordered) :
+    ∃ nameArg immutableName value,
+      args = [nameArg] ∧
+        Frontend.Expr.objectBuiltinNameArg? nameArg = some immutableName ∧
+        context.findImmutableValue? immutableName = some value ∧
+        ordered = .Lit value := by
+  rcases hNormalized with ⟨resolved, hResolve, hToYul⟩
+  unfold Frontend.Expr.resolveObjectBuiltinsIn? at hResolve
+  cases args with
+  | nil =>
+      simp [Frontend.Expr.List.resolveObjectBuiltinsIn?] at hResolve
+      subst resolved
+      simp [Frontend.Expr.toYul?] at hToYul
+  | cons nameArg rest =>
+      cases rest with
+      | nil =>
+          cases hName : Frontend.Expr.objectBuiltinNameArg? nameArg with
+          | none => simp [hName] at hResolve
+          | some immutableName =>
+              cases hValue : context.findImmutableValue? immutableName with
+              | none => simp [hName, hValue] at hResolve
+              | some value =>
+                  simp [hName, hValue] at hResolve
+                  subst resolved
+                  simp [Frontend.Expr.toYul?] at hToYul
+                  exact ⟨nameArg, immutableName, value, rfl, hName, hValue,
+                    hToYul.symm⟩
+      | cons extra tail =>
+          cases hArgsResolve :
+              Frontend.Expr.List.resolveObjectBuiltinsIn?
+                (nameArg :: extra :: tail) context with
+          | none => simp [hArgsResolve] at hResolve
+          | some resolvedArgs =>
+              simp [hArgsResolve] at hResolve
+              subst resolved
+              simp [Frontend.Expr.toYul?] at hToYul
+
+theorem datacopy_parts
+    {context : Frontend.ObjectBuiltinContext}
+    {args : List Frontend.Expr} {ordered : Frontend.AstExpr}
+    (hNormalized :
+      ExprNormalized context
+        (.call .objectBuiltin "datacopy" args) ordered) :
+    ∃ target offset size orderedArgs op,
+      args = [target, offset, size] ∧
+        Frontend.Primitive.ofName? "codecopy" = some op ∧
+        ordered = .Call (.inl op) orderedArgs ∧
+        Nonempty
+          (ExprListNormalized context [target, offset, size] orderedArgs) := by
+  rcases hNormalized with ⟨resolved, hResolve, hToYul⟩
+  unfold Frontend.Expr.resolveObjectBuiltinsIn? at hResolve
+  cases args with
+  | nil =>
+      simp [Frontend.Expr.List.resolveObjectBuiltinsIn?] at hResolve
+      subst resolved
+      simp [Frontend.Expr.toYul?] at hToYul
+  | cons target rest =>
+      cases rest with
+      | nil =>
+          cases hArgsResolve :
+              Frontend.Expr.List.resolveObjectBuiltinsIn? [target] context with
+          | none => simp [hArgsResolve] at hResolve
+          | some resolvedArgs =>
+              simp [hArgsResolve] at hResolve
+              subst resolved
+              simp [Frontend.Expr.toYul?] at hToYul
+      | cons offset rest =>
+          cases rest with
+          | nil =>
+              cases hArgsResolve :
+                  Frontend.Expr.List.resolveObjectBuiltinsIn?
+                    [target, offset] context with
+              | none => simp [hArgsResolve] at hResolve
+              | some resolvedArgs =>
+                  simp [hArgsResolve] at hResolve
+                  subst resolved
+                  simp [Frontend.Expr.toYul?] at hToYul
+          | cons size rest =>
+              cases rest with
+              | nil =>
+                  cases hTarget :
+                      target.resolveObjectBuiltinsIn? context with
+                  | none => simp [hTarget] at hResolve
+                  | some resolvedTarget =>
+                      cases hOffset :
+                          offset.resolveObjectBuiltinsIn? context with
+                      | none => simp [hTarget, hOffset] at hResolve
+                      | some resolvedOffset =>
+                          cases hSize :
+                              size.resolveObjectBuiltinsIn? context with
+                          | none =>
+                              simp [hTarget, hOffset, hSize] at hResolve
+                          | some resolvedSize =>
+                              simp [hTarget, hOffset, hSize] at hResolve
+                              subst resolved
+                              unfold Frontend.Expr.toYul? at hToYul
+                              cases hOp :
+                                  Frontend.Primitive.ofName? "codecopy" with
+                              | none => simp [hOp] at hToYul
+                              | some op =>
+                                  cases hArgsYul :
+                                      Frontend.Expr.List.toYul?
+                                        [resolvedTarget, resolvedOffset,
+                                          resolvedSize] with
+                                  | none => simp [hOp, hArgsYul] at hToYul
+                                  | some orderedArgs =>
+                                      simp [hOp, hArgsYul] at hToYul
+                                      refine
+                                        ⟨target, offset, size, orderedArgs,
+                                          op, rfl, by rfl, hToYul.symm, ⟨{
+                                            resolved :=
+                                              [resolvedTarget,
+                                                resolvedOffset, resolvedSize]
+                                            resolve := by
+                                              simp [Frontend.Expr.List.resolveObjectBuiltinsIn?,
+                                                hTarget, hOffset, hSize]
+                                            toYul := hArgsYul }⟩⟩
+              | cons extra tail =>
+                  cases hArgsResolve :
+                      Frontend.Expr.List.resolveObjectBuiltinsIn?
+                        (target :: offset :: size :: extra :: tail) context with
+                  | none => simp [hArgsResolve] at hResolve
+                  | some resolvedArgs =>
+                      simp [hArgsResolve] at hResolve
+                      subst resolved
+                      simp [Frontend.Expr.toYul?] at hToYul
+
+theorem memoryguard_parts
+    {context : Frontend.ObjectBuiltinContext}
+    {args : List Frontend.Expr} {ordered : Frontend.AstExpr}
+    (hNormalized :
+      ExprNormalized context
+        (.call .objectBuiltin "memoryguard" args) ordered) :
+    ∃ value size,
+      args = [value] ∧
+        Nonempty (ExprNormalized context value (.Lit size)) ∧
+        ordered = .Lit size := by
+  rcases hNormalized with ⟨resolved, hResolve, hToYul⟩
+  unfold Frontend.Expr.resolveObjectBuiltinsIn? at hResolve
+  cases args with
+  | nil =>
+      simp [Frontend.Expr.List.resolveObjectBuiltinsIn?] at hResolve
+      subst resolved
+      simp [Frontend.Expr.toYul?] at hToYul
+  | cons value rest =>
+      cases rest with
+      | nil =>
+          cases hValue : value.resolveObjectBuiltinsIn? context with
+          | none => simp [hValue] at hResolve
+          | some resolvedValue =>
+              cases resolvedValue with
+              | lit size =>
+                  simp [hValue] at hResolve
+                  subst resolved
+                  simp [Frontend.Expr.toYul?] at hToYul
+                  have hValueNormalized :
+                      ExprNormalized context value (.Lit size) :=
+                    { resolved := .lit size
+                      resolve := hValue
+                      toYul := rfl }
+                  exact
+                    ⟨value, size, rfl,
+                      ⟨hValueNormalized⟩,
+                      hToYul.symm⟩
+              | stringLit literal => simp [hValue] at hResolve
+              | bytesLit bytes => simp [hValue] at hResolve
+              | var name => simp [hValue] at hResolve
+              | call kind callee callArgs => simp [hValue] at hResolve
+      | cons extra tail =>
+          cases hArgsResolve :
+              Frontend.Expr.List.resolveObjectBuiltinsIn?
+                (value :: extra :: tail) context with
+          | none => simp [hArgsResolve] at hResolve
+          | some resolvedArgs =>
+              simp [hArgsResolve] at hResolve
+              subst resolved
+              simp [Frontend.Expr.toYul?] at hToYul
+
+end ExprNormalized
+
 theorem exprValuesRunForward_datasize_succ
     {rawFuel orderedFuel : Nat}
     {context : Raw.SourceSemantics.Context}
@@ -2142,6 +2751,36 @@ theorem exprValuesRunForward_datasize_succ
     Yul.Source.Canonical.evalValues, Yul.Source.Effectful.evalValues]
   exact Simulation.Interaction.ForwardRel.done rfl
 
+theorem exprValuesRunForward_of_scoped_elaborated_datasize
+    {slack rawFuel : Nat}
+    {builtinContext : Frontend.ObjectBuiltinContext}
+    {rawContext : Raw.SourceSemantics.Context}
+    {rawArgs : List Raw.Expr}
+    {elabState finalElabState : Elab.State}
+    {front : Frontend.Expr} {ordered : Frontend.AstExpr}
+    {contract : Frontend.AstContract} {state : State}
+    (hBuiltins : rawContext.objectBuiltins = builtinContext)
+    (hElab :
+      (Elab.Expr.elaborate (.functionCall "datasize" rawArgs)).run
+        elabState = .ok (front, finalElabState))
+    (hNormalized : ExprNormalized builtinContext front ordered) :
+    ExprValuesRunForward (rawFuel + 2) ((rawFuel + 2) + slack)
+      rawContext (.functionCall "datasize" rawArgs)
+      ordered contract state := by
+  rcases objectBuiltinCall_elaboration_parts
+      (name := "datasize") (by decide) (by decide) rfl hElab with
+    ⟨frontArgs, argsState, hArgs, rfl, rfl⟩
+  rcases ExprNormalized.datasize_parts hNormalized with
+    ⟨frontNameArg, dataName, size, hFrontArgs,
+      hFrontName, hSize, rfl⟩
+  rcases rawSingleObjectBuiltinNameArg_of_list_elaboration
+      hArgs hFrontArgs hFrontName with
+    ⟨rawNameArg, rfl, hRawName⟩
+  simpa [Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using
+    (exprValuesRunForward_datasize_succ
+      (rawFuel := rawFuel) (orderedFuel := rawFuel + slack + 1)
+      hRawName (by simpa [hBuiltins] using hSize))
+
 theorem exprValuesRunForward_dataoffset_succ
     {rawFuel orderedFuel : Nat}
     {context : Raw.SourceSemantics.Context}
@@ -2167,6 +2806,36 @@ theorem exprValuesRunForward_dataoffset_succ
   simp only [Yul.InteractionSemantics.evalValues,
     Yul.Source.Canonical.evalValues, Yul.Source.Effectful.evalValues]
   exact Simulation.Interaction.ForwardRel.done rfl
+
+theorem exprValuesRunForward_of_scoped_elaborated_dataoffset
+    {slack rawFuel : Nat}
+    {builtinContext : Frontend.ObjectBuiltinContext}
+    {rawContext : Raw.SourceSemantics.Context}
+    {rawArgs : List Raw.Expr}
+    {elabState finalElabState : Elab.State}
+    {front : Frontend.Expr} {ordered : Frontend.AstExpr}
+    {contract : Frontend.AstContract} {state : State}
+    (hBuiltins : rawContext.objectBuiltins = builtinContext)
+    (hElab :
+      (Elab.Expr.elaborate (.functionCall "dataoffset" rawArgs)).run
+        elabState = .ok (front, finalElabState))
+    (hNormalized : ExprNormalized builtinContext front ordered) :
+    ExprValuesRunForward (rawFuel + 2) ((rawFuel + 2) + slack)
+      rawContext (.functionCall "dataoffset" rawArgs)
+      ordered contract state := by
+  rcases objectBuiltinCall_elaboration_parts
+      (name := "dataoffset") (by decide) (by decide) rfl hElab with
+    ⟨frontArgs, argsState, hArgs, rfl, rfl⟩
+  rcases ExprNormalized.dataoffset_parts hNormalized with
+    ⟨frontNameArg, dataName, offset, hFrontArgs,
+      hFrontName, hOffset, rfl⟩
+  rcases rawSingleObjectBuiltinNameArg_of_list_elaboration
+      hArgs hFrontArgs hFrontName with
+    ⟨rawNameArg, rfl, hRawName⟩
+  simpa [Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using
+    (exprValuesRunForward_dataoffset_succ
+      (rawFuel := rawFuel) (orderedFuel := rawFuel + slack + 1)
+      hRawName (by simpa [hBuiltins] using hOffset))
 
 theorem exprValuesRunForward_linkersymbol_succ
     {rawFuel orderedFuel : Nat}
@@ -2195,6 +2864,36 @@ theorem exprValuesRunForward_linkersymbol_succ
     Yul.Source.Canonical.evalValues, Yul.Source.Effectful.evalValues]
   exact Simulation.Interaction.ForwardRel.done rfl
 
+theorem exprValuesRunForward_of_scoped_elaborated_linkersymbol
+    {slack rawFuel : Nat}
+    {builtinContext : Frontend.ObjectBuiltinContext}
+    {rawContext : Raw.SourceSemantics.Context}
+    {rawArgs : List Raw.Expr}
+    {elabState finalElabState : Elab.State}
+    {front : Frontend.Expr} {ordered : Frontend.AstExpr}
+    {contract : Frontend.AstContract} {state : State}
+    (hBuiltins : rawContext.objectBuiltins = builtinContext)
+    (hElab :
+      (Elab.Expr.elaborate (.functionCall "linkersymbol" rawArgs)).run
+        elabState = .ok (front, finalElabState))
+    (hNormalized : ExprNormalized builtinContext front ordered) :
+    ExprValuesRunForward (rawFuel + 2) ((rawFuel + 2) + slack)
+      rawContext (.functionCall "linkersymbol" rawArgs)
+      ordered contract state := by
+  rcases objectBuiltinCall_elaboration_parts
+      (name := "linkersymbol") (by decide) (by decide) rfl hElab with
+    ⟨frontArgs, argsState, hArgs, rfl, rfl⟩
+  rcases ExprNormalized.linkersymbol_parts hNormalized with
+    ⟨frontNameArg, linkerName, value, hFrontArgs,
+      hFrontName, hValue, rfl⟩
+  rcases rawSingleObjectBuiltinNameArg_of_list_elaboration
+      hArgs hFrontArgs hFrontName with
+    ⟨rawNameArg, rfl, hRawName⟩
+  simpa [Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using
+    (exprValuesRunForward_linkersymbol_succ
+      (rawFuel := rawFuel) (orderedFuel := rawFuel + slack + 1)
+      hRawName (by simpa [hBuiltins] using hValue))
+
 theorem exprValuesRunForward_loadimmutable_succ
     {rawFuel orderedFuel : Nat}
     {context : Raw.SourceSemantics.Context}
@@ -2222,6 +2921,36 @@ theorem exprValuesRunForward_loadimmutable_succ
   simp only [Yul.InteractionSemantics.evalValues,
     Yul.Source.Canonical.evalValues, Yul.Source.Effectful.evalValues]
   exact Simulation.Interaction.ForwardRel.done rfl
+
+theorem exprValuesRunForward_of_scoped_elaborated_loadimmutable
+    {slack rawFuel : Nat}
+    {builtinContext : Frontend.ObjectBuiltinContext}
+    {rawContext : Raw.SourceSemantics.Context}
+    {rawArgs : List Raw.Expr}
+    {elabState finalElabState : Elab.State}
+    {front : Frontend.Expr} {ordered : Frontend.AstExpr}
+    {contract : Frontend.AstContract} {state : State}
+    (hBuiltins : rawContext.objectBuiltins = builtinContext)
+    (hElab :
+      (Elab.Expr.elaborate (.functionCall "loadimmutable" rawArgs)).run
+        elabState = .ok (front, finalElabState))
+    (hNormalized : ExprNormalized builtinContext front ordered) :
+    ExprValuesRunForward (rawFuel + 2) ((rawFuel + 2) + slack)
+      rawContext (.functionCall "loadimmutable" rawArgs)
+      ordered contract state := by
+  rcases objectBuiltinCall_elaboration_parts
+      (name := "loadimmutable") (by decide) (by decide) rfl hElab with
+    ⟨frontArgs, argsState, hArgs, rfl, rfl⟩
+  rcases ExprNormalized.loadimmutable_parts hNormalized with
+    ⟨frontNameArg, immutableName, value, hFrontArgs,
+      hFrontName, hValue, rfl⟩
+  rcases rawSingleObjectBuiltinNameArg_of_list_elaboration
+      hArgs hFrontArgs hFrontName with
+    ⟨rawNameArg, rfl, hRawName⟩
+  simpa [Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using
+    (exprValuesRunForward_loadimmutable_succ
+      (rawFuel := rawFuel) (orderedFuel := rawFuel + slack + 1)
+      hRawName (by simpa [hBuiltins] using hValue))
 
 theorem exprValuesRunForward_datacopy_succ
     {rawFuel orderedFuel : Nat}
@@ -2263,6 +2992,48 @@ theorem exprValuesRunForward_datacopy_succ
       exact Simulation.Interaction.ForwardRel.done rfl
   | ok result =>
       exact hPrimitive result.1 result.2
+
+theorem exprValuesRunForward_of_scoped_elaborated_datacopy
+    {slack argsFuel : Nat}
+    {builtinContext : Frontend.ObjectBuiltinContext}
+    {rawContext : Raw.SourceSemantics.Context}
+    {rawArgs : List Raw.Expr}
+    {elabState finalElabState : Elab.State}
+    {front : Frontend.Expr} {ordered : Frontend.AstExpr}
+    {contract : Frontend.AstContract} {state : State}
+    (hExpr :
+      ScopedExprElaborationRunForward (slack + 1)
+        builtinContext contract)
+    (hFunctionScopes :
+      CompiledFunctionScopes builtinContext contract
+        rawContext.functionScopes elabState.functionScopes)
+    (hElab :
+      (Elab.Expr.elaborate (.functionCall "datacopy" rawArgs)).run
+        elabState = .ok (front, finalElabState))
+    (hNormalized : ExprNormalized builtinContext front ordered) :
+    ExprValuesRunForward (argsFuel + 2) ((argsFuel + 2) + slack)
+      rawContext (.functionCall "datacopy" rawArgs)
+      ordered contract state := by
+  rcases objectBuiltinCall_elaboration_parts
+      (name := "datacopy") (by decide) (by decide) rfl hElab with
+    ⟨frontArgs, argsState, hArgs, rfl, rfl⟩
+  rcases ExprNormalized.datacopy_parts hNormalized with
+    ⟨target, offset, size, orderedArgs, op,
+      hFrontArgs, hOp, rfl, ⟨hArgsNormalized⟩⟩
+  rw [hFrontArgs] at hArgs
+  have hArgsRun :=
+    argsRunForward_reverse_of_scoped_elaboration_fuel
+      hExpr hFunctionScopes hArgs hArgsNormalized
+      (rawFuel := argsFuel) state
+  have hRun :=
+    exprValuesRunForward_datacopy_succ
+      (rawFuel := argsFuel)
+      (orderedFuel := argsFuel + (slack + 1))
+      hOp hArgsRun
+      (fun stateAfterArgs values =>
+        primitiveRunForward_slack argsFuel (slack + 1)
+          stateAfterArgs op values.reverse)
+  simpa [Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using hRun
 
 theorem exprValuesRunForward_memoryguard_succ
     {rawFuel orderedFuel : Nat}
@@ -2306,6 +3077,44 @@ theorem exprValuesRunForward_memoryguard_succ
   cases rawDone with
   | error error => exact Simulation.Interaction.ForwardRel.done rfl
   | ok result => exact Simulation.Interaction.ForwardRel.done rfl
+
+theorem exprValuesRunForward_of_scoped_elaborated_memoryguard
+    {slack valueFuel : Nat}
+    {builtinContext : Frontend.ObjectBuiltinContext}
+    {rawContext : Raw.SourceSemantics.Context}
+    {rawArgs : List Raw.Expr}
+    {elabState finalElabState : Elab.State}
+    {front : Frontend.Expr} {ordered : Frontend.AstExpr}
+    {contract : Frontend.AstContract} {state : State}
+    (hExpr :
+      ScopedExprElaborationRunForward (slack + 2)
+        builtinContext contract)
+    (hFunctionScopes :
+      CompiledFunctionScopes builtinContext contract
+        rawContext.functionScopes elabState.functionScopes)
+    (hElab :
+      (Elab.Expr.elaborate (.functionCall "memoryguard" rawArgs)).run
+        elabState = .ok (front, finalElabState))
+    (hNormalized : ExprNormalized builtinContext front ordered) :
+    ExprValuesRunForward (valueFuel + 2) ((valueFuel + 2) + slack)
+      rawContext (.functionCall "memoryguard" rawArgs)
+      ordered contract state := by
+  rcases memoryguard_elaboration_parts hElab with
+    ⟨rawValue, frontValue, valueState, rfl, rfl, hValueElab, rfl⟩
+  rcases ExprNormalized.memoryguard_parts hNormalized with
+    ⟨normalizedValue, size, hFrontArgs, ⟨hValueNormalized⟩, rfl⟩
+  rcases List.cons.inj hFrontArgs with ⟨hFrontValue, _⟩
+  subst normalizedValue
+  have hValueValues :=
+    hExpr valueFuel hFunctionScopes (state := state)
+      hValueElab hValueNormalized
+  have hValueRun := exprRunForward_of_values hValueValues
+  have hRun :=
+    exprValuesRunForward_memoryguard_succ
+      (rawFuel := valueFuel)
+      (orderedFuel := valueFuel + slack + 1)
+      hValueRun
+  simpa [Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using hRun
 
 /-- Exact pre-block statement preservation used by the recursive frontend
 proof. Lexical-store restriction is handled only by block constructors. -/
