@@ -4112,6 +4112,68 @@ theorem generatedNormalizationEvidence_codeRouteOfRawOccurrence
         codeGeneratedNormalizationEvidence_codeRouteOfRawOccurrence
           hCodeEvidence
 
+theorem codeGeneratedNormalizationEvidence_clzCodeRouteOfRawOccurrence
+    {code : List Raw.Stmt} {object : Frontend.Object}
+    (hEvidence :
+      Raw.Object.CodeGeneratedNormalizationEvidence code object) :
+    ∃ (coreDispatcher : List Frontend.Stmt) (state : State)
+        (helper? arg? ret? : Option Name),
+      elaborateCodeCore code = .ok (coreDispatcher, state) ∧
+        elaborateCode code =
+          .ok (object.dispatcher, object.functions,
+            helper?, arg?, ret?) ∧
+          ∀ {rawArg : Raw.Expr},
+            RawOccurrence.StmtListClzCall rawArg code →
+              ∃ (helper : Name) (frontendArg : Frontend.Expr),
+                RawOccurrence.CodeElaborationRoute state helper
+                  [frontendArg] object.dispatcher := by
+  rcases hEvidence with
+    ⟨coreDispatcher, state, helper?, arg?, ret?, hCore, hElab,
+      _hFunctions, _hHelper, _hArg, _hRet, _hDistinct, _hClz,
+      _hInterface, _hHoistedRetained⟩
+  have hDispatcherEq : object.dispatcher = coreDispatcher := by
+    rcases elaborateCode_parts hElab with
+      ⟨stateFromElab, hCoreFromElab, _hFunctions, _hHelper,
+        _hArg, _hRet⟩
+    rw [hCore] at hCoreFromElab
+    simp at hCoreFromElab
+    exact hCoreFromElab.1.symm
+  refine ⟨coreDispatcher, state, helper?, arg?, ret?, hCore, hElab, ?_⟩
+  intro rawArg hOccurrence
+  rcases RawOccurrence.Elab.elaborateCodeCore_clzCodeRoute hCore
+      hOccurrence with
+    ⟨helper, frontendArg, hRoute⟩
+  exact ⟨helper, frontendArg, by simpa [hDispatcherEq] using hRoute⟩
+
+theorem generatedNormalizationEvidence_clzCodeRouteOfRawOccurrence
+    {raw : Raw.Object} {object : Frontend.Object}
+    (hEvidence : Raw.Object.GeneratedNormalizationEvidence raw object) :
+    match raw.code? with
+    | none => True
+    | some code =>
+        ∃ (coreDispatcher : List Frontend.Stmt) (state : State)
+            (helper? arg? ret? : Option Name),
+          elaborateCodeCore code = .ok (coreDispatcher, state) ∧
+            elaborateCode code =
+              .ok (object.dispatcher, object.functions,
+                helper?, arg?, ret?) ∧
+              ∀ {rawArg : Raw.Expr},
+                RawOccurrence.StmtListClzCall rawArg code →
+                  ∃ (helper : Name) (frontendArg : Frontend.Expr),
+                    RawOccurrence.CodeElaborationRoute state helper
+                      [frontendArg] object.dispatcher := by
+  cases hRawCode : raw.code? with
+  | none =>
+      simp [hRawCode]
+  | some code =>
+      have hCodeEvidence :
+          Raw.Object.CodeGeneratedNormalizationEvidence code object := by
+        simpa [Raw.Object.GeneratedNormalizationEvidence, hRawCode]
+          using hEvidence.2.2.2
+      exact
+        codeGeneratedNormalizationEvidence_clzCodeRouteOfRawOccurrence
+          hCodeEvidence
+
 theorem generatedNormalizationEvidence_prefixOfRawOccurrence
     {raw : Raw.Object} {object : Frontend.Object}
     {ordered : Yul.OrderedProgram}
@@ -4464,6 +4526,45 @@ theorem decodeAndElaborateSolcIr?_codeRouteOfRawOccurrence
   exact
     ⟨json, selected, object, hParse, hSelected, hObject, hProgram,
       generatedNormalizationEvidence_codeRouteOfRawOccurrence hEvidence⟩
+
+theorem decodeAndElaborateSolcIr?_clzCodeRouteOfRawOccurrence
+    {rawJson : String} {selection : Selection}
+    {program : Frontend.Program}
+    (hDecode :
+      decodeAndElaborateSolcIr? rawJson selection = some program) :
+    ∃ (json : Lean.Json) (selected : SelectedIr)
+        (object : Frontend.Object),
+      Lean.Json.parse rawJson = .ok json ∧
+        decodeSelectedIr json selection = .ok selected ∧
+          selected.root.elaborate? selected.evmVersion = .ok object ∧
+            program =
+              { source := selected.source
+                contract := selected.contract
+                object := object } ∧
+              match selected.root.code? with
+              | none => True
+              | some code =>
+                  ∃ (coreDispatcher : List Frontend.Stmt) (state : State)
+                      (helper? arg? ret? : Option Name),
+                    elaborateCodeCore code = .ok (coreDispatcher, state) ∧
+                      elaborateCode code =
+                        .ok (object.dispatcher, object.functions,
+                          helper?, arg?, ret?) ∧
+                        ∀ {rawArg : Raw.Expr},
+                          RawOccurrence.StmtListClzCall rawArg code →
+                            ∃ (helper : Name)
+                              (frontendArg : Frontend.Expr),
+                              RawOccurrence.CodeElaborationRoute state
+                                helper [frontendArg]
+                                object.dispatcher := by
+  rcases decodeAndElaborateSolcIr?_generatedNormalizationEvidence
+      hDecode with
+    ⟨json, selected, object, hParse, hSelected, hObject, hEvidence,
+      hProgram⟩
+  exact
+    ⟨json, selected, object, hParse, hSelected, hObject, hProgram,
+      generatedNormalizationEvidence_clzCodeRouteOfRawOccurrence
+        hEvidence⟩
 
 end Elab
 end RawAst

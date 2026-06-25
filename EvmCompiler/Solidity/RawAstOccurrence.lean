@@ -7564,6 +7564,493 @@ end ExprUserCall
 
 namespace Elab
 
+theorem clzCodeRouteBelow_stmt_succ
+    {fuel : Nat} (ih : ClzCodeRouteBelow fuel) :
+    ∀ {rawArg : Raw.Expr}
+      {rawStmt : Raw.Stmt} {frontendStmt : Frontend.Stmt}
+      {state state' : Elab.State},
+      rawStmtSize rawStmt < fuel + 1 →
+      RawStmtNotFunctionDefinition rawStmt →
+      StmtClzCall rawArg rawStmt →
+      (Elab.Stmt.elaborate rawStmt).run state =
+        .ok (frontendStmt, state') →
+      ∃ (helper : Name) (frontendArg : Frontend.Expr),
+        StmtCodeElaborationRoute state' helper [frontendArg]
+          frontendStmt := by
+  intro rawArg rawStmt frontendStmt state state' hSize hNotFunction
+    hOccurrence hRun
+  cases rawStmt with
+  | block body =>
+      cases hOccurrence with
+      | block hBodyOccurrence =>
+          have hBodySize : rawStmtListSize body < fuel := by
+            simp [rawStmtSize] at hSize
+            omega
+          cases hBody :
+              (Elab.Stmt.List.elaborateBlock body true).run state with
+          | error err =>
+              simp [Elab.Stmt.elaborate, hBody] at hRun
+          | ok bodyResult =>
+              rcases bodyResult with ⟨frontendBody, stateAfterBody⟩
+              simp [Elab.Stmt.elaborate, hBody] at hRun
+              rcases hRun with ⟨rfl, rfl⟩
+              rcases ih.block hBodySize hBodyOccurrence hBody with
+                ⟨helper, frontendArg, hRoute⟩
+              exact
+                ⟨helper, frontendArg,
+                  CodeElaborationRoute.toStmtRoute_block hRoute⟩
+  | variableDeclaration names value? =>
+      cases value? with
+      | none =>
+          cases hOccurrence
+      | some value =>
+          cases hOccurrence with
+          | variableDeclarationValue hValueOccurrence =>
+              cases hValue : (Elab.Expr.elaborate value).run state with
+              | error err =>
+                  simp [Elab.Stmt.elaborate, hValue] at hRun
+              | ok valueResult =>
+                  rcases valueResult with
+                    ⟨frontendValue, stateAfterValue⟩
+                  cases hDeclare :
+                      (Elab.declareIdentifiers names "variable").run
+                        stateAfterValue with
+                  | error err =>
+                      simp [Elab.Stmt.elaborate, hValue, hDeclare]
+                        at hRun
+                  | ok declareResult =>
+                      rcases declareResult with
+                        ⟨unitDeclare, stateAfterDeclare⟩
+                      simp [Elab.Stmt.elaborate, hValue, hDeclare]
+                        at hRun
+                      rcases hRun with ⟨rfl, rfl⟩
+                      rcases ExprClzCall.elaborate hValueOccurrence hValue with
+                        ⟨helper, frontendArg, _hHelperName,
+                          hFrontendExpr⟩
+                      exact
+                        ⟨helper, frontendArg,
+                          StmtCodeElaborationRoute.current
+                            (FrontendOccurrence.StmtUserCall.letValue
+                              hFrontendExpr)⟩
+  | assignment names value =>
+      cases hOccurrence with
+      | assignmentValue hValueOccurrence =>
+          rcases Stmt.assignment_elaborate_value_exists hRun with
+            ⟨frontendValue, stateBeforeValue, stateAfterValue,
+              hValue, hStmtEq⟩
+          subst frontendStmt
+          rcases ExprClzCall.elaborate hValueOccurrence hValue with
+            ⟨helper, frontendArg, _hHelperName, hFrontendExpr⟩
+          exact
+            ⟨helper, frontendArg,
+              StmtCodeElaborationRoute.current
+                (FrontendOccurrence.StmtUserCall.assignValue
+                  hFrontendExpr)⟩
+  | expressionStatement value =>
+      cases hOccurrence with
+      | expressionStatement hValueOccurrence =>
+          cases hValue : (Elab.Expr.elaborate value).run state with
+          | error err =>
+              simp [Elab.Stmt.elaborate, hValue] at hRun
+          | ok valueResult =>
+              rcases valueResult with ⟨frontendValue, stateAfterValue⟩
+              simp [Elab.Stmt.elaborate, hValue] at hRun
+              rcases hRun with ⟨rfl, rfl⟩
+              rcases ExprClzCall.elaborate hValueOccurrence hValue with
+                ⟨helper, frontendArg, _hHelperName, hFrontendExpr⟩
+              exact
+                ⟨helper, frontendArg,
+                  StmtCodeElaborationRoute.current
+                    (FrontendOccurrence.StmtUserCall.exprStmt
+                      hFrontendExpr)⟩
+  | functionDefinition name params returns body =>
+      exact False.elim (hNotFunction rfl)
+  | switch scrutinee cases defaultBody =>
+      have hCaseSize : rawCaseListSize cases < fuel := by
+        simp [rawStmtSize] at hSize
+        omega
+      have hDefaultSize : rawStmtListSize defaultBody < fuel := by
+        simp [rawStmtSize] at hSize
+        omega
+      cases hScrutinee :
+          (Elab.Expr.elaborate scrutinee).run state with
+      | error err =>
+          simp [Elab.Stmt.elaborate, hScrutinee] at hRun
+      | ok scrutineeResult =>
+          rcases scrutineeResult with
+            ⟨frontendScrutinee, stateAfterScrutinee⟩
+          cases hCases :
+              (Elab.Stmt.CaseList.elaborate cases).run
+                stateAfterScrutinee with
+          | error err =>
+              simp [Elab.Stmt.elaborate, hScrutinee, hCases] at hRun
+          | ok casesResult =>
+              rcases casesResult with ⟨frontendCases, stateAfterCases⟩
+              cases hDefault :
+                  (Elab.Stmt.List.elaborateBlock defaultBody true).run
+                    stateAfterCases with
+              | error err =>
+                  simp [Elab.Stmt.elaborate, hScrutinee, hCases, hDefault]
+                    at hRun
+              | ok defaultResult =>
+                  rcases defaultResult with
+                    ⟨frontendDefault, stateAfterDefault⟩
+                  simp [Elab.Stmt.elaborate, hScrutinee, hCases, hDefault]
+                    at hRun
+                  rcases hRun with ⟨rfl, rfl⟩
+                  cases hOccurrence with
+                  | switchScrutinee hScrutineeOccurrence =>
+                      rcases ExprClzCall.elaborate hScrutineeOccurrence
+                          hScrutinee with
+                        ⟨helper, frontendArg, _hHelperName,
+                          hFrontendExpr⟩
+                      exact
+                        ⟨helper, frontendArg,
+                          StmtCodeElaborationRoute.current
+                            (FrontendOccurrence.StmtUserCall.switchScrutinee
+                              hFrontendExpr)⟩
+                  | switchCase hCaseOccurrence =>
+                      rcases ih.caseList hCaseSize hCaseOccurrence hCases with
+                        ⟨helper, frontendArg, hRoute⟩
+                      have hRouteAtEnd :
+                          CaseListCodeElaborationRoute stateAfterDefault
+                            helper [frontendArg] frontendCases :=
+                        CaseListCodeElaborationRoute.retain hRoute
+                          (fun {entry} hMem =>
+                            Stmt.List.elaborateBlock_retains_hoisted
+                              hDefault hMem)
+                      exact
+                        ⟨helper, frontendArg,
+                          CaseListCodeElaborationRoute.toStmtRoute_switchCase
+                            hRouteAtEnd⟩
+                  | switchDefault hDefaultOccurrence =>
+                      rcases ih.block hDefaultSize hDefaultOccurrence
+                          hDefault with
+                        ⟨helper, frontendArg, hRoute⟩
+                      exact
+                        ⟨helper, frontendArg,
+                          CodeElaborationRoute.toStmtRoute_switchDefault
+                            hRoute⟩
+  | forLoop pre condition post body =>
+      have hPreSize : rawStmtListSize pre < fuel := by
+        simp [rawStmtSize] at hSize
+        omega
+      have hPostSize : rawStmtListSize post < fuel := by
+        simp [rawStmtSize] at hSize
+        omega
+      have hBodySize : rawStmtListSize body < fuel := by
+        simp [rawStmtSize] at hSize
+        omega
+      cases hPush : Elab.pushIdentifierScope.run state with
+      | error err =>
+          simp [Elab.Stmt.elaborate, hPush] at hRun
+      | ok pushResult =>
+          rcases pushResult with ⟨unitPush, stateAfterPush⟩
+          cases hPreHas :
+              Elab.Stmt.List.hasImmediateFunctionDefinition pre with
+          | false =>
+              cases hPre :
+                  (Elab.Stmt.List.elaborateBlock pre false).run
+                    stateAfterPush with
+              | error err =>
+                  simp [Elab.Stmt.elaborate, hPush, hPreHas, hPre]
+                    at hRun
+              | ok preResult =>
+                  rcases preResult with ⟨frontendPre, stateAfterPre⟩
+                  cases hCondition :
+                      (Elab.Expr.elaborate condition).run stateAfterPre with
+                  | error err =>
+                      simp [Elab.Stmt.elaborate, hPush, hPreHas, hPre,
+                        hCondition] at hRun
+                  | ok conditionResult =>
+                      rcases conditionResult with
+                        ⟨frontendCondition, stateAfterCondition⟩
+                      cases hPost :
+                          (Elab.Stmt.List.elaborateBlock post true).run
+                            stateAfterCondition with
+                      | error err =>
+                          simp [Elab.Stmt.elaborate, hPush, hPreHas, hPre,
+                            hCondition, hPost] at hRun
+                      | ok postResult =>
+                          rcases postResult with
+                            ⟨frontendPost, stateAfterPost⟩
+                          cases hBody :
+                              (Elab.Stmt.List.elaborateBlock body true).run
+                                stateAfterPost with
+                          | error err =>
+                              simp [Elab.Stmt.elaborate, hPush, hPreHas,
+                                hPre, hCondition, hPost, hBody] at hRun
+                          | ok bodyResult =>
+                              rcases bodyResult with
+                                ⟨frontendBody, stateAfterBody⟩
+                              cases hPop :
+                                  Elab.popIdentifierScope.run
+                                    stateAfterBody with
+                              | error err =>
+                                  simp [Elab.Stmt.elaborate, hPush, hPreHas,
+                                    hPre, hCondition, hPost, hBody, hPop]
+                                    at hRun
+                              | ok popResult =>
+                                  rcases popResult with
+                                    ⟨unitPop, stateAfterPop⟩
+                                  simp [Elab.Stmt.elaborate, hPush, hPreHas,
+                                    hPre, hCondition, hPost, hBody, hPop]
+                                    at hRun
+                                  rcases hRun with ⟨rfl, rfl⟩
+                                  cases hOccurrence with
+                                  | forPre hPreOccurrence =>
+                                      rcases ih.block hPreSize
+                                          hPreOccurrence hPre with
+                                        ⟨helper, frontendArg, hRoute⟩
+                                      have hRouteAtEnd :
+                                          CodeElaborationRoute stateAfterPop
+                                            helper [frontendArg]
+                                            frontendPre :=
+                                        CodeElaborationRoute.retain hRoute
+                                          (fun {entry} hMem =>
+                                            popIdentifierScope_retains_hoisted
+                                              hPop
+                                              (Stmt.List.elaborateBlock_retains_hoisted
+                                                hBody
+                                                (Stmt.List.elaborateBlock_retains_hoisted
+                                                  hPost
+                                                  (Expr.elaborate_retains_hoisted
+                                                    hCondition hMem))))
+                                      exact
+                                        ⟨helper, frontendArg,
+                                          CodeElaborationRoute.toStmtRoute_forPre
+                                            hRouteAtEnd⟩
+                                  | forCondition hConditionOccurrence =>
+                                      rcases ExprClzCall.elaborate
+                                          hConditionOccurrence hCondition with
+                                        ⟨helper, frontendArg, _hHelperName,
+                                          hFrontendExpr⟩
+                                      exact
+                                        ⟨helper, frontendArg,
+                                          StmtCodeElaborationRoute.current
+                                            (FrontendOccurrence.StmtUserCall.forCondition
+                                              hFrontendExpr)⟩
+                                  | forPost hPostOccurrence =>
+                                      rcases ih.block hPostSize
+                                          hPostOccurrence hPost with
+                                        ⟨helper, frontendArg, hRoute⟩
+                                      have hRouteAtEnd :
+                                          CodeElaborationRoute stateAfterPop
+                                            helper [frontendArg]
+                                            frontendPost :=
+                                        CodeElaborationRoute.retain hRoute
+                                          (fun {entry} hMem =>
+                                            popIdentifierScope_retains_hoisted
+                                              hPop
+                                              (Stmt.List.elaborateBlock_retains_hoisted
+                                                hBody hMem))
+                                      exact
+                                        ⟨helper, frontendArg,
+                                          CodeElaborationRoute.toStmtRoute_forPost
+                                            hRouteAtEnd⟩
+                                  | forBody hBodyOccurrence =>
+                                      rcases ih.block hBodySize
+                                          hBodyOccurrence hBody with
+                                        ⟨helper, frontendArg, hRoute⟩
+                                      have hRouteAtEnd :
+                                          CodeElaborationRoute stateAfterPop
+                                            helper [frontendArg]
+                                            frontendBody :=
+                                        CodeElaborationRoute.retain hRoute
+                                          (fun {entry} hMem =>
+                                            popIdentifierScope_retains_hoisted
+                                              hPop hMem)
+                                      exact
+                                        ⟨helper, frontendArg,
+                                          CodeElaborationRoute.toStmtRoute_forBody
+                                            hRouteAtEnd⟩
+          | true =>
+              cases hPre :
+                  (Elab.Stmt.List.elaborateForInitBlockWithScope pre).run
+                    stateAfterPush with
+              | error err =>
+                  simp [Elab.Stmt.elaborate, hPush, hPreHas, hPre]
+                    at hRun
+              | ok preResult =>
+                  rcases preResult with ⟨frontendPre, stateAfterPre⟩
+                  cases hCondition :
+                      (Elab.Expr.elaborate condition).run stateAfterPre with
+                  | error err =>
+                      simp [Elab.Stmt.elaborate, hPush, hPreHas, hPre,
+                        hCondition] at hRun
+                  | ok conditionResult =>
+                      rcases conditionResult with
+                        ⟨frontendCondition, stateAfterCondition⟩
+                      cases hPost :
+                          (Elab.Stmt.List.elaborateBlock post true).run
+                            stateAfterCondition with
+                      | error err =>
+                          simp [Elab.Stmt.elaborate, hPush, hPreHas, hPre,
+                            hCondition, hPost] at hRun
+                      | ok postResult =>
+                          rcases postResult with
+                            ⟨frontendPost, stateAfterPost⟩
+                          cases hBody :
+                              (Elab.Stmt.List.elaborateBlock body true).run
+                                stateAfterPost with
+                          | error err =>
+                              simp [Elab.Stmt.elaborate, hPush, hPreHas,
+                                hPre, hCondition, hPost, hBody] at hRun
+                          | ok bodyResult =>
+                              rcases bodyResult with
+                                ⟨frontendBody, stateAfterBody⟩
+                              cases hPopFunction :
+                                  Elab.popFunctionScope.run stateAfterBody with
+                              | error err =>
+                                  simp [Elab.Stmt.elaborate, hPush, hPreHas,
+                                    hPre, hCondition, hPost, hBody,
+                                    hPopFunction] at hRun
+                              | ok popFunctionResult =>
+                                  rcases popFunctionResult with
+                                    ⟨unitPopFunction, stateAfterPopFunction⟩
+                                  cases hPopIdentifier :
+                                      Elab.popIdentifierScope.run
+                                        stateAfterPopFunction with
+                                  | error err =>
+                                      simp [Elab.Stmt.elaborate, hPush,
+                                        hPreHas, hPre, hCondition, hPost,
+                                        hBody, hPopFunction, hPopIdentifier]
+                                        at hRun
+                                  | ok popIdentifierResult =>
+                                      rcases popIdentifierResult with
+                                        ⟨unitPopIdentifier,
+                                          stateAfterPopIdentifier⟩
+                                      simp [Elab.Stmt.elaborate, hPush,
+                                        hPreHas, hPre, hCondition, hPost,
+                                        hBody, hPopFunction, hPopIdentifier]
+                                        at hRun
+                                      rcases hRun with ⟨rfl, rfl⟩
+                                      cases hOccurrence with
+                                      | forPre hPreOccurrence =>
+                                          rcases ih.forInit hPreSize
+                                              hPreOccurrence hPre with
+                                            ⟨helper, frontendArg,
+                                              hRoute⟩
+                                          have hRouteAtEnd :
+                                              CodeElaborationRoute
+                                                stateAfterPopIdentifier
+                                                helper [frontendArg]
+                                                frontendPre :=
+                                            CodeElaborationRoute.retain
+                                              hRoute
+                                              (fun {entry} hMem =>
+                                                popIdentifierScope_retains_hoisted
+                                                  hPopIdentifier
+                                                  (popFunctionScope_retains_hoisted
+                                                    hPopFunction
+                                                    (Stmt.List.elaborateBlock_retains_hoisted
+                                                      hBody
+                                                      (Stmt.List.elaborateBlock_retains_hoisted
+                                                        hPost
+                                                        (Expr.elaborate_retains_hoisted
+                                                          hCondition hMem)))))
+                                          exact
+                                            ⟨helper, frontendArg,
+                                              CodeElaborationRoute.toStmtRoute_forPre
+                                                hRouteAtEnd⟩
+                                      | forCondition hConditionOccurrence =>
+                                          rcases ExprClzCall.elaborate
+                                              hConditionOccurrence
+                                              hCondition with
+                                            ⟨helper, frontendArg,
+                                              _hHelperName, hFrontendExpr⟩
+                                          exact
+                                            ⟨helper, frontendArg,
+                                              StmtCodeElaborationRoute.current
+                                                (FrontendOccurrence.StmtUserCall.forCondition
+                                                  hFrontendExpr)⟩
+                                      | forPost hPostOccurrence =>
+                                          rcases ih.block hPostSize
+                                              hPostOccurrence hPost with
+                                            ⟨helper, frontendArg,
+                                              hRoute⟩
+                                          have hRouteAtEnd :
+                                              CodeElaborationRoute
+                                                stateAfterPopIdentifier
+                                                helper [frontendArg]
+                                                frontendPost :=
+                                            CodeElaborationRoute.retain
+                                              hRoute
+                                              (fun {entry} hMem =>
+                                                popIdentifierScope_retains_hoisted
+                                                  hPopIdentifier
+                                                  (popFunctionScope_retains_hoisted
+                                                    hPopFunction
+                                                    (Stmt.List.elaborateBlock_retains_hoisted
+                                                      hBody hMem)))
+                                          exact
+                                            ⟨helper, frontendArg,
+                                              CodeElaborationRoute.toStmtRoute_forPost
+                                                hRouteAtEnd⟩
+                                      | forBody hBodyOccurrence =>
+                                          rcases ih.block hBodySize
+                                              hBodyOccurrence hBody with
+                                            ⟨helper, frontendArg,
+                                              hRoute⟩
+                                          have hRouteAtEnd :
+                                              CodeElaborationRoute
+                                                stateAfterPopIdentifier
+                                                helper [frontendArg]
+                                                frontendBody :=
+                                            CodeElaborationRoute.retain
+                                              hRoute
+                                              (fun {entry} hMem =>
+                                                popIdentifierScope_retains_hoisted
+                                                  hPopIdentifier
+                                                  (popFunctionScope_retains_hoisted
+                                                    hPopFunction hMem))
+                                          exact
+                                            ⟨helper, frontendArg,
+                                              CodeElaborationRoute.toStmtRoute_forBody
+                                                hRouteAtEnd⟩
+  | ifThen condition body =>
+      have hBodySize : rawStmtListSize body < fuel := by
+        simp [rawStmtSize] at hSize
+        omega
+      cases hCondition :
+          (Elab.Expr.elaborate condition).run state with
+      | error err =>
+          simp [Elab.Stmt.elaborate, hCondition] at hRun
+      | ok conditionResult =>
+          rcases conditionResult with
+            ⟨frontendCondition, stateAfterCondition⟩
+          cases hBody :
+              (Elab.Stmt.List.elaborateBlock body true).run
+                stateAfterCondition with
+          | error err =>
+              simp [Elab.Stmt.elaborate, hCondition, hBody] at hRun
+          | ok bodyResult =>
+              rcases bodyResult with ⟨frontendBody, stateAfterBody⟩
+              simp [Elab.Stmt.elaborate, hCondition, hBody] at hRun
+              rcases hRun with ⟨rfl, rfl⟩
+              cases hOccurrence with
+              | ifCondition hConditionOccurrence =>
+                  rcases ExprClzCall.elaborate hConditionOccurrence
+                      hCondition with
+                    ⟨helper, frontendArg, _hHelperName, hFrontendExpr⟩
+                  exact
+                    ⟨helper, frontendArg,
+                      StmtCodeElaborationRoute.current
+                        (FrontendOccurrence.StmtUserCall.ifCondition
+                          hFrontendExpr)⟩
+              | ifBody hBodyOccurrence =>
+                  rcases ih.block hBodySize hBodyOccurrence hBody with
+                    ⟨helper, frontendArg, hRoute⟩
+                  exact
+                    ⟨helper, frontendArg,
+                      CodeElaborationRoute.toStmtRoute_ifBody hRoute⟩
+  | «break» =>
+      cases hOccurrence
+  | «continue» =>
+      cases hOccurrence
+  | «leave» =>
+      cases hOccurrence
+
 theorem codeRouteBelow_stmt_succ
     {fuel : Nat} (ih : CodeRouteBelow fuel) :
     ∀ {functionName : Name} {rawArgs : List Raw.Expr}
@@ -8085,9 +8572,23 @@ theorem codeRouteBelow_succ
       forInit := codeRouteBelow_forInit_succ ih
       caseList := codeRouteBelow_caseList_succ ih }
 
+theorem clzCodeRouteBelow_succ
+    {fuel : Nat} (ih : ClzCodeRouteBelow fuel) :
+    ClzCodeRouteBelow (fuel + 1) := by
+  exact
+    { stmt := clzCodeRouteBelow_stmt_succ ih
+      stmtListAfterHoist := clzCodeRouteBelow_stmtListAfterHoist_succ ih
+      block := clzCodeRouteBelow_block_succ ih
+      forInit := clzCodeRouteBelow_forInit_succ ih
+      caseList := clzCodeRouteBelow_caseList_succ ih }
+
 theorem codeRouteBelow : (fuel : Nat) → CodeRouteBelow fuel
   | 0 => codeRouteBelow_zero
   | fuel + 1 => codeRouteBelow_succ (codeRouteBelow fuel)
+
+theorem clzCodeRouteBelow : (fuel : Nat) → ClzCodeRouteBelow fuel
+  | 0 => clzCodeRouteBelow_zero
+  | fuel + 1 => clzCodeRouteBelow_succ (clzCodeRouteBelow fuel)
 
 namespace FunctionDef
 
@@ -9618,6 +10119,231 @@ theorem elaborateCodeCore_functionBody_codeRoute_of_mem
     ⟨generated, frontendArgs,
       CodeElaborationRoute.liftFunctionBody hTopMem hRetainFn
         hBodyRoute⟩
+
+theorem elaborateCodeCore_stmt_clzCodeRoute_of_mem
+    {rawStmts : List Raw.Stmt} {dispatcher : List Frontend.Stmt}
+    {state : Elab.State}
+    (hCore :
+      Elab.elaborateCodeCore rawStmts = .ok (dispatcher, state))
+    {rawArg : Raw.Expr} {rawStmt : Raw.Stmt}
+    (hMem : rawStmt ∈ rawStmts)
+    (hNotFunction : RawStmtNotFunctionDefinition rawStmt)
+    (hOccurrence : StmtClzCall rawArg rawStmt) :
+    ∃ (helper : Name) (frontendArg : Frontend.Expr),
+      CodeElaborationRoute state helper [frontendArg] dispatcher := by
+  unfold Elab.elaborateCodeCore Elab.elaborateCodeAction at hCore
+  cases hPush : Elab.pushIdentifierScope.run {} with
+  | error err =>
+      simp [hPush] at hCore
+  | ok pushResult =>
+      rcases pushResult with ⟨unitPush, stateAfterPush⟩
+      cases hCollect : (Elab.collectTopFunctions rawStmts).run
+          stateAfterPush with
+      | error err =>
+          simp [hPush, hCollect] at hCore
+      | ok collectResult =>
+          rcases collectResult with ⟨topScope, stateAfterCollect⟩
+          cases hPushFunctions :
+              (Elab.pushFunctionScope topScope).run
+                stateAfterCollect with
+          | error err =>
+              simp [hPush, hCollect, hPushFunctions] at hCore
+          | ok pushFunctionsResult =>
+              rcases pushFunctionsResult with
+                ⟨unitPushFunctions, stateAfterPushFunctions⟩
+              cases hLoop :
+                  (Elab.elaborateCodeStmts rawStmts [] []).run
+                    stateAfterPushFunctions with
+              | error err =>
+                  simp [hPush, hCollect, hPushFunctions, hLoop] at hCore
+              | ok loopResult =>
+                  rcases loopResult with
+                    ⟨loopPair, stateAfterLoop⟩
+                  rcases loopPair with
+                    ⟨dispatcherRev, topFunctions⟩
+                  cases hPopFunctions :
+                      Elab.popFunctionScope.run stateAfterLoop with
+                  | error err =>
+                      simp [hPush, hCollect, hPushFunctions, hLoop,
+                        hPopFunctions] at hCore
+                  | ok popFunctionsResult =>
+                      rcases popFunctionsResult with
+                        ⟨unitPopFunctions, stateAfterPopFunctions⟩
+                      cases hPopIdentifiers :
+                          Elab.popIdentifierScope.run
+                            stateAfterPopFunctions with
+                      | error err =>
+                          simp [hPush, hCollect, hPushFunctions, hLoop,
+                            hPopFunctions, hPopIdentifiers] at hCore
+                      | ok popIdentifiersResult =>
+                          rcases popIdentifiersResult with
+                            ⟨unitPopIdentifiers,
+                              stateAfterPopIdentifiers⟩
+                          simp [hPush, hCollect, hPushFunctions, hLoop,
+                            hPopFunctions, hPopIdentifiers] at hCore
+                          rcases hCore with ⟨rfl, rfl⟩
+                          rcases
+                              elaborateCodeStmts_stmt_mem_retains_hoisted
+                                hLoop hMem hNotFunction with
+                            ⟨frontendStmt, stateBeforeStmt, stateAfterStmt,
+                              hStmt, hFrontendMem, hRetainLoop⟩
+                          have hFinalMem :
+                              frontendStmt ∈ dispatcherRev.reverse := by
+                            simpa using hFrontendMem
+                          have hBelow :=
+                            clzCodeRouteBelow (rawStmtSize rawStmt + 1)
+                          rcases hBelow.stmt (Nat.lt_succ_self _)
+                              hNotFunction hOccurrence hStmt with
+                            ⟨helper, frontendArg, hRoute⟩
+                          have hRetainFinal :
+                              ∀ {entry : Name × Frontend.FunctionDef},
+                                entry ∈ stateAfterStmt.hoistedFunctions →
+                                  entry ∈
+                                    ({ stateAfterPopIdentifiers with
+                                      hoistedFunctions :=
+                                        stateAfterPopIdentifiers.hoistedFunctions ++
+                                          topFunctions } :
+                                      Elab.State).hoistedFunctions := by
+                            intro entry hEntry
+                            have hLoopEntry :
+                                entry ∈ stateAfterLoop.hoistedFunctions :=
+                              hRetainLoop hEntry
+                            have hPopFunctionEntry :
+                                entry ∈
+                                  stateAfterPopFunctions.hoistedFunctions :=
+                              popFunctionScope_retains_hoisted
+                                hPopFunctions hLoopEntry
+                            have hPopIdentifierEntry :
+                                entry ∈
+                                  stateAfterPopIdentifiers.hoistedFunctions :=
+                              popIdentifierScope_retains_hoisted
+                                hPopIdentifiers hPopFunctionEntry
+                            simp [hPopIdentifierEntry]
+                          have hRouteAtEnd :
+                              StmtCodeElaborationRoute
+                                ({ stateAfterPopIdentifiers with
+                                  hoistedFunctions :=
+                                    stateAfterPopIdentifiers.hoistedFunctions ++
+                                      topFunctions } :
+                                  Elab.State)
+                                helper [frontendArg] frontendStmt :=
+                            StmtCodeElaborationRoute.retain hRoute
+                              hRetainFinal
+                          exact
+                            ⟨helper, frontendArg,
+                              StmtCodeElaborationRoute.toCodeRoute_of_mem
+                                hFinalMem hRouteAtEnd⟩
+
+theorem elaborateCodeCore_functionBody_clzCodeRoute_of_mem
+    {rawStmts : List Raw.Stmt} {dispatcher : List Frontend.Stmt}
+    {state : Elab.State}
+    (hCore :
+      Elab.elaborateCodeCore rawStmts = .ok (dispatcher, state))
+    {name : Name} {params returns : List Name} {body : List Raw.Stmt}
+    (hMem :
+      Raw.Stmt.functionDefinition name params returns body ∈ rawStmts)
+    {rawArg : Raw.Expr}
+    (hOccurrence : StmtListClzCall rawArg body) :
+    ∃ (helper : Name) (frontendArg : Frontend.Expr),
+      CodeElaborationRoute state helper [frontendArg] dispatcher := by
+  rcases elaborateCodeCore_function_mem_retains_hoisted hCore hMem with
+    ⟨fn, stateBeforeFn, stateAfterFn, hFn, hTopMem, hRetainFn⟩
+  rcases
+      _root_.EvmCompiler.Solidity.RawAst.RawOccurrence.FunctionDef.elaborate_clzCodeRoute_exists_of_body
+        hFn
+        (fun {frontendBody stateBeforeBody stateAfterBody}
+          hBody hBodyEq =>
+          by
+            have hBelow := clzCodeRouteBelow (rawStmtListSize body + 1)
+            exact
+              hBelow.block (Nat.lt_succ_self _) hOccurrence hBody) with
+    ⟨helper, frontendArg, hBodyRoute⟩
+  exact
+    ⟨helper, frontendArg,
+      CodeElaborationRoute.liftFunctionBody hTopMem hRetainFn
+        hBodyRoute⟩
+
+theorem elaborateCodeCore_clzCodeRoute
+    {rawStmts : List Raw.Stmt} {dispatcher : List Frontend.Stmt}
+    {state : Elab.State}
+    (hCore :
+      Elab.elaborateCodeCore rawStmts = .ok (dispatcher, state))
+    {rawArg : Raw.Expr}
+    (hOccurrence : StmtListClzCall rawArg rawStmts) :
+    ∃ (helper : Name) (frontendArg : Frontend.Expr),
+      CodeElaborationRoute state helper [frontendArg] dispatcher := by
+  rcases StmtListClzCall.exists_split_stmt hOccurrence with
+    ⟨pre, stmt, suffix, hSplit, hStmtOccurrence⟩
+  subst rawStmts
+  have hMem : stmt ∈ pre ++ stmt :: suffix := by
+    simp
+  have hStatementRoute :
+      RawStmtNotFunctionDefinition stmt →
+        ∃ (helper : Name) (frontendArg : Frontend.Expr),
+          CodeElaborationRoute state helper [frontendArg] dispatcher := by
+    intro hNotFunction
+    exact
+      elaborateCodeCore_stmt_clzCodeRoute_of_mem hCore hMem hNotFunction
+        hStmtOccurrence
+  cases stmt with
+  | block body =>
+      exact
+        hStatementRoute
+          (by
+            intro name params returns fnBody hEq
+            cases hEq)
+  | variableDeclaration names value? =>
+      cases value? with
+      | none =>
+          cases hStmtOccurrence
+      | some value =>
+          exact
+            hStatementRoute
+              (by
+                intro name params returns fnBody hEq
+                cases hEq)
+  | assignment names value =>
+      exact
+        hStatementRoute
+          (by
+            intro name params returns fnBody hEq
+            cases hEq)
+  | expressionStatement value =>
+      exact
+        hStatementRoute
+          (by
+            intro name params returns fnBody hEq
+            cases hEq)
+  | functionDefinition name params returns body =>
+      cases hStmtOccurrence with
+      | functionBody hBodyOccurrence =>
+          exact
+            elaborateCodeCore_functionBody_clzCodeRoute_of_mem hCore hMem
+              hBodyOccurrence
+  | switch scrutinee cases defaultBody =>
+      exact
+        hStatementRoute
+          (by
+            intro name params returns fnBody hEq
+            cases hEq)
+  | forLoop preLoop condition post body =>
+      exact
+        hStatementRoute
+          (by
+            intro name params returns fnBody hEq
+            cases hEq)
+  | ifThen condition body =>
+      exact
+        hStatementRoute
+          (by
+            intro name params returns fnBody hEq
+            cases hEq)
+  | «break» =>
+      cases hStmtOccurrence
+  | «continue» =>
+      cases hStmtOccurrence
+  | «leave» =>
+      cases hStmtOccurrence
 
 theorem elaborateCodeCore_codeRoute
     {rawStmts : List Raw.Stmt} {dispatcher : List Frontend.Stmt}

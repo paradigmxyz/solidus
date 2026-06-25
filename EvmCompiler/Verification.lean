@@ -141,12 +141,15 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedCallSemanticInterface.stmtListRecursiveSemanticStep
 #check EvmCompiler.Solidity.RawAst.Elab.codeGeneratedNormalizationEvidence_prefixEvidenceOfCodeRoute
 #check EvmCompiler.Solidity.RawAst.Elab.codeGeneratedNormalizationEvidence_codeRouteOfRawOccurrence
+#check EvmCompiler.Solidity.RawAst.Elab.codeGeneratedNormalizationEvidence_clzCodeRouteOfRawOccurrence
 #check EvmCompiler.Solidity.RawAst.Elab.generatedNormalizationEvidence_codeRouteOfRawOccurrence
+#check EvmCompiler.Solidity.RawAst.Elab.generatedNormalizationEvidence_clzCodeRouteOfRawOccurrence
 #check EvmCompiler.Solidity.RawAst.Elab.generatedNormalizationEvidence_prefixOfRawOccurrence
 #check EvmCompiler.Solidity.RawAst.Elab.decodeAndElaborateSolcIr?_prefixOfRawOccurrence
 #check EvmCompiler.Solidity.RawAst.Elab.decodeAndElaborateSolcIr?_semanticInterfaceOfRawOccurrence
 #check EvmCompiler.Solidity.RawAst.Elab.decodeAndElaborateSolcIr?_recursiveExecutionOfRawOccurrence
 #check EvmCompiler.Solidity.RawAst.Elab.decodeAndElaborateSolcIr?_codeRouteOfRawOccurrence
+#check EvmCompiler.Solidity.RawAst.Elab.decodeAndElaborateSolcIr?_clzCodeRouteOfRawOccurrence
 #check EvmCompiler.Yul.InteractionSemantics.EvalValues.call_succ
 #check EvmCompiler.Yul.YulOccurrence.ExprUserCall.EvalArgContext
 #check EvmCompiler.Yul.YulOccurrence.ExprUserCall.evalArgContext
@@ -277,6 +280,12 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.clzCodeRouteBelow_stmtListAfterHoist_succ
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.clzCodeRouteBelow_block_succ
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.clzCodeRouteBelow_forInit_succ
+#check EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.clzCodeRouteBelow_stmt_succ
+#check EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.clzCodeRouteBelow_succ
+#check EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.clzCodeRouteBelow
+#check EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.elaborateCodeCore_stmt_clzCodeRoute_of_mem
+#check EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.elaborateCodeCore_functionBody_clzCodeRoute_of_mem
+#check EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.elaborateCodeCore_clzCodeRoute
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.ExprUserCall.elaborate
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.Stmt.assignment_elaborate_value_exists
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.Stmt.switch_elaborate_parts
@@ -443,9 +452,12 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedCallSemanticInterface.stmtListRecursiveSemanticStep
 #print axioms EvmCompiler.Solidity.RawAst.Elab.codeGeneratedNormalizationEvidence_prefixEvidenceOfCodeRoute
 #print axioms EvmCompiler.Solidity.RawAst.Elab.codeGeneratedNormalizationEvidence_codeRouteOfRawOccurrence
+#print axioms EvmCompiler.Solidity.RawAst.Elab.codeGeneratedNormalizationEvidence_clzCodeRouteOfRawOccurrence
 #print axioms EvmCompiler.Solidity.RawAst.Elab.generatedNormalizationEvidence_codeRouteOfRawOccurrence
+#print axioms EvmCompiler.Solidity.RawAst.Elab.generatedNormalizationEvidence_clzCodeRouteOfRawOccurrence
 #print axioms EvmCompiler.Solidity.RawAst.Elab.generatedNormalizationEvidence_prefixOfRawOccurrence
 #print axioms EvmCompiler.Solidity.RawAst.Elab.decodeAndElaborateSolcIr?_codeRouteOfRawOccurrence
+#print axioms EvmCompiler.Solidity.RawAst.Elab.decodeAndElaborateSolcIr?_clzCodeRouteOfRawOccurrence
 #print axioms EvmCompiler.Solidity.RawAst.Elab.decodeAndElaborateSolcIr?_prefixOfRawOccurrence
 #print axioms EvmCompiler.Solidity.RawAst.Elab.decodeAndElaborateSolcIr?_semanticInterfaceOfRawOccurrence
 #print axioms EvmCompiler.Solidity.RawAst.Elab.decodeAndElaborateSolcIr?_recursiveExecutionOfRawOccurrence
@@ -487,6 +499,12 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.clzCodeRouteBelow_stmtListAfterHoist_succ
 #print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.clzCodeRouteBelow_block_succ
 #print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.clzCodeRouteBelow_forInit_succ
+#print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.clzCodeRouteBelow_stmt_succ
+#print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.clzCodeRouteBelow_succ
+#print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.clzCodeRouteBelow
+#print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.elaborateCodeCore_stmt_clzCodeRoute_of_mem
+#print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.elaborateCodeCore_functionBody_clzCodeRoute_of_mem
+#print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Elab.elaborateCodeCore_clzCodeRoute
 #print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.ExprUserCall.elaborate_direct_user
 #print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.ExprUserCall.elaborate
 #print axioms EvmCompiler.Solidity.RawAst.RawOccurrence.Stmt.assignment_elaborate_value_exists
