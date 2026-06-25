@@ -1448,12 +1448,9 @@ def continuingPrimStaticSensitive : PrimOp → Prop
 def continuingPrimStaticPermits (state : EVMState) (op : PrimOp) : Prop :=
   continuingPrimStaticSensitive op → state.executionEnv.perm = true
 
-/-- Continuing primitives whose imported `EvmYul.step` helper can currently be
-related exactly from this module.  `LOG0..4` go through EVMYulLean's private
-`evmLogOp` helper, so they need upstream/public helper equalities before joining
-this exact-delegation theorem. -/
+/-- Continuing primitives whose imported `EvmYul.step` helper can be related
+exactly from this module. -/
 def continuingPrimEVMStepTransparent : PrimOp → Prop
-  | .log0 | .log1 | .log2 | .log3 | .log4 => False
   | _ => True
 
 theorem evm_step_pop_eq_primStep_run
@@ -1498,6 +1495,86 @@ theorem evm_step_returndatacopy_eq_primStep_run
       | _ => .error .StackUnderflow) =
       PrimStep.returndatacopy.run state
   cases hPop : state.stack.pop3 <;> simp [PrimStep.run, hPop]
+
+theorem evm_step_log0_eq_primStep_run
+    (state : EVMState) (arg : Option (Word × Nat))
+    (hPerm : state.executionEnv.perm = true) :
+    EvmYul.step (τ := .EVM) .LOG0 arg state =
+      PrimStep.log0.run state := by
+  unfold EvmYul.step
+  change EvmYul.EVM.log0Op state = PrimStep.log0.run state
+  unfold EvmYul.EVM.log0Op
+  cases hPop : state.stack.pop2 with
+  | none =>
+      simp [PrimStep.run, hPerm, hPop]
+  | some popped =>
+      rcases popped with ⟨rest, μ₀, μ₁⟩
+      simp [PrimStep.run, hPerm, hPop]
+      rfl
+
+theorem evm_step_log1_eq_primStep_run
+    (state : EVMState) (arg : Option (Word × Nat))
+    (hPerm : state.executionEnv.perm = true) :
+    EvmYul.step (τ := .EVM) .LOG1 arg state =
+      PrimStep.log1.run state := by
+  unfold EvmYul.step
+  change EvmYul.EVM.log1Op state = PrimStep.log1.run state
+  unfold EvmYul.EVM.log1Op
+  cases hPop : state.stack.pop3 with
+  | none =>
+      simp [PrimStep.run, hPerm, hPop]
+  | some popped =>
+      rcases popped with ⟨rest, μ₀, μ₁, μ₂⟩
+      simp [PrimStep.run, hPerm, hPop]
+      rfl
+
+theorem evm_step_log2_eq_primStep_run
+    (state : EVMState) (arg : Option (Word × Nat))
+    (hPerm : state.executionEnv.perm = true) :
+    EvmYul.step (τ := .EVM) .LOG2 arg state =
+      PrimStep.log2.run state := by
+  unfold EvmYul.step
+  change EvmYul.EVM.log2Op state = PrimStep.log2.run state
+  unfold EvmYul.EVM.log2Op
+  cases hPop : state.stack.pop4 with
+  | none =>
+      simp [PrimStep.run, hPerm, hPop]
+  | some popped =>
+      rcases popped with ⟨rest, μ₀, μ₁, μ₂, μ₃⟩
+      simp [PrimStep.run, hPerm, hPop]
+      rfl
+
+theorem evm_step_log3_eq_primStep_run
+    (state : EVMState) (arg : Option (Word × Nat))
+    (hPerm : state.executionEnv.perm = true) :
+    EvmYul.step (τ := .EVM) .LOG3 arg state =
+      PrimStep.log3.run state := by
+  unfold EvmYul.step
+  change EvmYul.EVM.log3Op state = PrimStep.log3.run state
+  unfold EvmYul.EVM.log3Op
+  cases hPop : state.stack.pop5 with
+  | none =>
+      simp [PrimStep.run, hPerm, hPop]
+  | some popped =>
+      rcases popped with ⟨rest, μ₀, μ₁, μ₂, μ₃, μ₄⟩
+      simp [PrimStep.run, hPerm, hPop]
+      rfl
+
+theorem evm_step_log4_eq_primStep_run
+    (state : EVMState) (arg : Option (Word × Nat))
+    (hPerm : state.executionEnv.perm = true) :
+    EvmYul.step (τ := .EVM) .LOG4 arg state =
+      PrimStep.log4.run state := by
+  unfold EvmYul.step
+  change EvmYul.EVM.log4Op state = PrimStep.log4.run state
+  unfold EvmYul.EVM.log4Op
+  cases hPop : state.stack.pop6 with
+  | none =>
+      simp [PrimStep.run, hPerm, hPop]
+  | some popped =>
+      rcases popped with ⟨rest, μ₀, μ₁, μ₂, μ₃, μ₄, μ₅⟩
+      simp [PrimStep.run, hPerm, hPop]
+      rfl
 
 theorem continuingPrimStaticPermits_of_static_check
     {validJumps : Array Word} {state : EVMState} {op : PrimOp}
@@ -1604,15 +1681,100 @@ theorem evm_step_continuing_prim_after_charges
       (PrimStep.run_binaryState_of_permitted EvmYul.State.tstore
         (afterEVMInstructionChargeAt state) hPermCharged).symm
   case log0 =>
-    cases hTransparent
+    cases hStep
+    have hPerm := hStaticPermits (by simp [continuingPrimStaticSensitive])
+    have hPermCharged :
+        (afterEVMInstructionChargeAt state).executionEnv.perm = true := by
+      simpa [afterEVMInstructionChargeAt, afterMemoryChargeAt, chargeGas]
+        using hPerm
+    simp only [EvmYul.EVM.step, PrimOp.toEVM,
+      afterEVMInstructionChargeAt, afterMemoryChargeAt, dynamicGasCostAt,
+      chargeGas]
+    change
+      EvmYul.step (τ := .EVM) .LOG0 arg
+          (afterEVMInstructionChargeAt state) =
+        PrimOp.log0.step (afterEVMInstructionChargeAt state)
+    rw [PrimOp.step_eq_continuingStep_run (op := .log0)
+      (step := .log0) rfl]
+    exact
+      evm_step_log0_eq_primStep_run
+        (afterEVMInstructionChargeAt state) arg hPermCharged
   case log1 =>
-    cases hTransparent
+    cases hStep
+    have hPerm := hStaticPermits (by simp [continuingPrimStaticSensitive])
+    have hPermCharged :
+        (afterEVMInstructionChargeAt state).executionEnv.perm = true := by
+      simpa [afterEVMInstructionChargeAt, afterMemoryChargeAt, chargeGas]
+        using hPerm
+    simp only [EvmYul.EVM.step, PrimOp.toEVM,
+      afterEVMInstructionChargeAt, afterMemoryChargeAt, dynamicGasCostAt,
+      chargeGas]
+    change
+      EvmYul.step (τ := .EVM) .LOG1 arg
+          (afterEVMInstructionChargeAt state) =
+        PrimOp.log1.step (afterEVMInstructionChargeAt state)
+    rw [PrimOp.step_eq_continuingStep_run (op := .log1)
+      (step := .log1) rfl]
+    exact
+      evm_step_log1_eq_primStep_run
+        (afterEVMInstructionChargeAt state) arg hPermCharged
   case log2 =>
-    cases hTransparent
+    cases hStep
+    have hPerm := hStaticPermits (by simp [continuingPrimStaticSensitive])
+    have hPermCharged :
+        (afterEVMInstructionChargeAt state).executionEnv.perm = true := by
+      simpa [afterEVMInstructionChargeAt, afterMemoryChargeAt, chargeGas]
+        using hPerm
+    simp only [EvmYul.EVM.step, PrimOp.toEVM,
+      afterEVMInstructionChargeAt, afterMemoryChargeAt, dynamicGasCostAt,
+      chargeGas]
+    change
+      EvmYul.step (τ := .EVM) .LOG2 arg
+          (afterEVMInstructionChargeAt state) =
+        PrimOp.log2.step (afterEVMInstructionChargeAt state)
+    rw [PrimOp.step_eq_continuingStep_run (op := .log2)
+      (step := .log2) rfl]
+    exact
+      evm_step_log2_eq_primStep_run
+        (afterEVMInstructionChargeAt state) arg hPermCharged
   case log3 =>
-    cases hTransparent
+    cases hStep
+    have hPerm := hStaticPermits (by simp [continuingPrimStaticSensitive])
+    have hPermCharged :
+        (afterEVMInstructionChargeAt state).executionEnv.perm = true := by
+      simpa [afterEVMInstructionChargeAt, afterMemoryChargeAt, chargeGas]
+        using hPerm
+    simp only [EvmYul.EVM.step, PrimOp.toEVM,
+      afterEVMInstructionChargeAt, afterMemoryChargeAt, dynamicGasCostAt,
+      chargeGas]
+    change
+      EvmYul.step (τ := .EVM) .LOG3 arg
+          (afterEVMInstructionChargeAt state) =
+        PrimOp.log3.step (afterEVMInstructionChargeAt state)
+    rw [PrimOp.step_eq_continuingStep_run (op := .log3)
+      (step := .log3) rfl]
+    exact
+      evm_step_log3_eq_primStep_run
+        (afterEVMInstructionChargeAt state) arg hPermCharged
   case log4 =>
-    cases hTransparent
+    cases hStep
+    have hPerm := hStaticPermits (by simp [continuingPrimStaticSensitive])
+    have hPermCharged :
+        (afterEVMInstructionChargeAt state).executionEnv.perm = true := by
+      simpa [afterEVMInstructionChargeAt, afterMemoryChargeAt, chargeGas]
+        using hPerm
+    simp only [EvmYul.EVM.step, PrimOp.toEVM,
+      afterEVMInstructionChargeAt, afterMemoryChargeAt, dynamicGasCostAt,
+      chargeGas]
+    change
+      EvmYul.step (τ := .EVM) .LOG4 arg
+          (afterEVMInstructionChargeAt state) =
+        PrimOp.log4.step (afterEVMInstructionChargeAt state)
+    rw [PrimOp.step_eq_continuingStep_run (op := .log4)
+      (step := .log4) rfl]
+    exact
+      evm_step_log4_eq_primStep_run
+        (afterEVMInstructionChargeAt state) arg hPermCharged
   all_goals
     cases hStep
     rfl

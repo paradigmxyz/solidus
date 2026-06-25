@@ -1160,6 +1160,11 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Assembly.GasfulBridge.evm_step_pop_eq_primStep_run
 #print axioms EvmCompiler.Assembly.GasfulBridge.evm_step_mload_eq_primStep_run
 #print axioms EvmCompiler.Assembly.GasfulBridge.evm_step_returndatacopy_eq_primStep_run
+#print axioms EvmCompiler.Assembly.GasfulBridge.evm_step_log0_eq_primStep_run
+#print axioms EvmCompiler.Assembly.GasfulBridge.evm_step_log1_eq_primStep_run
+#print axioms EvmCompiler.Assembly.GasfulBridge.evm_step_log2_eq_primStep_run
+#print axioms EvmCompiler.Assembly.GasfulBridge.evm_step_log3_eq_primStep_run
+#print axioms EvmCompiler.Assembly.GasfulBridge.evm_step_log4_eq_primStep_run
 #print axioms EvmCompiler.Assembly.GasfulBridge.evm_step_continuing_prim_after_charges
 #print axioms EvmCompiler.Assembly.GasfulBridge.raw_continuing_prim_refines_evm_step_after_charges
 #print axioms EvmCompiler.Assembly.GasfulBridge.x_stop_success_after_charges
