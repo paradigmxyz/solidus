@@ -738,6 +738,10 @@ def ensureClzHelper : ElabM Name := do
           clzReturnName? := some ret }
       pure helper
 
+def clzHelperStepSchedule : List (Nat × Nat) :=
+  [(128, 128), (192, 64), (224, 32), (240, 16), (248, 8),
+    (252, 4), (254, 2), (255, 1)]
+
 def clzHelperFunctionDef (argName returnName : Name) :
     Frontend.FunctionDef :=
   let prim (name : Name) (args : List Frontend.Expr) :=
@@ -746,12 +750,9 @@ def clzHelperFunctionDef (argName returnName : Name) :
   let word (value : Nat) :=
     Frontend.Expr.lit (EvmYul.UInt256.ofNat value)
   let nonzeroBody :=
-    let steps : List (Nat × Nat) :=
-      [(128, 128), (192, 64), (224, 32), (240, 16), (248, 8),
-        (252, 4), (254, 2), (255, 1)]
     let init : List Frontend.Stmt :=
       [Frontend.Stmt.assign [returnName] (word 0)]
-    steps.foldl
+    clzHelperStepSchedule.foldl
       (fun body step =>
         let checkShift := step.fst
         let addend := step.snd
@@ -781,6 +782,89 @@ theorem clzHelperFunctionDef_shape (argName returnName : Name) :
     (clzHelperFunctionDef argName returnName).params = [argName] ∧
       (clzHelperFunctionDef argName returnName).returns = [returnName] := by
   simp [clzHelperFunctionDef]
+
+def clzHelperAstFunctionDef (argName returnName : Name) :
+    Yul.AstFunctionDefinition :=
+  let prim (op : EvmYul.Operation .Yul) (args : List Yul.AstExpr) :=
+    EvmYul.Yul.Ast.Expr.Call (.inl op) args
+  let value (name : Name) := EvmYul.Yul.Ast.Expr.Var name
+  let word (value : Nat) :=
+    EvmYul.Yul.Ast.Expr.Lit (EvmYul.UInt256.ofNat value)
+  let nonzeroBody :=
+    let init : List Yul.AstStmt :=
+      [EvmYul.Yul.Ast.Stmt.Assign [returnName] (word 0)]
+    clzHelperStepSchedule.foldl
+      (fun body step =>
+        let checkShift := step.fst
+        let addend := step.snd
+        let stepBody : List Yul.AstStmt :=
+          [EvmYul.Yul.Ast.Stmt.Assign [returnName]
+            (prim .ADD [value returnName, word addend])]
+        let stepBody :=
+          if addend == 1 then
+            stepBody
+          else
+            stepBody ++
+              [EvmYul.Yul.Ast.Stmt.Assign [argName]
+                (prim .SHL [word addend, value argName])]
+        body ++
+          [EvmYul.Yul.Ast.Stmt.If
+            (prim .ISZERO
+              [prim .SHR [word checkShift, value argName]])
+            stepBody])
+      init
+  EvmYul.Yul.Ast.FunctionDefinition.Def [argName] [returnName]
+    [EvmYul.Yul.Ast.Stmt.Assign [returnName] (word 256),
+      EvmYul.Yul.Ast.Stmt.If (value argName) nonzeroBody]
+
+def clzHelperValueStep (state : Word × Word) (step : Nat × Nat) :
+    Word × Word :=
+  let ret := state.fst
+  let arg := state.snd
+  let shifted :=
+    EvmYul.UInt256.shiftRight arg (EvmYul.UInt256.ofNat step.fst)
+  if shifted == EvmYul.UInt256.ofNat 0 then
+    let ret' := EvmYul.UInt256.add ret (EvmYul.UInt256.ofNat step.snd)
+    let arg' :=
+      if step.snd == 1 then
+        arg
+      else
+        EvmYul.UInt256.shiftLeft arg (EvmYul.UInt256.ofNat step.snd)
+    (ret', arg')
+  else
+    (ret, arg)
+
+def clzHelperValue (arg : Word) : Word :=
+  if arg == EvmYul.UInt256.ofNat 0 then
+    EvmYul.UInt256.ofNat 256
+  else
+    (clzHelperStepSchedule.foldl clzHelperValueStep
+      (EvmYul.UInt256.ofNat 0, arg)).fst
+
+theorem clzHelperValue_zero :
+    clzHelperValue (EvmYul.UInt256.ofNat 0) =
+      EvmYul.UInt256.ofNat 256 := by
+  native_decide
+
+theorem clzHelperFunctionDef_toYul?
+    (argName returnName : Name) :
+    Frontend.FunctionDef.toYul? (clzHelperFunctionDef argName returnName) =
+      some (clzHelperAstFunctionDef argName returnName) := by
+  simp [clzHelperFunctionDef, clzHelperAstFunctionDef,
+    clzHelperStepSchedule, Frontend.FunctionDef.toYul?,
+    Frontend.Stmt.List.toYul?, Frontend.Stmt.toYul?,
+    Frontend.Expr.toYul?, Frontend.Expr.List.toYul?,
+    Frontend.Primitive.ofName?]
+
+def ClzHelperYulInterface (functions : List (Name × Frontend.FunctionDef))
+    (helper? arg? ret? : Option Name) : Prop :=
+  match helper?, arg?, ret? with
+  | some helper, some arg, some ret =>
+      ∃ fn,
+        (helper, fn) ∈ functions ∧
+          Frontend.FunctionDef.toYul? fn =
+            some (clzHelperAstFunctionDef arg ret)
+  | _, _, _ => True
 
 mutual
   def Literal.elaborate : Raw.Literal → DecodeM Frontend.Expr
@@ -1022,6 +1106,19 @@ def ClzExpansionOk (functions : List (Name × Frontend.FunctionDef))
   | some helper, some arg, some ret =>
       (helper, clzHelperFunctionDef arg ret) ∈ functions
   | _, _, _ => True
+
+theorem clzExpansionOk_yulInterface
+    {functions : List (Name × Frontend.FunctionDef)}
+    {helper? arg? ret? : Option Name}
+    (hClz : ClzExpansionOk functions helper? arg? ret?) :
+    ClzHelperYulInterface functions helper? arg? ret? := by
+  unfold ClzExpansionOk at hClz
+  unfold ClzHelperYulInterface
+  cases helper? <;> cases arg? <;> cases ret? <;> simp at hClz ⊢
+  rename_i helper arg ret
+  exact
+    ⟨clzHelperFunctionDef arg ret, hClz,
+      clzHelperFunctionDef_toYul? arg ret⟩
 
 theorem finalFunctions_clzExpansionOk (state : State) :
     ClzExpansionOk (finalFunctions state) state.clzHelperName?
@@ -1331,8 +1428,10 @@ def Object.CodeGeneratedNormalizationEvidence
               ret? = state.clzReturnName? ∧
                 Elab.ClzExpansionOk frontend.functions
                   helper? arg? ret? ∧
-                  ∀ entry, entry ∈ state.hoistedFunctions →
-                    entry ∈ frontend.functions
+                  Elab.ClzHelperYulInterface frontend.functions
+                    helper? arg? ret? ∧
+                    ∀ entry, entry ∈ state.hoistedFunctions →
+                      entry ∈ frontend.functions
 
 theorem Object.elaborate?_clzExpansionOk
     {obj : Object} {evmVersion : Yul.SolcValidation.EvmVersion}
@@ -1530,7 +1629,9 @@ theorem Object.elaboratePreservingOrder?_generatedNormalizationEvidence
       exact
         ⟨dispatcher, state, helper?, arg?, ret?, hCore, hCodeElab,
           hFunctions, hHelper, hArg, hRet,
-          Elab.elaborateCode_clzExpansionOk hCodeElab, by
+          Elab.elaborateCode_clzExpansionOk hCodeElab,
+          Elab.clzExpansionOk_yulInterface
+            (Elab.elaborateCode_clzExpansionOk hCodeElab), by
             intro entry hEntry
             exact
               Elab.elaborateCode_hoistedFunction_mem hCore hCodeElab hEntry⟩

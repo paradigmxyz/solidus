@@ -154,7 +154,10 @@ Next raw frontend layer:
   object elaboration, raw string decoding, and artifact-wrapper success.
   `Raw.Object.GeneratedNormalizationEvidence` now bundles those facts with the
   shared `elaborateCodeCore`/`finalFunctions` witness and is derived from raw
-  object elaboration, raw string decoding, and artifact-wrapper success.
+  object elaboration, raw string decoding, and artifact-wrapper success. The
+  bundle now also proves that the generated `clz` helper converts to a
+  canonical Yul function built from the checked primitive table, and names the
+  corresponding primitive-step value function for the later semantic theorem.
   Semantic preservation of the helper and nested
   hoist/alpha-renaming passes remains open.
 - [x] Expose the production interface
