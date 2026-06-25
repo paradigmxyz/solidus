@@ -115,6 +115,11 @@ Gasful EVM bridge checkpoint:
   public helper equalities relate imported gasful `EvmYul.step` log helpers to
   `PrimStep.run`, so successful logs are covered by the generic
   `RunRefinesOpen` continuing-primitive theorem.
+- [x] Account for target-only bad-jump and stack-overflow prechecks in
+  `RunRefinesOpen`: the open raw-bytecode model intentionally does not validate
+  jump destinations or the 1024-stack postcondition, so gasful
+  `BadJumpDestination` and `StackOverflow` now refine an open transcript prefix
+  rather than a nonexistent matching open error.
 - [x] Add the matching terminal `RETURN`/`REVERT` compositions:
   stack-pop-aware actual `EVM.step` lemmas, gas/control-erased output-state
   relations, open raw-bytecode halt execution with concrete return bytes, and
@@ -124,9 +129,7 @@ Gasful EVM bridge checkpoint:
   gasful target bridge premise in
   `Yul.EndToEnd.optimizedSolcYulToGasfulRawBytecodeOfOpenRunBridge`.
 - [ ] Prove the full `EVM.X` simulation that discharges the bridge premise for
-  CALL/CREATE open-strategy responses with EIP-150/returned gas, and the
-  remaining non-OOG exceptional composition cases: stack overflow and bad jump
-  destinations.
+  CALL/CREATE open-strategy responses with EIP-150/returned gas.
 
 `Compiler.StackArtifact` is the sole code-body artifact and
 `Solidity.Frontend.VerifiedStackObjectArtifact` is the sole recursive object
