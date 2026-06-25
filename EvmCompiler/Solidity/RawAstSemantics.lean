@@ -4009,6 +4009,23 @@ theorem recursiveExecution_of_recursiveStepEvidence
     ⟨hInterface, pre, stmt, suffix, hSplit,
       StmtContext.RecursiveSemanticStep.execution hStep, hPrefix⟩
 
+theorem recursiveExecution_of_interface
+    {ordered : Yul.OrderedProgram}
+    {generated : Name}
+    {params returns : List Name} {body : List Yul.AstStmt}
+    {args : List Yul.AstExpr} {stmts : List Yul.AstStmt}
+    {prefixFuel : Nat} {code : Option Yul.AstContract}
+    {shared : EvmYul.SharedState .Yul}
+    {vars : EvmYul.Yul.VarStore}
+    (hInterface :
+      FocusedGeneratedCallSemanticInterface ordered generated params returns
+        body args stmts prefixFuel code shared vars) :
+    RecursiveExecution ordered generated params returns body args stmts
+      prefixFuel code shared vars := by
+  exact
+    recursiveExecution_of_recursiveStepEvidence
+      (recursiveStepEvidence_of_interface hInterface)
+
 end FocusedGeneratedCallSemanticInterface
 
 def FocusedGeneratedStmtListCallPrefix
@@ -5934,33 +5951,33 @@ theorem decodeAndElaborateSolcIr?_recursiveExecutionOfRawOccurrence
                                             ordered.program.contract)
                                           shared vars := by
   rcases
-      decodeAndElaborateSolcIr?_recursiveStepEvidenceOfRawOccurrence
+      decodeAndElaborateSolcIr?_semanticInterfaceOfRawOccurrence
         hDecode hConvert with
     ⟨json, selected, object, hParse, hSelected, hObject, hProgram,
-      hStepEvidence⟩
+      hSemantic⟩
   refine ⟨json, selected, object, hParse, hSelected, hObject, hProgram, ?_⟩
   cases hRawCode : selected.root.code? with
   | none =>
       simp [hRawCode]
   | some code =>
-      rw [hRawCode] at hStepEvidence
-      rcases hStepEvidence with
+      rw [hRawCode] at hSemantic
+      rcases hSemantic with
         ⟨coreDispatcher, state, helper?, arg?, ret?, hCore, hElab,
-          hOccurrenceStep⟩
+          hOccurrenceSemantic⟩
       refine
         ⟨coreDispatcher, state, helper?, arg?, ret?, hCore, hElab, ?_⟩
       intro functionName rawArgs hOccurrence hNotMemoryguard hNotClz
         hKind
-      rcases hOccurrenceStep hOccurrence hNotMemoryguard hNotClz hKind with
+      rcases hOccurrenceSemantic hOccurrence hNotMemoryguard hNotClz hKind with
         ⟨generated, frontendArgs, hGenerated⟩
       refine ⟨generated, frontendArgs, ?_⟩
       intro fuel shared vars
       rcases hGenerated with
-        ⟨params, returns, body, yulArgs, stmts, hEvidence⟩
+        ⟨params, returns, body, yulArgs, stmts, hInterface⟩
       exact
         ⟨params, returns, body, yulArgs, stmts,
-          FocusedGeneratedCallSemanticInterface.recursiveExecution_of_recursiveStepEvidence
-            hEvidence⟩
+          FocusedGeneratedCallSemanticInterface.recursiveExecution_of_interface
+            hInterface⟩
 
 theorem decodeAndElaborateSolcIr?_codeRouteOfRawOccurrence
     {rawJson : String} {selection : Selection}
