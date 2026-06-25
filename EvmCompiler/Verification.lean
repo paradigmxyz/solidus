@@ -562,6 +562,8 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Assembly.GasfulBridge.sameData_afterEVMInstructionCharge_afterDynamic
 #check EvmCompiler.Assembly.GasfulBridge.x_outOfGas_before_memory_charge
 #check EvmCompiler.Assembly.GasfulBridge.x_outOfGas_before_dynamic_charge
+#check EvmCompiler.Assembly.GasfulBridge.runRefinesOpen_outOfGas_before_memory_charge
+#check EvmCompiler.Assembly.GasfulBridge.runRefinesOpen_outOfGas_before_dynamic_charge
 #check EvmCompiler.Assembly.GasfulBridge.XGasChecksPass
 #check EvmCompiler.Assembly.GasfulBridge.XOpcodeStackChecksPass
 #check EvmCompiler.Assembly.GasfulBridge.XJumpChecksPass
@@ -578,6 +580,8 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Assembly.GasfulBridge.x_static_mode_violation_after_stack_limit_checks
 #check EvmCompiler.Assembly.GasfulBridge.x_sstore_stipend_outOfGas_after_static_check
 #check EvmCompiler.Assembly.GasfulBridge.x_create_initcode_outOfGas_after_sstore_check
+#check EvmCompiler.Assembly.GasfulBridge.runRefinesOpen_sstore_stipend_outOfGas
+#check EvmCompiler.Assembly.GasfulBridge.runRefinesOpen_create_initcode_outOfGas
 #check EvmCompiler.Assembly.GasfulBridge.x_after_prechecks_of_step_result
 #check EvmCompiler.Assembly.GasfulBridge.x_after_prechecks_of_step
 #check EvmCompiler.Assembly.GasfulBridge.x_after_prechecks_of_step_error
@@ -591,10 +595,12 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Assembly.GasfulBridge.sameData_gasful_open_stop_after_charges
 #check EvmCompiler.Assembly.GasfulBridge.sameData_stop_step_after_charges
 #check EvmCompiler.Assembly.GasfulBridge.raw_stop_executes_after_charges
+#check EvmCompiler.Assembly.GasfulBridge.raw_invalid_instruction_executes_after_charges
 #check EvmCompiler.Assembly.GasfulBridge.runRefinesOpen_of_x_after_prechecks_step_result
 #check EvmCompiler.Assembly.GasfulBridge.runRefinesOpen_of_x_after_prechecks_step_error_executes
 #check EvmCompiler.Assembly.GasfulBridge.runRefinesOpen_jumpdest_step
 #check EvmCompiler.Assembly.GasfulBridge.runRefinesOpen_stop_success
+#check EvmCompiler.Assembly.GasfulBridge.runRefinesOpen_invalid_instruction_after_gas_checks
 #check EvmCompiler.Assembly.GasfulBridge.runRefinesOpen_continuing_prim_success
 #check EvmCompiler.Assembly.GasfulBridge.CallBoundaryAccounting
 #check EvmCompiler.Assembly.GasfulBridge.CreateBoundaryAccounting
@@ -1068,6 +1074,8 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Assembly.GasfulBridge.raw_msize_observation_executes_after_charge
 #print axioms EvmCompiler.Assembly.GasfulBridge.x_outOfGas_before_memory_charge
 #print axioms EvmCompiler.Assembly.GasfulBridge.x_outOfGas_before_dynamic_charge
+#print axioms EvmCompiler.Assembly.GasfulBridge.runRefinesOpen_outOfGas_before_memory_charge
+#print axioms EvmCompiler.Assembly.GasfulBridge.runRefinesOpen_outOfGas_before_dynamic_charge
 #print axioms EvmCompiler.Assembly.GasfulBridge.x_invalid_instruction_after_gas_checks
 #print axioms EvmCompiler.Assembly.GasfulBridge.x_stack_underflow_after_gas_opcode_check
 #print axioms EvmCompiler.Assembly.GasfulBridge.x_bad_jump_destination_after_stack_check
@@ -1077,6 +1085,8 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Assembly.GasfulBridge.x_static_mode_violation_after_stack_limit_checks
 #print axioms EvmCompiler.Assembly.GasfulBridge.x_sstore_stipend_outOfGas_after_static_check
 #print axioms EvmCompiler.Assembly.GasfulBridge.x_create_initcode_outOfGas_after_sstore_check
+#print axioms EvmCompiler.Assembly.GasfulBridge.runRefinesOpen_sstore_stipend_outOfGas
+#print axioms EvmCompiler.Assembly.GasfulBridge.runRefinesOpen_create_initcode_outOfGas
 #print axioms EvmCompiler.Assembly.GasfulBridge.x_after_prechecks_of_step_result
 #print axioms EvmCompiler.Assembly.GasfulBridge.x_after_prechecks_of_step
 #print axioms EvmCompiler.Assembly.GasfulBridge.x_after_prechecks_of_step_error
@@ -1105,6 +1115,7 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Assembly.GasfulBridge.sameData_gasful_open_stop_after_charges
 #print axioms EvmCompiler.Assembly.GasfulBridge.sameData_stop_step_after_charges
 #print axioms EvmCompiler.Assembly.GasfulBridge.raw_stop_executes_after_charges
+#print axioms EvmCompiler.Assembly.GasfulBridge.raw_invalid_instruction_executes_after_charges
 #print axioms EvmCompiler.Assembly.GasfulBridge.SameData.hReturn_eq
 #print axioms EvmCompiler.Assembly.GasfulBridge.evm_step_return_after_charges
 #print axioms EvmCompiler.Assembly.GasfulBridge.evm_step_revert_after_charges
@@ -1125,6 +1136,7 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Assembly.GasfulBridge.runRefinesOpen_of_x_after_prechecks_step_error_executes
 #print axioms EvmCompiler.Assembly.GasfulBridge.runRefinesOpen_jumpdest_step
 #print axioms EvmCompiler.Assembly.GasfulBridge.runRefinesOpen_stop_success
+#print axioms EvmCompiler.Assembly.GasfulBridge.runRefinesOpen_invalid_instruction_after_gas_checks
 #print axioms EvmCompiler.Assembly.GasfulBridge.runRefinesOpen_return_success
 #print axioms EvmCompiler.Assembly.GasfulBridge.runRefinesOpen_revert_success
 #print axioms EvmCompiler.Assembly.GasfulBridge.runRefinesOpen_continuing_prim_success

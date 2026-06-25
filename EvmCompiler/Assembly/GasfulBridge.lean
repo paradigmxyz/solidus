@@ -2222,6 +2222,31 @@ theorem raw_stop_executes_after_charges
     (instr := .prim .stop) trivial hDecode hPc]
   exact Interaction.Executes.done _
 
+theorem raw_invalid_instruction_executes_after_charges
+    {bytes : ByteArray} {pc : Nat} {state : EVMState}
+    (hDecode : Compact.decodeAt bytes pc (.prim .invalid))
+    (hPc : (afterDynamicChargeAt state).pc = EvmYul.UInt256.ofNat pc) :
+    Interaction.Executes
+      (Compact.InteractionSemantics.openRunNResult
+        bytes 1 (afterDynamicChargeAt state))
+      []
+      (.error EvmYul.EVM.ExecutionException.InvalidInstruction) := by
+  rw [Compact.InteractionSemantics.openRunNResult_one_eq_instr
+    (instr := .prim .invalid) trivial hDecode hPc]
+  simpa [Compact.Instr.openStepResult, Compact.Instr.openStep,
+    Assembly.InteractionSemantics.Target.openStepInstrResult,
+    Assembly.Target.stepInstrResultWith,
+    Assembly.InteractionSemantics.Target.openStepInstr,
+    Assembly.Target.stepInstrWith,
+    Assembly.InteractionSemantics.PrimOp.openStep,
+    Assembly.PrimOp.step, Assembly.PrimOp.continuingStep?,
+    Assembly.PrimStep.run,
+    Simulation.Interaction.bind,
+    Simulation.Interaction.bind_done_error] using
+    (Interaction.Executes.done
+      (.error EvmYul.EVM.ExecutionException.InvalidInstruction :
+        Except EVMException StepResult))
+
 theorem raw_return_executes_after_charges
     {fuel : Nat} {bytes : ByteArray} {pc : Nat}
     {state gasfulFinal : EVMState}
@@ -2640,6 +2665,31 @@ theorem runRefinesOpen_stop_success
   · simpa [Nat.add_comm] using hExec
   · exact DoneRel.success (sameData_stop_step_after_charges hStep)
 
+theorem runRefinesOpen_invalid_instruction_after_gas_checks
+    {fuel : Nat} {validJumps : Array Word}
+    {bytes : ByteArray} {pc : Nat} {state : EVMState}
+    (hGas : XGasChecksPass state)
+    (hInvalid : EvmYul.EVM.δ (decodedOperationAt state) = none)
+    (hDecode : Compact.decodeAt bytes pc (.prim .invalid))
+    (hPc : (afterDynamicChargeAt state).pc = EvmYul.UInt256.ofNat pc) :
+    RunRefinesOpen
+      (EvmYul.EVM.X (fuel + 1) validJumps state)
+      (Compact.InteractionSemantics.openRunNResult
+        bytes (fuel + 1) (afterDynamicChargeAt state))
+      [] := by
+  rw [x_invalid_instruction_after_gas_checks
+    (fuel := fuel) (validJumps := validJumps) (state := state)
+    hGas hInvalid]
+  have hOne :=
+    raw_invalid_instruction_executes_after_charges
+      (bytes := bytes) (pc := pc) (state := state) hDecode hPc
+  have hExec :=
+    Compact.InteractionSemantics.openRunNResult_error_add_executes
+      (extra := fuel) hOne
+  apply RunRefinesOpen.completed
+  · simpa [Nat.add_comm] using hExec
+  · exact DoneRel.sameError
+
 theorem runRefinesOpen_return_success
     {fuel : Nat} {validJumps : Array Word}
     {bytes : ByteArray} {pc : Nat} {state gasfulFinal : EVMState}
@@ -2822,6 +2872,72 @@ theorem runRefinesOpen_outOfGas_prefix
       (.error EvmYul.EVM.ExecutionException.OutOfGass)
       openRun transcript :=
   .outOfGas rfl hFollows
+
+theorem runRefinesOpen_outOfGas_before_memory_charge
+    {fuel : Nat} {validJumps : Array Word} {state : EVMState}
+    {openRun : Interaction EVMException StepResult}
+    (hGas : state.gasAvailable.toNat < memoryExpansionCostAt state) :
+    RunRefinesOpen
+      (EvmYul.EVM.X (fuel + 1) validJumps state)
+      openRun [] := by
+  exact
+    RunRefinesOpen.outOfGas
+      (x_outOfGas_before_memory_charge
+        (fuel := fuel) (validJumps := validJumps) hGas)
+      (Interaction.Follows.nil openRun)
+
+theorem runRefinesOpen_outOfGas_before_dynamic_charge
+    {fuel : Nat} {validJumps : Array Word} {state : EVMState}
+    {openRun : Interaction EVMException StepResult}
+    (hMemoryGas :
+      ¬ state.gasAvailable.toNat < memoryExpansionCostAt state)
+    (hDynamicGas :
+      (afterMemoryChargeAt state).gasAvailable.toNat <
+        dynamicGasCostAt state) :
+    RunRefinesOpen
+      (EvmYul.EVM.X (fuel + 1) validJumps state)
+      openRun [] := by
+  exact
+    RunRefinesOpen.outOfGas
+      (x_outOfGas_before_dynamic_charge
+        (fuel := fuel) (validJumps := validJumps)
+        hMemoryGas hDynamicGas)
+      (Interaction.Follows.nil openRun)
+
+theorem runRefinesOpen_sstore_stipend_outOfGas
+    {fuel : Nat} {validJumps : Array Word} {state : EVMState}
+    {openRun : Interaction EVMException StepResult}
+    (hPrefix : XStaticChecksPass validJumps state)
+    (hSstore : sstoreStipendOutOfGasAt state) :
+    RunRefinesOpen
+      (EvmYul.EVM.X (fuel + 1) validJumps state)
+      openRun [] := by
+  exact
+    RunRefinesOpen.outOfGas
+      (x_sstore_stipend_outOfGas_after_static_check
+        (fuel := fuel) (validJumps := validJumps)
+        hPrefix hSstore)
+      (Interaction.Follows.nil openRun)
+
+theorem runRefinesOpen_create_initcode_outOfGas
+    {fuel : Nat} {validJumps : Array Word} {state : EVMState}
+    {openRun : Interaction EVMException StepResult}
+    (hPrefix : XSstoreStipendChecksPass validJumps state)
+    (hCreate :
+      decodedOperationAt state = EvmYul.Operation.CREATE ∨
+        decodedOperationAt state = EvmYul.Operation.CREATE2)
+    (hTooLarge :
+      (EvmYul.UInt256.ofNat 49152) <
+        state.stack[2]?.getD (EvmYul.UInt256.ofNat 0)) :
+    RunRefinesOpen
+      (EvmYul.EVM.X (fuel + 1) validJumps state)
+      openRun [] := by
+  exact
+    RunRefinesOpen.outOfGas
+      (x_create_initcode_outOfGas_after_sstore_check
+        (fuel := fuel) (validJumps := validJumps)
+        hPrefix hCreate hTooLarge)
+      (Interaction.Follows.nil openRun)
 
 end GasfulBridge
 end Assembly
