@@ -2395,6 +2395,76 @@ theorem ExprContext.ofOccurrence
     ExprContext hInterface expr :=
   ⟨Yul.YulOccurrence.ExprUserCall.evalArgContext hOccurrence⟩
 
+theorem ExprContext.directOrCallArgPrefix
+    {ordered : Yul.OrderedProgram}
+    {generated : Name}
+    {params returns : List Name} {body : List Yul.AstStmt}
+    {args : List Yul.AstExpr} {stmts : List Yul.AstStmt}
+    {prefixFuel : Nat} {code : Option Yul.AstContract}
+    {shared : EvmYul.SharedState .Yul}
+    {vars : EvmYul.Yul.VarStore}
+    {expr : Yul.AstExpr}
+    {hInterface :
+      FocusedGeneratedCallSemanticInterface ordered generated params returns
+        body args stmts prefixFuel code shared vars}
+    (hContext : ExprContext hInterface expr) :
+    expr = .Call (.inr generated) args ∨
+      ∃ (callee : EvmYul.Operation .Yul ⊕ Name)
+          (outerArgs before : List Yul.AstExpr) (arg : Yul.AstExpr)
+          (after : List Yul.AstExpr),
+        expr = .Call callee outerArgs ∧
+          outerArgs.reverse = before ++ arg :: after ∧
+            ExprContext hInterface arg ∧
+              ∀ (fuel : Nat) (source : Yul.InteractionSemantics.State),
+                Yul.InteractionSemantics.evalValues
+                    (fuel + 2 * before.length + 3)
+                    expr (some ordered.program.contract) source =
+                  Simulation.Interaction.bind
+                    (Yul.InteractionSemantics.evalArgs
+                      (fuel + 2 * before.length + 2) before
+                      (some ordered.program.contract) source)
+                    (fun beforeResult =>
+                      Simulation.Interaction.bind
+                        (Yul.InteractionSemantics.evalValues (fuel + 1)
+                          arg (some ordered.program.contract)
+                          beforeResult.1)
+                        (fun argResult =>
+                          Simulation.Interaction.bind
+                            (Yul.InteractionSemantics.evalArgs fuel after
+                              (some ordered.program.contract) argResult.1)
+                            (fun afterResult =>
+                              let evaluatedArgs :=
+                                beforeResult.2 ++
+                                  argResult.2.head! :: afterResult.2
+                              match callee with
+                              | .inl prim =>
+                                  Yul.InteractionSemantics.primitiveSemantics.eval
+                                    (fuel + 2 * before.length + 2)
+                                    afterResult.1 prim
+                                    evaluatedArgs.reverse
+                              | .inr functionName =>
+                                  Yul.InteractionSemantics.call
+                                    (fuel + 2 * before.length + 2)
+                                    evaluatedArgs.reverse
+                                    (some functionName)
+                                    (some ordered.program.contract)
+                                    afterResult.1))) := by
+  cases hContext with
+  | mk hEvalArgContext =>
+      cases hEvalArgContext with
+      | here =>
+          exact Or.inl rfl
+      | @callArg callee outerArgs arg before after hSplit hTail =>
+          refine
+            Or.inr
+              ⟨callee, outerArgs, before, arg, after, rfl, hSplit,
+                ⟨hTail⟩, ?_⟩
+          intro fuel source
+          exact
+            Yul.YulOccurrence.ExprUserCall.evalValues_callArgPrefix_succ
+              fuel callee outerArgs before arg after
+              (some ordered.program.contract) source hSplit
+
 mutual
   inductive StmtContext
       {ordered : Yul.OrderedProgram}

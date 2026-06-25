@@ -279,6 +279,28 @@ theorem internal_succ
     Yul.Source.Effectful.evalValues]
   rfl
 
+theorem call_succ
+    (fuel : Nat)
+    (callee : EvmYul.Operation .Yul ⊕ EvmYul.Yul.Ast.YulFunctionName)
+    (args : List EvmYul.Yul.Ast.Expr)
+    (code : Option EvmYul.Yul.Ast.YulContract) (state : State) :
+    evalValues (fuel + 1) (.Call callee args) code state =
+      Simulation.Interaction.bind
+        (evalArgs fuel args.reverse code state)
+        (fun result =>
+          match callee with
+          | .inl prim =>
+              primitiveSemantics.eval fuel result.1 prim result.2.reverse
+          | .inr functionName =>
+              call fuel result.2.reverse (some functionName) code result.1) := by
+  cases callee with
+  | inl prim =>
+      simp only [evalValues, Yul.Source.Canonical.evalValues,
+        Yul.Source.Effectful.evalValues]
+      rfl
+  | inr functionName =>
+      exact internal_succ fuel functionName args code state
+
 end EvalValues
 
 namespace EvalArgs

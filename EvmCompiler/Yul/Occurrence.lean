@@ -58,6 +58,121 @@ theorem evalArgContext
         ⟨before, after, hSplit⟩
       exact EvalArgContext.callArg hSplit ih
 
+theorem evalArgs_prefix_cons_succ
+    (fuel : Nat) (before : List AstExpr) (arg : AstExpr)
+    (after : List AstExpr) (code : Option AstContract)
+    (state : Yul.InteractionSemantics.State) :
+    Yul.InteractionSemantics.evalArgs
+        (fuel + 2 * before.length + 2)
+        (before ++ arg :: after) code state =
+      Simulation.Interaction.bind
+        (Yul.InteractionSemantics.evalArgs
+          (fuel + 2 * before.length + 2) before code state)
+        (fun beforeResult =>
+          Simulation.Interaction.bind
+            (Yul.InteractionSemantics.evalValues (fuel + 1)
+              arg code beforeResult.1)
+            (fun argResult =>
+              Simulation.Interaction.bind
+                (Yul.InteractionSemantics.evalArgs fuel after code
+                  argResult.1)
+                (fun afterResult =>
+                  pure
+                    (afterResult.1,
+                      beforeResult.2 ++
+                        argResult.2.head! :: afterResult.2)))) := by
+  rw [Yul.InteractionSemantics.EvalArgs.append before (arg :: after)]
+  have hResidual :
+      fuel + 2 * before.length + 2 - 2 * before.length =
+        fuel + 2 := by
+    omega
+  rw [hResidual]
+  apply Simulation.Interaction.AllDone.bind_congr
+    (Simulation.Interaction.AllDone.trivial
+      (Yul.InteractionSemantics.evalArgs
+        (fuel + 2 * before.length + 2) before code state))
+  intro beforeResult _hBefore
+  rw [Yul.InteractionSemantics.EvalArgs.succ_succ_cons]
+  rw [Simulation.Interaction.bind_assoc]
+  apply Simulation.Interaction.AllDone.bind_congr
+    (Simulation.Interaction.AllDone.trivial
+      (Yul.InteractionSemantics.evalValues (fuel + 1)
+        arg code beforeResult.1))
+  intro argResult _hArg
+  rw [Simulation.Interaction.bind_assoc]
+  apply Simulation.Interaction.AllDone.bind_congr
+    (Simulation.Interaction.AllDone.trivial
+      (Yul.InteractionSemantics.evalArgs fuel after code argResult.1))
+  intro afterResult _hAfter
+  change
+    Simulation.Interaction.bind
+      (Simulation.Interaction.done
+        (.ok (afterResult.1, argResult.2.head! :: afterResult.2)))
+      (fun rightResult =>
+        pure (rightResult.1, beforeResult.2 ++ rightResult.2)) =
+      pure
+        (afterResult.1,
+          beforeResult.2 ++ argResult.2.head! :: afterResult.2)
+  rw [Simulation.Interaction.bind_done_ok]
+
+theorem evalValues_callArgPrefix_succ
+    (fuel : Nat)
+    (callee : EvmYul.Operation .Yul ⊕ Name)
+    (outerArgs before : List AstExpr) (arg : AstExpr)
+    (after : List AstExpr) (code : Option AstContract)
+    (state : Yul.InteractionSemantics.State)
+    (hSplit : outerArgs.reverse = before ++ arg :: after) :
+    Yul.InteractionSemantics.evalValues
+        (fuel + 2 * before.length + 3)
+        (.Call callee outerArgs) code state =
+      Simulation.Interaction.bind
+        (Yul.InteractionSemantics.evalArgs
+          (fuel + 2 * before.length + 2) before code state)
+        (fun beforeResult =>
+          Simulation.Interaction.bind
+            (Yul.InteractionSemantics.evalValues (fuel + 1)
+              arg code beforeResult.1)
+            (fun argResult =>
+              Simulation.Interaction.bind
+                (Yul.InteractionSemantics.evalArgs fuel after code
+                  argResult.1)
+                (fun afterResult =>
+                  let evaluatedArgs :=
+                    beforeResult.2 ++ argResult.2.head! :: afterResult.2
+                  match callee with
+                  | .inl prim =>
+                      Yul.InteractionSemantics.primitiveSemantics.eval
+                        (fuel + 2 * before.length + 2)
+                        afterResult.1 prim evaluatedArgs.reverse
+                  | .inr functionName =>
+                      Yul.InteractionSemantics.call
+                        (fuel + 2 * before.length + 2)
+                        evaluatedArgs.reverse (some functionName)
+                        code afterResult.1))) := by
+  rw [show fuel + 2 * before.length + 3 =
+      (fuel + 2 * before.length + 2) + 1 by omega]
+  rw [Yul.InteractionSemantics.EvalValues.call_succ]
+  rw [hSplit]
+  rw [evalArgs_prefix_cons_succ fuel before arg after code state]
+  rw [Simulation.Interaction.bind_assoc]
+  apply Simulation.Interaction.AllDone.bind_congr
+    (Simulation.Interaction.AllDone.trivial
+      (Yul.InteractionSemantics.evalArgs
+        (fuel + 2 * before.length + 2) before code state))
+  intro beforeResult _hBefore
+  rw [Simulation.Interaction.bind_assoc]
+  apply Simulation.Interaction.AllDone.bind_congr
+    (Simulation.Interaction.AllDone.trivial
+      (Yul.InteractionSemantics.evalValues (fuel + 1)
+        arg code beforeResult.1))
+  intro argResult _hArg
+  rw [Simulation.Interaction.bind_assoc]
+  apply Simulation.Interaction.AllDone.bind_congr
+    (Simulation.Interaction.AllDone.trivial
+      (Yul.InteractionSemantics.evalArgs fuel after code argResult.1))
+  intro afterResult _hAfter
+  rfl
+
 end ExprUserCall
 
 mutual

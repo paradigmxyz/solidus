@@ -83,6 +83,7 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedCallSemanticInterface.switchScrutineeCall_succ
 #check EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedCallSemanticInterface.ExprContext
 #check EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedCallSemanticInterface.ExprContext.ofOccurrence
+#check EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedCallSemanticInterface.ExprContext.directOrCallArgPrefix
 #check EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedCallSemanticInterface.StmtContext
 #check EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedCallSemanticInterface.StmtContext.ofOccurrence
 #check EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedCallSemanticInterface.StmtListContext
@@ -99,8 +100,11 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.RawAst.Elab.decodeAndElaborateSolcIr?_prefixOfRawOccurrence
 #check EvmCompiler.Solidity.RawAst.Elab.decodeAndElaborateSolcIr?_semanticInterfaceOfRawOccurrence
 #check EvmCompiler.Solidity.RawAst.Elab.decodeAndElaborateSolcIr?_codeRouteOfRawOccurrence
+#check EvmCompiler.Yul.InteractionSemantics.EvalValues.call_succ
 #check EvmCompiler.Yul.YulOccurrence.ExprUserCall.EvalArgContext
 #check EvmCompiler.Yul.YulOccurrence.ExprUserCall.evalArgContext
+#check EvmCompiler.Yul.YulOccurrence.ExprUserCall.evalArgs_prefix_cons_succ
+#check EvmCompiler.Yul.YulOccurrence.ExprUserCall.evalValues_callArgPrefix_succ
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.StmtElaborationOccurrence
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.StmtListElaborationOccurrence
 #check EvmCompiler.Solidity.RawAst.RawOccurrence.CaseListElaborationOccurrence
@@ -343,6 +347,7 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedCallSemanticInterface.ifConditionCall_succ
 #print axioms EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedCallSemanticInterface.switchScrutineeCall_succ
 #print axioms EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedCallSemanticInterface.ExprContext.ofOccurrence
+#print axioms EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedCallSemanticInterface.ExprContext.directOrCallArgPrefix
 #print axioms EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedCallSemanticInterface.StmtContext.ofOccurrence
 #print axioms EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedCallSemanticInterface.StmtListContext.ofOccurrence
 #print axioms EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedCallSemanticInterface.CaseListContext.ofOccurrence
@@ -356,7 +361,10 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.RawAst.Elab.decodeAndElaborateSolcIr?_codeRouteOfRawOccurrence
 #print axioms EvmCompiler.Solidity.RawAst.Elab.decodeAndElaborateSolcIr?_prefixOfRawOccurrence
 #print axioms EvmCompiler.Solidity.RawAst.Elab.decodeAndElaborateSolcIr?_semanticInterfaceOfRawOccurrence
+#print axioms EvmCompiler.Yul.InteractionSemantics.EvalValues.call_succ
 #print axioms EvmCompiler.Yul.YulOccurrence.ExprUserCall.evalArgContext
+#print axioms EvmCompiler.Yul.YulOccurrence.ExprUserCall.evalArgs_prefix_cons_succ
+#print axioms EvmCompiler.Yul.YulOccurrence.ExprUserCall.evalValues_callArgPrefix_succ
 #print axioms EvmCompiler.Yul.YulOccurrence.StmtListUserCall.exists_split_stmt
 #print axioms EvmCompiler.Yul.YulOccurrence.StmtListUserCall.append_right
 #print axioms EvmCompiler.Yul.YulOccurrence.StmtListUserCall.execSeq_prefix_cons_succ
