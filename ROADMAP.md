@@ -60,7 +60,8 @@ Gasful EVM bridge checkpoint:
   of the actual parent-frame `EVM.step` result. Add
   `GasfulBridge.runRefinesOpen_jumpdest_step` as the first one-step continuation
   composition from actual charged `JUMPDEST` execution to the open raw-bytecode
-  run.
+  run, and `GasfulBridge.runRefinesOpen_stop_success` as the first successful
+  halt composition for charged `STOP`.
 - [x] Compose the existing Yul-to-open-raw-bytecode theorem with the named
   gasful target bridge premise in
   `Yul.EndToEnd.optimizedSolcYulToGasfulRawBytecodeOfOpenRunBridge`.

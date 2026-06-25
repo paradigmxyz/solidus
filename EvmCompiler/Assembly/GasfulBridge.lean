@@ -1293,6 +1293,40 @@ theorem jumpdest_chargedStepRel_after_charges
     cases state
     rfl
 
+def openStopStateAt (state : EVMState) : EVMState :=
+  { afterDynamicChargeAt state with
+    toMachineState :=
+      ((afterDynamicChargeAt state).toMachineState.setReturnData
+        ByteArray.empty).setHReturn ByteArray.empty }
+
+def openStopHaltAt (state : EVMState) : Halt :=
+  { kind := .stop
+    state := openStopStateAt state
+    output := ByteArray.empty }
+
+def gasfulStopStateAfterCharges (state : EVMState) : EVMState :=
+  { afterEVMInstructionChargeAt state with
+    toMachineState :=
+      ((afterEVMInstructionChargeAt state).toMachineState.setReturnData
+        ByteArray.empty).setHReturn ByteArray.empty }
+
+theorem evm_step_stop_after_charges
+    {fuel : Nat} {state : EVMState} :
+    EvmYul.EVM.step (fuel + 1) (dynamicGasCostAt state)
+        (some
+          (EvmYul.Operation.STOP,
+            ((EvmYul.EVM.decode state.executionEnv.code state.pc).getD
+              (EvmYul.Operation.STOP, none)).2))
+        (afterMemoryChargeAt state) =
+      .ok (gasfulStopStateAfterCharges state) := by
+  rfl
+
+theorem sameData_gasful_open_stop_after_charges
+    (state : EVMState) :
+    SameData (gasfulStopStateAfterCharges state) (openStopStateAt state) := by
+  cases state
+  rfl
+
 /-- `STOP` is a successful halting frame result after the same checked gas and
 exception prefix. The theorem leaves the concrete `EVM.step` result explicit,
 so it does not unfold the imported opcode dispatcher or introduce finalization
@@ -1380,6 +1414,37 @@ theorem x_stop_success_after_charges
     hStep', EvmYul.Operation.isCreate,
     afterMemoryChargeAt, dynamicGasCostAt,
     memoryExpansionCostAt, decodedOperationAt, chargeGas]
+
+theorem sameData_stop_step_after_charges
+    {fuel : Nat} {state gasfulFinal : EVMState}
+    (hStep :
+      EvmYul.EVM.step fuel (dynamicGasCostAt state)
+        (some
+          (EvmYul.Operation.STOP,
+            ((EvmYul.EVM.decode state.executionEnv.code state.pc).getD
+              (EvmYul.Operation.STOP, none)).2))
+        (afterMemoryChargeAt state) = .ok gasfulFinal) :
+    SameData gasfulFinal (openStopStateAt state) := by
+  cases fuel with
+  | zero =>
+      simp [EvmYul.EVM.step] at hStep
+  | succ f =>
+      rw [evm_step_stop_after_charges (fuel := f) (state := state)] at hStep
+      cases hStep
+      exact sameData_gasful_open_stop_after_charges state
+
+theorem raw_stop_executes_after_charges
+    {bytes : ByteArray} {pc : Nat} {state : EVMState}
+    (hDecode : Compact.decodeAt bytes pc (.prim .stop))
+    (hPc : (afterDynamicChargeAt state).pc = EvmYul.UInt256.ofNat pc) :
+    Interaction.Executes
+      (Compact.InteractionSemantics.openRunNResult
+        bytes 1 (afterDynamicChargeAt state))
+      []
+      (.ok (.halted (openStopHaltAt state))) := by
+  rw [Compact.InteractionSemantics.openRunNResult_one_eq_instr
+    (instr := .prim .stop) trivial hDecode hPc]
+  exact Interaction.Executes.done _
 
 def callTargetAddress (operands : CallOperands) : EvmYul.AccountAddress :=
   EvmYul.AccountAddress.ofUInt256 operands.address
@@ -1646,6 +1711,36 @@ theorem runRefinesOpen_jumpdest_step
                 Compact.InteractionSemantics.openRunNResult bytes fuel mid
             | .halted halt => Interaction.pure (.halted halt))
           hFirst hFollow)
+
+theorem runRefinesOpen_stop_success
+    {fuel : Nat} {validJumps : Array Word}
+    {bytes : ByteArray} {pc : Nat} {state gasfulFinal : EVMState}
+    (hPrefix : XSstoreStipendChecksPass validJumps state)
+    (hStop : decodedOperationAt state = EvmYul.Operation.STOP)
+    (hStep :
+      EvmYul.EVM.step fuel (dynamicGasCostAt state)
+        (some
+          (EvmYul.Operation.STOP,
+            ((EvmYul.EVM.decode state.executionEnv.code state.pc).getD
+              (EvmYul.Operation.STOP, none)).2))
+        (afterMemoryChargeAt state) = .ok gasfulFinal)
+    (hDecode : Compact.decodeAt bytes pc (.prim .stop))
+    (hPc : (afterDynamicChargeAt state).pc = EvmYul.UInt256.ofNat pc) :
+    RunRefinesOpen
+      (EvmYul.EVM.X (fuel + 1) validJumps state)
+      (Compact.InteractionSemantics.openRunNResult
+        bytes (fuel + 1) (afterDynamicChargeAt state))
+      [] := by
+  rw [x_stop_success_after_charges hPrefix hStop hStep]
+  have hOne :=
+    raw_stop_executes_after_charges
+      (bytes := bytes) (pc := pc) (state := state) hDecode hPc
+  have hExec :=
+    Compact.InteractionSemantics.openRunNResult_halted_add_executes
+      (extra := fuel) hOne
+  apply RunRefinesOpen.completed
+  · simpa [Nat.add_comm] using hExec
+  · exact DoneRel.success (sameData_stop_step_after_charges hStep)
 
 theorem runRefinesOpen_outOfGas_prefix
     {openRun : Interaction EVMException StepResult}
