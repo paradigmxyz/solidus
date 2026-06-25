@@ -1327,6 +1327,257 @@ theorem sameData_gasful_open_stop_after_charges
   cases state
   rfl
 
+theorem SameData.hReturn_eq {left right : EVMState}
+    (hSame : SameData left right) :
+    left.toMachineState.H_return = right.toMachineState.H_return := by
+  simpa [SameData, eraseControl, eraseGas] using
+    congrArg (fun state : EVMState => state.toMachineState.H_return) hSame
+
+def binaryMachineStateStepState
+    (op : EvmYul.MachineState → Word → Word → EvmYul.MachineState)
+    (state : EVMState) : EVMState :=
+  match state.stack.pop2 with
+  | some ⟨stack, μ₀, μ₁⟩ =>
+      let machine := op state.toMachineState μ₀ μ₁
+      let state' := { state with toMachineState := machine }
+      state'.replaceStackAndIncrPC stack
+  | none => state
+
+def openReturnStateAt (state : EVMState) : EVMState :=
+  binaryMachineStateStepState
+    EvmYul.MachineState.evmReturn (afterDynamicChargeAt state)
+
+def gasfulReturnStateAfterCharges (state : EVMState) : EVMState :=
+  binaryMachineStateStepState
+    EvmYul.MachineState.evmReturn (afterEVMInstructionChargeAt state)
+
+def openReturnHaltAt (state : EVMState) : Halt :=
+  { kind := .return
+    state := openReturnStateAt state
+    output := (openReturnStateAt state).toMachineState.H_return }
+
+def openRevertStateAt (state : EVMState) : EVMState :=
+  binaryMachineStateStepState
+    EvmYul.MachineState.evmRevert (afterDynamicChargeAt state)
+
+def gasfulRevertStateAfterCharges (state : EVMState) : EVMState :=
+  binaryMachineStateStepState
+    EvmYul.MachineState.evmRevert (afterEVMInstructionChargeAt state)
+
+def openRevertHaltAt (state : EVMState) : Halt :=
+  { kind := .revert
+    state := openRevertStateAt state
+    output := (openRevertStateAt state).toMachineState.H_return }
+
+theorem evm_step_return_after_charges
+    {fuel : Nat} {state : EVMState} {stack : EvmYul.Stack Word}
+    {μ₀ μ₁ : Word}
+    (hPop :
+      (afterEVMInstructionChargeAt state).stack.pop2 =
+        some ⟨stack, μ₀, μ₁⟩) :
+    EvmYul.EVM.step (fuel + 1) (dynamicGasCostAt state)
+        (some
+          (EvmYul.Operation.RETURN,
+            ((EvmYul.EVM.decode state.executionEnv.code state.pc).getD
+              (EvmYul.Operation.STOP, none)).2))
+        (afterMemoryChargeAt state) =
+      .ok (gasfulReturnStateAfterCharges state) := by
+  change
+    EvmYul.EVM.binaryMachineStateOp EvmYul.MachineState.evmReturn
+      (afterEVMInstructionChargeAt state) =
+      .ok (gasfulReturnStateAfterCharges state)
+  simp [EvmYul.EVM.binaryMachineStateOp, gasfulReturnStateAfterCharges,
+    binaryMachineStateStepState, hPop]
+  rfl
+
+theorem evm_step_revert_after_charges
+    {fuel : Nat} {state : EVMState} {stack : EvmYul.Stack Word}
+    {μ₀ μ₁ : Word}
+    (hPop :
+      (afterEVMInstructionChargeAt state).stack.pop2 =
+        some ⟨stack, μ₀, μ₁⟩) :
+    EvmYul.EVM.step (fuel + 1) (dynamicGasCostAt state)
+        (some
+          (EvmYul.Operation.REVERT,
+            ((EvmYul.EVM.decode state.executionEnv.code state.pc).getD
+              (EvmYul.Operation.STOP, none)).2))
+        (afterMemoryChargeAt state) =
+      .ok (gasfulRevertStateAfterCharges state) := by
+  change
+    EvmYul.EVM.binaryMachineStateOp EvmYul.MachineState.evmRevert
+      (afterEVMInstructionChargeAt state) =
+      .ok (gasfulRevertStateAfterCharges state)
+  simp [EvmYul.EVM.binaryMachineStateOp, gasfulRevertStateAfterCharges,
+    binaryMachineStateStepState, hPop]
+  rfl
+
+theorem sameData_gasful_open_return_after_charges
+    (state : EVMState) :
+    SameData (gasfulReturnStateAfterCharges state) (openReturnStateAt state) := by
+  cases state with
+  | mk shared pc stack execLength =>
+      cases hPop : stack.pop2 with
+      | none =>
+          simp [gasfulReturnStateAfterCharges, openReturnStateAt,
+            binaryMachineStateStepState, EvmYul.MachineState.evmReturn,
+            afterEVMInstructionChargeAt, afterDynamicChargeAt,
+            afterMemoryChargeAt, dynamicGasCostAt, chargeGas,
+            EvmYul.EVM.State.replaceStackAndIncrPC,
+            EvmYul.EVM.State.incrPC,
+            SameData, eraseControl, eraseGas, hPop]
+      | some popped =>
+          rcases popped with ⟨rest, μ₀, μ₁⟩
+          simp [gasfulReturnStateAfterCharges, openReturnStateAt,
+            binaryMachineStateStepState, EvmYul.MachineState.evmReturn,
+            afterEVMInstructionChargeAt, afterDynamicChargeAt,
+            afterMemoryChargeAt, dynamicGasCostAt, chargeGas,
+            EvmYul.EVM.State.replaceStackAndIncrPC,
+            EvmYul.EVM.State.incrPC,
+            SameData, eraseControl, eraseGas, hPop]
+
+theorem sameData_gasful_open_revert_after_charges
+    (state : EVMState) :
+    SameData (gasfulRevertStateAfterCharges state) (openRevertStateAt state) := by
+  cases state with
+  | mk shared pc stack execLength =>
+      cases hPop : stack.pop2 with
+      | none =>
+          simp [gasfulRevertStateAfterCharges, openRevertStateAt,
+            binaryMachineStateStepState, EvmYul.MachineState.evmRevert,
+            EvmYul.MachineState.evmReturn, afterEVMInstructionChargeAt,
+            afterDynamicChargeAt, afterMemoryChargeAt, dynamicGasCostAt,
+            chargeGas, EvmYul.EVM.State.replaceStackAndIncrPC,
+            EvmYul.EVM.State.incrPC,
+            SameData, eraseControl, eraseGas, hPop]
+      | some popped =>
+          rcases popped with ⟨rest, μ₀, μ₁⟩
+          simp [gasfulRevertStateAfterCharges, openRevertStateAt,
+            binaryMachineStateStepState, EvmYul.MachineState.evmRevert,
+            EvmYul.MachineState.evmReturn, afterEVMInstructionChargeAt,
+            afterDynamicChargeAt, afterMemoryChargeAt, dynamicGasCostAt,
+            chargeGas, EvmYul.EVM.State.replaceStackAndIncrPC,
+            EvmYul.EVM.State.incrPC,
+            SameData, eraseControl, eraseGas, hPop]
+
+theorem prim_return_step_after_dynamic_of_pop2
+    {state : EVMState} {stack : EvmYul.Stack Word} {μ₀ μ₁ : Word}
+    (hPop :
+      (afterDynamicChargeAt state).stack.pop2 =
+        some ⟨stack, μ₀, μ₁⟩) :
+    Assembly.PrimOp.return.step (afterDynamicChargeAt state) =
+      .ok (openReturnStateAt state) := by
+  change
+    EvmYul.EVM.binaryMachineStateOp EvmYul.MachineState.evmReturn
+      (afterDynamicChargeAt state) =
+      .ok (openReturnStateAt state)
+  simp [EvmYul.EVM.binaryMachineStateOp, openReturnStateAt,
+    binaryMachineStateStepState, hPop]
+  rfl
+
+theorem prim_revert_step_after_dynamic_of_pop2
+    {state : EVMState} {stack : EvmYul.Stack Word} {μ₀ μ₁ : Word}
+    (hPop :
+      (afterDynamicChargeAt state).stack.pop2 =
+        some ⟨stack, μ₀, μ₁⟩) :
+    Assembly.PrimOp.revert.step (afterDynamicChargeAt state) =
+      .ok (openRevertStateAt state) := by
+  change
+    EvmYul.EVM.binaryMachineStateOp EvmYul.MachineState.evmRevert
+      (afterDynamicChargeAt state) =
+      .ok (openRevertStateAt state)
+  simp [EvmYul.EVM.binaryMachineStateOp, openRevertStateAt,
+    binaryMachineStateStepState, hPop]
+  rfl
+
+theorem afterDynamic_pop2_of_afterEVMInstruction_pop2
+    {state : EVMState} {stack : EvmYul.Stack Word} {μ₀ μ₁ : Word}
+    (hPop :
+      (afterEVMInstructionChargeAt state).stack.pop2 =
+        some ⟨stack, μ₀, μ₁⟩) :
+    (afterDynamicChargeAt state).stack.pop2 =
+      some ⟨stack, μ₀, μ₁⟩ := by
+  cases state
+  simpa [afterEVMInstructionChargeAt, afterDynamicChargeAt,
+    afterMemoryChargeAt, dynamicGasCostAt, chargeGas] using hPop
+
+theorem afterDynamic_pop2_of_return_step_ok
+    {fuel : Nat} {state gasfulFinal : EVMState}
+    (hStep :
+      EvmYul.EVM.step fuel (dynamicGasCostAt state)
+        (some
+          (EvmYul.Operation.RETURN,
+            ((EvmYul.EVM.decode state.executionEnv.code state.pc).getD
+              (EvmYul.Operation.STOP, none)).2))
+        (afterMemoryChargeAt state) = .ok gasfulFinal) :
+    ∃ (stack : EvmYul.Stack Word) (μ₀ μ₁ : Word),
+      (afterDynamicChargeAt state).stack.pop2 = some ⟨stack, μ₀, μ₁⟩ := by
+  cases fuel with
+  | zero =>
+      simp [EvmYul.EVM.step] at hStep
+  | succ fuel =>
+      cases hPop :
+          (afterEVMInstructionChargeAt state).stack.pop2 with
+      | none =>
+          have hBad :
+              EvmYul.EVM.step (fuel + 1) (dynamicGasCostAt state)
+                (some
+                  (EvmYul.Operation.RETURN,
+                    ((EvmYul.EVM.decode state.executionEnv.code state.pc).getD
+                      (EvmYul.Operation.STOP, none)).2))
+                (afterMemoryChargeAt state) =
+                  .error .StackUnderflow := by
+            change
+              EvmYul.EVM.binaryMachineStateOp
+                EvmYul.MachineState.evmReturn
+                (afterEVMInstructionChargeAt state) =
+                  .error .StackUnderflow
+            simp [EvmYul.EVM.binaryMachineStateOp, hPop]
+          rw [hBad] at hStep
+          cases hStep
+      | some popped =>
+          rcases popped with ⟨stack, μ₀, μ₁⟩
+          exact ⟨stack, μ₀, μ₁,
+            afterDynamic_pop2_of_afterEVMInstruction_pop2 hPop⟩
+
+theorem afterDynamic_pop2_of_revert_step_ok
+    {fuel : Nat} {state gasfulFinal : EVMState}
+    (hStep :
+      EvmYul.EVM.step fuel (dynamicGasCostAt state)
+        (some
+          (EvmYul.Operation.REVERT,
+            ((EvmYul.EVM.decode state.executionEnv.code state.pc).getD
+              (EvmYul.Operation.STOP, none)).2))
+        (afterMemoryChargeAt state) = .ok gasfulFinal) :
+    ∃ (stack : EvmYul.Stack Word) (μ₀ μ₁ : Word),
+      (afterDynamicChargeAt state).stack.pop2 = some ⟨stack, μ₀, μ₁⟩ := by
+  cases fuel with
+  | zero =>
+      simp [EvmYul.EVM.step] at hStep
+  | succ fuel =>
+      cases hPop :
+          (afterEVMInstructionChargeAt state).stack.pop2 with
+      | none =>
+          have hBad :
+              EvmYul.EVM.step (fuel + 1) (dynamicGasCostAt state)
+                (some
+                  (EvmYul.Operation.REVERT,
+                    ((EvmYul.EVM.decode state.executionEnv.code state.pc).getD
+                      (EvmYul.Operation.STOP, none)).2))
+                (afterMemoryChargeAt state) =
+                  .error .StackUnderflow := by
+            change
+              EvmYul.EVM.binaryMachineStateOp
+                EvmYul.MachineState.evmRevert
+                (afterEVMInstructionChargeAt state) =
+                  .error .StackUnderflow
+            simp [EvmYul.EVM.binaryMachineStateOp, hPop]
+          rw [hBad] at hStep
+          cases hStep
+      | some popped =>
+          rcases popped with ⟨stack, μ₀, μ₁⟩
+          exact ⟨stack, μ₀, μ₁,
+            afterDynamic_pop2_of_afterEVMInstruction_pop2 hPop⟩
+
 /-- `STOP` is a successful halting frame result after the same checked gas and
 exception prefix. The theorem leaves the concrete `EVM.step` result explicit,
 so it does not unfold the imported opcode dispatcher or introduce finalization
@@ -1433,6 +1684,175 @@ theorem sameData_stop_step_after_charges
       cases hStep
       exact sameData_gasful_open_stop_after_charges state
 
+theorem x_return_success_after_charges
+    {fuel : Nat} {validJumps : Array Word} {state gasfulFinal : EVMState}
+    (hPrefix : XSstoreStipendChecksPass validJumps state)
+    (hReturn : decodedOperationAt state = EvmYul.Operation.RETURN)
+    (hStep :
+      EvmYul.EVM.step fuel (dynamicGasCostAt state)
+        (some
+          (EvmYul.Operation.RETURN,
+            ((EvmYul.EVM.decode state.executionEnv.code state.pc).getD
+              (EvmYul.Operation.STOP, none)).2))
+        (afterMemoryChargeAt state) = .ok gasfulFinal) :
+    EvmYul.EVM.X (fuel + 1) validJumps state =
+      .ok (.success gasfulFinal gasfulFinal.toMachineState.H_return) := by
+  have hCreateOk :
+      ¬ (EvmYul.Operation.isCreate (decodedOperationAt state) = true ∧
+        (EvmYul.UInt256.ofNat 49152) <
+          state.stack[2]?.getD (EvmYul.UInt256.ofNat 0)) := by
+    intro hCreate
+    simpa [hReturn, EvmYul.Operation.isCreate] using hCreate.1
+  have hOp' :
+      ((EvmYul.EVM.decode state.executionEnv.code state.pc).getD
+        (EvmYul.Operation.STOP, none)).1 =
+        EvmYul.Operation.RETURN := by
+    simpa [decodedOperationAt] using hReturn
+  have hStep' :
+      EvmYul.EVM.step fuel (dynamicGasCostAt state)
+        (some
+          ((EvmYul.EVM.decode state.executionEnv.code state.pc).getD
+            (EvmYul.Operation.STOP, none)))
+        (afterMemoryChargeAt state) = .ok gasfulFinal := by
+    change EvmYul.EVM.step fuel (dynamicGasCostAt state)
+      (some
+        (((EvmYul.EVM.decode state.executionEnv.code state.pc).getD
+            (EvmYul.Operation.STOP, none)).1,
+          ((EvmYul.EVM.decode state.executionEnv.code state.pc).getD
+            (EvmYul.Operation.STOP, none)).2))
+      (afterMemoryChargeAt state) = .ok gasfulFinal
+    rw [hOp']
+    exact hStep
+  simpa [xPostStepExceptResult, xPostStepResult, haltOutputAt, hReturn] using
+    (x_after_prechecks_of_step_result
+      (fuel := fuel) (validJumps := validJumps) (state := state)
+      (stepResult := .ok gasfulFinal) hPrefix hCreateOk hStep')
+
+theorem x_revert_success_after_charges
+    {fuel : Nat} {validJumps : Array Word} {state gasfulFinal : EVMState}
+    (hPrefix : XSstoreStipendChecksPass validJumps state)
+    (hRevert : decodedOperationAt state = EvmYul.Operation.REVERT)
+    (hStep :
+      EvmYul.EVM.step fuel (dynamicGasCostAt state)
+        (some
+          (EvmYul.Operation.REVERT,
+            ((EvmYul.EVM.decode state.executionEnv.code state.pc).getD
+              (EvmYul.Operation.STOP, none)).2))
+        (afterMemoryChargeAt state) = .ok gasfulFinal) :
+    EvmYul.EVM.X (fuel + 1) validJumps state =
+      .ok (.revert gasfulFinal.gasAvailable
+        gasfulFinal.toMachineState.H_return) := by
+  have hCreateOk :
+      ¬ (EvmYul.Operation.isCreate (decodedOperationAt state) = true ∧
+        (EvmYul.UInt256.ofNat 49152) <
+          state.stack[2]?.getD (EvmYul.UInt256.ofNat 0)) := by
+    intro hCreate
+    simpa [hRevert, EvmYul.Operation.isCreate] using hCreate.1
+  have hOp' :
+      ((EvmYul.EVM.decode state.executionEnv.code state.pc).getD
+        (EvmYul.Operation.STOP, none)).1 =
+        EvmYul.Operation.REVERT := by
+    simpa [decodedOperationAt] using hRevert
+  have hStep' :
+      EvmYul.EVM.step fuel (dynamicGasCostAt state)
+        (some
+          ((EvmYul.EVM.decode state.executionEnv.code state.pc).getD
+            (EvmYul.Operation.STOP, none)))
+        (afterMemoryChargeAt state) = .ok gasfulFinal := by
+    change EvmYul.EVM.step fuel (dynamicGasCostAt state)
+      (some
+        (((EvmYul.EVM.decode state.executionEnv.code state.pc).getD
+            (EvmYul.Operation.STOP, none)).1,
+          ((EvmYul.EVM.decode state.executionEnv.code state.pc).getD
+            (EvmYul.Operation.STOP, none)).2))
+      (afterMemoryChargeAt state) = .ok gasfulFinal
+    rw [hOp']
+    exact hStep
+  simpa [xPostStepExceptResult, xPostStepResult, haltOutputAt, hRevert] using
+    (x_after_prechecks_of_step_result
+      (fuel := fuel) (validJumps := validJumps) (state := state)
+      (stepResult := .ok gasfulFinal) hPrefix hCreateOk hStep')
+
+theorem sameData_return_step_after_charges
+    {fuel : Nat} {state gasfulFinal : EVMState}
+    (hStep :
+      EvmYul.EVM.step fuel (dynamicGasCostAt state)
+        (some
+          (EvmYul.Operation.RETURN,
+            ((EvmYul.EVM.decode state.executionEnv.code state.pc).getD
+              (EvmYul.Operation.STOP, none)).2))
+        (afterMemoryChargeAt state) = .ok gasfulFinal) :
+    SameData gasfulFinal (openReturnStateAt state) := by
+  cases fuel with
+  | zero =>
+      simp [EvmYul.EVM.step] at hStep
+  | succ f =>
+      cases hPop :
+          (afterEVMInstructionChargeAt state).stack.pop2 with
+      | none =>
+          have hBad :
+              EvmYul.EVM.step (f + 1) (dynamicGasCostAt state)
+                (some
+                  (EvmYul.Operation.RETURN,
+                    ((EvmYul.EVM.decode state.executionEnv.code state.pc).getD
+                      (EvmYul.Operation.STOP, none)).2))
+                (afterMemoryChargeAt state) =
+                  .error .StackUnderflow := by
+            change
+              EvmYul.EVM.binaryMachineStateOp
+                EvmYul.MachineState.evmReturn
+                (afterEVMInstructionChargeAt state) =
+                  .error .StackUnderflow
+            simp [EvmYul.EVM.binaryMachineStateOp, hPop]
+          rw [hBad] at hStep
+          cases hStep
+      | some popped =>
+          rcases popped with ⟨stack, μ₀, μ₁⟩
+          rw [evm_step_return_after_charges
+            (fuel := f) (state := state) hPop] at hStep
+          cases hStep
+          exact sameData_gasful_open_return_after_charges state
+
+theorem sameData_revert_step_after_charges
+    {fuel : Nat} {state gasfulFinal : EVMState}
+    (hStep :
+      EvmYul.EVM.step fuel (dynamicGasCostAt state)
+        (some
+          (EvmYul.Operation.REVERT,
+            ((EvmYul.EVM.decode state.executionEnv.code state.pc).getD
+              (EvmYul.Operation.STOP, none)).2))
+        (afterMemoryChargeAt state) = .ok gasfulFinal) :
+    SameData gasfulFinal (openRevertStateAt state) := by
+  cases fuel with
+  | zero =>
+      simp [EvmYul.EVM.step] at hStep
+  | succ f =>
+      cases hPop :
+          (afterEVMInstructionChargeAt state).stack.pop2 with
+      | none =>
+          have hBad :
+              EvmYul.EVM.step (f + 1) (dynamicGasCostAt state)
+                (some
+                  (EvmYul.Operation.REVERT,
+                    ((EvmYul.EVM.decode state.executionEnv.code state.pc).getD
+                      (EvmYul.Operation.STOP, none)).2))
+                (afterMemoryChargeAt state) =
+                  .error .StackUnderflow := by
+            change
+              EvmYul.EVM.binaryMachineStateOp
+                EvmYul.MachineState.evmRevert
+                (afterEVMInstructionChargeAt state) =
+                  .error .StackUnderflow
+            simp [EvmYul.EVM.binaryMachineStateOp, hPop]
+          rw [hBad] at hStep
+          cases hStep
+      | some popped =>
+          rcases popped with ⟨stack, μ₀, μ₁⟩
+          rw [evm_step_revert_after_charges
+            (fuel := f) (state := state) hPop] at hStep
+          cases hStep
+          exact sameData_gasful_open_revert_after_charges state
+
 theorem raw_stop_executes_after_charges
     {bytes : ByteArray} {pc : Nat} {state : EVMState}
     (hDecode : Compact.decodeAt bytes pc (.prim .stop))
@@ -1445,6 +1865,128 @@ theorem raw_stop_executes_after_charges
   rw [Compact.InteractionSemantics.openRunNResult_one_eq_instr
     (instr := .prim .stop) trivial hDecode hPc]
   exact Interaction.Executes.done _
+
+theorem raw_return_executes_after_charges
+    {fuel : Nat} {bytes : ByteArray} {pc : Nat}
+    {state gasfulFinal : EVMState}
+    (hDecode : Compact.decodeAt bytes pc (.prim .return))
+    (hPc : (afterDynamicChargeAt state).pc = EvmYul.UInt256.ofNat pc)
+    (hStep :
+      EvmYul.EVM.step fuel (dynamicGasCostAt state)
+        (some
+          (EvmYul.Operation.RETURN,
+            ((EvmYul.EVM.decode state.executionEnv.code state.pc).getD
+              (EvmYul.Operation.STOP, none)).2))
+        (afterMemoryChargeAt state) = .ok gasfulFinal) :
+    Interaction.Executes
+      (Compact.InteractionSemantics.openRunNResult
+        bytes 1 (afterDynamicChargeAt state))
+      []
+      (.ok (.halted
+        { kind := .return
+          state := openReturnStateAt state
+          output := gasfulFinal.toMachineState.H_return })) := by
+  rcases afterDynamic_pop2_of_return_step_ok hStep with
+    ⟨stack, μ₀, μ₁, hPop⟩
+  have hPrim :
+      Assembly.PrimOp.return.step (afterDynamicChargeAt state) =
+        .ok (openReturnStateAt state) :=
+    prim_return_step_after_dynamic_of_pop2 hPop
+  have hOpen :
+      Assembly.InteractionSemantics.PrimOp.openStep
+          .return (afterDynamicChargeAt state) =
+        Simulation.Interaction.done (.ok (openReturnStateAt state)) := by
+    simp [Assembly.InteractionSemantics.PrimOp.openStep,
+      Assembly.PrimOp.toEVM,
+      Simulation.ExternalKind.ofEVMOperation?,
+      Simulation.CallKind.ofEVMOperation?,
+      Simulation.CreateKind.ofEVMOperation?, hPrim]
+  have hExec :
+      Interaction.Executes
+        (Compact.InteractionSemantics.openRunNResult
+          bytes 1 (afterDynamicChargeAt state))
+        []
+        (.ok (.halted (openReturnHaltAt state))) := by
+    rw [Compact.InteractionSemantics.openRunNResult_one_eq_instr
+      (instr := .prim .return) trivial hDecode hPc]
+    simpa [Compact.Instr.openStepResult, Compact.Instr.openStep, hPrim,
+      Assembly.InteractionSemantics.Target.openStepInstrResult,
+      Assembly.Target.stepInstrResultWith,
+      Assembly.InteractionSemantics.Target.openStepInstr,
+      Assembly.Target.stepInstrWith, hOpen,
+      Simulation.Interaction.bind,
+      Simulation.Interaction.pure,
+      Simulation.Interaction.bind_done_ok,
+      Assembly.PrimOp.haltKind?, Compact.Instr.haltKind?,
+      HaltKind.output, openReturnHaltAt] using
+      (Interaction.Executes.done
+        (.ok (StepResult.halted (openReturnHaltAt state))))
+  have hOutput :
+      gasfulFinal.toMachineState.H_return =
+        (openReturnStateAt state).toMachineState.H_return :=
+    SameData.hReturn_eq (sameData_return_step_after_charges hStep)
+  simpa [openReturnHaltAt, hOutput.symm] using hExec
+
+theorem raw_revert_executes_after_charges
+    {fuel : Nat} {bytes : ByteArray} {pc : Nat}
+    {state gasfulFinal : EVMState}
+    (hDecode : Compact.decodeAt bytes pc (.prim .revert))
+    (hPc : (afterDynamicChargeAt state).pc = EvmYul.UInt256.ofNat pc)
+    (hStep :
+      EvmYul.EVM.step fuel (dynamicGasCostAt state)
+        (some
+          (EvmYul.Operation.REVERT,
+            ((EvmYul.EVM.decode state.executionEnv.code state.pc).getD
+              (EvmYul.Operation.STOP, none)).2))
+        (afterMemoryChargeAt state) = .ok gasfulFinal) :
+    Interaction.Executes
+      (Compact.InteractionSemantics.openRunNResult
+        bytes 1 (afterDynamicChargeAt state))
+      []
+      (.ok (.halted
+        { kind := .revert
+          state := openRevertStateAt state
+          output := gasfulFinal.toMachineState.H_return })) := by
+  rcases afterDynamic_pop2_of_revert_step_ok hStep with
+    ⟨stack, μ₀, μ₁, hPop⟩
+  have hPrim :
+      Assembly.PrimOp.revert.step (afterDynamicChargeAt state) =
+        .ok (openRevertStateAt state) :=
+    prim_revert_step_after_dynamic_of_pop2 hPop
+  have hOpen :
+      Assembly.InteractionSemantics.PrimOp.openStep
+          .revert (afterDynamicChargeAt state) =
+        Simulation.Interaction.done (.ok (openRevertStateAt state)) := by
+    simp [Assembly.InteractionSemantics.PrimOp.openStep,
+      Assembly.PrimOp.toEVM,
+      Simulation.ExternalKind.ofEVMOperation?,
+      Simulation.CallKind.ofEVMOperation?,
+      Simulation.CreateKind.ofEVMOperation?, hPrim]
+  have hExec :
+      Interaction.Executes
+        (Compact.InteractionSemantics.openRunNResult
+          bytes 1 (afterDynamicChargeAt state))
+        []
+        (.ok (.halted (openRevertHaltAt state))) := by
+    rw [Compact.InteractionSemantics.openRunNResult_one_eq_instr
+      (instr := .prim .revert) trivial hDecode hPc]
+    simpa [Compact.Instr.openStepResult, Compact.Instr.openStep, hPrim,
+      Assembly.InteractionSemantics.Target.openStepInstrResult,
+      Assembly.Target.stepInstrResultWith,
+      Assembly.InteractionSemantics.Target.openStepInstr,
+      Assembly.Target.stepInstrWith, hOpen,
+      Simulation.Interaction.bind,
+      Simulation.Interaction.pure,
+      Simulation.Interaction.bind_done_ok,
+      Assembly.PrimOp.haltKind?, Compact.Instr.haltKind?,
+      HaltKind.output, openRevertHaltAt] using
+      (Interaction.Executes.done
+        (.ok (StepResult.halted (openRevertHaltAt state))))
+  have hOutput :
+      gasfulFinal.toMachineState.H_return =
+        (openRevertStateAt state).toMachineState.H_return :=
+    SameData.hReturn_eq (sameData_revert_step_after_charges hStep)
+  simpa [openRevertHaltAt, hOutput.symm] using hExec
 
 def callTargetAddress (operands : CallOperands) : EvmYul.AccountAddress :=
   EvmYul.AccountAddress.ofUInt256 operands.address
@@ -1741,6 +2283,68 @@ theorem runRefinesOpen_stop_success
   apply RunRefinesOpen.completed
   · simpa [Nat.add_comm] using hExec
   · exact DoneRel.success (sameData_stop_step_after_charges hStep)
+
+theorem runRefinesOpen_return_success
+    {fuel : Nat} {validJumps : Array Word}
+    {bytes : ByteArray} {pc : Nat} {state gasfulFinal : EVMState}
+    (hPrefix : XSstoreStipendChecksPass validJumps state)
+    (hReturn : decodedOperationAt state = EvmYul.Operation.RETURN)
+    (hStep :
+      EvmYul.EVM.step fuel (dynamicGasCostAt state)
+        (some
+          (EvmYul.Operation.RETURN,
+            ((EvmYul.EVM.decode state.executionEnv.code state.pc).getD
+              (EvmYul.Operation.STOP, none)).2))
+        (afterMemoryChargeAt state) = .ok gasfulFinal)
+    (hDecode : Compact.decodeAt bytes pc (.prim .return))
+    (hPc : (afterDynamicChargeAt state).pc = EvmYul.UInt256.ofNat pc) :
+    RunRefinesOpen
+      (EvmYul.EVM.X (fuel + 1) validJumps state)
+      (Compact.InteractionSemantics.openRunNResult
+        bytes (fuel + 1) (afterDynamicChargeAt state))
+      [] := by
+  rw [x_return_success_after_charges hPrefix hReturn hStep]
+  have hOne :=
+    raw_return_executes_after_charges
+      (bytes := bytes) (pc := pc) (state := state)
+      (gasfulFinal := gasfulFinal) hDecode hPc hStep
+  have hExec :=
+    Compact.InteractionSemantics.openRunNResult_halted_add_executes
+      (extra := fuel) hOne
+  apply RunRefinesOpen.completed
+  · simpa [Nat.add_comm] using hExec
+  · exact DoneRel.success (sameData_return_step_after_charges hStep)
+
+theorem runRefinesOpen_revert_success
+    {fuel : Nat} {validJumps : Array Word}
+    {bytes : ByteArray} {pc : Nat} {state gasfulFinal : EVMState}
+    (hPrefix : XSstoreStipendChecksPass validJumps state)
+    (hRevert : decodedOperationAt state = EvmYul.Operation.REVERT)
+    (hStep :
+      EvmYul.EVM.step fuel (dynamicGasCostAt state)
+        (some
+          (EvmYul.Operation.REVERT,
+            ((EvmYul.EVM.decode state.executionEnv.code state.pc).getD
+              (EvmYul.Operation.STOP, none)).2))
+        (afterMemoryChargeAt state) = .ok gasfulFinal)
+    (hDecode : Compact.decodeAt bytes pc (.prim .revert))
+    (hPc : (afterDynamicChargeAt state).pc = EvmYul.UInt256.ofNat pc) :
+    RunRefinesOpen
+      (EvmYul.EVM.X (fuel + 1) validJumps state)
+      (Compact.InteractionSemantics.openRunNResult
+        bytes (fuel + 1) (afterDynamicChargeAt state))
+      [] := by
+  rw [x_revert_success_after_charges hPrefix hRevert hStep]
+  have hOne :=
+    raw_revert_executes_after_charges
+      (bytes := bytes) (pc := pc) (state := state)
+      (gasfulFinal := gasfulFinal) hDecode hPc hStep
+  have hExec :=
+    Compact.InteractionSemantics.openRunNResult_halted_add_executes
+      (extra := fuel) hOne
+  apply RunRefinesOpen.completed
+  · simpa [Nat.add_comm] using hExec
+  · exact DoneRel.revert
 
 theorem runRefinesOpen_outOfGas_prefix
     {openRun : Interaction EVMException StepResult}

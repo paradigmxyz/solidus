@@ -62,11 +62,16 @@ Gasful EVM bridge checkpoint:
   composition from actual charged `JUMPDEST` execution to the open raw-bytecode
   run, and `GasfulBridge.runRefinesOpen_stop_success` as the first successful
   halt composition for charged `STOP`.
+- [x] Add the matching terminal `RETURN`/`REVERT` compositions:
+  stack-pop-aware actual `EVM.step` lemmas, gas/control-erased output-state
+  relations, open raw-bytecode halt execution with concrete return bytes, and
+  `GasfulBridge.runRefinesOpen_return_success` /
+  `GasfulBridge.runRefinesOpen_revert_success`.
 - [x] Compose the existing Yul-to-open-raw-bytecode theorem with the named
   gasful target bridge premise in
   `Yul.EndToEnd.optimizedSolcYulToGasfulRawBytecodeOfOpenRunBridge`.
 - [ ] Prove the full `EVM.X` simulation that discharges the bridge premise for
-  charged ordinary steps, successful halts/reverts, and CALL/CREATE
+  charged ordinary steps beyond the current one-step slices and CALL/CREATE
   open-strategy responses with EIP-150/returned gas.
 
 `Compiler.StackArtifact` is the sole code-body artifact and
