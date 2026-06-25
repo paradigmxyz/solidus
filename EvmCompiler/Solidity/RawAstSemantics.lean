@@ -1650,6 +1650,123 @@ theorem decodeAndElaborateSolcIr?_clzHelper_call_value_succ
       generatedNormalizationEvidence_clzHelper_call_value_succ
         hEvidence hObjectConvert⟩
 
+def HoistedCallSemantics (state : State)
+    (ordered : Yul.OrderedProgram) : Prop :=
+  ∀ {generated : Name} {fn : Frontend.FunctionDef}
+    {yulFn : Yul.AstFunctionDefinition},
+    (generated, fn) ∈ state.hoistedFunctions →
+      fn.toYul? = some yulFn →
+        ∀ (fuel : Nat) (args : List Word)
+          (source : Yul.InteractionSemantics.State),
+          Yul.InteractionSemantics.call (fuel + 1) args
+              (some generated) (some ordered.program.contract) source =
+            Simulation.Interaction.bind
+              (Yul.InteractionSemantics.exec fuel
+                (.Block yulFn.body) (some ordered.program.contract)
+                (EvmYul.Yul.State.mkOk
+                  (source.initcall yulFn.params yulFn.rets args)))
+              (fun stateAfterBody =>
+                pure
+                  ((stateAfterBody.reviveJump.overwrite? source).setStore
+                    source,
+                    List.map stateAfterBody.lookup! yulFn.rets))
+
+theorem codeGeneratedNormalizationEvidence_hoistedCallSemantics
+    {code : List Raw.Stmt} {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    (hEvidence :
+      Raw.Object.CodeGeneratedNormalizationEvidence code object)
+    (hConvert : object.toSolcYulOrderedProgram? = some ordered) :
+    ∃ (coreDispatcher : List Frontend.Stmt) (state : State)
+        (helper? arg? ret? : Option Name),
+      elaborateCodeCore code = .ok (coreDispatcher, state) ∧
+        elaborateCode code =
+          .ok (object.dispatcher, object.functions,
+            helper?, arg?, ret?) ∧
+          HoistedCallSemantics state ordered := by
+  rcases hEvidence with
+    ⟨coreDispatcher, state, helper?, arg?, ret?, hCore, hElab,
+      _hFunctions, _hHelper, _hArg, _hRet, _hDistinct, _hClz,
+      _hInterface, hHoistedRetained⟩
+  refine ⟨coreDispatcher, state, helper?, arg?, ret?, hCore, hElab, ?_⟩
+  intro generated fn yulFn hHoisted hFn fuel args source
+  have hMem : (generated, fn) ∈ object.functions :=
+    hHoistedRetained (generated, fn) hHoisted
+  have hLookup :
+      ordered.program.contract.functions.lookup generated = some yulFn :=
+    Frontend.Object.toSolcYulOrderedProgram?_functionLookup_of_mem
+      hConvert hMem hFn
+  cases yulFn with
+  | Def params rets body =>
+      exact
+        Yul.InteractionSemantics.Call.explicit_succ
+          fuel args generated ordered.program.contract params rets body
+          source hLookup
+
+theorem generatedNormalizationEvidence_hoistedCallSemantics
+    {raw : Raw.Object} {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    (hEvidence : Raw.Object.GeneratedNormalizationEvidence raw object)
+    (hConvert : object.toSolcYulOrderedProgram? = some ordered) :
+    match raw.code? with
+    | none => True
+    | some code =>
+        ∃ (coreDispatcher : List Frontend.Stmt) (state : State)
+            (helper? arg? ret? : Option Name),
+          elaborateCodeCore code = .ok (coreDispatcher, state) ∧
+            elaborateCode code =
+              .ok (object.dispatcher, object.functions,
+                helper?, arg?, ret?) ∧
+              HoistedCallSemantics state ordered := by
+  cases hRawCode : raw.code? with
+  | none =>
+      simp [hRawCode]
+  | some code =>
+      have hCodeEvidence :
+          Raw.Object.CodeGeneratedNormalizationEvidence code object := by
+        simpa [Raw.Object.GeneratedNormalizationEvidence, hRawCode]
+          using hEvidence.2.2.2
+      exact
+        codeGeneratedNormalizationEvidence_hoistedCallSemantics
+          hCodeEvidence hConvert
+
+theorem decodeAndElaborateSolcIr?_hoistedCallSemantics
+    {rawJson : String} {selection : Selection}
+    {program : Frontend.Program} {ordered : Yul.OrderedProgram}
+    (hDecode :
+      decodeAndElaborateSolcIr? rawJson selection = some program)
+    (hConvert : program.object.toSolcYulOrderedProgram? = some ordered) :
+    ∃ (json : Lean.Json) (selected : SelectedIr)
+        (object : Frontend.Object),
+      Lean.Json.parse rawJson = .ok json ∧
+        decodeSelectedIr json selection = .ok selected ∧
+          selected.root.elaborate? selected.evmVersion = .ok object ∧
+            program =
+              { source := selected.source
+                contract := selected.contract
+                object := object } ∧
+              match selected.root.code? with
+              | none => True
+              | some code =>
+                  ∃ (coreDispatcher : List Frontend.Stmt) (state : State)
+                      (helper? arg? ret? : Option Name),
+                    elaborateCodeCore code = .ok (coreDispatcher, state) ∧
+                      elaborateCode code =
+                        .ok (object.dispatcher, object.functions,
+                          helper?, arg?, ret?) ∧
+                        HoistedCallSemantics state ordered := by
+  rcases decodeAndElaborateSolcIr?_generatedNormalizationEvidence
+      hDecode with
+    ⟨json, selected, object, hParse, hSelected, hObject, hEvidence,
+      hProgram⟩
+  have hObjectConvert :
+      object.toSolcYulOrderedProgram? = some ordered := by
+    simpa [hProgram] using hConvert
+  exact
+    ⟨json, selected, object, hParse, hSelected, hObject, hProgram,
+      generatedNormalizationEvidence_hoistedCallSemantics
+        hEvidence hObjectConvert⟩
+
 end Elab
 end RawAst
 end Solidity
