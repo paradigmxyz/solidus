@@ -69,6 +69,11 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.RawAst.Elab.clzHelperYulInterface_orderedLookup
 #check EvmCompiler.Solidity.RawAst.Elab.clzHelperAstBody_zero_exec
 #check EvmCompiler.Solidity.RawAst.Elab.clzHelperYulInterface_call_succ
+#check EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedCallPrefixEvidence
+#check EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedCallPrefixEvidence.of_yulOccurrence
+#check EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedCallPrefixEvidence.call_succ
+#check EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedCallPrefixEvidence.evalValues_succ
+#check EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedCallPrefixEvidence.eval_succ
 #check EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedStmtListCallPrefix
 #check EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedStmtListCallPrefix.of_yulOccurrence
 #check EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedStmtListCallPrefix.dispatcher_of_frontend
@@ -87,6 +92,7 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.RawAst.Elab.generatedNormalizationEvidence_functionBodyPrefix
 #check EvmCompiler.Solidity.RawAst.Elab.generatedNormalizationEvidence_functionBodyPrefixOfFrontendOccurrence
 #check EvmCompiler.Solidity.RawAst.Elab.generatedNormalizationEvidence_prefixOfCodeRoute
+#check EvmCompiler.Solidity.RawAst.Elab.codeGeneratedNormalizationEvidence_prefixEvidenceOfCodeRoute
 #check EvmCompiler.Solidity.RawAst.Elab.codeGeneratedNormalizationEvidence_codeRouteOfRawOccurrence
 #check EvmCompiler.Solidity.RawAst.Elab.generatedNormalizationEvidence_codeRouteOfRawOccurrence
 #check EvmCompiler.Solidity.RawAst.Elab.generatedNormalizationEvidence_prefixOfRawOccurrence
@@ -329,6 +335,10 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.RawAst.Elab.codeGeneratedNormalizationEvidence_hoistedCallSemantics
 #print axioms EvmCompiler.Solidity.RawAst.Elab.generatedNormalizationEvidence_hoistedCallSemantics
 #print axioms EvmCompiler.Solidity.RawAst.Elab.decodeAndElaborateSolcIr?_hoistedCallSemantics
+#print axioms EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedCallPrefixEvidence.of_yulOccurrence
+#print axioms EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedCallPrefixEvidence.call_succ
+#print axioms EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedCallPrefixEvidence.evalValues_succ
+#print axioms EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedCallPrefixEvidence.eval_succ
 #print axioms EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedCallOccurrence.call_succ
 #print axioms EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedCallOccurrence.evalValues_succ
 #print axioms EvmCompiler.Solidity.RawAst.Elab.FocusedGeneratedCallOccurrence.eval_succ
@@ -349,6 +359,7 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.RawAst.Elab.generatedNormalizationEvidence_functionBodyPrefix
 #print axioms EvmCompiler.Solidity.RawAst.Elab.generatedNormalizationEvidence_functionBodyPrefixOfFrontendOccurrence
 #print axioms EvmCompiler.Solidity.RawAst.Elab.generatedNormalizationEvidence_prefixOfCodeRoute
+#print axioms EvmCompiler.Solidity.RawAst.Elab.codeGeneratedNormalizationEvidence_prefixEvidenceOfCodeRoute
 #print axioms EvmCompiler.Solidity.RawAst.Elab.codeGeneratedNormalizationEvidence_codeRouteOfRawOccurrence
 #print axioms EvmCompiler.Solidity.RawAst.Elab.generatedNormalizationEvidence_codeRouteOfRawOccurrence
 #print axioms EvmCompiler.Solidity.RawAst.Elab.generatedNormalizationEvidence_prefixOfRawOccurrence

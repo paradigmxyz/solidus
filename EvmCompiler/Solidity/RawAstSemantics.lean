@@ -1671,6 +1671,161 @@ def HoistedCallSemantics (state : State)
                     source,
                     List.map stateAfterBody.lookup! yulFn.rets))
 
+theorem yulExprUserCall_lookup_of_exprOk
+    {profile : Yul.SolcValidation.DialectProfile}
+    {contract : Yul.AstContract} {vars : List Name}
+    {expected : Nat} {functionName : Name}
+    {args : List Yul.AstExpr} {expr : Yul.AstExpr}
+    (hOccurrence :
+      Yul.YulOccurrence.ExprUserCall functionName args expr)
+    (hOk :
+      Yul.SolcValidation.ExprOk? profile contract vars expected expr =
+        true) :
+    ∃ params returns body,
+      contract.functions.lookup functionName =
+        some (.Def params returns body) := by
+  induction hOccurrence generalizing expected with
+  | here =>
+      exact Yul.SolcValidation.exprOk_functionCall_lookup_exists hOk
+  | @callArg callee outerArgs arg hMem _ ih =>
+      cases callee with
+      | inl prim =>
+          have hArgsOk :
+              Yul.SolcValidation.ExprsOk? profile contract vars
+                  outerArgs =
+                true :=
+            Yul.SolcValidation.exprsOk_of_exprOk_primitive hOk
+          have hArgOk :
+              Yul.SolcValidation.ExprOk? profile contract vars 1 arg =
+                true :=
+            Yul.SolcValidation.exprOk_of_exprsOk_of_mem hArgsOk hMem
+          exact ih hArgOk
+      | inr outerName =>
+          cases hLookup :
+              contract.functions.lookup outerName with
+          | none =>
+              simp [Yul.SolcValidation.ExprOk?,
+                Yul.SolcValidation.lookupFunction?, hLookup] at hOk
+          | some outerFn =>
+              cases outerFn with
+              | Def params returns body =>
+                  have hArgsOk :
+                      Yul.SolcValidation.ExprsOk? profile contract vars
+                          outerArgs =
+                        true :=
+                    Yul.SolcValidation.exprsOk_of_exprOk_functionCall
+                      hOk hLookup
+                  have hArgOk :
+                      Yul.SolcValidation.ExprOk? profile contract vars 1
+                          arg =
+                        true :=
+                    Yul.SolcValidation.exprOk_of_exprsOk_of_mem hArgsOk
+                      hMem
+                  exact ih hArgOk
+
+mutual
+  theorem yulStmtUserCall_lookup_of_stmtOk
+      {profile : Yul.SolcValidation.DialectProfile}
+      {contract : Yul.AstContract}
+      {functionNames vars : List Name}
+      {canBreak canContinue canLeave : Bool}
+      {functionName : Name} {args : List Yul.AstExpr}
+      {stmt : Yul.AstStmt}
+      (hOccurrence :
+        Yul.YulOccurrence.StmtUserCall functionName args stmt)
+      (hOk :
+        Yul.SolcValidation.StmtOk? profile contract functionNames vars
+            canBreak canContinue canLeave stmt =
+          true) :
+      ∃ params returns body,
+        contract.functions.lookup functionName =
+          some (.Def params returns body) := by
+    cases hOccurrence with
+    | block hBody =>
+        exact yulStmtListUserCall_lookup_of_stmtsOk hBody hOk
+    | letValue hValue =>
+        simp [Yul.SolcValidation.StmtOk?] at hOk
+        exact yulExprUserCall_lookup_of_exprOk hValue hOk.2
+    | assignValue hValue =>
+        simp [Yul.SolcValidation.StmtOk?] at hOk
+        exact yulExprUserCall_lookup_of_exprOk hValue hOk.2
+    | exprStmt hValue =>
+        simp [Yul.SolcValidation.StmtOk?] at hOk
+        exact yulExprUserCall_lookup_of_exprOk hValue hOk
+    | switchScrutinee hScrutinee =>
+        simp [Yul.SolcValidation.StmtOk?] at hOk
+        exact yulExprUserCall_lookup_of_exprOk hScrutinee hOk.1
+    | switchCase hCases =>
+        simp [Yul.SolcValidation.StmtOk?] at hOk
+        exact yulCaseListUserCall_lookup_of_casesOk hCases hOk.2.2.1
+    | switchDefault hDefault =>
+        simp [Yul.SolcValidation.StmtOk?] at hOk
+        exact yulStmtListUserCall_lookup_of_stmtsOk hDefault hOk.2.2.2
+    | forCondition hCondition =>
+        simp [Yul.SolcValidation.StmtOk?] at hOk
+        exact yulExprUserCall_lookup_of_exprOk hCondition hOk.1
+    | forPost hPost =>
+        simp [Yul.SolcValidation.StmtOk?] at hOk
+        exact yulStmtListUserCall_lookup_of_stmtsOk hPost hOk.2.1
+    | forBody hBody =>
+        simp [Yul.SolcValidation.StmtOk?] at hOk
+        exact yulStmtListUserCall_lookup_of_stmtsOk hBody hOk.2.2
+    | ifCondition hCondition =>
+        simp [Yul.SolcValidation.StmtOk?] at hOk
+        exact yulExprUserCall_lookup_of_exprOk hCondition hOk.1
+    | ifBody hBody =>
+        simp [Yul.SolcValidation.StmtOk?] at hOk
+        exact yulStmtListUserCall_lookup_of_stmtsOk hBody hOk.2
+
+  theorem yulStmtListUserCall_lookup_of_stmtsOk
+      {profile : Yul.SolcValidation.DialectProfile}
+      {contract : Yul.AstContract}
+      {functionNames vars : List Name}
+      {canBreak canContinue canLeave : Bool}
+      {functionName : Name} {args : List Yul.AstExpr}
+      {stmts : List Yul.AstStmt}
+      (hOccurrence :
+        Yul.YulOccurrence.StmtListUserCall functionName args stmts)
+      (hOk :
+        Yul.SolcValidation.StmtsOk? profile contract functionNames vars
+            canBreak canContinue canLeave stmts =
+          true) :
+      ∃ params returns body,
+        contract.functions.lookup functionName =
+          some (.Def params returns body) := by
+    cases hOccurrence with
+    | head hStmt =>
+        have hParts := Yul.SolcValidation.stmtsOk_cons_parts hOk
+        exact yulStmtUserCall_lookup_of_stmtOk hStmt hParts.1
+    | tail hTail =>
+        have hParts := Yul.SolcValidation.stmtsOk_cons_parts hOk
+        exact yulStmtListUserCall_lookup_of_stmtsOk hTail hParts.2
+
+  theorem yulCaseListUserCall_lookup_of_casesOk
+      {profile : Yul.SolcValidation.DialectProfile}
+      {contract : Yul.AstContract}
+      {functionNames vars : List Name}
+      {canBreak canContinue canLeave : Bool}
+      {functionName : Name} {args : List Yul.AstExpr}
+      {cases : List (Word × List Yul.AstStmt)}
+      (hOccurrence :
+        Yul.YulOccurrence.CaseListUserCall functionName args cases)
+      (hOk :
+        Yul.SolcValidation.CasesOk? profile contract functionNames vars
+            canBreak canContinue canLeave cases =
+          true) :
+      ∃ params returns body,
+        contract.functions.lookup functionName =
+          some (.Def params returns body) := by
+    cases hOccurrence with
+    | head hBody =>
+        simp [Yul.SolcValidation.CasesOk?] at hOk
+        exact yulStmtListUserCall_lookup_of_stmtsOk hBody hOk.1
+    | tail hTail =>
+        simp [Yul.SolcValidation.CasesOk?] at hOk
+        exact yulCaseListUserCall_lookup_of_casesOk hTail hOk.2
+end
+
 structure FocusedGeneratedCallOccurrence
     (state : State) (ordered : Yul.OrderedProgram)
     (generated : Name) (fn : Frontend.FunctionDef)
@@ -1681,6 +1836,160 @@ structure FocusedGeneratedCallOccurrence
   lookup :
     ordered.program.contract.functions.lookup generated =
       some (.Def params returns body)
+
+structure FocusedGeneratedCallPrefixEvidence
+    (ordered : Yul.OrderedProgram)
+    (generated : Name)
+    (params returns : List Name) (body : List Yul.AstStmt)
+    (args : List Yul.AstExpr) (stmts : List Yul.AstStmt)
+    (fuel : Nat) (code : Option Yul.AstContract)
+    (shared : EvmYul.SharedState .Yul)
+    (vars : EvmYul.Yul.VarStore) : Prop where
+  lookup :
+    ordered.program.contract.functions.lookup generated =
+      some (.Def params returns body)
+  splitPrefix :
+    ∃ (pre : List Yul.AstStmt) (stmt : Yul.AstStmt)
+      (suffix : List Yul.AstStmt),
+      stmts = pre ++ stmt :: suffix ∧
+        Yul.YulOccurrence.StmtUserCall generated args stmt ∧
+          Yul.InteractionSemantics.execSeq
+            (fuel + pre.length + 1) stmts code (.Ok shared vars) =
+            Simulation.Interaction.bind
+              (Yul.InteractionSemantics.execSeq
+                (fuel + pre.length + 1) pre code (.Ok shared vars))
+              (fun stateAfterPre =>
+                Yul.YulOccurrence.StmtListUserCall.continueAfterPrefix
+                  (fuel + 1) (stmt :: suffix) code stateAfterPre)
+
+namespace FocusedGeneratedCallPrefixEvidence
+
+theorem of_yulOccurrence
+    {ordered : Yul.OrderedProgram}
+    {generated : Name}
+    {params returns : List Name} {body : List Yul.AstStmt}
+    {args : List Yul.AstExpr} {stmts : List Yul.AstStmt}
+    {fuel : Nat} {code : Option Yul.AstContract}
+    {shared : EvmYul.SharedState .Yul}
+    {vars : EvmYul.Yul.VarStore}
+    (hLookup :
+      ordered.program.contract.functions.lookup generated =
+        some (.Def params returns body))
+    (hOccurrence :
+      Yul.YulOccurrence.StmtListUserCall generated args stmts) :
+    FocusedGeneratedCallPrefixEvidence ordered generated params returns
+      body args stmts fuel code shared vars := by
+  rcases
+      Yul.YulOccurrence.StmtListUserCall.exists_split_stmt_execSeq_prefix
+        hOccurrence fuel code shared vars with
+    ⟨pre, stmt, suffix, hSplit, hStmt, hPrefix⟩
+  exact
+    ⟨hLookup, pre, stmt, suffix, hSplit, hStmt, hPrefix⟩
+
+theorem call_succ
+    {ordered : Yul.OrderedProgram}
+    {generated : Name}
+    {params returns : List Name} {body : List Yul.AstStmt}
+    {stmts : List Yul.AstStmt}
+    {argExprs : List Yul.AstExpr}
+    {prefixFuel : Nat} {code : Option Yul.AstContract}
+    {shared : EvmYul.SharedState .Yul}
+    {vars : EvmYul.Yul.VarStore}
+    (hEvidence :
+      FocusedGeneratedCallPrefixEvidence ordered generated params returns
+        body argExprs stmts prefixFuel code shared vars)
+    (callFuel : Nat) (args : List Word)
+    (source : Yul.InteractionSemantics.State) :
+    Yul.InteractionSemantics.call (callFuel + 1) args
+        (some generated) (some ordered.program.contract) source =
+      Simulation.Interaction.bind
+        (Yul.InteractionSemantics.exec callFuel
+          (.Block body) (some ordered.program.contract)
+          (EvmYul.Yul.State.mkOk
+            (source.initcall params returns args)))
+        (fun stateAfterBody =>
+          pure
+            ((stateAfterBody.reviveJump.overwrite? source).setStore
+              source,
+              List.map stateAfterBody.lookup! returns)) := by
+  exact
+    Yul.InteractionSemantics.Call.explicit_succ
+      callFuel args generated ordered.program.contract params returns body
+      source hEvidence.lookup
+
+theorem evalValues_succ
+    {ordered : Yul.OrderedProgram}
+    {generated : Name}
+    {params returns : List Name} {body : List Yul.AstStmt}
+    {argExprs : List Yul.AstExpr} {stmts : List Yul.AstStmt}
+    {prefixFuel : Nat} {code : Option Yul.AstContract}
+    {shared : EvmYul.SharedState .Yul}
+    {vars : EvmYul.Yul.VarStore}
+    (hEvidence :
+      FocusedGeneratedCallPrefixEvidence ordered generated params returns
+        body argExprs stmts prefixFuel code shared vars)
+    (fuel : Nat) (source : Yul.InteractionSemantics.State) :
+    Yul.InteractionSemantics.evalValues (fuel + 2)
+        (.Call (.inr generated) argExprs)
+        (some ordered.program.contract) source =
+      Simulation.Interaction.bind
+        (Yul.InteractionSemantics.evalArgs (fuel + 1)
+          argExprs.reverse (some ordered.program.contract) source)
+        (fun argsResult =>
+          Simulation.Interaction.bind
+            (Yul.InteractionSemantics.exec fuel
+              (.Block body) (some ordered.program.contract)
+              (EvmYul.Yul.State.mkOk
+                (argsResult.1.initcall params returns
+                  argsResult.2.reverse)))
+            (fun stateAfterBody =>
+              pure
+                ((stateAfterBody.reviveJump.overwrite?
+                    argsResult.1).setStore argsResult.1,
+                  List.map stateAfterBody.lookup! returns))) := by
+  rw [show fuel + 2 = (fuel + 1) + 1 by omega]
+  rw [Yul.InteractionSemantics.EvalValues.internal_succ
+    (fuel + 1) generated argExprs (some ordered.program.contract) source]
+  apply congrArg
+  funext argsResult
+  exact call_succ hEvidence fuel argsResult.2.reverse argsResult.1
+
+theorem eval_succ
+    {ordered : Yul.OrderedProgram}
+    {generated : Name}
+    {params returns : List Name} {body : List Yul.AstStmt}
+    {argExprs : List Yul.AstExpr} {stmts : List Yul.AstStmt}
+    {prefixFuel : Nat} {code : Option Yul.AstContract}
+    {shared : EvmYul.SharedState .Yul}
+    {vars : EvmYul.Yul.VarStore}
+    (hEvidence :
+      FocusedGeneratedCallPrefixEvidence ordered generated params returns
+        body argExprs stmts prefixFuel code shared vars)
+    (fuel : Nat) (source : Yul.InteractionSemantics.State) :
+    Yul.InteractionSemantics.eval (fuel + 2)
+        (.Call (.inr generated) argExprs)
+        (some ordered.program.contract) source =
+      Simulation.Interaction.bind
+        (Simulation.Interaction.bind
+          (Yul.InteractionSemantics.evalArgs (fuel + 1)
+            argExprs.reverse (some ordered.program.contract) source)
+          (fun argsResult =>
+            Simulation.Interaction.bind
+              (Yul.InteractionSemantics.exec fuel
+                (.Block body) (some ordered.program.contract)
+                (EvmYul.Yul.State.mkOk
+                  (argsResult.1.initcall params returns
+                    argsResult.2.reverse)))
+              (fun stateAfterBody =>
+                pure
+                  ((stateAfterBody.reviveJump.overwrite?
+                      argsResult.1).setStore argsResult.1,
+                    List.map stateAfterBody.lookup! returns))))
+        (fun result => pure (result.1, result.2.head!)) := by
+  rw [Yul.InteractionSemantics.eval_eq_bind]
+  rw [evalValues_succ hEvidence fuel source]
+
+end FocusedGeneratedCallPrefixEvidence
 
 def FocusedGeneratedStmtListCallPrefix
     (state : State) (ordered : Yul.OrderedProgram)
@@ -2479,6 +2788,110 @@ theorem codeGeneratedNormalizationEvidence_prefixOfCodeRoute
             ⟨yulArgs, hPrefix⟩
           exact ⟨yulArgs, contextBody, hPrefix⟩
 
+theorem codeGeneratedNormalizationEvidence_prefixEvidenceOfCodeRoute
+    {code : List Raw.Stmt} {object : Frontend.Object}
+    {ordered : Yul.OrderedProgram}
+    (hEvidence :
+      Raw.Object.CodeGeneratedNormalizationEvidence code object)
+    (hConvert : object.toSolcYulOrderedProgram? = some ordered) :
+    ∃ (coreDispatcher : List Frontend.Stmt) (state : State)
+        (helper? arg? ret? : Option Name),
+      elaborateCodeCore code = .ok (coreDispatcher, state) ∧
+        elaborateCode code =
+          .ok (object.dispatcher, object.functions,
+            helper?, arg?, ret?) ∧
+          ∀ {generated : Name} {frontendArgs : List Frontend.Expr}
+              {fuel : Nat} {shared : EvmYul.SharedState .Yul}
+              {vars : EvmYul.Yul.VarStore},
+            RawOccurrence.CodeElaborationRoute state generated
+              frontendArgs object.dispatcher →
+              ∃ (params returns : List Name) (body : List Yul.AstStmt)
+                (yulArgs : List Yul.AstExpr) (stmts : List Yul.AstStmt),
+                FocusedGeneratedCallPrefixEvidence ordered generated
+                  params returns body yulArgs stmts fuel
+                  (some ordered.program.contract) shared vars := by
+  rcases hEvidence with
+    ⟨coreDispatcher, state, helper?, arg?, ret?, hCore, hElab,
+      _hFunctions, _hHelper, _hArg, _hRet, _hDistinct, _hClz,
+      _hInterface, hHoistedRetained⟩
+  have hContractOk :
+      Yul.SolcValidation.ContractOkWithEntries? object.dialectProfile
+          ordered.program.contract ordered.functionEntries =
+        true := by
+    simpa [Yul.SolcValidation.ProgramOkWithEntries?] using
+      Frontend.Object.toSolcYulOrderedProgram?_programOkWithEntries
+        hConvert
+  refine ⟨coreDispatcher, state, helper?, arg?, ret?, hCore, hElab, ?_⟩
+  intro generated frontendArgs fuel shared vars hRoute
+  cases hRoute with
+  | dispatcher hOccurrence =>
+      rcases
+          FrontendOccurrence.Object.dispatcherOccurrence_args_toYul?
+            hOccurrence hConvert with
+        ⟨yulArgs, hArgs⟩
+      have hYulOccurrence :
+          Yul.YulOccurrence.StmtListUserCall generated yulArgs
+            [ordered.program.contract.dispatcher] :=
+        FrontendOccurrence.Object.dispatcherOccurrence_toOrdered?
+          hOccurrence hConvert hArgs
+      have hDispatcherOk :
+          Yul.SolcValidation.StmtOk? object.dialectProfile
+              ordered.program.contract
+              (ordered.functionEntries.map Prod.fst) [] false false false
+              ordered.program.contract.dispatcher =
+            true :=
+        Yul.SolcValidation.contractOkWithEntries_dispatcherOk hContractOk
+      have hStmtsOk :
+          Yul.SolcValidation.StmtsOk? object.dialectProfile
+              ordered.program.contract
+              (ordered.functionEntries.map Prod.fst) [] false false false
+              [ordered.program.contract.dispatcher] =
+            true := by
+        simp [Yul.SolcValidation.StmtsOk?, hDispatcherOk]
+      rcases yulStmtListUserCall_lookup_of_stmtsOk hYulOccurrence
+          hStmtsOk with
+        ⟨params, returns, body, hLookup⟩
+      exact
+        ⟨params, returns, body, yulArgs,
+          [ordered.program.contract.dispatcher],
+          FocusedGeneratedCallPrefixEvidence.of_yulOccurrence
+            hLookup hYulOccurrence⟩
+  | functionBody contextName contextFn hContextHoisted hOccurrence =>
+      have hContextMem : (contextName, contextFn) ∈ object.functions :=
+        hHoistedRetained (contextName, contextFn) hContextHoisted
+      rcases
+          Frontend.Object.toSolcYulOrderedProgram?_functionEntry_of_mem
+            hConvert hContextMem with
+        ⟨contextYulFn, hContextFn, hContextEntry, _hContextLookup⟩
+      cases contextYulFn with
+      | Def contextParams contextReturns contextBody =>
+          rcases
+              FrontendOccurrence.FunctionDef.bodyOccurrence_args_toYul?
+                hOccurrence hContextFn with
+            ⟨yulArgs, hArgs⟩
+          have hYulOccurrence :
+              Yul.YulOccurrence.StmtListUserCall generated yulArgs
+                contextBody :=
+            FrontendOccurrence.FunctionDef.bodyOccurrence_toYul?
+              hOccurrence hContextFn hArgs
+          have hBodyOk :
+              Yul.SolcValidation.StmtsOk? object.dialectProfile
+                  ordered.program.contract
+                  (ordered.functionEntries.map Prod.fst)
+                  (Yul.identNames contextReturns ++
+                    Yul.identNames contextParams)
+                  false false true contextBody =
+                true :=
+            Yul.SolcValidation.contractOkWithEntries_function_bodyOk_of_mem
+              hContractOk hContextEntry
+          rcases yulStmtListUserCall_lookup_of_stmtsOk hYulOccurrence
+              hBodyOk with
+            ⟨params, returns, body, hLookup⟩
+          exact
+            ⟨params, returns, body, yulArgs, contextBody,
+              FocusedGeneratedCallPrefixEvidence.of_yulOccurrence
+                hLookup hYulOccurrence⟩
+
 theorem codeGeneratedNormalizationEvidence_codeRouteOfRawOccurrence
     {code : List Raw.Stmt} {object : Frontend.Object}
     (hEvidence :
@@ -2827,27 +3240,25 @@ theorem generatedNormalizationEvidence_prefixOfRawOccurrence
                       CallClass.classifyCall functionName = .user →
                         ∃ (generated : Name)
                           (frontendArgs : List Frontend.Expr),
-                          ∀ {calleeFn : Frontend.FunctionDef}
-                              {params returns : List Name}
-                              {body : List Yul.AstStmt}
-                              {fuel : Nat}
+                          ∀ {fuel : Nat}
                               {shared : EvmYul.SharedState .Yul}
                               {vars : EvmYul.Yul.VarStore},
-                            (generated, calleeFn) ∈
-                                state.hoistedFunctions →
-                              calleeFn.toYul? =
-                                  some (.Def params returns body) →
-                                ∃ (yulArgs : List Yul.AstExpr)
-                                  (stmts : List Yul.AstStmt),
-                                  FocusedGeneratedStmtListCallPrefix state
-                                    ordered generated calleeFn params returns
-                                    body yulArgs stmts fuel
-                                    (some ordered.program.contract) shared
-                                    vars := by
+                            ∃ (params returns : List Name)
+                              (body : List Yul.AstStmt)
+                              (yulArgs : List Yul.AstExpr)
+                              (stmts : List Yul.AstStmt),
+                              FocusedGeneratedCallPrefixEvidence ordered
+                                generated params returns body yulArgs stmts
+                                fuel (some ordered.program.contract) shared
+                                vars := by
   cases hRawCode : raw.code? with
   | none =>
       simp [hRawCode]
   | some code =>
+      have hCodeEvidence :
+          Raw.Object.CodeGeneratedNormalizationEvidence code object := by
+        simpa [Raw.Object.GeneratedNormalizationEvidence, hRawCode]
+          using hEvidence.2.2.2
       have hPrefix :
           ∃ (coreDispatcher : List Frontend.Stmt) (state : State)
               (helper? arg? ret? : Option Name),
@@ -2855,24 +3266,21 @@ theorem generatedNormalizationEvidence_prefixOfRawOccurrence
               elaborateCode code =
                 .ok (object.dispatcher, object.functions,
                   helper?, arg?, ret?) ∧
-                ∀ {generated : Name} {calleeFn : Frontend.FunctionDef}
-                    {params returns : List Name} {body : List Yul.AstStmt}
-                    {frontendArgs : List Frontend.Expr}
+                ∀ {generated : Name} {frontendArgs : List Frontend.Expr}
                     {fuel : Nat} {shared : EvmYul.SharedState .Yul}
                     {vars : EvmYul.Yul.VarStore},
-                  (generated, calleeFn) ∈ state.hoistedFunctions →
-                    calleeFn.toYul? =
-                        some (.Def params returns body) →
-                      RawOccurrence.CodeElaborationRoute state generated
-                        frontendArgs object.dispatcher →
-                        ∃ (yulArgs : List Yul.AstExpr)
-                          (stmts : List Yul.AstStmt),
-                          FocusedGeneratedStmtListCallPrefix state ordered
-                            generated calleeFn params returns body yulArgs
-                            stmts fuel (some ordered.program.contract)
-                            shared vars := by
-        simpa [hRawCode] using
-          generatedNormalizationEvidence_prefixOfCodeRoute hEvidence hConvert
+                  RawOccurrence.CodeElaborationRoute state generated
+                    frontendArgs object.dispatcher →
+                    ∃ (params returns : List Name)
+                      (body : List Yul.AstStmt)
+                      (yulArgs : List Yul.AstExpr)
+                      (stmts : List Yul.AstStmt),
+                      FocusedGeneratedCallPrefixEvidence ordered generated
+                        params returns body yulArgs stmts fuel
+                        (some ordered.program.contract) shared vars := by
+        exact
+          codeGeneratedNormalizationEvidence_prefixEvidenceOfCodeRoute
+            hCodeEvidence hConvert
       have hRoute :
           ∃ (coreDispatcher : List Frontend.Stmt) (state : State)
               (helper? arg? ret? : Option Name),
@@ -2909,9 +3317,7 @@ theorem generatedNormalizationEvidence_prefixOfRawOccurrence
         ⟨generated, frontendArgs, hRoute⟩
       exact
         ⟨generated, frontendArgs,
-          fun {calleeFn params returns body fuel shared vars}
-              hCalleeHoisted hCalleeFn =>
-            hPrefixRoute hCalleeHoisted hCalleeFn hRoute⟩
+          fun {fuel shared vars} => hPrefixRoute hRoute⟩
 
 theorem decodeAndElaborateSolcIr?_focusedGeneratedCallOccurrence
     {rawJson : String} {selection : Selection}
@@ -3284,25 +3690,19 @@ theorem decodeAndElaborateSolcIr?_prefixOfRawOccurrence
                                   .user →
                                   ∃ (generated : Name)
                                     (frontendArgs : List Frontend.Expr),
-                                    ∀ {calleeFn : Frontend.FunctionDef}
-                                        {params returns : List Name}
-                                        {body : List Yul.AstStmt}
-                                        {fuel : Nat}
+                                    ∀ {fuel : Nat}
                                         {shared : EvmYul.SharedState .Yul}
                                         {vars : EvmYul.Yul.VarStore},
-                                      (generated, calleeFn) ∈
-                                          state.hoistedFunctions →
-                                        calleeFn.toYul? =
-                                            some (.Def params returns body) →
-                                          ∃ (yulArgs : List Yul.AstExpr)
-                                            (stmts : List Yul.AstStmt),
-                                            FocusedGeneratedStmtListCallPrefix
-                                              state ordered generated
-                                              calleeFn params returns body
-                                              yulArgs stmts fuel
-                                              (some
-                                                ordered.program.contract)
-                                              shared vars := by
+                                      ∃ (params returns : List Name)
+                                        (body : List Yul.AstStmt)
+                                        (yulArgs : List Yul.AstExpr)
+                                        (stmts : List Yul.AstStmt),
+                                        FocusedGeneratedCallPrefixEvidence
+                                          ordered generated params returns
+                                          body yulArgs stmts fuel
+                                          (some
+                                            ordered.program.contract)
+                                          shared vars := by
   rcases decodeAndElaborateSolcIr?_generatedNormalizationEvidence
       hDecode with
     ⟨json, selected, object, hParse, hSelected, hObject, hEvidence,
