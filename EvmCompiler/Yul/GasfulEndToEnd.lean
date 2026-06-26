@@ -101,9 +101,9 @@ theorem optimizedSolcYulToGasfulRawBytecodeOfOpenRunBridge
 /-- Public composition through the proved recursive frame bridge. Unlike
 `optimizedSolcYulToGasfulRawBytecodeOfOpenRunBridge`, this theorem has no
 caller-supplied run simulation or external-response oracle: the concrete
-`EVM.X` run existentially determines the ordered open transcript. The sole
-remaining target-side premise is that reachable parent states remain at
-compiler-generated block, branch-midpoint, or checked-sentinel control points. -/
+`EVM.X` run existentially determines the ordered open transcript. Checked
+compact layout and one-step preservation derive all reachable block,
+branch-midpoint, and sentinel control points from the verified artifact. -/
 theorem verifiedArtifact_frameCodeInvariant_of_layout
     {object : Solidity.Frontend.Object}
     {linkerSymbols : List
@@ -279,6 +279,64 @@ theorem verifiedArtifact_frameStepInvariant_of_ordinaryBoundary
       hObject)
     hSentinel hOrdinary) hPoint hPrefix hStep hContinues
 
+theorem verifiedArtifact_ordinaryBoundaryInvariant_of_remainingPrim
+    {object : Solidity.Frontend.Object}
+    {linkerSymbols : List
+      (Solidity.Frontend.Name × Solidity.Frontend.Word)}
+    {artifact : Solidity.Frontend.VerifiedStackObjectArtifact}
+    (hObject :
+      object.compileVerifiedStackObjectArtifactWithLinkerSymbols?
+          linkerSymbols = some artifact)
+    {validJumps : Array Assembly.Word}
+    (hRemaining :
+      Assembly.GasfulBridge.ArtifactRemainingPrimBoundaryStepInvariant
+        artifact.codeArtifact.compact
+        (Assembly.Bytecode.ofList artifact.image.bytes)
+        validJumps) :
+    Assembly.GasfulBridge.ArtifactOrdinaryBoundaryStepInvariant
+      artifact.codeArtifact.compact
+      (Assembly.Bytecode.ofList artifact.image.bytes)
+      validJumps := by
+  obtain ⟨_children, _plan, _codeArtifact, _hChildren, _hPlan, _hFinish,
+      hCode, _hArtifactChildren, _hContext, _hChildImages, _hPayload,
+      _hImage⟩ :=
+    Solidity.Frontend.Object.compileVerifiedStackObjectArtifactWithLinkerSymbols?_parts
+      hObject
+  obtain ⟨_hResolved, _hOrdered, _hLower, _hStack, _pinnedPushPcs,
+      _hPins, hCompact, _hBytes, _hMarker⟩ :=
+    Solidity.Frontend.Object.compileVerifiedStackCodeArtifactIn?_parts hCode
+  exact Assembly.GasfulBridge.artifactOrdinaryBoundaryStepInvariant_of_remainingPrim
+    hCompact
+    (Solidity.Frontend.Object.compileVerifiedStackObjectArtifactWithLinkerSymbols?_decodingCorrect
+      hObject)
+    hRemaining
+
+theorem verifiedArtifact_ordinaryBoundaryInvariant
+    {object : Solidity.Frontend.Object}
+    {linkerSymbols : List
+      (Solidity.Frontend.Name × Solidity.Frontend.Word)}
+    {artifact : Solidity.Frontend.VerifiedStackObjectArtifact}
+    (hObject :
+      object.compileVerifiedStackObjectArtifactWithLinkerSymbols?
+          linkerSymbols = some artifact)
+    (validJumps : Array Assembly.Word) :
+    Assembly.GasfulBridge.ArtifactOrdinaryBoundaryStepInvariant
+      artifact.codeArtifact.compact
+      (Assembly.Bytecode.ofList artifact.image.bytes)
+      validJumps := by
+  obtain ⟨_children, _plan, _codeArtifact, _hChildren, _hPlan, _hFinish,
+      hCode, _hArtifactChildren, _hContext, _hChildImages, _hPayload,
+      _hImage⟩ :=
+    Solidity.Frontend.Object.compileVerifiedStackObjectArtifactWithLinkerSymbols?_parts
+      hObject
+  obtain ⟨_hResolved, _hOrdered, _hLower, _hStack, _pinnedPushPcs,
+      _hPins, hCompact, _hBytes, _hMarker⟩ :=
+    Solidity.Frontend.Object.compileVerifiedStackCodeArtifactIn?_parts hCode
+  exact Assembly.GasfulBridge.artifactOrdinaryBoundaryStepInvariant_of_compile
+    hCompact
+    (Solidity.Frontend.Object.compileVerifiedStackObjectArtifactWithLinkerSymbols?_decodingCorrect
+      hObject)
+
 theorem optimizedSolcYulToGasfulRawBytecodeOfRecursiveFrameBridge
     {object : Solidity.Frontend.Object}
     {linkerSymbols : List
@@ -290,13 +348,6 @@ theorem optimizedSolcYulToGasfulRawBytecodeOfRecursiveFrameBridge
     (hObject :
       object.compileVerifiedStackObjectArtifactWithLinkerSymbols?
           linkerSymbols = some artifact)
-    (hOrdinary :
-      Assembly.GasfulBridge.ArtifactOrdinaryBoundaryStepInvariant
-        artifact.codeArtifact.compact
-        (Assembly.Bytecode.ofList artifact.image.bytes)
-        (EvmYul.EVM.D_J
-          (Assembly.Bytecode.ofList artifact.image.bytes)
-          (EvmYul.UInt256.ofNat 0)))
     (hInitial :
       Assembly.GasfulBridge.OpenStateRel gasfulInitial
         { (initialExpressionsState artifact baseSource).evm with
@@ -356,6 +407,17 @@ theorem optimizedSolcYulToGasfulRawBytecodeOfRecursiveFrameBridge
       (baseSource := baseSource) hObject
   have hInitialPoint :=
     verifiedArtifact_initialArtifactFramePoint hObject hInitial
+  have hOrdinary :
+      Assembly.GasfulBridge.ArtifactOrdinaryBoundaryStepInvariant
+        artifact.codeArtifact.compact
+        (Assembly.Bytecode.ofList artifact.image.bytes)
+        (EvmYul.EVM.D_J
+          (Assembly.Bytecode.ofList artifact.image.bytes)
+          (EvmYul.UInt256.ofNat 0)) :=
+    verifiedArtifact_ordinaryBoundaryInvariant hObject
+      (EvmYul.EVM.D_J
+        (Assembly.Bytecode.ofList artifact.image.bytes)
+        (EvmYul.UInt256.ofNat 0))
   have hStepInvariant : Assembly.GasfulBridge.ArtifactFrameStepInvariant
       artifact.codeArtifact.compact
       (Assembly.Bytecode.ofList artifact.image.bytes)

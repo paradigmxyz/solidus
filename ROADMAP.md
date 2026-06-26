@@ -223,9 +223,8 @@ Gasful EVM bridge checkpoint:
   outcomes.
 - [x] Compose that recursive theorem with the public optimized-Yul theorem in
   `optimizedSolcYulToGasfulRawBytecodeOfRecursiveFrameBridge`; this removes the
-  caller-supplied whole-run bridge and external-response oracle. Its remaining
-  semantic premises are `ArtifactOrdinaryBoundaryStepInvariant` and the initial
-  `OpenStateRel`.
+  caller-supplied whole-run bridge and external-response oracle. Its sole
+  target/source-state boundary premise is the initial `OpenStateRel`.
 - [x] Derive `FrameCodeInvariant` from artifact `DecodingCorrect`, compact
   program validity, the verified trailing `INVALID` sentinel, and
   `FrameLayoutInvariant`; compact instruction decoding also proves that
@@ -234,11 +233,12 @@ Gasful EVM bridge checkpoint:
   branch midpoint, or trailing sentinel), prove initial construction and exact
   charged PUSH/JUMP/JUMPI preservation for fixed-label branches, and lift any
   complete one-step proof to `ArtifactFrameInvariant`.
-- [ ] Complete `ArtifactFramePoint` preservation for ordinary source-block and
-  CALL/CREATE parent transitions, then discharge
-  `ArtifactOrdinaryBoundaryStepInvariant` in the public theorem. Initial
-  control, generated branches, the final checked sentinel, and reachability
-  induction are already discharged internally.
+- [x] Complete `ArtifactFramePoint` preservation for every source block:
+  labels, compact PUSHes, charged frame-local primitives, actual GAS/MSIZE and
+  PC successors, terminal/INVALID non-continuation, and CALL/CREATE parent
+  restoration through the EIP-150/returned-gas response relation. The compiler
+  now constructs `ArtifactOrdinaryBoundaryStepInvariant`; initial control,
+  generated branches, the checked sentinel, and reachability are internal.
 
 `Compiler.StackArtifact` is the sole code-body artifact and
 `Solidity.Frontend.VerifiedStackObjectArtifact` is the sole recursive object
