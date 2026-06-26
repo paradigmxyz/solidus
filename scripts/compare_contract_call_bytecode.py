@@ -787,11 +787,11 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--remappings-file", action="append", default=[], type=Path)
     parser.add_argument("--no-auto-include-imports", dest="auto_include_imports", action="store_false")
     parser.add_argument("--linker-symbol", action="append", default=[])
-    parser.add_argument("--solc", default=os.environ.get("SOLC", "/Users/dan/.local/bin/solc"))
+    parser.add_argument("--solc", default=os.environ.get("SOLC", "solc"))
     parser.add_argument("--solc-arg", action="append", default=[])
     parser.add_argument("--yul-ast-solc")
     parser.add_argument("--yul-ast-solc-arg", action="append", default=[])
-    parser.add_argument("--lake", default=os.environ.get("LAKE", "/Users/dan/.elan/bin/lake"))
+    parser.add_argument("--lake", default=os.environ.get("LAKE", "lake"))
     parser.add_argument("--lake-cwd", type=Path, default=Path.cwd())
     parser.add_argument("--forge", default=os.environ.get("FORGE", "forge"))
     parser.add_argument(

@@ -2,12 +2,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PYTHON_BIN="${PYTHON:-python3}"
-BUNDLED_PYTHON="$HOME/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/bin/python3"
-if ! "$PYTHON_BIN" -c 'import jsonschema' >/dev/null 2>&1 && \
-    [[ -x "$BUNDLED_PYTHON" ]]; then
-  PYTHON_BIN="$BUNDLED_PYTHON"
-fi
+PYTHON_BIN="$("$ROOT/scripts/find_schema_python.sh")"
 SOLC_BIN="${SOLC:-solc}"
 if [[ -n "${LAKE:-}" ]]; then
   LAKE_BIN="$LAKE"

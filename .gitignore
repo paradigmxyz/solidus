@@ -1,4 +1,6 @@
 .lake/
+.venv/
+.test-results/
 build/
 lake-packages/
 *.olean

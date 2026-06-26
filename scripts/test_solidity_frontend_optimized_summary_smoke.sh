@@ -3,12 +3,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SOLC_BIN="${SOLC:-solc}"
-PYTHON_BIN="${PYTHON:-python3}"
-BUNDLED_PYTHON="$HOME/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/bin/python3"
-if ! "$PYTHON_BIN" -c 'import jsonschema' >/dev/null 2>&1 && \
-    [[ -x "$BUNDLED_PYTHON" ]]; then
-  PYTHON_BIN="$BUNDLED_PYTHON"
-fi
+PYTHON_BIN="$("$ROOT/scripts/find_schema_python.sh")"
 
 TMPDIR="${TMPDIR:-/tmp}"
 OUTDIR="$(mktemp -d "$TMPDIR/evm-compiler-frontend-optimized-summary-smoke.XXXXXX")"

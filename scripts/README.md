@@ -1,5 +1,10 @@
 # Solidity Front Half
 
+For a complete macOS/Linux install (uv, Python, Lean/elan, solc, and Foundry),
+run `./scripts/setup.sh` from the repository root. Run every test with
+`./scripts/test_all.sh`; see the root `README.md` for prerequisites and pinned
+versions.
+
 ## Architecture verification
 
 Run the repository verification gate with:
@@ -21,8 +26,8 @@ Record reproducible architecture metrics with:
 scripts/architecture_metrics.sh \
   --cache-label warm \
   --build EvmCompiler.Public \
-  --build EvmCompiler.Compiler.AllocatedTypedCfg \
-  --build EvmCompiler.Objects.Compiler
+  --build EvmCompiler.Compiler.StackArtifact \
+  --build EvmCompiler.Structured.TypedCfgCompiler
 ```
 
 The default output is
@@ -570,8 +575,8 @@ contracts.  Extra solc arguments from Forge are forwarded to the real solc
 invocation used inside the bridge:
 
 ```sh
-SOLC_LEAN_REAL_SOLC=/Users/dan/.local/bin/solc \
-SOLC_LEAN_LAKE=/Users/dan/.elan/bin/lake \
+SOLC_LEAN_REAL_SOLC=solc \
+SOLC_LEAN_LAKE=lake \
 SOLC_LEAN_BRIDGE_JSON_DIR=/tmp/solc-lean-bridge-json \
 SOLC_LEAN_OPTIMIZED=1 \
 SOLC_LEAN_LAKE_CWD="$PWD" \
@@ -595,8 +600,8 @@ To run the same selected Forge tests through both compilers and compare
 pass/fail status, use:
 
 ```sh
-SOLC=/Users/dan/.local/bin/solc LAKE=/Users/dan/.elan/bin/lake \
-  FORGE=/Users/dan/.foundry/bin/forge \
+SOLC=solc LAKE=lake \
+  FORGE=forge \
   scripts/compare_forge_solc_lean.sh --match-test testName
 ```
 
@@ -695,8 +700,8 @@ comparisons where creation bytecode still needs code-image or linker work that
 the runtime object does not need.
 
 ```sh
-SOLC=/Users/dan/.local/bin/solc LAKE=/Users/dan/.elan/bin/lake \
-  FORGE=/Users/dan/.foundry/bin/forge \
+SOLC=solc LAKE=lake \
+  FORGE=forge \
   scripts/compare_contract_call_bytecode.py examples/Simple.sol \
     --contract Simple \
     --calldata 0xc744c4860000000000000000000000000000000000000000000000000000000000000029
@@ -708,7 +713,7 @@ and dependencies, to fit the current Lean backend subset.
 The repeatable smoke gate is:
 
 ```sh
-SOLC=/Users/dan/.local/bin/solc LAKE=/Users/dan/.elan/bin/lake \
+SOLC=solc LAKE=lake \
   scripts/test_solidity_bytecode_smoke.sh
 ```
 
@@ -730,8 +735,8 @@ against full solc through Forge, then packages optimized `ModifierBox` bridge
 JSON and replays the manifest through Lean:
 
 ```sh
-SOLC=/Users/dan/.local/bin/solc LAKE=/Users/dan/.elan/bin/lake \
-  FORGE=/Users/dan/.foundry/bin/forge \
+SOLC=solc LAKE=lake \
+  FORGE=forge \
   scripts/test_solidity_optimized_ast_smoke.sh
 ```
 
@@ -741,7 +746,7 @@ the cached bridge manifests and summaries, and asserts that frontend metadata is
 `irOptimizedAst` rather than the default `irAst`:
 
 ```sh
-SOLC=/Users/dan/.local/bin/solc \
+SOLC=solc \
   scripts/test_solidity_frontend_optimized_summary_smoke.sh
 ```
 
@@ -749,7 +754,7 @@ The paired Lean-free summary runner executes both the default `irAst` summary
 preflight and the optimized `irOptimizedAst` summary preflight:
 
 ```sh
-SOLC=/Users/dan/.local/bin/solc \
+SOLC=solc \
   scripts/test_solidity_frontend_summary_all.sh
 ```
 
@@ -759,8 +764,8 @@ wrapper, using Foundry `via_ir` plus optimizer settings and
 `SOLC_LEAN_OPTIMIZED=1`:
 
 ```sh
-SOLC=/Users/dan/.local/bin/solc LAKE=/Users/dan/.elan/bin/lake \
-  FORGE=/Users/dan/.foundry/bin/forge \
+SOLC=solc LAKE=lake \
+  FORGE=forge \
   scripts/test_solidity_forge_compare_optimized.sh
 ```
 
@@ -775,7 +780,7 @@ creation requests/responses; it does not pretend to be a closed concrete
 deployment-world simulator.
 
 ```sh
-SOLC=/Users/dan/.local/bin/solc LAKE=/Users/dan/.elan/bin/lake \
+SOLC=solc LAKE=lake \
   scripts/test_solidity_object_tree_smoke.sh
 ```
 
@@ -791,7 +796,7 @@ while its Lean backend-check report records the current executable handoff block
 (`to_yul_contract` for creation and `functions_compile` for runtime):
 
 ```sh
-SOLC=/Users/dan/.local/bin/solc LAKE=/Users/dan/.elan/bin/lake \
+SOLC=solc LAKE=lake \
   scripts/test_solidity_frontend_decode_smoke.sh
 ```
 
@@ -809,7 +814,7 @@ first failing stage for a concrete executable artifact, but the CALL-family
 primitive surface itself is no longer classified as unsupported:
 
 ```sh
-SOLC=/Users/dan/.local/bin/solc LAKE=/Users/dan/.elan/bin/lake \
+SOLC=solc LAKE=lake \
   scripts/test_solidity_external_call_decode_smoke.sh
 ```
 
@@ -823,7 +828,7 @@ creation and runtime, and the static summary classifier reports that storage
 and log primitives are inside the current non-external backend surface:
 
 ```sh
-SOLC=/Users/dan/.local/bin/solc LAKE=/Users/dan/.elan/bin/lake \
+SOLC=solc LAKE=lake \
   scripts/test_solidity_fallback_decode_smoke.sh
 ```
 
@@ -836,7 +841,7 @@ creation and runtime, and the static summary classifier reports the log surface
 as backend-compatible:
 
 ```sh
-SOLC=/Users/dan/.local/bin/solc LAKE=/Users/dan/.elan/bin/lake \
+SOLC=solc LAKE=lake \
   scripts/test_solidity_event_matrix_decode_smoke.sh
 ```
 
@@ -849,7 +854,7 @@ setup as a summary-compatibility blocker.  The current backend check reaches
 object-image generation for both creation and runtime:
 
 ```sh
-SOLC=/Users/dan/.local/bin/solc LAKE=/Users/dan/.elan/bin/lake \
+SOLC=solc LAKE=lake \
   scripts/test_solidity_selfdestruct_decode_smoke.sh
 ```
 
@@ -864,7 +869,7 @@ open-boundary proof surface; the smoke still reports backend-check status and
 first failing stage for both the caller runtime and target runtime:
 
 ```sh
-SOLC=/Users/dan/.local/bin/solc LAKE=/Users/dan/.elan/bin/lake \
+SOLC=solc LAKE=lake \
   scripts/test_solidity_try_catch_decode_smoke.sh
 ```
 
@@ -876,7 +881,7 @@ storage writes remain visible in the bridge summary.  The smoke reports the
 current backend-check status and first failing stage for the runtime object:
 
 ```sh
-SOLC=/Users/dan/.local/bin/solc LAKE=/Users/dan/.elan/bin/lake \
+SOLC=solc LAKE=lake \
   scripts/test_solidity_error_panic_decode_smoke.sh
 ```
 
@@ -890,7 +895,7 @@ report.  The smoke reports the current runtime backend-check status and first
 failing stage alongside the static storage/log backend-compatibility blocker:
 
 ```sh
-SOLC=/Users/dan/.local/bin/solc LAKE=/Users/dan/.elan/bin/lake \
+SOLC=solc LAKE=lake \
   scripts/test_solidity_minitoken_decode_smoke.sh
 ```
 
@@ -902,7 +907,7 @@ contract creation, dynamic storage arrays, ABI dynamic data, and environment
 opcodes, then validates each manifest plus its bridge-summary preflight:
 
 ```sh
-SOLC=/Users/dan/.local/bin/solc \
+SOLC=solc \
   scripts/test_solidity_frontend_summary_smokes.sh
 ```
 
@@ -911,7 +916,7 @@ external-call, fallback/receive, event-matrix, selfdestruct, try/catch,
 custom-error/panic, and MiniToken structural smokes:
 
 ```sh
-SOLC=/Users/dan/.local/bin/solc LAKE=/Users/dan/.elan/bin/lake \
+SOLC=solc LAKE=lake \
   scripts/test_solidity_frontend_decode_smokes.sh
 ```
 
@@ -949,8 +954,8 @@ hook-address validation, dynamic-fee zero-address handling, permission-struct
 validation, and custom reverts:
 
 ```sh
-SOLC=/Users/dan/.local/bin/solc LAKE=/Users/dan/.elan/bin/lake \
-  FORGE=/Users/dan/.foundry/bin/forge \
+SOLC=solc LAKE=lake \
+  FORGE=forge \
   scripts/test_uniswap_v4_bridge_smoke.sh
 ```
 
@@ -968,8 +973,8 @@ fee-growth wraparound, liquidity reduction, and the `CannotUpdateEmptyPosition`
 custom revert emitted through Uniswap's `CustomRevert` helper:
 
 ```sh
-SOLC=/Users/dan/.local/bin/solc LAKE=/Users/dan/.elan/bin/lake \
-  FORGE=/Users/dan/.foundry/bin/forge \
+SOLC=solc LAKE=lake \
+  FORGE=forge \
   scripts/test_uniswap_v4_position_bridge_smoke.sh
 ```
 
@@ -980,7 +985,7 @@ log primitives, and solc `irAst` frontend provenance without reintroducing
 old storage/log summary blockers:
 
 ```sh
-SOLC=/Users/dan/.local/bin/solc \
+SOLC=solc \
   scripts/test_uniswap_v4_extload_summary_smoke.sh
 ```
 
@@ -999,8 +1004,8 @@ command range. The runtime reaches a strict checked bytecode artifact and is
 compared against full solc through Forge:
 
 ```sh
-SOLC=/Users/dan/.local/bin/solc LAKE=/Users/dan/.elan/bin/lake \
-  FORGE=/Users/dan/.foundry/bin/forge \
+SOLC=solc LAKE=lake \
+  FORGE=forge \
   scripts/test_uniswap_universal_router_smoke.sh
 ```
 
@@ -1027,8 +1032,8 @@ The signature lane also runs its Forge comparison; the PermitHash lane remains
 a checked-artifact and semantic-inventory gate:
 
 ```sh
-SOLC=/Users/dan/.local/bin/solc LAKE=/Users/dan/.elan/bin/lake \
-  FORGE=/Users/dan/.foundry/bin/forge \
+SOLC=solc LAKE=lake \
+  FORGE=forge \
   scripts/test_uniswap_permit2_bridge_smoke.sh
 ```
 
@@ -1052,8 +1057,8 @@ the current function compiler accepts the broader checked-arithmetic/runtime-dat
 pattern:
 
 ```sh
-SOLC=/Users/dan/.local/bin/solc LAKE=/Users/dan/.elan/bin/lake \
-  FORGE=/Users/dan/.foundry/bin/forge \
+SOLC=solc LAKE=lake \
+  FORGE=forge \
   scripts/test_aave_v3_bridge_smoke.sh
 ```
 
@@ -1157,8 +1162,8 @@ by this bridge, the smoke copies `CometMath.sol` into the temporary fixture with
 only the pragma relaxed and then compiles it with structured-AST solc `0.8.26`:
 
 ```sh
-SOLC=/Users/dan/.local/bin/solc LAKE=/Users/dan/.elan/bin/lake \
-  FORGE=/Users/dan/.foundry/bin/forge INSTALL_SOLC=0 \
+SOLC=solc LAKE=lake \
+  FORGE=forge INSTALL_SOLC=0 \
   scripts/test_compound_comet_bridge_smoke.sh
 ```
 
@@ -1181,8 +1186,8 @@ stage for the Solmate harness.  A tiny wrapper around the real
 root, and an assembly overflow revert against full solc bytecode through Forge:
 
 ```sh
-SOLC=/Users/dan/.local/bin/solc LAKE=/Users/dan/.elan/bin/lake \
-  FORGE=/Users/dan/.foundry/bin/forge \
+SOLC=solc LAKE=lake \
+  FORGE=forge \
   scripts/test_solmate_bridge_smoke.sh
 ```
 
@@ -1201,8 +1206,8 @@ behavior against full solc bytecode through Forge.  The smoke reports runtime
 backend-check status plus first failing stage for the Solady wrapper:
 
 ```sh
-SOLC=/Users/dan/.local/bin/solc LAKE=/Users/dan/.elan/bin/lake \
-  FORGE=/Users/dan/.foundry/bin/forge \
+SOLC=solc LAKE=lake \
+  FORGE=forge \
   scripts/test_solady_bridge_smoke.sh
 ```
 
@@ -1229,8 +1234,8 @@ this library shape still falls outside the current executable bytecode image
 path:
 
 ```sh
-SOLC=/Users/dan/.local/bin/solc LAKE=/Users/dan/.elan/bin/lake \
-  FORGE=/Users/dan/.foundry/bin/forge \
+SOLC=solc LAKE=lake \
+  FORGE=forge \
   scripts/test_openzeppelin_bridge_smoke.sh
 ```
 
@@ -1254,7 +1259,7 @@ strict runtime backend checks with `firstNone = none` and run runtime-only Forge
 comparisons against full solc:
 
 ```sh
-SOLC=/Users/dan/.local/bin/solc LAKE=/Users/dan/.elan/bin/lake INSTALL_SOLC=0 \
+SOLC=solc LAKE=lake INSTALL_SOLC=0 \
   scripts/test_chainlink_cbor_bridge_smoke.sh
 ```
 
@@ -1270,8 +1275,8 @@ PRBMath, Solbase, Balancer v3, OpenSea Seaport, Morpho, Safe, ENS, account
 abstraction, and EigenLayer BN254 bridge smokes in one pass:
 
 ```sh
-SOLC=/Users/dan/.local/bin/solc LAKE=/Users/dan/.elan/bin/lake \
-  FORGE=/Users/dan/.foundry/bin/forge INSTALL_SOLC=0 \
+SOLC=solc LAKE=lake \
+  FORGE=forge INSTALL_SOLC=0 \
   scripts/test_famous_repo_bridge_smokes.sh
 ```
 
@@ -1306,8 +1311,8 @@ flow through `value()`, `inc()`, and `add(uint256)`, and an imported
 `UsesLibrary`/`MathLib` flow through `twice(21) == 42`:
 
 ```sh
-SOLC=/Users/dan/.local/bin/solc LAKE=/Users/dan/.elan/bin/lake \
-  FORGE=/Users/dan/.foundry/bin/forge \
+SOLC=solc LAKE=lake \
+  FORGE=forge \
   scripts/test_solidity_forge_smoke.sh
 ```
 
@@ -1316,8 +1321,8 @@ runs a selected pure arithmetic/revert Forge test once with full solc and once
 with the solc-lean wrapper, then compares the normalized Forge result lines:
 
 ```sh
-SOLC=/Users/dan/.local/bin/solc LAKE=/Users/dan/.elan/bin/lake \
-  FORGE=/Users/dan/.foundry/bin/forge \
+SOLC=solc LAKE=lake \
+  FORGE=forge \
   scripts/test_solidity_forge_compare.sh
 ```
 
@@ -1329,8 +1334,8 @@ bridge manifest records the generated creation/runtime objects without skipped
 contracts:
 
 ```sh
-SOLC=/Users/dan/.local/bin/solc LAKE=/Users/dan/.elan/bin/lake \
-  FORGE=/Users/dan/.foundry/bin/forge \
+SOLC=solc LAKE=lake \
+  FORGE=forge \
   scripts/test_solidity_forge_compare_imports.sh
 ```
 
@@ -1341,8 +1346,8 @@ linker-symbol path, so full solc and solc-lean can compare the same linked
 library-shaped bytecode:
 
 ```sh
-SOLC=/Users/dan/.local/bin/solc LAKE=/Users/dan/.elan/bin/lake \
-  FORGE=/Users/dan/.foundry/bin/forge \
+SOLC=solc LAKE=lake \
+  FORGE=forge \
   scripts/test_solidity_forge_compare_libraries.sh
 ```
 
@@ -1353,8 +1358,8 @@ test compilation batch.  It runs both compilers over a tiny project with
 Forge test outcomes and validates the persisted bridge JSON package:
 
 ```sh
-SOLC=/Users/dan/.local/bin/solc LAKE=/Users/dan/.elan/bin/lake \
-  FORGE=/Users/dan/.foundry/bin/forge \
+SOLC=solc LAKE=lake \
+  FORGE=forge \
   scripts/test_solidity_forge_compare_inline_assembly.sh
 ```
 
@@ -1363,8 +1368,8 @@ multi-source path, the library-linker path, the inline-assembly wrapper path,
 and the optimized `irOptimizedAst` path:
 
 ```sh
-SOLC=/Users/dan/.local/bin/solc LAKE=/Users/dan/.elan/bin/lake \
-  FORGE=/Users/dan/.foundry/bin/forge \
+SOLC=solc LAKE=lake \
+  FORGE=forge \
   scripts/test_solidity_forge_compare_all.sh
 ```
 
@@ -1375,8 +1380,8 @@ structural decode/preflight smokes, target-bytecode comparisons, and the
 default/imported/library/inline-assembly/optimized Forge wrapper comparisons:
 
 ```sh
-SOLC=/Users/dan/.local/bin/solc LAKE=/Users/dan/.elan/bin/lake \
-  FORGE=/Users/dan/.foundry/bin/forge \
+SOLC=solc LAKE=lake \
+  FORGE=forge \
   scripts/test_solidity_local_smokes.sh
 ```
 
@@ -1430,8 +1435,8 @@ It also replays `ResourceObserverBox.observe()` to pin executable lowering for
 inline-assembly `gas()` and `msize()` observer opcodes.
 
 ```sh
-SOLC=/Users/dan/.local/bin/solc LAKE=/Users/dan/.elan/bin/lake \
-  FORGE=/Users/dan/.foundry/bin/forge \
+SOLC=solc LAKE=lake \
+  FORGE=forge \
   scripts/test_solidity_contract_call_compare.sh
 ```
 
@@ -1440,8 +1445,8 @@ Lean runtime/deployed creation Forge smoke above and the broader
 full-solc-vs-Lean-bytecode call-sequence comparison:
 
 ```sh
-SOLC=/Users/dan/.local/bin/solc LAKE=/Users/dan/.elan/bin/lake \
-  FORGE=/Users/dan/.foundry/bin/forge \
+SOLC=solc LAKE=lake \
+  FORGE=forge \
   scripts/test_solidity_target_bytecode_smokes.sh
 ```
 

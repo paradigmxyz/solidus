@@ -2,8 +2,8 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SOLC_BIN="${SOLC:-/Users/dan/.local/bin/solc}"
-LAKE_BIN="${LAKE:-/Users/dan/.elan/bin/lake}"
+SOLC_BIN="${SOLC:-solc}"
+LAKE_BIN="${LAKE:-lake}"
 FORGE_BIN="${FORGE:-forge}"
 TMPDIR="${TMPDIR:-/tmp}"
 OUTDIR="$(mktemp -d "$TMPDIR/evm-compiler-forge-compare-libraries.XXXXXX")"

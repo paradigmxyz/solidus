@@ -2,8 +2,8 @@
 set -u -o pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-REAL_SOLC="${SOLC:-/Users/dan/.local/bin/solc}"
-LAKE_BIN="${LAKE:-/Users/dan/.elan/bin/lake}"
+REAL_SOLC="${SOLC:-solc}"
+LAKE_BIN="${LAKE:-lake}"
 FORGE_BIN="${FORGE:-forge}"
 PYTHON_BIN="${PYTHON:-python3}"
 TMPDIR="${TMPDIR:-/tmp}"
@@ -33,8 +33,8 @@ On successful solc-lean compilation, validates the generated
 bridge-json/manifest.json handoff package before reporting pass.
 
 Environment:
-  SOLC      Real solc executable. Default: /Users/dan/.local/bin/solc
-  LAKE      Lake executable. Default: /Users/dan/.elan/bin/lake
+  SOLC      Real solc executable. Default: solc
+  LAKE      Lake executable. Default: lake
   FORGE     Forge executable. Default: forge
   PYTHON    Python executable used for bridge JSON validation and reports.
             Default: python3

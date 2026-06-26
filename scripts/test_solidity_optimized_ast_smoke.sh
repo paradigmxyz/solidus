@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SOLC_BIN="${SOLC:-/Users/dan/.local/bin/solc}"
+SOLC_BIN="${SOLC:-solc}"
 if [[ -n "${LAKE:-}" ]]; then
   LAKE_BIN="$LAKE"
 elif [[ -x "$HOME/.elan/bin/lake" ]]; then
