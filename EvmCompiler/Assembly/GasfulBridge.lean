@@ -8261,7 +8261,7 @@ inductive DoneRel :
     Except EVMException (EvmYul.EVM.ExecutionResult EVMState) →
     Except EVMException StepResult → Prop where
   | success {gasful openState output haltKind} :
-      SameData gasful openState →
+      OpenSameData gasful openState →
       DoneRel
         (.ok (.success gasful output))
         (.ok (.halted
@@ -9649,7 +9649,8 @@ theorem runRefinesOpen_stop_success
       (extra := fuel) hOne
   apply RunRefinesOpen.completed
   · simpa [Nat.add_comm] using hExec
-  · exact DoneRel.success (sameData_stop_step_after_charges hStep)
+  · exact DoneRel.success
+      (OpenSameData.of_sameData (sameData_stop_step_after_charges hStep))
 
 theorem runRefinesOpen_invalid_instruction_after_gas_checks
     {fuel : Nat} {validJumps : Array Word}
@@ -10355,7 +10356,8 @@ theorem runRefinesOpen_selfdestruct_success
     simpa [xPostStepExceptResult, xPostStepResult, hDecodedOp,
       haltOutputAt] using
       (DoneRel.success
-        (selfdestructNext_sameData state recipient rest)
+        (OpenSameData.of_sameData
+          (selfdestructNext_sameData state recipient rest))
         (output := ByteArray.empty) (haltKind := Assembly.HaltKind.selfdestruct))
   have hStepActual :
       EvmYul.EVM.step (fuel + 1) (dynamicGasCostAt state)
@@ -10401,7 +10403,8 @@ theorem runRefinesOpen_return_success
       (extra := fuel) hOne
   apply RunRefinesOpen.completed
   · simpa [Nat.add_comm] using hExec
-  · exact DoneRel.success (sameData_return_step_after_charges hStep)
+  · exact DoneRel.success
+      (OpenSameData.of_sameData (sameData_return_step_after_charges hStep))
 
 theorem runRefinesOpen_revert_success
     {fuel : Nat} {validJumps : Array Word}

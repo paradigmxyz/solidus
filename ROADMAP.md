@@ -191,6 +191,9 @@ Gasful EVM bridge checkpoint:
   reads/code copy/hash, `SLOAD`/`SSTORE`, `TLOAD`/`TSTORE`, and `LOG0..4` now
   preserve `OpenStateRel`; every `continuingStep?` success except resource
   `MSIZE` and error-only `INVALID` is derived by the checked family classifier.
+- [x] Lift successful terminal instructions over `OpenStateRel`: `STOP`,
+  `RETURN`, `REVERT`, and world-mutating `SELFDESTRUCT` now halt from an
+  arbitrary related open state with normalized final world/frame data.
 - [x] Compose the existing Yul-to-open-raw-bytecode theorem with the named
   gasful target bridge premise in
   `Yul.EndToEnd.optimizedSolcYulToGasfulRawBytecodeOfOpenRunBridge`.
