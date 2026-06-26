@@ -153,6 +153,10 @@ Gasful EVM bridge checkpoint:
   world, EIP-150 withholding, and returned child gas without a
   caller-provided response-relation premise, while preserving the exact caller
   continuation PC.
+- [x] Rebase actual CALL/CREATE responses over arbitrary `OpenStateRel` parent
+  frames: open queries now originate from the related open frame, response
+  finishing preserves the recursive invariant, and concrete parent gas,
+  EIP-150 forwarding, and returned child gas remain in the response relation.
 - [x] Add the matching terminal `RETURN`/`REVERT` compositions:
   stack-pop-aware actual `EVM.step` lemmas, gas/control-erased output-state
   relations, open raw-bytecode halt execution with concrete return bytes, and

@@ -10919,6 +10919,439 @@ theorem runRefinesOpen_create_external_success_actual
       kind hPrefix hCreateOk hDecodedPair hOperands hPermission hDecode hPc
       hGasful hResponse (hCont response)
 
+theorem StateDataRel.installWorld
+    {left right : EvmYul.State EvmYul.OperationType.EVM}
+    (hRel : StateDataRel left right) (world : OpenWorld) :
+    StateDataRel (OpenWorld.installEVM left world)
+      (OpenWorld.installEVM right world) := by
+  exact
+    { world := by simp
+      initialAccounts := by
+        simpa [OpenWorld.installEVM] using hRel.initialAccounts
+      totalGasUsedInBlock := by
+        simpa [OpenWorld.installEVM] using hRel.totalGasUsedInBlock
+      transactionReceipts := by
+        simpa [OpenWorld.installEVM] using hRel.transactionReceipts
+      executionEnv := by
+        simpa [OpenWorld.installEVM] using hRel.executionEnv
+      blocks := by simpa [OpenWorld.installEVM] using hRel.blocks
+      genesisBlockHeader := by
+        simpa [OpenWorld.installEVM] using hRel.genesisBlockHeader }
+
+theorem MachineDataRel.finishExternalCall
+    {left right : EvmYul.MachineState}
+    (hRel : MachineDataRel left right) (returnData : ByteArray)
+    (inputOffset inputSize outputOffset outputSize : Word) :
+    MachineDataRel
+      (left.finishExternalCall returnData
+        inputOffset inputSize outputOffset outputSize)
+      (right.finishExternalCall returnData
+        inputOffset inputSize outputOffset outputSize) := by
+  cases left
+  cases right
+  rcases hRel with ⟨hActive, hMemory, hReturn, hHReturn⟩
+  simp_all [EvmYul.MachineState.finishExternalCall, EvmYul.writeBytes]
+  exact ⟨rfl, rfl, rfl, rfl⟩
+
+theorem MachineDataRel.finishCall
+    {left right : EvmYul.MachineState}
+    (hRel : MachineDataRel left right) (callLocal : CallLocal)
+    (returnData : ByteArray) :
+    MachineDataRel (callLocal.finishMachine left returnData)
+      (callLocal.finishMachine right returnData) := by
+  exact hRel.finishExternalCall returnData
+    callLocal.inputOffset callLocal.inputSize
+    callLocal.outputOffset callLocal.outputSize
+
+theorem MachineDataRel.finishCreate
+    {left right : EvmYul.MachineState}
+    (hRel : MachineDataRel left right) (createLocal : CreateLocal)
+    (returnData : ByteArray) :
+    MachineDataRel (createLocal.finishMachine left returnData)
+      (createLocal.finishMachine right returnData) := by
+  exact hRel.finishExternalCall returnData
+    createLocal.initOffset createLocal.initSize (EvmYul.UInt256.ofNat 0)
+    (EvmYul.UInt256.ofNat 0)
+
+theorem OpenStateRel.finishCall
+    {left right : EVMState} (hRel : OpenStateRel left right)
+    (rest : EvmYul.Stack Word) (callLocal : CallLocal)
+    (response : CallResponse) :
+    OpenStateRel
+      (InteractionSemantics.EVMState.finishCall left rest callLocal response)
+      (InteractionSemantics.EVMState.finishCall right rest callLocal response) := by
+  have hState := hRel.stateDataRel.installWorld response.postWorld
+  have hMachine := hRel.machineDataRel.finishCall callLocal response.returnData
+  have hInstalled :
+      OpenStateRel
+        { left with
+          toState := OpenWorld.installEVM left.toState response.postWorld
+          toMachineState := callLocal.finishMachine left.toMachineState
+            response.returnData }
+        { right with
+          toState := OpenWorld.installEVM right.toState response.postWorld
+          toMachineState := callLocal.finishMachine right.toMachineState
+            response.returnData } := by
+    exact (hRel.withState hState).withMachineState hMachine
+  simpa [InteractionSemantics.EVMState.finishCall,
+    InteractionSemantics.EVMState.installWorld,
+    OpenWorld.installEVMShared,
+    EvmYul.EVM.State.replaceStackAndIncrPC] using
+    (OpenStateRel.replaceStackAndIncrPC hInstalled
+      (leftStack := response.statusWord :: rest)
+      (rightStack := response.statusWord :: rest) rfl)
+
+theorem OpenStateRel.finishCreate
+    {left right : EVMState} (hRel : OpenStateRel left right)
+    (rest : EvmYul.Stack Word) (createLocal : CreateLocal)
+    (response : CreateResponse) :
+    OpenStateRel
+      (InteractionSemantics.EVMState.finishCreate left rest createLocal response)
+      (InteractionSemantics.EVMState.finishCreate right rest createLocal response) := by
+  have hState := hRel.stateDataRel.installWorld response.postWorld
+  have hMachine := hRel.machineDataRel.finishCreate createLocal response.returnData
+  have hInstalled :
+      OpenStateRel
+        { left with
+          toState := OpenWorld.installEVM left.toState response.postWorld
+          toMachineState := createLocal.finishMachine left.toMachineState
+            response.returnData }
+        { right with
+          toState := OpenWorld.installEVM right.toState response.postWorld
+          toMachineState := createLocal.finishMachine right.toMachineState
+            response.returnData } := by
+    exact (hRel.withState hState).withMachineState hMachine
+  simpa [InteractionSemantics.EVMState.finishCreate,
+    InteractionSemantics.EVMState.installWorld,
+    OpenWorld.installEVMShared,
+    EvmYul.EVM.State.replaceStackAndIncrPC] using
+    (OpenStateRel.replaceStackAndIncrPC hInstalled
+      (leftStack := response.address :: rest)
+      (rightStack := response.address :: rest) rfl)
+
+theorem CallResponseStateRel.rebaseOpen
+    {kind : CallKind} {preCostState : EVMState}
+    {operands : CallOperands} {response : CallResponse}
+    {gasfulState firstOpen secondOpen : EVMState}
+    (hResponse : CallResponseStateRel kind preCostState operands response
+      gasfulState firstOpen)
+    (hRel : OpenStateRel firstOpen secondOpen) :
+    CallResponseStateRel kind preCostState operands response
+      gasfulState secondOpen :=
+  ⟨hResponse.openData.trans hRel.openData,
+    hResponse.pc_eq.trans hRel.pc_eq, hResponse.gasAccounting⟩
+
+theorem CreateResponseStateRel.rebaseOpen
+    {kind : CreateKind} {preCostState : EVMState}
+    {operands : CreateOperands} {response : CreateResponse}
+    {gasfulState firstOpen secondOpen : EVMState}
+    (hResponse : CreateResponseStateRel kind preCostState operands response
+      gasfulState firstOpen)
+    (hRel : OpenStateRel firstOpen secondOpen) :
+    CreateResponseStateRel kind preCostState operands response
+      gasfulState secondOpen :=
+  ⟨hResponse.openData.trans hRel.openData,
+    hResponse.pc_eq.trans hRel.pc_eq, hResponse.gasAccounting⟩
+
+theorem raw_call_external_executes_at
+    {bytes : ByteArray} {pc : Nat} {state : EVMState}
+    {rest : EvmYul.Stack Word} {operands : CallOperands}
+    {response : CallResponse} (kind : CallKind)
+    (hOperands : kind.evmOperands? state.stack = some (rest, operands))
+    (hAllowed :
+      kind.allowedIn (ExternalFrame.ofShared state.toSharedState)
+        operands = true)
+    (hDecode : Compact.decodeAt bytes pc (.prim (callPrimOp kind)))
+    (hPc : state.pc = EvmYul.UInt256.ofNat pc) :
+    Interaction.Executes
+      (Compact.InteractionSemantics.openRunNResult bytes 1 state)
+      [callExternalExchange kind state operands response]
+      (.ok
+        (.running
+          (InteractionSemantics.EVMState.finishCall
+            state rest operands.callLocal response))) := by
+  have hStep := callStep_external_executes
+    (kind := kind) (state := state) (rest := rest)
+    (operands := operands) (response := response) hOperands hAllowed
+  have hMapped :
+      Interaction.Executes
+        (Interaction.bind
+          (InteractionSemantics.PrimOp.callStep kind state)
+          (fun state' => Interaction.pure (StepResult.running state')))
+        [callExternalExchange kind state operands response]
+        (.ok
+          (.running
+            (InteractionSemantics.EVMState.finishCall
+              state rest operands.callLocal response))) := by
+    let openNext := InteractionSemantics.EVMState.finishCall
+      state rest operands.callLocal response
+    have hRest :
+        Interaction.Executes
+          (Interaction.pure (Error := EVMException) (StepResult.running openNext))
+          [] ((.ok (StepResult.running openNext)) :
+            Except EVMException StepResult) := by
+      simpa [Interaction.pure] using
+        (Interaction.Executes.done
+          (.ok (StepResult.running openNext) : Except EVMException StepResult))
+    exact Interaction.Executes.bind_ok hStep hRest
+  rw [Compact.InteractionSemantics.openRunNResult_one_eq_instr
+    (instr := .prim (callPrimOp kind)) trivial hDecode hPc]
+  cases kind <;>
+    simpa [callPrimOp, Compact.Instr.openStepResult,
+      Compact.Instr.openStep,
+      Assembly.InteractionSemantics.Target.openStepInstrResult,
+      Assembly.Target.stepInstrResultWith,
+      Assembly.InteractionSemantics.Target.openStepInstr,
+      Assembly.Target.stepInstrWith,
+      Assembly.InteractionSemantics.PrimOp.openStep,
+      ExternalKind.ofEVMOperation?, CallKind.ofEVMOperation?,
+      CreateKind.ofEVMOperation?, Interaction.bind,
+      Interaction.bind_done_ok, PrimOp.haltKind?,
+      Compact.Instr.haltKind?] using hMapped
+
+theorem raw_create_external_executes_at
+    {bytes : ByteArray} {pc : Nat} {state : EVMState}
+    {rest : EvmYul.Stack Word} {operands : CreateOperands}
+    {response : CreateResponse} (kind : CreateKind)
+    (hOperands : kind.evmOperands? state.stack = some (rest, operands))
+    (hPermission :
+      (ExternalFrame.ofShared state.toSharedState).permission = true)
+    (hDecode : Compact.decodeAt bytes pc (.prim (createPrimOp kind)))
+    (hPc : state.pc = EvmYul.UInt256.ofNat pc) :
+    Interaction.Executes
+      (Compact.InteractionSemantics.openRunNResult bytes 1 state)
+      [createExternalExchange kind state operands response]
+      (.ok
+        (.running
+          (InteractionSemantics.EVMState.finishCreate
+            state rest operands.createLocal response))) := by
+  have hStep := createStep_external_executes
+    (kind := kind) (state := state) (rest := rest)
+    (operands := operands) (response := response) hOperands hPermission
+  have hMapped :
+      Interaction.Executes
+        (Interaction.bind
+          (InteractionSemantics.PrimOp.createStep kind state)
+          (fun state' => Interaction.pure (StepResult.running state')))
+        [createExternalExchange kind state operands response]
+        (.ok
+          (.running
+            (InteractionSemantics.EVMState.finishCreate
+              state rest operands.createLocal response))) := by
+    let openNext := InteractionSemantics.EVMState.finishCreate
+      state rest operands.createLocal response
+    have hRest :
+        Interaction.Executes
+          (Interaction.pure (Error := EVMException) (StepResult.running openNext))
+          [] ((.ok (StepResult.running openNext)) :
+            Except EVMException StepResult) := by
+      simpa [Interaction.pure] using
+        (Interaction.Executes.done
+          (.ok (StepResult.running openNext) : Except EVMException StepResult))
+    exact Interaction.Executes.bind_ok hStep hRest
+  rw [Compact.InteractionSemantics.openRunNResult_one_eq_instr
+    (instr := .prim (createPrimOp kind)) trivial hDecode hPc]
+  cases kind <;>
+    simpa [createPrimOp, Compact.Instr.openStepResult,
+      Compact.Instr.openStep,
+      Assembly.InteractionSemantics.Target.openStepInstrResult,
+      Assembly.Target.stepInstrResultWith,
+      Assembly.InteractionSemantics.Target.openStepInstr,
+      Assembly.Target.stepInstrWith,
+      Assembly.InteractionSemantics.PrimOp.openStep,
+      ExternalKind.ofEVMOperation?, CallKind.ofEVMOperation?,
+      CreateKind.ofEVMOperation?, Interaction.bind,
+      Interaction.bind_done_ok, PrimOp.haltKind?,
+      Compact.Instr.haltKind?] using hMapped
+
+theorem afterDynamicChargeAt_openStateRel_left
+    {gasful openState : EVMState} (hRel : OpenStateRel gasful openState) :
+    OpenStateRel (afterDynamicChargeAt gasful) openState := by
+  constructor
+  · constructor
+    · simpa [afterDynamicChargeAt, afterMemoryChargeAt, chargeGas]
+        using hRel.openData.world
+    · simpa [afterDynamicChargeAt, afterMemoryChargeAt, chargeGas,
+        eraseOpenWorldData, eraseControl, eraseGas] using hRel.openData.frame
+  · simpa [afterDynamicChargeAt, afterMemoryChargeAt, chargeGas]
+      using hRel.pc_eq
+
+theorem runRefinesOpen_call_external_success_actual_rel
+    {fuel : Nat} {validJumps : Array Word}
+    {bytes : ByteArray} {pc : Nat} {state openState gasfulNext : EVMState}
+    {rest : EvmYul.Stack Word} {operands : CallOperands}
+    {arg : Option (Word × Nat)}
+    (kind : CallKind)
+    (tailTranscript : CallResponse → Interaction.Transcript)
+    (hRel : OpenStateRel state openState)
+    (hPrefix : XSstoreStipendChecksPass validJumps state)
+    (hDecodedPair :
+      ((EvmYul.EVM.decode state.executionEnv.code state.pc).getD
+        (EvmYul.Operation.STOP, none)) = (kind.toEVMOperation, arg))
+    (hOperands : kind.evmOperands? state.stack = some (rest, operands))
+    (hAllowed :
+      kind.allowedIn
+        (ExternalFrame.ofShared (afterDynamicChargeAt state).toSharedState)
+        operands = true)
+    (hDecode : Compact.decodeAt bytes pc (.prim (callPrimOp kind)))
+    (hPc : openState.pc = EvmYul.UInt256.ofNat pc)
+    (hGasful :
+      EvmYul.EVM.step fuel (dynamicGasCostAt state)
+        (some (kind.toEVMOperation, arg)) (afterMemoryChargeAt state) =
+          .ok gasfulNext)
+    (hCont :
+      ∀ response,
+        CallResponseStateRel kind (afterMemoryChargeAt state) operands
+            response gasfulNext
+            (InteractionSemantics.EVMState.finishCall
+              openState rest operands.callLocal response) →
+          RunRefinesOpen
+            (EvmYul.EVM.X fuel validJumps gasfulNext)
+            (Compact.InteractionSemantics.openRunNResult bytes fuel
+              (InteractionSemantics.EVMState.finishCall
+                openState rest operands.callLocal response))
+            (tailTranscript response)) :
+    ∃ response,
+      RunRefinesOpen
+        (EvmYul.EVM.X (fuel + 1) validJumps state)
+        (Compact.InteractionSemantics.openRunNResult
+          bytes (fuel + 1) openState)
+        (callExternalExchange kind openState operands response ::
+          tailTranscript response) := by
+  have hDecodedOp : decodedOperationAt state = kind.toEVMOperation := by
+    simpa [decodedOperationAt, hDecodedPair]
+  obtain ⟨response, hResponse⟩ :=
+    evm_step_call_responseStateRel_at kind hDecodedOp hOperands hGasful
+  have hChargedRel := afterDynamicChargeAt_openStateRel_left hRel
+  have hFinishRel := hChargedRel.finishCall
+    rest operands.callLocal response
+  have hResponseOpen := hResponse.rebaseOpen hFinishRel
+  have hOpenOperands :
+      kind.evmOperands? openState.stack = some (rest, operands) := by
+    simpa [← hRel.stack_eq] using hOperands
+  have hOpenAllowed :
+      kind.allowedIn (ExternalFrame.ofShared openState.toSharedState)
+        operands = true := by
+    cases kind <;>
+      simpa [CallKind.allowedIn, ExternalFrame.ofShared,
+        hChargedRel.executionEnv_eq] using hAllowed
+  have hFirst := raw_call_external_executes_at
+    (bytes := bytes) (pc := pc) (state := openState)
+    (rest := rest) (operands := operands) (response := response)
+    kind hOpenOperands hOpenAllowed hDecode hPc
+  have hCreateOk :
+      ¬ (EvmYul.Operation.isCreate (decodedOperationAt state) = true ∧
+        (EvmYul.UInt256.ofNat 49152) <
+          state.stack[2]?.getD (EvmYul.UInt256.ofNat 0)) := by
+    cases kind <;>
+      simp [hDecodedOp, CallKind.toEVMOperation,
+        EvmYul.Operation.isCreate]
+  have hStepActual :
+      EvmYul.EVM.step fuel (dynamicGasCostAt state)
+        (some
+          ((EvmYul.EVM.decode state.executionEnv.code state.pc).getD
+            (EvmYul.Operation.STOP, none)))
+        (afterMemoryChargeAt state) = .ok gasfulNext := by
+    simpa [hDecodedPair] using hGasful
+  have hHalt : haltOutputAt gasfulNext kind.toEVMOperation = none := by
+    cases kind <;> rfl
+  refine ⟨response, ?_⟩
+  simpa using
+    (runRefinesOpen_running_step_rel
+      (stepFuel := fuel) (validJumps := validJumps)
+      (bytes := bytes) (gasful := state) (gasfulNext := gasfulNext)
+      (openState := openState)
+      (openNext := InteractionSemantics.EVMState.finishCall
+        openState rest operands.callLocal response)
+      (op := kind.toEVMOperation)
+      hPrefix hCreateOk hDecodedOp hStepActual hHalt hFirst
+      (hCont response hResponseOpen))
+
+theorem runRefinesOpen_create_external_success_actual_rel
+    {fuel : Nat} {validJumps : Array Word}
+    {bytes : ByteArray} {pc : Nat} {state openState gasfulNext : EVMState}
+    {rest : EvmYul.Stack Word} {operands : CreateOperands}
+    {arg : Option (Word × Nat)}
+    (kind : CreateKind)
+    (tailTranscript : CreateResponse → Interaction.Transcript)
+    (hRel : OpenStateRel state openState)
+    (hPrefix : XSstoreStipendChecksPass validJumps state)
+    (hCreateOk :
+      ¬ (EvmYul.Operation.isCreate (decodedOperationAt state) = true ∧
+        (EvmYul.UInt256.ofNat 49152) <
+          state.stack[2]?.getD (EvmYul.UInt256.ofNat 0)))
+    (hDecodedPair :
+      ((EvmYul.EVM.decode state.executionEnv.code state.pc).getD
+        (EvmYul.Operation.STOP, none)) = (kind.toEVMOperation, arg))
+    (hOperands : kind.evmOperands? state.stack = some (rest, operands))
+    (hPermission :
+      (ExternalFrame.ofShared
+        (afterDynamicChargeAt state).toSharedState).permission = true)
+    (hDecode : Compact.decodeAt bytes pc (.prim (createPrimOp kind)))
+    (hPc : openState.pc = EvmYul.UInt256.ofNat pc)
+    (hGasful :
+      EvmYul.EVM.step fuel (dynamicGasCostAt state)
+        (some (kind.toEVMOperation, arg)) (afterMemoryChargeAt state) =
+          .ok gasfulNext)
+    (hCont :
+      ∀ response,
+        CreateResponseStateRel kind (afterMemoryChargeAt state) operands
+            response gasfulNext
+            (InteractionSemantics.EVMState.finishCreate
+              openState rest operands.createLocal response) →
+          RunRefinesOpen
+            (EvmYul.EVM.X fuel validJumps gasfulNext)
+            (Compact.InteractionSemantics.openRunNResult bytes fuel
+              (InteractionSemantics.EVMState.finishCreate
+                openState rest operands.createLocal response))
+            (tailTranscript response)) :
+    ∃ response,
+      RunRefinesOpen
+        (EvmYul.EVM.X (fuel + 1) validJumps state)
+        (Compact.InteractionSemantics.openRunNResult
+          bytes (fuel + 1) openState)
+        (createExternalExchange kind openState operands response ::
+          tailTranscript response) := by
+  have hDecodedOp : decodedOperationAt state = kind.toEVMOperation := by
+    simpa [decodedOperationAt, hDecodedPair]
+  obtain ⟨response, hResponse⟩ :=
+    evm_step_create_responseStateRel_at kind hDecodedOp hOperands hGasful
+  have hChargedRel := afterDynamicChargeAt_openStateRel_left hRel
+  have hFinishRel := hChargedRel.finishCreate
+    rest operands.createLocal response
+  have hResponseOpen := hResponse.rebaseOpen hFinishRel
+  have hOpenOperands :
+      kind.evmOperands? openState.stack = some (rest, operands) := by
+    simpa [← hRel.stack_eq] using hOperands
+  have hOpenPermission :
+      (ExternalFrame.ofShared openState.toSharedState).permission = true := by
+    simpa [ExternalFrame.ofShared, hChargedRel.executionEnv_eq]
+      using hPermission
+  have hFirst := raw_create_external_executes_at
+    (bytes := bytes) (pc := pc) (state := openState)
+    (rest := rest) (operands := operands) (response := response)
+    kind hOpenOperands hOpenPermission hDecode hPc
+  have hStepActual :
+      EvmYul.EVM.step fuel (dynamicGasCostAt state)
+        (some
+          ((EvmYul.EVM.decode state.executionEnv.code state.pc).getD
+            (EvmYul.Operation.STOP, none)))
+        (afterMemoryChargeAt state) = .ok gasfulNext := by
+    simpa [hDecodedPair] using hGasful
+  have hHalt : haltOutputAt gasfulNext kind.toEVMOperation = none := by
+    cases kind <;> rfl
+  refine ⟨response, ?_⟩
+  simpa using
+    (runRefinesOpen_running_step_rel
+      (stepFuel := fuel) (validJumps := validJumps)
+      (bytes := bytes) (gasful := state) (gasfulNext := gasfulNext)
+      (openState := openState)
+      (openNext := InteractionSemantics.EVMState.finishCreate
+        openState rest operands.createLocal response)
+      (op := kind.toEVMOperation)
+      hPrefix hCreateOk hDecodedOp hStepActual hHalt hFirst
+      (hCont response hResponseOpen))
+
 theorem runRefinesOpen_outOfGas_prefix
     {openRun : Interaction EVMException StepResult}
     {transcript : Interaction.Transcript}
