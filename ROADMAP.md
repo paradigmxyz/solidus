@@ -224,14 +224,20 @@ Gasful EVM bridge checkpoint:
 - [x] Compose that recursive theorem with the public optimized-Yul theorem in
   `optimizedSolcYulToGasfulRawBytecodeOfRecursiveFrameBridge`; this removes the
   caller-supplied whole-run bridge and external-response oracle. Its remaining
-  semantic premises are `FrameLayoutInvariant` and the initial `OpenStateRel`.
+  semantic premises are `ArtifactFrameInvariant` and the initial
+  `OpenStateRel`.
 - [x] Derive `FrameCodeInvariant` from artifact `DecodingCorrect`, compact
-  program validity, and `FrameLayoutInvariant`; compact instruction decoding
-  also proves that reachable instructions cannot be unsupported `PUSH0`.
-- [ ] Prove `FrameLayoutInvariant` from the compiler artifact's control/stack
-  invariant. Decoding correctness alone cannot establish reachable layout
-  membership because `D_J` scans appended object payload bytes as well as
-  laid-out executable code.
+  program validity, the verified trailing `INVALID` sentinel, and
+  `FrameLayoutInvariant`; compact instruction decoding also proves that
+  reachable instructions cannot be unsupported `PUSH0`.
+- [x] Define compiler-generated `ArtifactFramePoint`s (block entry, generated
+  branch midpoint, or trailing sentinel), prove initial construction and exact
+  charged PUSH/JUMP/JUMPI preservation for fixed-label branches, and lift any
+  complete one-step proof to `ArtifactFrameInvariant`.
+- [ ] Complete `ArtifactFramePoint` preservation for ordinary source-block and
+  CALL/CREATE parent transitions, then discharge `ArtifactFrameInvariant` in
+  the public theorem. The final non-taken JUMPI may reach the checked sentinel,
+  so code-member-only reachability is intentionally not claimed.
 
 `Compiler.StackArtifact` is the sole code-body artifact and
 `Solidity.Frontend.VerifiedStackObjectArtifact` is the sole recursive object

@@ -550,33 +550,52 @@ theorem compact_instr_decoded_ne_push0
       subst decoded
       cases op <;> simp [PrimOp.toEVM]
 
+/-- A concrete PC is either a compact instruction boundary or the verified
+end-of-code sentinel immediately before object payload bytes. -/
+def CompactLayoutPoint (program : Compact.Program) (pc : Word) : Prop :=
+  (∃ located, located ∈ program.code ∧
+      pc = EvmYul.UInt256.ofNat located.pc) ∨
+    pc = EvmYul.UInt256.ofNat
+      (Compact.Program.codeByteLength program.code)
+
 /-- Exact compiler-side control fact needed beyond decoding correctness:
 concrete parent execution remains at a member of the compact instruction
-layout and retains the installed object image. -/
+layout or at its checked invalid sentinel, and retains the installed object
+image. -/
 def FrameLayoutInvariant
     (program : Compact.Program) (bytes : ByteArray)
     (validJumps : Array Word) (initial : EVMState) : Prop :=
   ∀ state, FrameReachable validJumps initial state →
     state.executionEnv.code = bytes ∧
-      ∃ located, located ∈ program.code ∧
-        state.pc = EvmYul.UInt256.ofNat located.pc
+      CompactLayoutPoint program state.pc
 
 theorem frameCodeInvariant_of_layout
     {program : Compact.Program} {bytes : ByteArray}
     {validJumps : Array Word} {initial : EVMState}
     (hValid : program.Valid)
     (hDecode : Compact.DecodingCorrect program bytes)
+    (hSentinel : Compact.decodeAt bytes
+      (Compact.Program.codeByteLength program.code) (.prim .invalid))
     (hLayout : FrameLayoutInvariant program bytes validJumps initial) :
     FrameCodeInvariant bytes validJumps initial := by
   intro state hReach
-  obtain ⟨hCode, located, hMem, hPc⟩ := hLayout state hReach
-  obtain ⟨decoded, hInstrDecoded, hBytesDecoded⟩ :=
-    hDecode.decodes located hMem
-  have hInstrValid : located.instr.Valid :=
-    (List.forall_iff_forall_mem.mp hValid) located hMem
-  refine ⟨hCode, decoded.1, decoded.2, ?_, ?_⟩
-  · simpa [hPc] using hBytesDecoded
-  · exact compact_instr_decoded_ne_push0 hInstrValid hInstrDecoded
+  obtain ⟨hCode, hPoint⟩ := hLayout state hReach
+  cases hPoint with
+  | inl hMember =>
+      rcases hMember with ⟨located, hMem, hPc⟩
+      obtain ⟨decoded, hInstrDecoded, hBytesDecoded⟩ :=
+        hDecode.decodes located hMem
+      have hInstrValid : located.instr.Valid :=
+        (List.forall_iff_forall_mem.mp hValid) located hMem
+      refine ⟨hCode, decoded.1, decoded.2, ?_, ?_⟩
+      · simpa [hPc] using hBytesDecoded
+      · exact compact_instr_decoded_ne_push0 hInstrValid hInstrDecoded
+  | inr hPc =>
+      obtain ⟨decoded, hInstrDecoded, hBytesDecoded⟩ := hSentinel
+      refine ⟨hCode, decoded.1, decoded.2, ?_, ?_⟩
+      · simpa [hPc] using hBytesDecoded
+      · exact compact_instr_decoded_ne_push0
+          (instr := .prim .invalid) trivial hInstrDecoded
 
 theorem executionException_beq_outOfFuel_iff
     (err : EvmYul.EVM.ExecutionException) :

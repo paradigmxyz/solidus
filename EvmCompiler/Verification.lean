@@ -1388,8 +1388,17 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Assembly.GasfulBridge.evm_call_error_eq_outOfFuel
 #print axioms EvmCompiler.Assembly.GasfulBridge.positiveExternalPrimRefinement
 #print axioms EvmCompiler.Assembly.GasfulBridge.runRefinesOpen_recursive
+#print axioms EvmCompiler.Assembly.GasfulBridge.compact_compile_sentinel_decodeAt
+#print axioms EvmCompiler.Assembly.GasfulBridge.compact_branch_entry_mem
+#print axioms EvmCompiler.Assembly.GasfulBridge.compact_branch_fallthrough_boundary
+#print axioms EvmCompiler.Assembly.GasfulBridge.artifactFramePoint_branch_push_step
+#print axioms EvmCompiler.Assembly.GasfulBridge.artifactFramePoint_branchMid_jump_step
+#print axioms EvmCompiler.Assembly.GasfulBridge.artifactFramePoint_branchMid_jumpi_step
+#print axioms EvmCompiler.Assembly.GasfulBridge.artifactFrameInvariant_of_step
+#print axioms EvmCompiler.Assembly.GasfulBridge.frameLayoutInvariant_of_artifactFrameInvariant
 #print axioms EvmCompiler.Assembly.GasfulBridge.frameCodeInvariant_of_layout
 #print axioms EvmCompiler.Yul.EndToEnd.verifiedArtifact_frameCodeInvariant_of_layout
+#print axioms EvmCompiler.Yul.EndToEnd.verifiedArtifact_frameLayoutInvariant_of_artifactFrameInvariant
 #print axioms EvmCompiler.Yul.EndToEnd.optimizedSolcYulToGasfulRawBytecodeOfRecursiveFrameBridge
 #print axioms EvmCompiler.Yul.EndToEnd.optimizedSolcYulToRawBytecodeFinished
 #print axioms EvmCompiler.Yul.EndToEnd.optimizedSolcYulToRawBytecodeFinishedLegacy

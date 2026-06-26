@@ -1,5 +1,5 @@
 import EvmCompiler.Yul.EndToEnd
-import EvmCompiler.Assembly.GasfulBridgeRecursive
+import EvmCompiler.Assembly.GasfulBridgeLayout
 
 namespace EvmCompiler
 namespace Yul
@@ -102,8 +102,8 @@ theorem optimizedSolcYulToGasfulRawBytecodeOfOpenRunBridge
 `optimizedSolcYulToGasfulRawBytecodeOfOpenRunBridge`, this theorem has no
 caller-supplied run simulation or external-response oracle: the concrete
 `EVM.X` run existentially determines the ordered open transcript. The sole
-remaining target-side premise is that reachable parent PCs remain members of
-the compiler's compact layout. -/
+remaining target-side premise is that reachable parent states remain at
+compiler-generated block, branch-midpoint, or checked-sentinel control points. -/
 theorem verifiedArtifact_frameCodeInvariant_of_layout
     {object : Solidity.Frontend.Object}
     {linkerSymbols : List
@@ -137,10 +137,58 @@ theorem verifiedArtifact_frameCodeInvariant_of_layout
     Solidity.Frontend.Object.compileVerifiedStackCodeArtifactIn?_parts hCode
   have hValid : artifact.codeArtifact.compact.program.Valid :=
     (Assembly.Compact.compile?_valid hCompact).wellFormed.1
+  obtain ⟨plan, hImage⟩ :=
+    Solidity.Frontend.Object.compileVerifiedStackObjectArtifactWithLinkerSymbols?_sentinelImage
+      hObject
+  have hSentinel : Assembly.Compact.decodeAt
+      (Assembly.Bytecode.ofList artifact.image.bytes)
+      (Assembly.Compact.Program.codeByteLength
+        artifact.codeArtifact.compact.program.code)
+      (.prim .invalid) := by
+    rw [hImage]
+    simpa [Solidity.Frontend.Object.verifiedCodeSentinel,
+      List.append_assoc] using
+      (Assembly.GasfulBridge.compact_compile_sentinel_decodeAt
+        hCompact plan.payload)
   exact Assembly.GasfulBridge.frameCodeInvariant_of_layout hValid
     (Solidity.Frontend.Object.compileVerifiedStackObjectArtifactWithLinkerSymbols?_decodingCorrect
       hObject)
-    hLayout
+    hSentinel hLayout
+
+theorem verifiedArtifact_frameLayoutInvariant_of_artifactFrameInvariant
+    {object : Solidity.Frontend.Object}
+    {linkerSymbols : List
+      (Solidity.Frontend.Name × Solidity.Frontend.Word)}
+    {artifact : Solidity.Frontend.VerifiedStackObjectArtifact}
+    {gasfulInitial : Assembly.EVMState}
+    (hObject :
+      object.compileVerifiedStackObjectArtifactWithLinkerSymbols?
+          linkerSymbols = some artifact)
+    (hFrame :
+      Assembly.GasfulBridge.ArtifactFrameInvariant
+        artifact.codeArtifact.compact
+        (Assembly.Bytecode.ofList artifact.image.bytes)
+        (EvmYul.EVM.D_J
+          (Assembly.Bytecode.ofList artifact.image.bytes)
+          (EvmYul.UInt256.ofNat 0))
+        gasfulInitial) :
+    Assembly.GasfulBridge.FrameLayoutInvariant
+      artifact.codeArtifact.compact.program
+      (Assembly.Bytecode.ofList artifact.image.bytes)
+      (EvmYul.EVM.D_J
+        (Assembly.Bytecode.ofList artifact.image.bytes)
+        (EvmYul.UInt256.ofNat 0))
+      gasfulInitial := by
+  obtain ⟨_children, _plan, _codeArtifact, _hChildren, _hPlan, _hFinish,
+      hCode, _hArtifactChildren, _hContext, _hChildImages, _hPayload,
+      _hImage⟩ :=
+    Solidity.Frontend.Object.compileVerifiedStackObjectArtifactWithLinkerSymbols?_parts
+      hObject
+  obtain ⟨_hResolved, _hOrdered, _hLower, _hStack, _pinnedPushPcs,
+      _hPins, hCompact, _hBytes, _hMarker⟩ :=
+    Solidity.Frontend.Object.compileVerifiedStackCodeArtifactIn?_parts hCode
+  exact Assembly.GasfulBridge.frameLayoutInvariant_of_artifactFrameInvariant
+    hCompact hFrame
 
 theorem optimizedSolcYulToGasfulRawBytecodeOfRecursiveFrameBridge
     {object : Solidity.Frontend.Object}
@@ -153,9 +201,9 @@ theorem optimizedSolcYulToGasfulRawBytecodeOfRecursiveFrameBridge
     (hObject :
       object.compileVerifiedStackObjectArtifactWithLinkerSymbols?
           linkerSymbols = some artifact)
-    (hLayout :
-      Assembly.GasfulBridge.FrameLayoutInvariant
-        artifact.codeArtifact.compact.program
+    (hFrame :
+      Assembly.GasfulBridge.ArtifactFrameInvariant
+        artifact.codeArtifact.compact
         (Assembly.Bytecode.ofList artifact.image.bytes)
         (EvmYul.EVM.D_J
           (Assembly.Bytecode.ofList artifact.image.bytes)
@@ -218,6 +266,9 @@ theorem optimizedSolcYulToGasfulRawBytecodeOfRecursiveFrameBridge
   obtain ⟨structuredFuel, hAccepted, hForward⟩ :=
     optimizedSolcYulToRawBytecode (sourceFuel := sourceFuel)
       (baseSource := baseSource) hObject
+  have hLayout :=
+    verifiedArtifact_frameLayoutInvariant_of_artifactFrameInvariant
+      hObject hFrame
   have hCode := verifiedArtifact_frameCodeInvariant_of_layout hObject hLayout
   obtain ⟨transcript, hGasful⟩ :=
     Assembly.GasfulBridge.runRefinesOpen_recursive hCode
