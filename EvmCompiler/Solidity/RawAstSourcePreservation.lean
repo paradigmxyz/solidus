@@ -280,6 +280,53 @@ theorem objectBuiltinCall_elaboration_parts
       rcases hElab with ⟨rfl, rfl⟩
       exact ⟨frontArgs, argsState, by rfl, rfl, rfl⟩
 
+theorem functionCall_elaboration_kind_parts
+    {name : Name} {rawArgs : List Raw.Expr}
+    {kind : Frontend.CallKind}
+    {state finalState : Elab.State}
+    {front : Frontend.Expr}
+    (hNotMemoryguard : name ≠ "memoryguard")
+    (hNotClz : name ≠ "clz")
+    (hClass : CallClass.classifyCall name = kind)
+    (hElab :
+      (Elab.Expr.elaborate (.functionCall name rawArgs)).run state =
+        .ok (front, finalState)) :
+    ∃ callee frontArgs,
+      front = .call kind callee frontArgs := by
+  unfold Elab.Expr.elaborate at hElab
+  simp [hNotMemoryguard, hNotClz, StateT.run_bind] at hElab
+  cases hArgs : (Elab.Expr.List.elaborate rawArgs).run state with
+  | error err => simp [hArgs] at hElab
+  | ok argsResult =>
+      rcases argsResult with ⟨frontArgs, argsState⟩
+      simp [hArgs, hClass] at hElab
+      cases kind with
+      | primitive =>
+          rcases hElab with ⟨rfl, rfl⟩
+          exact ⟨name, frontArgs, rfl⟩
+      | objectBuiltin =>
+          rcases hElab with ⟨rfl, rfl⟩
+          exact ⟨name, frontArgs, rfl⟩
+      | dialectBuiltin =>
+          rcases hElab with ⟨rfl, rfl⟩
+          exact ⟨name, frontArgs, rfl⟩
+      | user =>
+          cases hResolve :
+              Elab.resolveFunctionIn name argsState.functionScopes with
+          | none =>
+              simp [Elab.resolveFunction, StateT.run_bind,
+                StateT.run_get, hResolve] at hElab
+              unfold Elab.throw at hElab
+              change
+                (Except.error _ :
+                  Except String (Frontend.Expr × Elab.State)) =
+                    .ok (front, finalState) at hElab
+              cases hElab
+          | some generated =>
+              simp [Elab.resolveFunction, hResolve] at hElab
+              rcases hElab with ⟨rfl, rfl⟩
+              exact ⟨generated, frontArgs, rfl⟩
+
 theorem memoryguard_elaboration_parts
     {rawArgs : List Raw.Expr}
     {elabState finalElabState : Elab.State}
@@ -1036,6 +1083,30 @@ theorem exprStmt_parts_of_generic_resolve
                 resolved := resolvedExpr
                 resolve := hExprResolve
                 toYul := hExprToYul }⟩⟩
+
+theorem exprStmt_call_parts_of_not_setimmutable
+    {context : Frontend.ObjectBuiltinContext}
+    {kind : Frontend.CallKind} {callee : Name}
+    {args : List Frontend.Expr} {ordered : Frontend.AstStmt}
+    (hNotSetimmutable :
+      kind ≠ .objectBuiltin ∨ callee ≠ "setimmutable")
+    (hNormalized :
+      StmtNormalized context (.exprStmt (.call kind callee args)) ordered) :
+    ∃ orderedExpr,
+      ordered = .ExprStmtCall orderedExpr ∧
+        Nonempty
+          (ExprNormalized context (.call kind callee args) orderedExpr) := by
+  apply exprStmt_parts_of_generic_resolve _ hNormalized
+  cases kind with
+  | primitive => simp [Frontend.Stmt.resolveObjectBuiltinsIn?]
+  | user => simp [Frontend.Stmt.resolveObjectBuiltinsIn?]
+  | dialectBuiltin => simp [Frontend.Stmt.resolveObjectBuiltinsIn?]
+  | objectBuiltin =>
+      have hCallee : callee ≠ "setimmutable" := by
+        rcases hNotSetimmutable with hKind | hCallee
+        · exact False.elim (hKind rfl)
+        · exact hCallee
+      simp [Frontend.Stmt.resolveObjectBuiltinsIn?, hCallee]
 
 theorem block_parts
     {context : Frontend.ObjectBuiltinContext}
@@ -1816,7 +1887,8 @@ def ClzBindingResolver (contract : Frontend.AstContract) : Prop :=
 /-- Bundled semantic evidence for one generated `clz` call. The argument is
 preserved recursively; helper lookup, conversion, execution fuel, and the
 result equation are owned by the frontend-generated binding. -/
-structure GeneratedClzCallRun (rawArgFuel orderedBase : Nat)
+structure GeneratedClzCallRun
+    (rawArgFuel orderedArgFuel orderedCallFuel : Nat)
     (context : Raw.SourceSemantics.Context)
     (rawArg : Raw.Expr) (generated : Name)
     (orderedArg : Frontend.AstExpr)
@@ -1825,9 +1897,9 @@ structure GeneratedClzCallRun (rawArgFuel orderedBase : Nat)
   bodyFuel :
     Raw.ClzPreservation.stmtListFuel
         (Elab.clzHelperBody binding.argName binding.returnName) + 2 ≤
-      orderedBase + 3
+      orderedCallFuel
   argForward :
-    ExprRunForward rawArgFuel (orderedBase + 2)
+    ExprRunForward rawArgFuel orderedArgFuel
       context rawArg orderedArg contract state
 
 theorem exprValuesRunForward_zero
@@ -3504,7 +3576,8 @@ theorem exprValuesRunForward_generatedClz
     {rawArg : Raw.Expr} {generated : Name}
     {orderedArg : Frontend.AstExpr}
     {contract : Frontend.AstContract} {state : State}
-    (hRun : GeneratedClzCallRun rawArgFuel orderedBase
+    (hRun : GeneratedClzCallRun rawArgFuel (orderedBase + 2)
+      (orderedBase + 3)
       context rawArg generated orderedArg contract state) :
     ExprValuesRunForward (rawArgFuel + 1) (orderedBase + 4)
       context (.functionCall "clz" [rawArg])
@@ -3592,7 +3665,8 @@ theorem exprValuesRunForward_of_scoped_clz_parts
     dsimp [orderedBase]
     omega
   have hRun :
-      GeneratedClzCallRun rawArgFuel orderedBase context rawArg generated
+      GeneratedClzCallRun rawArgFuel (orderedBase + 2) (orderedBase + 3)
+        context rawArg generated
         orderedArg contract state :=
     { binding := binding
       bodyFuel := hBodyFuel
@@ -3720,7 +3794,8 @@ theorem exprValuesRunForward_of_scoped_elaborated_clz_path
     dsimp [orderedBase]
     omega
   have hRun :
-      GeneratedClzCallRun rawArgFuel orderedBase context rawArg generated
+      GeneratedClzCallRun rawArgFuel (orderedBase + 2) (orderedBase + 3)
+        context rawArg generated
         orderedArg contract state :=
     { binding := binding
       bodyFuel := hBodyFuel
@@ -5580,6 +5655,64 @@ theorem stmtRunForward_expressionStatement_primitive_succ
       cases stateAfterExpr <;>
         exact Simulation.Interaction.ForwardRel.done rfl
 
+theorem stmtRunForward_expressionStatement_call_one
+    {orderedFuel : Nat}
+    {context : Raw.SourceSemantics.Context}
+    {name : Name} {rawArgs : List Raw.Expr}
+    {ordered : Frontend.AstStmt}
+    {contract : Frontend.AstContract} {state : State}
+    (hNotSetimmutable : name ≠ "setimmutable") :
+    StmtRunForward 1 orderedFuel context
+      (.expressionStatement (.functionCall name rawArgs))
+      ordered contract state := by
+  unfold StmtRunForward
+  rw [show 1 = 0 + 1 by omega]
+  rw [Raw.SourceSemantics.Exec.expressionStatement_succ]
+  simp [hNotSetimmutable, Raw.SourceSemantics.evalValues,
+    Raw.SourceSemantics.fail]
+  exact
+    Simulation.Interaction.ForwardRel.truncated
+      (by simp [Yul.FunctionsInteractionPrimitive.Truncated])
+
+theorem stmtRunForward_expressionStatement_userCall_two
+    {orderedFuel : Nat}
+    {context : Raw.SourceSemantics.Context}
+    {name : Name} {rawArgs : List Raw.Expr}
+    {ordered : Frontend.AstStmt}
+    {contract : Frontend.AstContract} {state : State}
+    (hNotSetimmutable : name ≠ "setimmutable")
+    (hNotClz : name ≠ "clz")
+    (hClass : CallClass.classifyCall name = .user) :
+    StmtRunForward 2 orderedFuel context
+      (.expressionStatement (.functionCall name rawArgs))
+      ordered contract state := by
+  unfold StmtRunForward
+  rw [show 2 = 1 + 1 by omega]
+  rw [Raw.SourceSemantics.Exec.expressionStatement_succ]
+  simp [hNotSetimmutable]
+  rw [Raw.SourceSemantics.EvalValues.functionCall_succ_of_ne_clz
+    0 context name rawArgs state hNotClz]
+  simp only [hClass]
+  rw [Raw.SourceSemantics.evalArgs_zero]
+  unfold Raw.SourceSemantics.fail
+  change
+    Simulation.Interaction.ForwardRel
+      Yul.FunctionsInteractionPrimitive.Truncated SameDoneRel
+      (Simulation.Interaction.bind
+        (Simulation.Interaction.bind
+          (Yul.InteractionSemantics.Primitive.fail state .OutOfFuel :
+            Open (State × List Frontend.Word))
+          (fun result =>
+            Raw.SourceSemantics.call 0 context result.2.reverse
+              name result.1))
+        (fun result => pure result.1))
+      _
+  rw [Simulation.Interaction.bind_assoc]
+  rw [Yul.InteractionSemantics.Primitive.bind_fail]
+  exact
+    Simulation.Interaction.ForwardRel.truncated
+      (by simp [Yul.FunctionsInteractionPrimitive.Truncated])
+
 /-- The expression-statement constructor consumes the same generated-call
 evidence with one additional unit of target argument fuel. Callee-body fuel,
 lookup, return restoration, and value discard remain shared with value-position
@@ -5651,6 +5784,318 @@ theorem stmtRunForward_expressionStatement_userCall_succ
           rcases callResult with ⟨stateAfterCall, values⟩
           cases stateAfterCall <;>
             exact Simulation.Interaction.ForwardRel.done rfl
+
+theorem stmtRunForward_expressionStatement_generatedClz
+    {rawArgFuel orderedBase : Nat}
+    {context : Raw.SourceSemantics.Context}
+    {rawArg : Raw.Expr} {generated : Name}
+    {orderedArg : Frontend.AstExpr}
+    {contract : Frontend.AstContract} {state : State}
+    (hRun :
+      GeneratedClzCallRun rawArgFuel (orderedBase + 2)
+        (orderedBase + 2) context rawArg generated orderedArg
+        contract state) :
+    StmtRunForward (rawArgFuel + 2) (orderedBase + 4)
+      context (.expressionStatement (.functionCall "clz" [rawArg]))
+      (.ExprStmtCall (.Call (.inr generated) [orderedArg]))
+      contract state := by
+  unfold StmtRunForward
+  rw [show rawArgFuel + 2 = (rawArgFuel + 1) + 1 by omega]
+  rw [Raw.SourceSemantics.Exec.expressionStatement_succ]
+  simp
+  rw [Raw.SourceSemantics.EvalValues.clz_succ]
+  change
+    Simulation.Interaction.ForwardRel
+      Yul.FunctionsInteractionPrimitive.Truncated SameDoneRel
+      (Simulation.Interaction.bind
+        (Simulation.Interaction.bind
+          (Raw.SourceSemantics.eval rawArgFuel context rawArg state)
+          (fun result =>
+            match result.1 with
+            | .Ok _ _ =>
+                pure
+                  (result.1,
+                    [Elab.ClzHelperModel.reference result.2])
+            | .OutOfFuel | .Checkpoint _ =>
+                Raw.SourceSemantics.fail result.1 .OutOfFuel))
+        (fun result => pure result.1))
+      _
+  rw [Simulation.Interaction.bind_assoc]
+  rw [show orderedBase + 4 = (orderedBase + 2) + 2 by omega]
+  rw [Yul.InteractionSemantics.Exec.expr_internal_succ]
+  simp only [List.reverse_singleton]
+  rw [orderedEvalArgs_single]
+  simp only [Simulation.Interaction.bind_assoc]
+  have hArg := hRun.argForward
+  unfold ExprRunForward at hArg
+  refine Simulation.Interaction.ForwardRel.bind_custom hArg ?_
+  intro rawDone orderedDone hDone
+  unfold SameDoneRel at hDone
+  subst orderedDone
+  cases rawDone with
+  | error error => exact Simulation.Interaction.ForwardRel.done rfl
+  | ok result =>
+      rcases result with ⟨stateAfterArg, value⟩
+      cases stateAfterArg with
+      | OutOfFuel =>
+          exact
+            Simulation.Interaction.ForwardRel.truncated
+              (by simp [Yul.FunctionsInteractionPrimitive.Truncated])
+      | Checkpoint jump =>
+          exact
+            Simulation.Interaction.ForwardRel.truncated
+              (by simp [Yul.FunctionsInteractionPrimitive.Truncated])
+      | Ok shared store =>
+          simp only [Simulation.Interaction.instMonad,
+            Simulation.Interaction.pure, Simulation.Interaction.bind,
+            List.reverse_singleton]
+          rw [Raw.ClzPreservation.clzHelperCall
+            hRun.binding.namesDistinct hRun.binding.orderedLookup
+            hRun.binding.bodyToYul shared store value
+            (orderedBase + 2) hRun.bodyFuel]
+          exact Simulation.Interaction.ForwardRel.done rfl
+
+theorem stmtRunForward_of_path_elaborated_clz
+    {rawArgFuel slack : Nat}
+    {builtinContext : Frontend.ObjectBuiltinContext}
+    {context : Raw.SourceSemantics.Context}
+    {rawArgs : List Raw.Expr} {front : Frontend.Expr}
+    {ordered : Frontend.AstExpr}
+    {elabState finalElabState : Elab.State}
+    {contract : Frontend.AstContract} {state : State}
+    (hExpr :
+      ScopedExprPathRunForwardAt
+        rawArgFuel slack builtinContext contract)
+    (hContext :
+      PathCompiledContext builtinContext contract
+        context elabState.functionScopes)
+    (hPath :
+      ClzCompilationPath contract elabState finalElabState)
+    (hElab :
+      (Elab.Expr.elaborate (.functionCall "clz" rawArgs)).run elabState =
+        .ok (front, finalElabState))
+    (hNormalized : ExprNormalized builtinContext front ordered)
+    (hArgTarget : 2 ≤ rawArgFuel + slack)
+    (hHelperFuel :
+      Raw.ClzPreservation.helperBodyFuel + 2 ≤
+        rawArgFuel + slack) :
+    StmtRunForward (rawArgFuel + 2) ((rawArgFuel + 2) + slack)
+      context (.expressionStatement (.functionCall "clz" rawArgs))
+      (.ExprStmtCall ordered) contract state := by
+  rcases clz_elaboration_parts hElab with
+    ⟨rawArg, frontArg, argState, generated, helperState,
+      rfl, hArgElab, hEnsure, rfl, rfl⟩
+  rcases ExprNormalized.user_call_parts hNormalized with
+    ⟨orderedArgs, rfl, ⟨hArgsNormalized⟩⟩
+  rcases ExprListNormalized.cons_parts hArgsNormalized with
+    ⟨orderedArg, orderedTail, hOrderedArgs,
+      ⟨hArgNormalized⟩, ⟨hTailNormalized⟩⟩
+  have hTail : orderedTail = [] :=
+    ExprListNormalized.nil_ordered hTailNormalized
+  subst orderedTail
+  subst orderedArgs
+  have hArgExt :=
+    Elab.Expr.elaborate_preserves_clzAllocation rawArg
+      hArgElab hPath.entryValid
+  have hEnsureExt :=
+    Elab.ensureClzHelper_preserves_clzAllocation
+      hEnsure hArgExt.after_valid
+  have hArgPath :
+      ClzCompilationPath contract elabState argState :=
+    hPath.prefixPath hEnsureExt
+  have hArgValues :=
+    hExpr (state := state) hContext hArgPath hArgElab hArgNormalized
+  have hArgRun := exprRunForward_of_values hArgValues
+  rcases Elab.ensureClzHelper_allocated hEnsure hArgExt.after_valid with
+    ⟨argName, returnName, hAllocated⟩
+  rcases hPath.finalResolver hAllocated with ⟨binding⟩
+  let orderedBase := rawArgFuel + slack - 2
+  have hBase : orderedBase + 2 = rawArgFuel + slack := by
+    dsimp [orderedBase]
+    omega
+  have hBodyFuel :
+      Raw.ClzPreservation.stmtListFuel
+          (Elab.clzHelperBody binding.argName binding.returnName) + 2 ≤
+        orderedBase + 2 := by
+    rw [Raw.ClzPreservation.helperBodyFuel_eq]
+    dsimp [orderedBase]
+    omega
+  have hRun :
+      GeneratedClzCallRun rawArgFuel (orderedBase + 2)
+        (orderedBase + 2) context rawArg generated orderedArg
+        contract state :=
+    { binding := binding
+      bodyFuel := hBodyFuel
+      argForward := by simpa [hBase] using hArgRun }
+  have hCall := stmtRunForward_expressionStatement_generatedClz hRun
+  have hTargetEq :
+      orderedBase + 4 = rawArgFuel + 2 + slack := by
+    dsimp [orderedBase]
+    omega
+  rw [hTargetEq] at hCall
+  exact hCall
+
+/-- Every accepted ordinary call statement is derived from checked
+elaboration and normalization. Generated user calls use the bundled occurrence
+interface; primitive and `datacopy` statements consume the generic expression
+simulation. Only `clz` and `setimmutable` remain separate frontend-owned
+normalizations. -/
+theorem scopedStmtRunForward_of_path_elaborated_callStatement_below
+    {fuel slack : Nat}
+    {builtinContext : Frontend.ObjectBuiltinContext}
+    {rawContext : Raw.SourceSemantics.Context}
+    {name : Name} {rawArgs : List Raw.Expr}
+    {elabState finalElabState : Elab.State}
+    {front : Frontend.Stmt} {ordered : Frontend.AstStmt}
+    {contract : Frontend.AstContract}
+    {entryStore : EvmYul.Yul.VarStore} {state : State}
+    (hExpr :
+      ∀ extra,
+        ScopedExprPathRunForwardBelow
+          (fuel + 1) (slack + extra) builtinContext contract)
+    (hBlock :
+      ScopedBlockPathRunForwardBelow
+        (fuel + 1) slack builtinContext contract)
+    (hContext :
+      PathCompiledContext builtinContext contract
+        rawContext elabState.functionScopes)
+    (hPath :
+      ClzCompilationPath contract elabState finalElabState)
+    (hNotClz : name ≠ "clz")
+    (hNotSetimmutable : name ≠ "setimmutable")
+    (hElab :
+      (Elab.Stmt.elaborate
+        (.expressionStatement (.functionCall name rawArgs))).run
+          elabState = .ok (front, finalElabState))
+    (hNormalized : StmtNormalized builtinContext front ordered) :
+    ScopedStmtRunForward entryStore (fuel + 1) ((fuel + 1) + slack)
+      rawContext (.expressionStatement (.functionCall name rawArgs))
+      ordered contract state := by
+  unfold Elab.Stmt.elaborate at hElab
+  cases hSupported :
+      CallClass.supportedExpressionStatementCall? name with
+  | false =>
+      simp [hSupported] at hElab
+      change
+        (Except.error "unsupported Yul expression statement call" :
+          Except String (Frontend.Stmt × Elab.State)) =
+            .ok (front, finalElabState) at hElab
+      cases hElab
+  | true =>
+      simp [hSupported, StateT.run_bind] at hElab
+      cases hExprElab :
+          (Elab.Expr.elaborate (.functionCall name rawArgs)).run
+            elabState with
+      | error err => simp [hExprElab] at hElab
+      | ok exprResult =>
+          rcases exprResult with ⟨frontExpr, exprState⟩
+          simp [hExprElab] at hElab
+          rcases hElab with ⟨rfl, rfl⟩
+          have hNotMemoryguard : name ≠ "memoryguard" := by
+            intro hName
+            subst name
+            have hRejected :
+                CallClass.supportedExpressionStatementCall?
+                    "memoryguard" = false := by
+              rfl
+            rw [hRejected] at hSupported
+            cases hSupported
+          cases hClass : CallClass.classifyCall name with
+          | primitive =>
+              rcases functionCall_elaboration_kind_parts
+                  hNotMemoryguard hNotClz hClass hExprElab with
+                ⟨callee, frontArgs, rfl⟩
+              rcases StmtNormalized.exprStmt_call_parts_of_not_setimmutable
+                  (Or.inl (by intro hKind; cases hKind)) hNormalized with
+                ⟨orderedExpr, rfl, ⟨hExprNormalized⟩⟩
+              rcases ExprNormalized.primitive_call_parts hExprNormalized with
+                ⟨op, orderedArgs, hOp, rfl, hArgsNormalized⟩
+              have hValues :=
+                hExpr 1 fuel (by omega) (state := state)
+                  hContext hPath hExprElab hExprNormalized
+              apply scopedStmtRunForward_of_exact
+              simpa [Nat.add_assoc, Nat.add_comm,
+                Nat.add_left_comm] using
+                  (stmtRunForward_expressionStatement_primitive_succ
+                    hNotSetimmutable hValues)
+          | user =>
+              rcases functionCall_elaboration_kind_parts
+                  hNotMemoryguard hNotClz hClass hExprElab with
+                ⟨generated, frontArgs, rfl⟩
+              rcases StmtNormalized.exprStmt_call_parts_of_not_setimmutable
+                  (Or.inl (by intro hKind; cases hKind)) hNormalized with
+                ⟨orderedExpr, rfl, ⟨hExprNormalized⟩⟩
+              cases fuel with
+              | zero =>
+                  exact scopedStmtRunForward_of_exact
+                    (stmtRunForward_expressionStatement_call_one
+                      (orderedFuel := 1 + slack)
+                      hNotSetimmutable)
+              | succ predecessor =>
+                  cases predecessor with
+                  | zero =>
+                      exact scopedStmtRunForward_of_exact
+                        (stmtRunForward_expressionStatement_userCall_two
+                          (orderedFuel := 2 + slack)
+                          hNotSetimmutable hNotClz hClass)
+                  | succ callFuel =>
+                      have hArgsExpr :
+                          ScopedExprPathRunForwardBelow
+                            (callFuel + 2) (slack + 1)
+                            builtinContext contract := by
+                        intro childFuel hChild
+                        exact hExpr 1 childFuel (by omega)
+                      have hBodyBlock :
+                          ScopedBlockPathRunForwardBelow
+                            (callFuel + 2) slack
+                            builtinContext contract := by
+                        intro childFuel hChild
+                        exact hBlock childFuel (by omega)
+                      rcases generatedUserCallRun_of_path_elaboration_below
+                          hArgsExpr hBodyBlock hContext hPath
+                          hNotMemoryguard hNotClz hClass
+                          hExprElab hExprNormalized with
+                        ⟨resolved, orderedArgs, hOrdered, ⟨hRun⟩⟩
+                      cases hOrdered
+                      apply scopedStmtRunForward_of_exact
+                      simpa [Nat.add_assoc, Nat.add_comm,
+                        Nat.add_left_comm] using
+                          (stmtRunForward_expressionStatement_userCall_succ
+                            hRun)
+          | objectBuiltin =>
+              have hObject :
+                  name = "datacopy" ∨ name = "setimmutable" := by
+                unfold CallClass.supportedExpressionStatementCall?
+                  at hSupported
+                simp [hClass] at hSupported
+                exact hSupported
+              rcases hObject with hDatacopy | hSetimmutable
+              · subst name
+                rcases objectBuiltinCall_elaboration_parts
+                    hNotMemoryguard hNotClz hClass hExprElab with
+                  ⟨frontArgs, argsState, hArgsElab, hFront, hFinal⟩
+                subst frontExpr
+                subst exprState
+                rcases
+                    StmtNormalized.exprStmt_call_parts_of_not_setimmutable
+                      (Or.inr (by decide)) hNormalized with
+                  ⟨orderedExpr, rfl, ⟨hExprNormalized⟩⟩
+                rcases ExprNormalized.datacopy_parts hExprNormalized with
+                  ⟨target, offset, size, orderedArgs, op,
+                    hArgs, hOp, rfl, hArgsNormalized⟩
+                have hValues :=
+                  hExpr 1 fuel (by omega) (state := state)
+                    hContext hPath hExprElab hExprNormalized
+                apply scopedStmtRunForward_of_exact
+                simpa [Nat.add_assoc, Nat.add_comm,
+                  Nat.add_left_comm] using
+                    (stmtRunForward_expressionStatement_primitive_succ
+                      (by decide) hValues)
+              · exact False.elim (hNotSetimmutable hSetimmutable)
+          | dialectBuiltin =>
+              unfold CallClass.supportedExpressionStatementCall?
+                at hSupported
+              simp [hClass] at hSupported
 
 theorem stmtRunForward_block_succ
     {rawFuel orderedFuel : Nat}
@@ -6240,12 +6685,12 @@ theorem scopedStmtPathRunForwardAt_succ_of_special
     {contract : Frontend.AstContract}
     (hExpr :
       ∀ extra,
-        ScopedExprPathRunForwardAt
-          fuel (slack + extra) builtinContext contract)
+        ScopedExprPathRunForwardBelow
+          (fuel + 1) (slack + extra) builtinContext contract)
     (hBlock :
       ∀ extra,
-        ScopedBlockPathRunForwardAt
-          fuel (slack + extra) builtinContext contract)
+        ScopedBlockPathRunForwardBelow
+          (fuel + 1) (slack + extra) builtinContext contract)
     (hSpecial :
       ScopedStmtSpecialRunForwardAt
         (fuel + 1) slack builtinContext contract) :
@@ -6267,7 +6712,7 @@ theorem scopedStmtPathRunForwardAt_succ_of_special
           rcases StmtNormalized.block_parts hNormalized with
             ⟨orderedBody, rfl, ⟨hBodyNormalized⟩⟩
           have hBodyRun :=
-            hBlock 1 (state := state)
+            hBlock 1 fuel (by omega) (state := state)
               hContext hPath hBody hBodyNormalized
           apply scopedStmtRunForward_of_exact
           simpa [Nat.add_assoc, Nat.add_comm,
@@ -6313,7 +6758,7 @@ theorem scopedStmtPathRunForwardAt_succ_of_special
                       ClzCompilationPath contract elabState valueState :=
                     hPath.prefixPath hDeclareExt
                   have hValueRun :=
-                    hExpr 0 (state := state)
+                    hExpr 0 fuel (by omega) (state := state)
                       hContext hValuePath hValue hValueNormalized
                   apply scopedStmtRunForward_of_exact
                   simpa [Nat.add_assoc, Nat.add_comm,
@@ -6355,7 +6800,7 @@ theorem scopedStmtPathRunForwardAt_succ_of_special
                     rawContext visibleState.functionScopes := by
                 simpa [hVisibleScopes] using hContext
               have hValueRun :=
-                hExpr 0 (state := state)
+                hExpr 0 fuel (by omega) (state := state)
                   hValueContext hValuePath hValue hValueNormalized
               apply scopedStmtRunForward_of_exact
               simpa [Nat.add_assoc, Nat.add_comm,
@@ -6418,7 +6863,8 @@ theorem scopedStmtPathRunForwardAt_succ_of_special
                     rawContext conditionState.functionScopes := by
                 simpa [hConditionScopes] using hContext
               have hConditionRun :=
-                hExpr 0 (state := state) hContext hConditionPath
+                hExpr 0 fuel (by omega) (state := state)
+                  hContext hConditionPath
                   hCondition hConditionNormalized
               apply scopedStmtRunForward_of_exact
               have hIf :=
@@ -6428,7 +6874,8 @@ theorem scopedStmtPathRunForwardAt_succ_of_special
                   (state := state)
                   (exprRunForward_of_values hConditionRun)
                   (fun stateAfterCondition value _hTruthy =>
-                    hBlock 0 (state := stateAfterCondition)
+                    hBlock 0 fuel (by omega)
+                      (state := stateAfterCondition)
                       hBodyContext hBodyPath hBody hBodyNormalized)
               simpa [Nat.add_assoc, Nat.add_comm,
                 Nat.add_left_comm] using hIf
