@@ -2125,6 +2125,143 @@ theorem reverse
 
 end ScopedExprListCompiled
 
+/-- Pointwise expression compilation carrying the exact generated-helper path
+for each occurrence. Because paths are stored per node, the evidence survives
+the runtime reversal of call arguments without pretending elaboration itself
+ran in reverse. -/
+inductive PathScopedExprListCompiled
+    (builtinContext : Frontend.ObjectBuiltinContext)
+    (contract : Frontend.AstContract)
+    (generatedScopes : List (List (Name × Name))) :
+    List Raw.Expr → List Frontend.AstExpr → Prop where
+  | nil :
+      PathScopedExprListCompiled builtinContext contract generatedScopes [] []
+  | cons
+      {rawHead : Raw.Expr} {orderedHead : Frontend.AstExpr}
+      {rawTail : List Raw.Expr} {orderedTail : List Frontend.AstExpr}
+      {frontHead : Frontend.Expr}
+      {elabState finalElabState : Elab.State}
+      (headElaborates :
+        (Elab.Expr.elaborate rawHead).run elabState =
+          .ok (frontHead, finalElabState))
+      (headScopes : elabState.functionScopes = generatedScopes)
+      (headNormalized :
+        ExprNormalized builtinContext frontHead orderedHead)
+      (headPath :
+        ClzCompilationPath contract elabState finalElabState)
+      (tail :
+        PathScopedExprListCompiled builtinContext contract generatedScopes
+          rawTail orderedTail) :
+      PathScopedExprListCompiled builtinContext contract generatedScopes
+        (rawHead :: rawTail) (orderedHead :: orderedTail)
+
+namespace PathScopedExprListCompiled
+
+theorem of_elaboration
+    {builtinContext : Frontend.ObjectBuiltinContext}
+    {contract : Frontend.AstContract} :
+    ∀ {rawExprs : List Raw.Expr} {fronts : List Frontend.Expr}
+      {ordered : List Frontend.AstExpr}
+      {elabState finalElabState : Elab.State},
+      (Elab.Expr.List.elaborate rawExprs).run elabState =
+          .ok (fronts, finalElabState) →
+        ExprListNormalized builtinContext fronts ordered →
+          ClzCompilationPath contract elabState finalElabState →
+            PathScopedExprListCompiled builtinContext contract
+              elabState.functionScopes rawExprs ordered := by
+  intro rawExprs
+  induction rawExprs with
+  | nil =>
+      intro fronts ordered elabState finalElabState hElab hNormalized hPath
+      simp [Elab.Expr.List.elaborate] at hElab
+      rcases hElab with ⟨rfl, rfl⟩
+      have hOrdered := ExprListNormalized.nil_ordered hNormalized
+      subst ordered
+      exact .nil
+  | cons rawHead rawTail ih =>
+      intro fronts ordered elabState finalElabState hElab hNormalized hPath
+      unfold Elab.Expr.List.elaborate at hElab
+      simp [StateT.run_bind] at hElab
+      cases hHead : (Elab.Expr.elaborate rawHead).run elabState with
+      | error err => simp [hHead] at hElab
+      | ok headResult =>
+          rcases headResult with ⟨frontHead, headElabState⟩
+          simp [hHead] at hElab
+          cases hTail :
+              (Elab.Expr.List.elaborate rawTail).run headElabState with
+          | error err => simp [hTail] at hElab
+          | ok tailResult =>
+              rcases tailResult with ⟨frontTail, tailElabState⟩
+              simp [hTail] at hElab
+              rcases hElab with ⟨rfl, rfl⟩
+              rcases ExprListNormalized.cons_parts hNormalized with
+                ⟨orderedHead, orderedTail, rfl,
+                  ⟨hHeadNormalized⟩, ⟨hTailNormalized⟩⟩
+              have hHeadExt :=
+                Elab.Expr.elaborate_preserves_clzAllocation rawHead
+                  hHead hPath.entryValid
+              have hTailExt :=
+                Elab.Expr.List.elaborate_preserves_clzAllocation rawTail
+                  hTail hHeadExt.after_valid
+              have hHeadScopes :
+                  headElabState.functionScopes =
+                    elabState.functionScopes :=
+                Elab.Expr.elaborate_preserves_functionScopes rawHead hHead
+              have hHeadPath :
+                  ClzCompilationPath contract elabState headElabState :=
+                hPath.prefixPath hTailExt
+              have hTailPath :
+                  ClzCompilationPath contract
+                    headElabState tailElabState :=
+                hPath.suffixPath hHeadExt
+              have hTailCompiled :=
+                ih hTail hTailNormalized hTailPath
+              rw [hHeadScopes] at hTailCompiled
+              exact
+                .cons hHead rfl hHeadNormalized hHeadPath hTailCompiled
+
+theorem append
+    {builtinContext : Frontend.ObjectBuiltinContext}
+    {contract : Frontend.AstContract}
+    {generatedScopes : List (List (Name × Name))}
+    {rawLeft rawRight : List Raw.Expr}
+    {orderedLeft orderedRight : List Frontend.AstExpr}
+    (hLeft :
+      PathScopedExprListCompiled builtinContext contract generatedScopes
+        rawLeft orderedLeft)
+    (hRight :
+      PathScopedExprListCompiled builtinContext contract generatedScopes
+        rawRight orderedRight) :
+    PathScopedExprListCompiled builtinContext contract generatedScopes
+      (rawLeft ++ rawRight) (orderedLeft ++ orderedRight) := by
+  induction hLeft with
+  | nil => exact hRight
+  | cons hElab hScopes hNormalized hPath hTail ih =>
+      exact .cons hElab hScopes hNormalized hPath ih
+
+theorem reverse
+    {builtinContext : Frontend.ObjectBuiltinContext}
+    {contract : Frontend.AstContract}
+    {generatedScopes : List (List (Name × Name))}
+    {rawExprs : List Raw.Expr} {ordered : List Frontend.AstExpr}
+    (hCompiled :
+      PathScopedExprListCompiled builtinContext contract generatedScopes
+        rawExprs ordered) :
+    PathScopedExprListCompiled builtinContext contract generatedScopes
+      rawExprs.reverse ordered.reverse := by
+  induction hCompiled with
+  | nil => exact .nil
+  | @cons rawHead orderedHead rawTail orderedTail frontHead
+      elabState finalElabState hElab hScopes hNormalized hPath hTail ih =>
+      simpa using
+        append ih
+          (.cons hElab hScopes hNormalized hPath
+            (.nil :
+              PathScopedExprListCompiled builtinContext contract
+                generatedScopes [] []))
+
+end PathScopedExprListCompiled
+
 theorem argsRunForward_cons
     {rawFuel orderedFuel : Nat}
     {context : Raw.SourceSemantics.Context}
@@ -2520,6 +2657,133 @@ theorem argsRunForward_reverse_of_scoped_elaboration_fuel_below
     argsRunForward_of_scoped_compiled_fuel_below
       hExpr hContext hReversed state
 
+/-- Arbitrary-fuel argument preservation over occurrence-local compilation
+paths. This is stable under argument reversal because each node retains its
+own exact elaborator path to the final artifact binding. -/
+theorem argsRunForward_of_path_scoped_compiled_fuel_below
+    {slack rawFuel : Nat}
+    {builtinContext : Frontend.ObjectBuiltinContext}
+    {contract : Frontend.AstContract}
+    (hExpr :
+      ScopedExprPathRunForwardBelow
+        rawFuel slack builtinContext contract)
+    {rawContext : Raw.SourceSemantics.Context}
+    {generatedScopes : List (List (Name × Name))}
+    {rawExprs : List Raw.Expr} {ordered : List Frontend.AstExpr}
+    (hContext :
+      CompiledContext builtinContext contract rawContext generatedScopes)
+    (hCompiled :
+      PathScopedExprListCompiled builtinContext contract generatedScopes
+        rawExprs ordered)
+    (state : State) :
+    ArgsRunForward rawFuel (rawFuel + slack)
+      rawContext rawExprs ordered contract state := by
+  induction rawFuel using Nat.strong_induction_on generalizing
+      rawExprs ordered state with
+  | h rawFuel ih =>
+      cases rawFuel with
+      | zero =>
+          exact argsRunForward_zero
+      | succ predecessor =>
+          cases predecessor with
+          | zero =>
+              cases hCompiled with
+              | nil =>
+                  simpa [Nat.add_comm, Nat.add_left_comm,
+                    Nat.add_assoc] using
+                    (argsRunForward_nil_succ
+                      (rawFuel := 0) (orderedFuel := slack)
+                      (context := rawContext) (contract := contract)
+                      (state := state))
+              | cons hElab hScopes hNormalized hPath hTail =>
+                  simpa [Nat.add_comm, Nat.add_left_comm,
+                    Nat.add_assoc] using
+                    (argsRunForward_cons_one
+                      (orderedFuel := slack)
+                      (context := rawContext) (contract := contract)
+                      (state := state))
+          | succ residual =>
+              cases hCompiled with
+              | nil =>
+                  simpa [Nat.add_comm, Nat.add_left_comm,
+                    Nat.add_assoc] using
+                    (argsRunForward_nil_succ
+                      (rawFuel := residual + 1)
+                      (orderedFuel := (residual + 1) + slack)
+                      (context := rawContext) (contract := contract)
+                      (state := state))
+              | @cons rawHead orderedHead rawTail orderedTail frontHead
+                  elabState finalElabState hElab hScopes hNormalized
+                  hHeadPath hTail =>
+                  have hHeadContext :
+                      CompiledContext builtinContext contract rawContext
+                        elabState.functionScopes :=
+                    { objectBuiltins := hContext.objectBuiltins
+                      functionScopes := by
+                        simpa [hScopes] using hContext.functionScopes }
+                  have hHeadValues :=
+                    hExpr (residual + 1) (by omega)
+                      hHeadContext hHeadPath (state := state)
+                        hElab hNormalized
+                  have hHead := exprRunForward_of_values hHeadValues
+                  have hTailBelow :
+                      ScopedExprPathRunForwardBelow
+                        residual slack builtinContext contract := by
+                    intro fuel hFuel
+                    exact hExpr fuel (by omega)
+                  have hTailRun :
+                      ∀ stateAfterHead,
+                        ArgsRunForward residual (residual + slack)
+                          rawContext rawTail orderedTail contract
+                          stateAfterHead := by
+                    intro stateAfterHead
+                    exact
+                      ih residual (by omega) hTailBelow hTail
+                        stateAfterHead
+                  have hCons :=
+                    argsRunForward_cons
+                      (rawFuel := residual)
+                      (orderedFuel := residual + slack)
+                      (context := rawContext) (rawArg := rawHead)
+                      (rawRest := rawTail) (orderedArg := orderedHead)
+                      (orderedRest := orderedTail) (contract := contract)
+                      (state := state) (by
+                        simpa [Nat.add_comm, Nat.add_left_comm,
+                          Nat.add_assoc] using hHead)
+                      hTailRun
+                  simpa [Nat.add_comm, Nat.add_left_comm,
+                    Nat.add_assoc] using hCons
+
+theorem argsRunForward_reverse_of_path_elaboration_fuel_below
+    {slack rawFuel : Nat}
+    {builtinContext : Frontend.ObjectBuiltinContext}
+    {contract : Frontend.AstContract}
+    (hExpr :
+      ScopedExprPathRunForwardBelow
+        rawFuel slack builtinContext contract)
+    {rawContext : Raw.SourceSemantics.Context}
+    {rawExprs : List Raw.Expr} {fronts : List Frontend.Expr}
+    {ordered : List Frontend.AstExpr}
+    {elabState finalElabState : Elab.State}
+    (hContext :
+      CompiledContext builtinContext contract
+        rawContext elabState.functionScopes)
+    (hPath :
+      ClzCompilationPath contract elabState finalElabState)
+    (hElab :
+      (Elab.Expr.List.elaborate rawExprs).run elabState =
+        .ok (fronts, finalElabState))
+    (hNormalized : ExprListNormalized builtinContext fronts ordered)
+    (state : State) :
+    ArgsRunForward rawFuel (rawFuel + slack)
+      rawContext rawExprs.reverse ordered.reverse contract state := by
+  have hCompiled :=
+    PathScopedExprListCompiled.of_elaboration hElab hNormalized hPath
+  have hReversed := PathScopedExprListCompiled.reverse hCompiled
+  exact
+    argsRunForward_of_path_scoped_compiled_fuel_below
+      hExpr hContext hReversed state
+
 theorem argsRunForward_of_compiled
     {slack : Nat}
     {rawContext : Raw.SourceSemantics.Context}
@@ -2786,6 +3050,57 @@ theorem exprValuesRunForward_of_scoped_elaborated_primitiveCall_below
         exprValuesRunForward_primitiveCall_of_runs
           hNotClz hClass hOp hArgsRun (hPrimitive op hOp)
       exact hCall
+
+theorem exprValuesRunForward_of_path_elaborated_primitiveCall_below
+    {slack argsFuel : Nat}
+    {builtinContext : Frontend.ObjectBuiltinContext}
+    {rawContext : Raw.SourceSemantics.Context}
+    {name : Name} {rawArgs : List Raw.Expr}
+    {elabState finalElabState : Elab.State}
+    {front : Frontend.Expr} {ordered : Frontend.AstExpr}
+    {contract : Frontend.AstContract} {state : State}
+    (hExpr :
+      ScopedExprPathRunForwardBelow
+        argsFuel slack builtinContext contract)
+    (hContext :
+      CompiledContext builtinContext contract
+        rawContext elabState.functionScopes)
+    (hPath :
+      ClzCompilationPath contract elabState finalElabState)
+    (hNotMemoryguard : name ≠ "memoryguard")
+    (hNotClz : name ≠ "clz")
+    (hClass : CallClass.classifyCall name = .primitive)
+    (hElab :
+      (Elab.Expr.elaborate (.functionCall name rawArgs)).run elabState =
+        .ok (front, finalElabState))
+    (hNormalized : ExprNormalized builtinContext front ordered)
+    (hPrimitive :
+      ∀ (op : EvmYul.Operation .Yul),
+        Frontend.Primitive.ofName? name = some op →
+          ∀ (stateAfterArgs : State) (values : List Frontend.Word),
+            PrimitiveRunForward
+              argsFuel (argsFuel + slack)
+              stateAfterArgs op values.reverse) :
+    ExprValuesRunForward
+      (argsFuel + 1)
+      ((argsFuel + slack) + 1)
+      rawContext (.functionCall name rawArgs) ordered contract state := by
+  unfold Elab.Expr.elaborate at hElab
+  simp at hElab
+  cases hArgs : (Elab.Expr.List.elaborate rawArgs).run elabState with
+  | error err => simp [hArgs] at hElab
+  | ok argsResult =>
+      rcases argsResult with ⟨frontArgs, argsState⟩
+      simp [hArgs, hClass] at hElab
+      rcases hElab with ⟨rfl, rfl⟩
+      rcases ExprNormalized.primitive_call_parts hNormalized with
+        ⟨op, orderedArgs, hOp, rfl, ⟨hArgsNormalized⟩⟩
+      have hArgsRun :=
+        argsRunForward_reverse_of_path_elaboration_fuel_below
+          hExpr hContext hPath hArgs hArgsNormalized state
+      exact
+        exprValuesRunForward_primitiveCall_of_runs
+          hNotClz hClass hOp hArgsRun (hPrimitive op hOp)
 
 theorem exprValuesRunForward_userCall_one
     {orderedFuel : Nat}
