@@ -239,6 +239,47 @@ theorem stmtList_elaborate_length
               rcases hElab with ⟨rfl, rfl⟩
               simp [ih hTail]
 
+theorem stmtList_elaborateBlock_false_length
+    {rawStmts : List Raw.Stmt} {fronts : List Frontend.Stmt}
+    {elabState finalElabState : Elab.State}
+    (hElab :
+      (Elab.Stmt.List.elaborateBlock rawStmts false).run elabState =
+        .ok (fronts, finalElabState)) :
+    fronts.length = rawStmts.length := by
+  unfold Elab.Stmt.List.elaborateBlock at hElab
+  simp [StateT.run_bind] at hElab
+  cases hScope :
+      (Elab.Stmt.List.localFunctionScope rawStmts).run elabState with
+  | error err => simp [hScope] at hElab
+  | ok scopeResult =>
+      rcases scopeResult with ⟨scope, scopeState⟩
+      simp [hScope] at hElab
+      cases hPush : (Elab.pushFunctionScope scope).run scopeState with
+      | error err => simp [hPush] at hElab
+      | ok pushResult =>
+          rcases pushResult with ⟨_, pushedState⟩
+          simp [hPush] at hElab
+          cases hHoist :
+              (Elab.Stmt.List.hoistLocalFunctions rawStmts scope).run
+                pushedState with
+          | error err => simp [hHoist] at hElab
+          | ok hoistResult =>
+              rcases hoistResult with ⟨_, hoistState⟩
+              simp [hHoist] at hElab
+              cases hCode :
+                  (Elab.Stmt.List.elaborate rawStmts).run hoistState with
+              | error err => simp [hCode] at hElab
+              | ok codeResult =>
+                  rcases codeResult with ⟨frontCode, codeState⟩
+                  simp [hCode] at hElab
+                  cases hPop : Elab.popFunctionScope.run codeState with
+                  | error err => simp [hPop] at hElab
+                  | ok popResult =>
+                      rcases popResult with ⟨_, poppedState⟩
+                      simp [hPop] at hElab
+                      rcases hElab with ⟨rfl, rfl⟩
+                      exact stmtList_elaborate_length hCode
+
 theorem exprList_elaborate_single_head
     {rawExpr : Raw.Expr} {front : Frontend.Expr}
     {elabState finalElabState : Elab.State}
@@ -2056,6 +2097,14 @@ inductive CompiledFunctionScopes
     List Raw.SourceSemantics.FunctionScope →
       List (List (Name × Name)) → Prop where
   | nil : CompiledFunctionScopes builtinContext contract [] []
+  | rawEmpty
+      {rawRest : List Raw.SourceSemantics.FunctionScope}
+      {generatedScopes : List (List (Name × Name))}
+      (tail :
+        CompiledFunctionScopes builtinContext contract
+          rawRest generatedScopes) :
+      CompiledFunctionScopes builtinContext contract
+        ([] :: rawRest) generatedScopes
   | cons
       {rawScope : Raw.SourceSemantics.FunctionScope}
       {rawRest : List Raw.SourceSemantics.FunctionScope}
@@ -2094,6 +2143,14 @@ theorem resolve
   induction hScopes with
   | nil =>
       simp [Elab.resolveFunctionIn] at hResolve
+  | rawEmpty tail ih =>
+      rcases ih hResolve with
+        ⟨rawFn, rawLexical, generatedLexical,
+          hRawResolve, hBinding, hLexical⟩
+      refine
+        ⟨rawFn, rawLexical, generatedLexical, ?_, hBinding, hLexical⟩
+      simp [Raw.SourceSemantics.lookupFunctionWithLexicalScopesIn,
+        Raw.SourceSemantics.lookupFunctionInScope, hRawResolve]
   | @cons rawScope rawRest generatedScope generatedRest hHead hTail ih =>
       cases hLookup : Elab.lookupFunctionInScope rawName generatedScope with
       | none =>
@@ -3016,6 +3073,75 @@ private theorem localFunctionScope_rawFunctionScope
             ⟨rawScope,
               by simp [Raw.SourceSemantics.functionScope?, hRaw], hNames⟩
 
+private theorem rawFunctionScope_eq_empty_of_noImmediate
+    {stmts : List Raw.Stmt}
+    {rawScope : Raw.SourceSemantics.FunctionScope}
+    (hNone :
+      Elab.Stmt.List.hasImmediateFunctionDefinition stmts = false)
+    (hScope :
+      Raw.SourceSemantics.functionScope? stmts = some rawScope) :
+    rawScope = [] := by
+  induction stmts generalizing rawScope with
+  | nil =>
+      simpa [Raw.SourceSemantics.functionScope?] using
+        Option.some.inj hScope
+  | cons stmt rest ih =>
+      cases stmt with
+      | functionDefinition name params returns body =>
+          simp [Elab.Stmt.List.hasImmediateFunctionDefinition] at hNone
+      | block nested =>
+          simp [Elab.Stmt.List.hasImmediateFunctionDefinition] at hNone
+          simp [Raw.SourceSemantics.functionScope?] at hScope
+          exact ih hNone hScope
+      | variableDeclaration names value? =>
+          simp [Elab.Stmt.List.hasImmediateFunctionDefinition] at hNone
+          simp [Raw.SourceSemantics.functionScope?] at hScope
+          exact ih hNone hScope
+      | assignment names value =>
+          simp [Elab.Stmt.List.hasImmediateFunctionDefinition] at hNone
+          simp [Raw.SourceSemantics.functionScope?] at hScope
+          exact ih hNone hScope
+      | expressionStatement expr =>
+          simp [Elab.Stmt.List.hasImmediateFunctionDefinition] at hNone
+          simp [Raw.SourceSemantics.functionScope?] at hScope
+          exact ih hNone hScope
+      | switch scrutinee cases default =>
+          simp [Elab.Stmt.List.hasImmediateFunctionDefinition] at hNone
+          simp [Raw.SourceSemantics.functionScope?] at hScope
+          exact ih hNone hScope
+      | forLoop pre condition post loopBody =>
+          simp [Elab.Stmt.List.hasImmediateFunctionDefinition] at hNone
+          simp [Raw.SourceSemantics.functionScope?] at hScope
+          exact ih hNone hScope
+      | ifThen condition ifBody =>
+          simp [Elab.Stmt.List.hasImmediateFunctionDefinition] at hNone
+          simp [Raw.SourceSemantics.functionScope?] at hScope
+          exact ih hNone hScope
+      | «break» =>
+          simp [Elab.Stmt.List.hasImmediateFunctionDefinition] at hNone
+          simp [Raw.SourceSemantics.functionScope?] at hScope
+          exact ih hNone hScope
+      | «continue» =>
+          simp [Elab.Stmt.List.hasImmediateFunctionDefinition] at hNone
+          simp [Raw.SourceSemantics.functionScope?] at hScope
+          exact ih hNone hScope
+      | «leave» =>
+          simp [Elab.Stmt.List.hasImmediateFunctionDefinition] at hNone
+          simp [Raw.SourceSemantics.functionScope?] at hScope
+          exact ih hNone hScope
+
+private theorem rawFunctionScope_of_noImmediate
+    {stmts : List Raw.Stmt}
+    (hNone :
+      Elab.Stmt.List.hasImmediateFunctionDefinition stmts = false) :
+    Raw.SourceSemantics.functionScope? stmts = some [] := by
+  induction stmts with
+  | nil => rfl
+  | cons stmt rest ih =>
+      cases stmt <;>
+        simp [Elab.Stmt.List.hasImmediateFunctionDefinition] at hNone <;>
+        simp [Raw.SourceSemantics.functionScope?, ih hNone]
+
 /-- Construct the complete lexical-scope relation from the two checked scope
 collectors and the actual local-function hoist path. -/
 theorem pathCompiledFunctionScope_of_localHoist
@@ -3078,6 +3204,14 @@ inductive PathCompiledFunctionScopes
     List Raw.SourceSemantics.FunctionScope →
       List (List (Name × Name)) → Prop where
   | nil : PathCompiledFunctionScopes builtinContext contract [] []
+  | rawEmpty
+      {rawRest : List Raw.SourceSemantics.FunctionScope}
+      {generatedScopes : List (List (Name × Name))}
+      (tail :
+        PathCompiledFunctionScopes builtinContext contract
+          rawRest generatedScopes) :
+      PathCompiledFunctionScopes builtinContext contract
+        ([] :: rawRest) generatedScopes
   | cons
       {rawScope : Raw.SourceSemantics.FunctionScope}
       {rawRest : List Raw.SourceSemantics.FunctionScope}
@@ -3116,6 +3250,14 @@ theorem resolve
   induction hScopes with
   | nil =>
       simp [Elab.resolveFunctionIn] at hResolve
+  | rawEmpty tail ih =>
+      rcases ih hResolve with
+        ⟨rawFn, rawLexical, generatedLexical,
+          hRawResolve, hBinding, hLexical⟩
+      refine
+        ⟨rawFn, rawLexical, generatedLexical, ?_, hBinding, hLexical⟩
+      simp [Raw.SourceSemantics.lookupFunctionWithLexicalScopesIn,
+        Raw.SourceSemantics.lookupFunctionInScope, hRawResolve]
   | @cons rawScope rawRest generatedScope generatedRest hHead hTail ih =>
       cases hLookup : Elab.lookupFunctionInScope rawName generatedScope with
       | none =>
@@ -3154,6 +3296,7 @@ theorem toCompiled
       rawScopes generatedScopes := by
   induction hScopes with
   | nil => exact .nil
+  | rawEmpty tail ih => exact .rawEmpty ih
   | cons head tail ih =>
       exact .cons
         { binding := by
@@ -3181,6 +3324,18 @@ structure PathCompiledContext
       rawContext.functionScopes generatedScopes
 
 namespace PathCompiledContext
+
+def withEmptyFunctionScope
+    {builtinContext : Frontend.ObjectBuiltinContext}
+    {contract : Frontend.AstContract}
+    {rawContext : Raw.SourceSemantics.Context}
+    {generatedScopes : List (List (Name × Name))}
+    (context :
+      PathCompiledContext builtinContext contract rawContext generatedScopes) :
+    PathCompiledContext builtinContext contract
+      (rawContext.withFunctionScope []) generatedScopes where
+  objectBuiltins := context.objectBuiltins
+  functionScopes := .rawEmpty context.functionScopes
 
 def toCompiled
     {builtinContext : Frontend.ObjectBuiltinContext}
@@ -8037,6 +8192,38 @@ private theorem loopRestrictedRunForward
   cases rawLoopDone <;>
     exact Simulation.Interaction.ForwardRel.done rfl
 
+theorem loopRunForward_zero
+    {orderedFuel : Nat}
+    {context : Raw.SourceSemantics.Context}
+    {rawCondition : Raw.Expr} {rawPost rawBody : List Raw.Stmt}
+    {orderedCondition : Frontend.AstExpr}
+    {orderedPost orderedBody : List Frontend.AstStmt}
+    {contract : Frontend.AstContract} {state : State} :
+    LoopRunForward 0 orderedFuel context
+      rawCondition rawPost rawBody orderedCondition
+      orderedPost orderedBody contract state := by
+  unfold LoopRunForward
+  rw [Raw.SourceSemantics.Loop.zero]
+  exact
+    Simulation.Interaction.ForwardRel.truncated
+      (by simp [Yul.FunctionsInteractionPrimitive.Truncated])
+
+theorem loopRunForward_one
+    {orderedFuel : Nat}
+    {context : Raw.SourceSemantics.Context}
+    {rawCondition : Raw.Expr} {rawPost rawBody : List Raw.Stmt}
+    {orderedCondition : Frontend.AstExpr}
+    {orderedPost orderedBody : List Frontend.AstStmt}
+    {contract : Frontend.AstContract} {state : State} :
+    LoopRunForward 1 orderedFuel context
+      rawCondition rawPost rawBody orderedCondition
+      orderedPost orderedBody contract state := by
+  unfold LoopRunForward
+  rw [Raw.SourceSemantics.Loop.one]
+  exact
+    Simulation.Interaction.ForwardRel.truncated
+      (by simp [Yul.FunctionsInteractionPrimitive.Truncated])
+
 theorem loopRunForward_of_components
     {fuel slack : Nat}
     {context : Raw.SourceSemantics.Context}
@@ -8317,8 +8504,53 @@ theorem loopRunForward_of_components
                                                 hCondition n (by omega) state)
                                               (fun n hN state =>
                                                 hPost n (by omega) state)
-                                              (fun n hN state =>
-                                                hBody n (by omega) state))
+                                                  (fun n hN state =>
+                                                    hBody n (by omega) state))
+
+/-- Enter a loop after a nonempty statement prefix. If the prefix exhausts
+source fuel, zero/one truncation is immediate; otherwise the common recursive
+component slack survives the administrative subtraction exactly. -/
+theorem loopRunForward_after_nonemptyPrefix
+    {fuel slack prefixLength : Nat}
+    {context : Raw.SourceSemantics.Context}
+    {rawCondition : Raw.Expr} {rawPost rawBody : List Raw.Stmt}
+    {orderedCondition : Frontend.AstExpr}
+    {orderedPost orderedBody : List Frontend.AstStmt}
+    {contract : Frontend.AstContract} {state : State}
+    (hCondition :
+      ∀ n, n < fuel → ∀ state,
+        ExprRunForward n (n + slack)
+          context rawCondition orderedCondition contract state)
+    (hPost :
+      ∀ n, n < fuel → ∀ state,
+        BlockCodeRunForward n (n + slack)
+          context rawPost orderedPost contract state)
+    (hBody :
+      ∀ n, n < fuel → ∀ state,
+        BlockCodeRunForward n (n + slack)
+          context rawBody orderedBody contract state) :
+    LoopRunForward (fuel - prefixLength - 1)
+      (fuel + slack - prefixLength - 1)
+      context rawCondition rawPost rawBody orderedCondition
+      orderedPost orderedBody contract state := by
+  by_cases hLoopFuel : prefixLength + 3 ≤ fuel
+  · have hTargetFuel :
+        fuel + slack - prefixLength - 1 =
+          (fuel - prefixLength - 1) + slack := by
+      omega
+    rw [hTargetFuel]
+    exact
+      loopRunForward_of_components
+        (fun n hN state => hCondition n (by omega) state)
+        (fun n hN state => hPost n (by omega) state)
+        (fun n hN state => hBody n (by omega) state)
+  · have hSmall : fuel - prefixLength - 1 ≤ 1 := by omega
+    cases hSourceFuel : fuel - prefixLength - 1 with
+    | zero => exact loopRunForward_zero
+    | succ residual =>
+        have hResidual : residual = 0 := by omega
+        subst residual
+        exact loopRunForward_one
 
 theorem stmtRunForward_for_nonempty
     {fuel slack : Nat}
@@ -8518,6 +8750,24 @@ theorem stmtRunForward_for_empty
       rw [Simulation.Interaction.bind_done_ok]
       rw [Simulation.Interaction.bind_pure]
       simpa using hLoop state
+
+theorem stmtRunForward_for_one
+    {orderedFuel : Nat}
+    {context : Raw.SourceSemantics.Context}
+    {rawPre rawPost rawBody : List Raw.Stmt}
+    {rawCondition : Raw.Expr}
+    {ordered : Frontend.AstStmt}
+    {contract : Frontend.AstContract} {state : State} :
+    StmtRunForward 1 orderedFuel context
+      (.forLoop rawPre rawCondition rawPost rawBody)
+      ordered contract state := by
+  unfold StmtRunForward
+  rw [show 1 = 0 + 1 by omega]
+  rw [Raw.SourceSemantics.Exec.forLoop_succ]
+  simp [Raw.SourceSemantics.execFor, Raw.SourceSemantics.fail]
+  exact
+    Simulation.Interaction.ForwardRel.truncated
+      (by simp [Yul.FunctionsInteractionPrimitive.Truncated])
 
 theorem stmtRunForward_break_succ
     {rawFuel orderedFuel : Nat}
@@ -9230,6 +9480,941 @@ theorem scopedStmtRunForward_switch_of_path_below
                   (SwitchCaseListRunForward.select hCasesRun hDefaultRun)
               simpa [Nat.add_assoc, Nat.add_comm,
                 Nat.add_left_comm] using hSwitch
+
+/-- Checked `for` preservation for the elaborator branch that retains a local
+function scope across the initializer, condition, post, and body. -/
+theorem scopedStmtRunForward_for_withFunctions_of_path_below
+    {fuel slack : Nat}
+    {builtinContext : Frontend.ObjectBuiltinContext}
+    {contract : Frontend.AstContract}
+    (hExpr :
+      ∀ extra,
+        ScopedExprPathRunForwardBelow
+          (fuel + 1) (slack + extra) builtinContext contract)
+    (hBlock :
+      ∀ extra,
+        ScopedBlockPathRunForwardBelow
+          (fuel + 1) (slack + extra) builtinContext contract)
+    (hSeq :
+      ScopedSeqPathRunForwardAt
+        fuel (slack + 1) builtinContext contract)
+    {rawContext : Raw.SourceSemantics.Context}
+    {rawPre rawPost rawBody : List Raw.Stmt}
+    {rawCondition : Raw.Expr}
+    {front : Frontend.Stmt} {ordered : Frontend.AstStmt}
+    {elabState finalElabState : Elab.State}
+    {entryStore : EvmYul.Yul.VarStore} {state : State}
+    (hHasFunctions :
+      Elab.Stmt.List.hasImmediateFunctionDefinition rawPre = true)
+    (hSlack : rawPre.length + 1 ≤ slack)
+    (hContext :
+      PathCompiledContext builtinContext contract
+        rawContext elabState.functionScopes)
+    (hPath :
+      FrontendCompilationPath builtinContext contract
+        elabState finalElabState)
+    (hElab :
+      (Elab.Stmt.elaborate
+        (.forLoop rawPre rawCondition rawPost rawBody)).run elabState =
+          .ok (front, finalElabState))
+    (hNormalized : StmtNormalized builtinContext front ordered) :
+    ScopedStmtRunForward entryStore (fuel + 2) (fuel + 2 + slack)
+      rawContext (.forLoop rawPre rawCondition rawPost rawBody)
+      ordered contract state := by
+  unfold Elab.Stmt.elaborate at hElab
+  simp only [hHasFunctions, Bool.true_eq_false, ↓reduceIte] at hElab
+  simp [StateT.run_bind] at hElab
+  cases hPushIdentifier : Elab.pushIdentifierScope.run elabState with
+  | error err => simp [hPushIdentifier] at hElab
+  | ok pushIdentifierResult =>
+      rcases pushIdentifierResult with ⟨_, identifierPushedState⟩
+      simp [hPushIdentifier] at hElab
+      cases hPre :
+          (Elab.Stmt.List.elaborateForInitBlockWithScope rawPre).run
+            identifierPushedState with
+      | error err => simp [hPre] at hElab
+      | ok preResult =>
+          rcases preResult with ⟨frontPre, preState⟩
+          simp [hPre] at hElab
+          cases hCondition :
+              (Elab.Expr.elaborate rawCondition).run preState with
+          | error err => simp [hCondition] at hElab
+          | ok conditionResult =>
+              rcases conditionResult with
+                ⟨frontCondition, conditionState⟩
+              simp [hCondition] at hElab
+              cases hPost :
+                  (Elab.Stmt.List.elaborateBlock rawPost true).run
+                    conditionState with
+              | error err => simp [hPost] at hElab
+              | ok postResult =>
+                  rcases postResult with ⟨frontPost, postState⟩
+                  simp [hPost] at hElab
+                  cases hBody :
+                      (Elab.Stmt.List.elaborateBlock rawBody true).run
+                        postState with
+                  | error err => simp [hBody] at hElab
+                  | ok bodyResult =>
+                      rcases bodyResult with ⟨frontBody, bodyState⟩
+                      simp [hBody] at hElab
+                      cases hPopFunction :
+                          Elab.popFunctionScope.run bodyState with
+                      | error err => simp [hPopFunction] at hElab
+                      | ok popFunctionResult =>
+                          rcases popFunctionResult with
+                            ⟨_, functionPoppedState⟩
+                          simp [hPopFunction] at hElab
+                          cases hPopIdentifier :
+                              Elab.popIdentifierScope.run
+                                functionPoppedState with
+                          | error err => simp [hPopIdentifier] at hElab
+                          | ok popIdentifierResult =>
+                              rcases popIdentifierResult with
+                                ⟨_, identifierPoppedState⟩
+                              simp [hPopIdentifier] at hElab
+                              rcases hElab with ⟨rfl, rfl⟩
+                              rcases StmtNormalized.for_parts hNormalized with
+                                ⟨orderedPre, orderedCondition,
+                                  orderedPost, orderedBody, rfl,
+                                  ⟨hPreNormalized⟩,
+                                  ⟨hConditionNormalized⟩,
+                                  ⟨hPostNormalized⟩,
+                                  ⟨hBodyNormalized⟩⟩
+                              have hPushIdentifierExt :=
+                                Elab.pushIdentifierScope_preserves_clzAllocation
+                                  hPushIdentifier hPath.entryValid
+                              have hPreExt :=
+                                Elab.Stmt.List.elaborateForInitBlockWithScope_preserves_clzAllocation
+                                  rawPre hPre
+                                  hPushIdentifierExt.after_valid
+                              have hConditionExt :=
+                                Elab.Expr.elaborate_preserves_clzAllocation
+                                  rawCondition hCondition hPreExt.after_valid
+                              have hPostExt :=
+                                Elab.Stmt.List.elaborateBlock_preserves_clzAllocation
+                                  rawPost true hPost
+                                  hConditionExt.after_valid
+                              have hBodyExt :=
+                                Elab.Stmt.List.elaborateBlock_preserves_clzAllocation
+                                  rawBody true hBody hPostExt.after_valid
+                              have hPopFunctionExt :=
+                                Elab.popFunctionScope_preserves_clzAllocation
+                                  hPopFunction hBodyExt.after_valid
+                              have hPopIdentifierExt :=
+                                Elab.popIdentifierScope_preserves_clzAllocation
+                                  hPopIdentifier hPopFunctionExt.after_valid
+                              have hBodyHoisted :
+                                  HoistedFunctionsExtend postState bodyState := by
+                                intro entry hEntry
+                                exact
+                                  Elab.Stmt.List.elaborateBlock_preserves_hoistedFunction_mem
+                                    rawBody true hBody hEntry
+                              have hPopFunctionHoisted :
+                                  HoistedFunctionsExtend bodyState
+                                    functionPoppedState := by
+                                intro entry hEntry
+                                exact
+                                  Elab.popFunctionScope_preserves_hoistedFunction_mem
+                                    hPopFunction hEntry
+                              have hPopIdentifierHoisted :
+                                  HoistedFunctionsExtend functionPoppedState
+                                    identifierPoppedState := by
+                                intro entry hEntry
+                                exact
+                                  Elab.popIdentifierScope_preserves_hoistedFunction_mem
+                                    hPopIdentifier hEntry
+                              have hAfterBodyClz :
+                                  Elab.ClzAllocationExtends bodyState
+                                    identifierPoppedState :=
+                                Elab.ClzAllocationExtends.trans
+                                  hPopFunctionExt hPopIdentifierExt
+                              have hAfterBodyHoisted :
+                                  HoistedFunctionsExtend bodyState
+                                    identifierPoppedState :=
+                                HoistedFunctionsExtend.trans
+                                  hPopFunctionHoisted hPopIdentifierHoisted
+                              have hBeforeBodyClz :
+                                  Elab.ClzAllocationExtends elabState
+                                    postState :=
+                                Elab.ClzAllocationExtends.trans
+                                  hPushIdentifierExt
+                                  (Elab.ClzAllocationExtends.trans hPreExt
+                                    (Elab.ClzAllocationExtends.trans
+                                      hConditionExt hPostExt))
+                              have hBodyPath :
+                                  FrontendCompilationPath builtinContext
+                                    contract postState bodyState :=
+                                hPath.subpath hBeforeBodyClz
+                                  hAfterBodyClz hAfterBodyHoisted
+                              have hPostHoisted :
+                                  HoistedFunctionsExtend conditionState
+                                    postState := by
+                                intro entry hEntry
+                                exact
+                                  Elab.Stmt.List.elaborateBlock_preserves_hoistedFunction_mem
+                                    rawPost true hPost hEntry
+                              have hAfterPostClz :
+                                  Elab.ClzAllocationExtends postState
+                                    identifierPoppedState :=
+                                Elab.ClzAllocationExtends.trans hBodyExt
+                                  hAfterBodyClz
+                              have hAfterPostHoisted :
+                                  HoistedFunctionsExtend postState
+                                    identifierPoppedState :=
+                                HoistedFunctionsExtend.trans hBodyHoisted
+                                  hAfterBodyHoisted
+                              have hBeforePostClz :
+                                  Elab.ClzAllocationExtends elabState
+                                    conditionState :=
+                                Elab.ClzAllocationExtends.trans
+                                  hPushIdentifierExt
+                                  (Elab.ClzAllocationExtends.trans hPreExt
+                                    hConditionExt)
+                              have hPostPath :
+                                  FrontendCompilationPath builtinContext
+                                    contract conditionState postState :=
+                                hPath.subpath hBeforePostClz
+                                  hAfterPostClz hAfterPostHoisted
+                              have hAfterConditionClz :
+                                  Elab.ClzAllocationExtends conditionState
+                                    identifierPoppedState :=
+                                Elab.ClzAllocationExtends.trans hPostExt
+                                  hAfterPostClz
+                              have hBeforeConditionClz :
+                                  Elab.ClzAllocationExtends elabState
+                                    preState :=
+                                Elab.ClzAllocationExtends.trans
+                                  hPushIdentifierExt hPreExt
+                              have hConditionPath :
+                                  ClzCompilationPath contract preState
+                                    conditionState :=
+                                (hPath.clz.suffixPath
+                                  hBeforeConditionClz).prefixPath
+                                    hAfterConditionClz
+                              have hPushIdentifierScopes :
+                                  identifierPushedState.functionScopes =
+                                    elabState.functionScopes :=
+                                Elab.pushIdentifierScope_preserves_functionScopes
+                                  hPushIdentifier
+                              unfold
+                                Elab.Stmt.List.elaborateForInitBlockWithScope
+                                at hPre
+                              simp [StateT.run_bind] at hPre
+                              cases hScope :
+                                  (Elab.Stmt.List.localFunctionScope rawPre).run
+                                    identifierPushedState with
+                              | error err => simp [hScope] at hPre
+                              | ok scopeResult =>
+                                  rcases scopeResult with
+                                    ⟨generatedScope, scopeState⟩
+                                  simp [hScope] at hPre
+                                  cases hPushFunction :
+                                      (Elab.pushFunctionScope
+                                        generatedScope).run scopeState with
+                                  | error err =>
+                                      simp [hPushFunction] at hPre
+                                  | ok pushFunctionResult =>
+                                      rcases pushFunctionResult with
+                                        ⟨_, functionPushedState⟩
+                                      simp [hPushFunction] at hPre
+                                      cases hHoist :
+                                          (Elab.Stmt.List.hoistLocalFunctions
+                                            rawPre generatedScope).run
+                                            functionPushedState with
+                                      | error err => simp [hHoist] at hPre
+                                      | ok hoistResult =>
+                                          rcases hoistResult with
+                                            ⟨_, hoistState⟩
+                                          simp [hHoist] at hPre
+                                          cases hPreCode :
+                                              (Elab.Stmt.List.elaborate
+                                                rawPre).run hoistState with
+                                          | error err =>
+                                              simp [hPreCode] at hPre
+                                          | ok preCodeResult =>
+                                              rcases preCodeResult with
+                                                ⟨frontPreCode,
+                                                  preCodeState⟩
+                                              simp [hPreCode] at hPre
+                                              rcases hPre with ⟨rfl, rfl⟩
+                                              rcases
+                                                  localFunctionScope_rawFunctionScope
+                                                    hScope with
+                                                ⟨rawScope, hRawScope,
+                                                  _hNames⟩
+                                              have hScopeExt :=
+                                                Elab.Stmt.List.localFunctionScope_preserves_clzAllocation
+                                                  rawPre hScope
+                                                  hPushIdentifierExt.after_valid
+                                              have hPushFunctionExt :=
+                                                Elab.pushFunctionScope_preserves_clzAllocation
+                                                  generatedScope hPushFunction
+                                                  hScopeExt.after_valid
+                                              have hHoistExt :=
+                                                Elab.Stmt.List.hoistLocalFunctions_preserves_clzAllocation
+                                                  rawPre generatedScope hHoist
+                                                  hPushFunctionExt.after_valid
+                                              have hPreCodeExt :=
+                                                Elab.Stmt.List.elaborate_preserves_clzAllocation
+                                                  rawPre hPreCode
+                                                  hHoistExt.after_valid
+                                              have hAfterPreClz :
+                                                  Elab.ClzAllocationExtends
+                                                    preCodeState
+                                                    identifierPoppedState :=
+                                                Elab.ClzAllocationExtends.trans
+                                                  hConditionExt
+                                                  hAfterConditionClz
+                                              have hConditionHoisted :
+                                                  HoistedFunctionsExtend
+                                                    preCodeState
+                                                    conditionState := by
+                                                intro entry hEntry
+                                                exact
+                                                  Elab.Expr.elaborate_preserves_hoistedFunction_mem
+                                                    rawCondition hCondition
+                                                    hEntry
+                                              have hAfterConditionHoisted :
+                                                  HoistedFunctionsExtend
+                                                    conditionState
+                                                    identifierPoppedState :=
+                                                HoistedFunctionsExtend.trans
+                                                  hPostHoisted
+                                                  hAfterPostHoisted
+                                              have hAfterPreHoisted :
+                                                  HoistedFunctionsExtend
+                                                    preCodeState
+                                                    identifierPoppedState :=
+                                                HoistedFunctionsExtend.trans
+                                                  hConditionHoisted
+                                                  hAfterConditionHoisted
+                                              have hBeforeHoistClz :
+                                                  Elab.ClzAllocationExtends
+                                                    elabState
+                                                    functionPushedState :=
+                                                Elab.ClzAllocationExtends.trans
+                                                  hPushIdentifierExt
+                                                  (Elab.ClzAllocationExtends.trans
+                                                    hScopeExt hPushFunctionExt)
+                                              have hAfterHoistClz :
+                                                  Elab.ClzAllocationExtends
+                                                    hoistState
+                                                    identifierPoppedState :=
+                                                Elab.ClzAllocationExtends.trans
+                                                  hPreCodeExt hAfterPreClz
+                                              have hPreCodeHoisted :
+                                                  HoistedFunctionsExtend
+                                                    hoistState preCodeState := by
+                                                intro entry hEntry
+                                                exact
+                                                  Elab.Stmt.List.elaborate_preserves_hoistedFunction_mem
+                                                    rawPre hPreCode hEntry
+                                              have hAfterHoistHoisted :
+                                                  HoistedFunctionsExtend
+                                                    hoistState
+                                                    identifierPoppedState :=
+                                                HoistedFunctionsExtend.trans
+                                                  hPreCodeHoisted
+                                                  hAfterPreHoisted
+                                              have hHoistPath :
+                                                  FrontendCompilationPath
+                                                    builtinContext contract
+                                                    functionPushedState
+                                                    hoistState :=
+                                                hPath.subpath
+                                                  hBeforeHoistClz
+                                                  hAfterHoistClz
+                                                  hAfterHoistHoisted
+                                              have hBeforePreCodeClz :
+                                                  Elab.ClzAllocationExtends
+                                                    elabState hoistState :=
+                                                Elab.ClzAllocationExtends.trans
+                                                  hBeforeHoistClz hHoistExt
+                                              have hPreCodePath :
+                                                  FrontendCompilationPath
+                                                    builtinContext contract
+                                                    hoistState preCodeState :=
+                                                hPath.subpath
+                                                  hBeforePreCodeClz
+                                                  hAfterPreClz
+                                                  hAfterPreHoisted
+                                              have hScopeScopes :
+                                                  scopeState.functionScopes =
+                                                    identifierPushedState.functionScopes :=
+                                                Elab.Stmt.List.localFunctionScope_preserves_functionScopes
+                                                  rawPre hScope
+                                              have hPushFunctionScopes :
+                                                  functionPushedState.functionScopes =
+                                                    generatedScope ::
+                                                      scopeState.functionScopes :=
+                                                Elab.pushFunctionScope_functionScopes
+                                                  hPushFunction
+                                              have hHoistScopes :
+                                                  hoistState.functionScopes =
+                                                    functionPushedState.functionScopes :=
+                                                Elab.Stmt.List.hoistLocalFunctions_preserves_functionScopes
+                                                  rawPre generatedScope hHoist
+                                              have hPreCodeScopes :
+                                                  preCodeState.functionScopes =
+                                                    hoistState.functionScopes :=
+                                                Elab.Stmt.List.elaborate_preserves_functionScopes
+                                                  rawPre hPreCode
+                                              have hFunctionPushedScopes :
+                                                  functionPushedState.functionScopes =
+                                                    generatedScope ::
+                                                      elabState.functionScopes := by
+                                                rw [hPushFunctionScopes,
+                                                  hScopeScopes,
+                                                  hPushIdentifierScopes]
+                                              have hScopeBinding :=
+                                                pathCompiledFunctionScope_of_localHoist
+                                                  hRawScope hScope hHoist
+                                                  hFunctionPushedScopes
+                                                  hHoistPath
+                                              have hLoopContext :
+                                                  PathCompiledContext
+                                                    builtinContext contract
+                                                    (rawContext.withFunctionScope
+                                                      rawScope)
+                                                    preCodeState.functionScopes := by
+                                                refine
+                                                  { objectBuiltins :=
+                                                      hContext.objectBuiltins
+                                                    functionScopes := ?_ }
+                                                rw [hPreCodeScopes,
+                                                  hHoistScopes,
+                                                  hFunctionPushedScopes]
+                                                exact
+                                                  .cons hScopeBinding
+                                                    hContext.functionScopes
+                                              have hPreRun :=
+                                                have hPreContext :
+                                                    PathCompiledContext
+                                                      builtinContext contract
+                                                      (rawContext.withFunctionScope
+                                                        rawScope)
+                                                      hoistState.functionScopes := by
+                                                  simpa [hPreCodeScopes] using
+                                                    hLoopContext
+                                                hSeq
+                                                  (state := state)
+                                                  (entryStore := state.store)
+                                                  (by cases state <;>
+                                                    simp [BlockEntryCompatible])
+                                                  hPreContext hPreCodePath
+                                                  hPreCode hPreNormalized
+                                              have hConditionScopes :
+                                                  conditionState.functionScopes =
+                                                    preCodeState.functionScopes :=
+                                                Elab.Expr.elaborate_preserves_functionScopes
+                                                  rawCondition hCondition
+                                              have hPostScopes :
+                                                  postState.functionScopes =
+                                                    conditionState.functionScopes :=
+                                                Elab.Stmt.List.elaborateBlock_preserves_functionScopes
+                                                  rawPost true hPost
+                                              have hPostContext :
+                                                  PathCompiledContext
+                                                    builtinContext contract
+                                                    (rawContext.withFunctionScope
+                                                      rawScope)
+                                                    conditionState.functionScopes := by
+                                                simpa [hConditionScopes] using
+                                                  hLoopContext
+                                              have hBodyContext :
+                                                  PathCompiledContext
+                                                    builtinContext contract
+                                                    (rawContext.withFunctionScope
+                                                      rawScope)
+                                                    postState.functionScopes := by
+                                                simpa [hPostScopes] using
+                                                  hPostContext
+                                              have hLengthFront :
+                                                  frontPreCode.length =
+                                                    rawPre.length :=
+                                                stmtList_elaborate_length
+                                                  hPreCode
+                                              have hLengthOrdered :
+                                                  orderedPre.length =
+                                                    rawPre.length := by
+                                                rw [StmtListNormalized.length_eq
+                                                  hPreNormalized,
+                                                  hLengthFront]
+                                              have hRawNonempty :
+                                                  rawPre ≠ [] := by
+                                                intro hEmpty
+                                                subst rawPre
+                                                simp
+                                                  [Elab.Stmt.List.hasImmediateFunctionDefinition]
+                                                  at hHasFunctions
+                                              have hOrderedNonempty :
+                                                  orderedPre ≠ [] := by
+                                                intro hEmpty
+                                                subst orderedPre
+                                                have : rawPre.length = 0 := by
+                                                  simpa using
+                                                    hLengthOrdered.symm
+                                                exact hRawNonempty
+                                                  (List.eq_nil_of_length_eq_zero
+                                                    this)
+                                              have hOrderedForm :
+                                                  orderedForStmt orderedPre
+                                                      orderedCondition
+                                                      orderedPost orderedBody =
+                                                    .Block
+                                                      (orderedPre ++
+                                                        [.For orderedCondition
+                                                          orderedPost
+                                                          orderedBody]) := by
+                                                cases orderedPre with
+                                                | nil =>
+                                                    exact
+                                                      (hOrderedNonempty rfl).elim
+                                                | cons head tail => rfl
+                                              rw [hOrderedForm]
+                                              apply
+                                                scopedStmtRunForward_of_exact
+                                              apply stmtRunForward_for_nonempty
+                                                hRawScope hLengthOrdered
+                                                hOrderedNonempty hSlack hPreRun
+                                              intro loopState
+                                              apply
+                                                loopRunForward_after_nonemptyPrefix
+                                              · intro n hN conditionEntry
+                                                apply exprRunForward_of_values
+                                                exact
+                                                  hExpr 0 n (by omega)
+                                                    (state := conditionEntry)
+                                                    hLoopContext
+                                                    hConditionPath hCondition
+                                                    hConditionNormalized
+                                              · intro n hN postEntry
+                                                exact
+                                                  hBlock 0 n (by omega)
+                                                    (state := postEntry)
+                                                    hPostContext hPostPath
+                                                    hPost hPostNormalized
+                                              · intro n hN bodyEntry
+                                                exact
+                                                  hBlock 0 n (by omega)
+                                                    (state := bodyEntry)
+                                                  hBodyContext hBodyPath
+                                                  hBody hBodyNormalized
+
+/-- Bundled semantic interface for one non-scope-retaining `for` initializer.
+The recursive frontend theorem constructs it from generic sequence
+preservation and successful `elaborateBlock ... false`. -/
+def EmptyForInitPathRunForwardAt
+    (fuel slack : Nat)
+    (builtinContext : Frontend.ObjectBuiltinContext)
+    (contract : Frontend.AstContract) : Prop :=
+  ∀ {rawContext : Raw.SourceSemantics.Context}
+    {rawCode : List Raw.Stmt} {front : List Frontend.Stmt}
+    {ordered : List Frontend.AstStmt}
+    {elabState finalElabState : Elab.State} {state : State},
+    Elab.Stmt.List.hasImmediateFunctionDefinition rawCode = false →
+      PathCompiledContext builtinContext contract
+        rawContext elabState.functionScopes →
+      FrontendCompilationPath builtinContext contract
+        elabState finalElabState →
+      (Elab.Stmt.List.elaborateBlock rawCode false).run elabState =
+        .ok (front, finalElabState) →
+      StmtListNormalized builtinContext front ordered →
+      ScopedSeqRunForward state.store fuel (fuel + slack)
+        (rawContext.withFunctionScope []) rawCode ordered contract state
+
+/-- Checked `for` preservation for the elaborator branch whose temporary
+initializer scope is popped before the condition. The corresponding raw scope
+is empty and is represented explicitly by the scope relation's `rawEmpty`
+constructor. -/
+theorem scopedStmtRunForward_for_withoutFunctions_of_path_below
+    {fuel slack : Nat}
+    {builtinContext : Frontend.ObjectBuiltinContext}
+    {contract : Frontend.AstContract}
+    (hExpr :
+      ∀ extra,
+        ScopedExprPathRunForwardBelow
+          (fuel + 1) (slack + extra) builtinContext contract)
+    (hBlock :
+      ∀ extra,
+        ScopedBlockPathRunForwardBelow
+          (fuel + 1) (slack + extra) builtinContext contract)
+    (hSeq :
+      ScopedSeqPathRunForwardAt
+        fuel (slack + 1) builtinContext contract)
+    (hInit :
+      EmptyForInitPathRunForwardAt
+        fuel (slack + 1) builtinContext contract)
+    {rawContext : Raw.SourceSemantics.Context}
+    {rawPre rawPost rawBody : List Raw.Stmt}
+    {rawCondition : Raw.Expr}
+    {front : Frontend.Stmt} {ordered : Frontend.AstStmt}
+    {elabState finalElabState : Elab.State}
+    {entryStore : EvmYul.Yul.VarStore} {state : State}
+    (hNoFunctions :
+      Elab.Stmt.List.hasImmediateFunctionDefinition rawPre = false)
+    (hSlack : rawPre.length + 1 ≤ slack)
+    (hContext :
+      PathCompiledContext builtinContext contract
+        rawContext elabState.functionScopes)
+    (hPath :
+      FrontendCompilationPath builtinContext contract
+        elabState finalElabState)
+    (hElab :
+      (Elab.Stmt.elaborate
+        (.forLoop rawPre rawCondition rawPost rawBody)).run elabState =
+          .ok (front, finalElabState))
+    (hNormalized : StmtNormalized builtinContext front ordered) :
+    ScopedStmtRunForward entryStore (fuel + 2) (fuel + 2 + slack)
+      rawContext (.forLoop rawPre rawCondition rawPost rawBody)
+      ordered contract state := by
+  unfold Elab.Stmt.elaborate at hElab
+  simp only [hNoFunctions, Bool.false_eq_true, ↓reduceIte] at hElab
+  simp [StateT.run_bind] at hElab
+  cases hPushIdentifier : Elab.pushIdentifierScope.run elabState with
+  | error err => simp [hPushIdentifier] at hElab
+  | ok pushIdentifierResult =>
+      rcases pushIdentifierResult with ⟨_, identifierPushedState⟩
+      simp [hPushIdentifier] at hElab
+      cases hPre :
+          (Elab.Stmt.List.elaborateBlock rawPre false).run
+            identifierPushedState with
+      | error err => simp [hPre] at hElab
+      | ok preResult =>
+          rcases preResult with ⟨frontPre, preState⟩
+          simp [hPre] at hElab
+          cases hCondition :
+              (Elab.Expr.elaborate rawCondition).run preState with
+          | error err => simp [hCondition] at hElab
+          | ok conditionResult =>
+              rcases conditionResult with
+                ⟨frontCondition, conditionState⟩
+              simp [hCondition] at hElab
+              cases hPost :
+                  (Elab.Stmt.List.elaborateBlock rawPost true).run
+                    conditionState with
+              | error err => simp [hPost] at hElab
+              | ok postResult =>
+                  rcases postResult with ⟨frontPost, postState⟩
+                  simp [hPost] at hElab
+                  cases hBody :
+                      (Elab.Stmt.List.elaborateBlock rawBody true).run
+                        postState with
+                  | error err => simp [hBody] at hElab
+                  | ok bodyResult =>
+                      rcases bodyResult with ⟨frontBody, bodyState⟩
+                      simp [hBody] at hElab
+                      cases hPopIdentifier :
+                          Elab.popIdentifierScope.run bodyState with
+                      | error err => simp [hPopIdentifier] at hElab
+                      | ok popIdentifierResult =>
+                          rcases popIdentifierResult with
+                            ⟨_, identifierPoppedState⟩
+                          simp [hPopIdentifier] at hElab
+                          rcases hElab with ⟨rfl, rfl⟩
+                          rcases StmtNormalized.for_parts hNormalized with
+                            ⟨orderedPre, orderedCondition,
+                              orderedPost, orderedBody, rfl,
+                              ⟨hPreNormalized⟩,
+                              ⟨hConditionNormalized⟩,
+                              ⟨hPostNormalized⟩,
+                              ⟨hBodyNormalized⟩⟩
+                          have hPushIdentifierExt :=
+                            Elab.pushIdentifierScope_preserves_clzAllocation
+                              hPushIdentifier hPath.entryValid
+                          have hPreExt :=
+                            Elab.Stmt.List.elaborateBlock_preserves_clzAllocation
+                              rawPre false hPre
+                              hPushIdentifierExt.after_valid
+                          have hConditionExt :=
+                            Elab.Expr.elaborate_preserves_clzAllocation
+                              rawCondition hCondition hPreExt.after_valid
+                          have hPostExt :=
+                            Elab.Stmt.List.elaborateBlock_preserves_clzAllocation
+                              rawPost true hPost
+                              hConditionExt.after_valid
+                          have hBodyExt :=
+                            Elab.Stmt.List.elaborateBlock_preserves_clzAllocation
+                              rawBody true hBody hPostExt.after_valid
+                          have hPopIdentifierExt :=
+                            Elab.popIdentifierScope_preserves_clzAllocation
+                              hPopIdentifier hBodyExt.after_valid
+                          have hConditionHoisted :
+                              HoistedFunctionsExtend preState
+                                conditionState := by
+                            intro entry hEntry
+                            exact
+                              Elab.Expr.elaborate_preserves_hoistedFunction_mem
+                                rawCondition hCondition hEntry
+                          have hPostHoisted :
+                              HoistedFunctionsExtend conditionState
+                                postState := by
+                            intro entry hEntry
+                            exact
+                              Elab.Stmt.List.elaborateBlock_preserves_hoistedFunction_mem
+                                rawPost true hPost hEntry
+                          have hBodyHoisted :
+                              HoistedFunctionsExtend postState bodyState := by
+                            intro entry hEntry
+                            exact
+                              Elab.Stmt.List.elaborateBlock_preserves_hoistedFunction_mem
+                                rawBody true hBody hEntry
+                          have hPopIdentifierHoisted :
+                              HoistedFunctionsExtend bodyState
+                                identifierPoppedState := by
+                            intro entry hEntry
+                            exact
+                              Elab.popIdentifierScope_preserves_hoistedFunction_mem
+                                hPopIdentifier hEntry
+                          have hAfterBodyHoisted :
+                              HoistedFunctionsExtend bodyState
+                                identifierPoppedState :=
+                            hPopIdentifierHoisted
+                          have hBeforeBodyClz :
+                              Elab.ClzAllocationExtends elabState postState :=
+                            Elab.ClzAllocationExtends.trans
+                              hPushIdentifierExt
+                              (Elab.ClzAllocationExtends.trans hPreExt
+                                (Elab.ClzAllocationExtends.trans
+                                  hConditionExt hPostExt))
+                          have hBodyPath :
+                              FrontendCompilationPath builtinContext contract
+                                postState bodyState :=
+                            hPath.subpath hBeforeBodyClz hPopIdentifierExt
+                              hAfterBodyHoisted
+                          have hAfterPostClz :
+                              Elab.ClzAllocationExtends postState
+                                identifierPoppedState :=
+                            Elab.ClzAllocationExtends.trans hBodyExt
+                              hPopIdentifierExt
+                          have hAfterPostHoisted :
+                              HoistedFunctionsExtend postState
+                                identifierPoppedState :=
+                            HoistedFunctionsExtend.trans hBodyHoisted
+                              hPopIdentifierHoisted
+                          have hBeforePostClz :
+                              Elab.ClzAllocationExtends elabState
+                                conditionState :=
+                            Elab.ClzAllocationExtends.trans
+                              hPushIdentifierExt
+                              (Elab.ClzAllocationExtends.trans hPreExt
+                                hConditionExt)
+                          have hPostPath :
+                              FrontendCompilationPath builtinContext contract
+                                conditionState postState :=
+                            hPath.subpath hBeforePostClz hAfterPostClz
+                              hAfterPostHoisted
+                          have hAfterConditionClz :
+                              Elab.ClzAllocationExtends conditionState
+                                identifierPoppedState :=
+                            Elab.ClzAllocationExtends.trans hPostExt
+                              hAfterPostClz
+                          have hBeforeConditionClz :
+                              Elab.ClzAllocationExtends elabState preState :=
+                            Elab.ClzAllocationExtends.trans
+                              hPushIdentifierExt hPreExt
+                          have hConditionPath :
+                              ClzCompilationPath contract preState
+                                conditionState :=
+                            (hPath.clz.suffixPath
+                              hBeforeConditionClz).prefixPath
+                                hAfterConditionClz
+                          have hAfterPreClz :
+                              Elab.ClzAllocationExtends preState
+                                identifierPoppedState :=
+                            Elab.ClzAllocationExtends.trans hConditionExt
+                              hAfterConditionClz
+                          have hAfterConditionHoisted :
+                              HoistedFunctionsExtend conditionState
+                                identifierPoppedState :=
+                            HoistedFunctionsExtend.trans hPostHoisted
+                              hAfterPostHoisted
+                          have hAfterPreHoisted :
+                              HoistedFunctionsExtend preState
+                                identifierPoppedState :=
+                            HoistedFunctionsExtend.trans hConditionHoisted
+                              hAfterConditionHoisted
+                          have hPrePath :
+                              FrontendCompilationPath builtinContext contract
+                                identifierPushedState preState :=
+                            hPath.subpath hPushIdentifierExt hAfterPreClz
+                              hAfterPreHoisted
+                          have hPushIdentifierScopes :
+                              identifierPushedState.functionScopes =
+                                elabState.functionScopes :=
+                            Elab.pushIdentifierScope_preserves_functionScopes
+                              hPushIdentifier
+                          have hPreScopes :
+                              preState.functionScopes =
+                                identifierPushedState.functionScopes :=
+                            Elab.Stmt.List.elaborateBlock_preserves_functionScopes
+                              rawPre false hPre
+                          have hPreContext :
+                              PathCompiledContext builtinContext contract
+                                rawContext
+                                identifierPushedState.functionScopes := by
+                            simpa [hPushIdentifierScopes] using hContext
+                          have hPreRun :=
+                            hInit (state := state) hNoFunctions
+                              hPreContext hPrePath
+                              hPre hPreNormalized
+                          have hLoopContext :
+                              PathCompiledContext builtinContext contract
+                                (rawContext.withFunctionScope [])
+                                preState.functionScopes := by
+                            simpa [hPreScopes, hPushIdentifierScopes] using
+                              hContext.withEmptyFunctionScope
+                          have hConditionScopes :
+                              conditionState.functionScopes =
+                                preState.functionScopes :=
+                            Elab.Expr.elaborate_preserves_functionScopes
+                              rawCondition hCondition
+                          have hPostScopes :
+                              postState.functionScopes =
+                                conditionState.functionScopes :=
+                            Elab.Stmt.List.elaborateBlock_preserves_functionScopes
+                              rawPost true hPost
+                          have hPostContext :
+                              PathCompiledContext builtinContext contract
+                                (rawContext.withFunctionScope [])
+                                conditionState.functionScopes := by
+                            simpa [hConditionScopes] using hLoopContext
+                          have hBodyContext :
+                              PathCompiledContext builtinContext contract
+                                (rawContext.withFunctionScope [])
+                                postState.functionScopes := by
+                            simpa [hPostScopes] using hPostContext
+                          have hLengthFront :
+                              frontPre.length = rawPre.length :=
+                            stmtList_elaborateBlock_false_length hPre
+                          have hLengthOrdered :
+                              orderedPre.length = rawPre.length := by
+                            rw [StmtListNormalized.length_eq hPreNormalized,
+                              hLengthFront]
+                          have hRawScope :=
+                            rawFunctionScope_of_noImmediate hNoFunctions
+                          cases rawPre with
+                          | nil =>
+                              have hOrderedEmpty : orderedPre = [] :=
+                                List.eq_nil_of_length_eq_zero (by
+                                  simpa using hLengthOrdered)
+                              subst orderedPre
+                              apply scopedStmtRunForward_of_exact
+                              apply stmtRunForward_for_empty
+                              intro loopState
+                              apply loopRunForward_of_components
+                              · intro n hN conditionEntry
+                                apply exprRunForward_of_values
+                                exact
+                                  hExpr 2 n (by omega)
+                                    (state := conditionEntry)
+                                    hLoopContext hConditionPath hCondition
+                                    hConditionNormalized
+                              · intro n hN postEntry
+                                exact
+                                  hBlock 2 n (by omega)
+                                    (state := postEntry)
+                                    hPostContext hPostPath hPost
+                                    hPostNormalized
+                              · intro n hN bodyEntry
+                                exact
+                                  hBlock 2 n (by omega)
+                                    (state := bodyEntry)
+                                    hBodyContext hBodyPath hBody
+                                    hBodyNormalized
+                          | cons rawHead rawTail =>
+                              have hOrderedNonempty : orderedPre ≠ [] := by
+                                intro hEmpty
+                                subst orderedPre
+                                simp at hLengthOrdered
+                              have hOrderedForm :
+                                  orderedForStmt orderedPre orderedCondition
+                                      orderedPost orderedBody =
+                                    .Block
+                                      (orderedPre ++
+                                        [.For orderedCondition orderedPost
+                                          orderedBody]) := by
+                                cases orderedPre with
+                                | nil => exact (hOrderedNonempty rfl).elim
+                                | cons head tail => rfl
+                              rw [hOrderedForm]
+                              apply scopedStmtRunForward_of_exact
+                              apply stmtRunForward_for_nonempty
+                                hRawScope hLengthOrdered hOrderedNonempty
+                                hSlack hPreRun
+                              intro loopState
+                              apply loopRunForward_after_nonemptyPrefix
+                              · intro n hN conditionEntry
+                                apply exprRunForward_of_values
+                                exact
+                                  hExpr 0 n (by omega)
+                                    (state := conditionEntry)
+                                    hLoopContext hConditionPath hCondition
+                                    hConditionNormalized
+                              · intro n hN postEntry
+                                exact
+                                  hBlock 0 n (by omega)
+                                    (state := postEntry)
+                                    hPostContext hPostPath hPost
+                                    hPostNormalized
+                              · intro n hN bodyEntry
+                                exact
+                                  hBlock 0 n (by omega)
+                                    (state := bodyEntry)
+                                    hBodyContext hBodyPath hBody
+                                    hBodyNormalized
+
+theorem scopedStmtRunForward_for_of_path_below
+    {fuel slack : Nat}
+    {builtinContext : Frontend.ObjectBuiltinContext}
+    {contract : Frontend.AstContract}
+    (hExpr :
+      ∀ extra,
+        ScopedExprPathRunForwardBelow
+          (fuel + 1) (slack + extra) builtinContext contract)
+    (hBlock :
+      ∀ extra,
+        ScopedBlockPathRunForwardBelow
+          (fuel + 1) (slack + extra) builtinContext contract)
+    (hSeq :
+      ScopedSeqPathRunForwardAt
+        fuel (slack + 1) builtinContext contract)
+    (hInit :
+      EmptyForInitPathRunForwardAt
+        fuel (slack + 1) builtinContext contract)
+    {rawContext : Raw.SourceSemantics.Context}
+    {rawPre rawPost rawBody : List Raw.Stmt}
+    {rawCondition : Raw.Expr}
+    {front : Frontend.Stmt} {ordered : Frontend.AstStmt}
+    {elabState finalElabState : Elab.State}
+    {entryStore : EvmYul.Yul.VarStore} {state : State}
+    (hSlack : rawPre.length + 1 ≤ slack)
+    (hContext :
+      PathCompiledContext builtinContext contract
+        rawContext elabState.functionScopes)
+    (hPath :
+      FrontendCompilationPath builtinContext contract
+        elabState finalElabState)
+    (hElab :
+      (Elab.Stmt.elaborate
+        (.forLoop rawPre rawCondition rawPost rawBody)).run elabState =
+          .ok (front, finalElabState))
+    (hNormalized : StmtNormalized builtinContext front ordered) :
+    ScopedStmtRunForward entryStore (fuel + 2) (fuel + 2 + slack)
+      rawContext (.forLoop rawPre rawCondition rawPost rawBody)
+      ordered contract state := by
+  cases hHasFunctions :
+      Elab.Stmt.List.hasImmediateFunctionDefinition rawPre with
+  | false =>
+      exact
+        scopedStmtRunForward_for_withoutFunctions_of_path_below
+          hExpr hBlock hSeq hInit
+          hHasFunctions hSlack hContext hPath hElab hNormalized
+  | true =>
+      exact
+        scopedStmtRunForward_for_withFunctions_of_path_below
+          hExpr hBlock hSeq hHasFunctions hSlack hContext hPath
+          hElab hNormalized
 
 theorem scopedStmtPathRunForwardAt_zero
     {slack : Nat}
@@ -10436,6 +11621,186 @@ theorem scopedBlockPathRunForwardAt_succ_of_seq
                                   hRawScope hCodeRun
                               simpa [Nat.add_assoc, Nat.add_comm,
                                 Nat.add_left_comm] using hBlock
+
+/-- A non-scope-creating frontend block still creates a temporary generated
+function scope while elaborating its list, then pops it before returning. When
+the syntax contains no immediate function declaration, the matching raw scope
+is exactly empty; this theorem packages the resulting initializer sequence. -/
+theorem scopedSeqRunForward_of_elaborateBlock_false
+    {fuel slack : Nat}
+    {builtinContext : Frontend.ObjectBuiltinContext}
+    {contract : Frontend.AstContract}
+    (hSeq :
+      ScopedSeqPathRunForwardAt fuel slack builtinContext contract)
+    {rawContext : Raw.SourceSemantics.Context}
+    {rawCode : List Raw.Stmt} {front : List Frontend.Stmt}
+    {ordered : List Frontend.AstStmt}
+    {elabState finalElabState : Elab.State} {state : State}
+    (hNoFunctions :
+      Elab.Stmt.List.hasImmediateFunctionDefinition rawCode = false)
+    (hContext :
+      PathCompiledContext builtinContext contract
+        rawContext elabState.functionScopes)
+    (hPath :
+      FrontendCompilationPath builtinContext contract
+        elabState finalElabState)
+    (hElab :
+      (Elab.Stmt.List.elaborateBlock rawCode false).run elabState =
+        .ok (front, finalElabState))
+    (hNormalized : StmtListNormalized builtinContext front ordered) :
+    ScopedSeqRunForward state.store fuel (fuel + slack)
+      (rawContext.withFunctionScope []) rawCode ordered contract state := by
+  unfold Elab.Stmt.List.elaborateBlock at hElab
+  simp [StateT.run_bind] at hElab
+  cases hScope :
+      (Elab.Stmt.List.localFunctionScope rawCode).run elabState with
+  | error err => simp [hScope] at hElab
+  | ok scopeResult =>
+      rcases scopeResult with ⟨generatedScope, scopeState⟩
+      simp [hScope] at hElab
+      cases hPushFunction :
+          (Elab.pushFunctionScope generatedScope).run scopeState with
+      | error err => simp [hPushFunction] at hElab
+      | ok pushFunctionResult =>
+          rcases pushFunctionResult with ⟨_, functionPushedState⟩
+          simp [hPushFunction] at hElab
+          cases hHoist :
+              (Elab.Stmt.List.hoistLocalFunctions
+                rawCode generatedScope).run functionPushedState with
+          | error err => simp [hHoist] at hElab
+          | ok hoistResult =>
+              rcases hoistResult with ⟨_, hoistState⟩
+              simp [hHoist] at hElab
+              cases hCode :
+                  (Elab.Stmt.List.elaborate rawCode).run hoistState with
+              | error err => simp [hCode] at hElab
+              | ok codeResult =>
+                  rcases codeResult with ⟨frontCode, codeState⟩
+                  simp [hCode] at hElab
+                  cases hPopFunction :
+                      Elab.popFunctionScope.run codeState with
+                  | error err => simp [hPopFunction] at hElab
+                  | ok popFunctionResult =>
+                      rcases popFunctionResult with
+                        ⟨_, functionPoppedState⟩
+                      simp [hPopFunction] at hElab
+                      rcases hElab with ⟨rfl, rfl⟩
+                      rcases localFunctionScope_rawFunctionScope hScope with
+                        ⟨rawScope, hRawScope, _hNames⟩
+                      have hRawEmpty :=
+                        rawFunctionScope_eq_empty_of_noImmediate
+                          hNoFunctions hRawScope
+                      subst rawScope
+                      have hScopeExt :=
+                        Elab.Stmt.List.localFunctionScope_preserves_clzAllocation
+                          rawCode hScope hPath.entryValid
+                      have hPushFunctionExt :=
+                        Elab.pushFunctionScope_preserves_clzAllocation
+                          generatedScope hPushFunction hScopeExt.after_valid
+                      have hHoistExt :=
+                        Elab.Stmt.List.hoistLocalFunctions_preserves_clzAllocation
+                          rawCode generatedScope hHoist
+                          hPushFunctionExt.after_valid
+                      have hCodeExt :=
+                        Elab.Stmt.List.elaborate_preserves_clzAllocation
+                          rawCode hCode hHoistExt.after_valid
+                      have hPopFunctionExt :=
+                        Elab.popFunctionScope_preserves_clzAllocation
+                          hPopFunction hCodeExt.after_valid
+                      have hCodeHoisted :
+                          HoistedFunctionsExtend hoistState codeState := by
+                        intro entry hEntry
+                        exact
+                          Elab.Stmt.List.elaborate_preserves_hoistedFunction_mem
+                            rawCode hCode hEntry
+                      have hPopFunctionHoisted :
+                          HoistedFunctionsExtend codeState
+                            functionPoppedState := by
+                        intro entry hEntry
+                        exact
+                          Elab.popFunctionScope_preserves_hoistedFunction_mem
+                            hPopFunction hEntry
+                      have hBeforeHoistClz :
+                          Elab.ClzAllocationExtends elabState
+                            functionPushedState :=
+                        Elab.ClzAllocationExtends.trans hScopeExt
+                          hPushFunctionExt
+                      have hAfterHoistClz :
+                          Elab.ClzAllocationExtends hoistState
+                            functionPoppedState :=
+                        Elab.ClzAllocationExtends.trans hCodeExt
+                          hPopFunctionExt
+                      have hAfterHoistHoisted :
+                          HoistedFunctionsExtend hoistState
+                            functionPoppedState :=
+                        HoistedFunctionsExtend.trans hCodeHoisted
+                          hPopFunctionHoisted
+                      have hHoistPath :
+                          FrontendCompilationPath builtinContext contract
+                            functionPushedState hoistState :=
+                        hPath.subpath hBeforeHoistClz hAfterHoistClz
+                          hAfterHoistHoisted
+                      have hBeforeCodeClz :
+                          Elab.ClzAllocationExtends elabState hoistState :=
+                        Elab.ClzAllocationExtends.trans hBeforeHoistClz
+                          hHoistExt
+                      have hCodePath :
+                          FrontendCompilationPath builtinContext contract
+                            hoistState codeState :=
+                        hPath.subpath hBeforeCodeClz hPopFunctionExt
+                          hPopFunctionHoisted
+                      have hScopeScopes :
+                          scopeState.functionScopes =
+                            elabState.functionScopes :=
+                        Elab.Stmt.List.localFunctionScope_preserves_functionScopes
+                          rawCode hScope
+                      have hPushFunctionScopes :
+                          functionPushedState.functionScopes =
+                            generatedScope :: scopeState.functionScopes :=
+                        Elab.pushFunctionScope_functionScopes hPushFunction
+                      have hHoistScopes :
+                          hoistState.functionScopes =
+                            functionPushedState.functionScopes :=
+                        Elab.Stmt.List.hoistLocalFunctions_preserves_functionScopes
+                          rawCode generatedScope hHoist
+                      have hFunctionPushedScopes :
+                          functionPushedState.functionScopes =
+                            generatedScope :: elabState.functionScopes := by
+                        rw [hPushFunctionScopes, hScopeScopes]
+                      have hScopeBinding :=
+                        pathCompiledFunctionScope_of_localHoist
+                          hRawScope hScope hHoist hFunctionPushedScopes
+                          hHoistPath
+                      have hCodeContext :
+                          PathCompiledContext builtinContext contract
+                            (rawContext.withFunctionScope [])
+                            hoistState.functionScopes := by
+                        refine
+                          { objectBuiltins := hContext.objectBuiltins
+                            functionScopes := ?_ }
+                        rw [hHoistScopes, hFunctionPushedScopes]
+                        exact
+                          .cons hScopeBinding hContext.functionScopes
+                      exact
+                        hSeq
+                          (entryStore := state.store)
+                          (state := state)
+                          (by cases state <;>
+                            simp [BlockEntryCompatible])
+                          hCodeContext hCodePath hCode hNormalized
+
+theorem emptyForInitPathRunForwardAt_of_seq
+    {fuel slack : Nat}
+    {builtinContext : Frontend.ObjectBuiltinContext}
+    {contract : Frontend.AstContract}
+    (hSeq :
+      ScopedSeqPathRunForwardAt fuel slack builtinContext contract) :
+    EmptyForInitPathRunForwardAt fuel slack builtinContext contract := by
+  intro rawContext rawCode front ordered elabState finalElabState state
+    hNoFunctions hContext hPath hElab hNormalized
+  exact
+    scopedSeqRunForward_of_elaborateBlock_false
+      hSeq hNoFunctions hContext hPath hElab hNormalized
 
 /-- Raw block-body sequence preservation against the ordered dispatcher
 sequence, before both sides apply their lexical block store restriction. -/
