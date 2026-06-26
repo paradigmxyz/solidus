@@ -1388,5 +1388,6 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Assembly.GasfulBridge.evm_call_error_eq_outOfFuel
 #print axioms EvmCompiler.Assembly.GasfulBridge.positiveExternalPrimRefinement
 #print axioms EvmCompiler.Assembly.GasfulBridge.runRefinesOpen_recursive
+#print axioms EvmCompiler.Yul.EndToEnd.optimizedSolcYulToGasfulRawBytecodeOfRecursiveFrameBridge
 #print axioms EvmCompiler.Yul.EndToEnd.optimizedSolcYulToRawBytecodeFinished
 #print axioms EvmCompiler.Yul.EndToEnd.optimizedSolcYulToRawBytecodeFinishedLegacy

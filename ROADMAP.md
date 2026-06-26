@@ -220,8 +220,14 @@ Gasful EVM bridge checkpoint:
   using `OpenStateRel` and a reachable-PC `FrameCodeInvariant`. The concrete
   CALL/CREATE step determines the open response, including EIP-150 and returned
   gas; CALL proof-fuel exhaustion and CREATE parent OOG remain explicit prefix
-  outcomes. Next derive the frame-code invariant from the compiler artifact and
-  discharge the public gasful end-to-end bridge premise.
+  outcomes.
+- [x] Compose that recursive theorem with the public optimized-Yul theorem in
+  `optimizedSolcYulToGasfulRawBytecodeOfRecursiveFrameBridge`; this removes the
+  caller-supplied whole-run bridge and external-response oracle. Its remaining
+  semantic premises are `FrameCodeInvariant` and the initial `OpenStateRel`.
+- [ ] Derive `FrameCodeInvariant` from the compiler artifact's control/stack
+  invariant. Decoding correctness alone is insufficient because `D_J` scans
+  appended object payload bytes as well as laid-out executable code.
 
 `Compiler.StackArtifact` is the sole code-body artifact and
 `Solidity.Frontend.VerifiedStackObjectArtifact` is the sole recursive object
