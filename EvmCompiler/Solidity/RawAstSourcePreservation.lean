@@ -1559,6 +1559,52 @@ end ExprNormalized
 
 namespace StmtNormalized
 
+theorem setimmutable_args_eq_three
+    {context : Frontend.ObjectBuiltinContext}
+    {args : List Frontend.Expr} {ordered : Frontend.AstStmt}
+    (hNormalized :
+      StmtNormalized context
+        (.exprStmt (.call .objectBuiltin "setimmutable" args)) ordered) :
+    ∃ base nameArg value, args = [base, nameArg, value] := by
+  by_contra hNoThree
+  rcases hNormalized with ⟨resolved, hResolve, hToYul⟩
+  have hGenericResolve :
+      Frontend.Stmt.resolveObjectBuiltinsIn?
+          (.exprStmt (.call .objectBuiltin "setimmutable" args)) context =
+        (Frontend.Expr.resolveObjectBuiltinsIn?
+          (.call .objectBuiltin "setimmutable" args) context).bind
+            (fun expr => some (.exprStmt expr)) := by
+    cases args with
+    | nil => simp [Frontend.Stmt.resolveObjectBuiltinsIn?]
+    | cons base rest =>
+        cases rest with
+        | nil => simp [Frontend.Stmt.resolveObjectBuiltinsIn?]
+        | cons nameArg rest =>
+            cases rest with
+            | nil => simp [Frontend.Stmt.resolveObjectBuiltinsIn?]
+            | cons value rest =>
+                cases rest with
+                | nil => exact False.elim (hNoThree ⟨base, nameArg, value, rfl⟩)
+                | cons extra tail =>
+                    simp [Frontend.Stmt.resolveObjectBuiltinsIn?]
+  rw [hGenericResolve] at hResolve
+  cases hExprResolve :
+      Frontend.Expr.resolveObjectBuiltinsIn?
+        (.call .objectBuiltin "setimmutable" args) context with
+  | none => simp [hExprResolve] at hResolve
+  | some resolvedExpr =>
+      simp [hExprResolve] at hResolve
+      subst resolved
+      unfold Frontend.Stmt.toYul? at hToYul
+      cases hExprToYul : resolvedExpr.toYul? with
+      | none => simp [hExprToYul] at hToYul
+      | some orderedExpr =>
+          exact False.elim
+            (ExprNormalized.setimmutable_call_false
+              { resolved := resolvedExpr
+                resolve := hExprResolve
+                toYul := hExprToYul })
+
 theorem let_none_ordered
     {context : Frontend.ObjectBuiltinContext}
     {names : List Name} {ordered : Frontend.AstStmt}
@@ -5606,6 +5652,12 @@ theorem exprValuesRunForward_of_scoped_elaborated_clz
 def clzFrontendSlack : Nat :=
   Raw.ClzPreservation.helperBodyFuel + 1
 
+/-- Compiler-owned frontend expansion budget at one raw semantic fuel. The
+fixed component executes the generated `clz` helper body; each additional raw
+fuel level covers at most one nested frontend control/call expansion. -/
+def sourceFuelFrontendSlack (rawFuel : Nat) : Nat :=
+  Raw.ClzPreservation.helperBodyFuel + rawFuel
+
 theorem clzElaborationRunForwardAt_zero
     {builtinContext : Frontend.ObjectBuiltinContext}
     {contract : Frontend.AstContract} :
@@ -5700,6 +5752,44 @@ theorem clzPathRunForwardAt_succ_succ
       hArgTarget hHelperFuel
   simpa [clzFrontendSlack, Nat.add_assoc, Nat.add_comm,
     Nat.add_left_comm] using hCall
+
+/-- Fuel-indexed generated-`clz` preservation at any compiler budget at least
+`sourceFuelFrontendSlack`. The recursive argument receives exactly one less
+slack, matching the one extra generated call layer. -/
+theorem clzPathRunForwardAt_succ_succ_of_slack
+    {argFuel slack : Nat}
+    {builtinContext : Frontend.ObjectBuiltinContext}
+    {contract : Frontend.AstContract}
+    (hSlack : sourceFuelFrontendSlack (argFuel + 2) ≤ slack)
+    (hExpr :
+      ScopedExprPathRunForwardAt
+        (argFuel + 1) (slack - 1) builtinContext contract) :
+    ClzPathRunForwardAt
+      (argFuel + 2) slack builtinContext contract := by
+  intro rawContext rawArgs front ordered elabState finalElabState state
+    hContext hPath hElab hNormalized
+  have hArgTarget :
+      2 ≤ (argFuel + 1) + (slack - 1) := by
+    unfold sourceFuelFrontendSlack at hSlack
+    rw [Raw.ClzPreservation.helperBodyFuel_value] at hSlack
+    omega
+  have hHelperFuel :
+      Raw.ClzPreservation.helperBodyFuel + 2 ≤
+        (argFuel + 1) + (slack - 1) + 1 := by
+    unfold sourceFuelFrontendSlack at hSlack
+    omega
+  have hCall :=
+    exprValuesRunForward_of_scoped_elaborated_clz_path
+      (state := state) hExpr hContext hPath hElab hNormalized
+        hArgTarget hHelperFuel
+  have hPositive : 1 ≤ slack := by
+    unfold sourceFuelFrontendSlack at hSlack
+    omega
+  have hTargetFuel :
+      (argFuel + 1 + (slack - 1)) + 2 = argFuel + 2 + slack := by
+    omega
+  rw [hTargetFuel] at hCall
+  exact hCall
 
 /-- Call-body execution and caller restoration supplied by one bundled
 generated-call occurrence, independently of its argument-fuel schedule. -/
@@ -8077,6 +8167,59 @@ private theorem loopReentryRunForward
   cases rawLoopDone <;>
     exact Simulation.Interaction.ForwardRel.done rfl
 
+private theorem orderedExecSeq_append
+    {fuel : Nat} {pre suffix : List Frontend.AstStmt}
+    {contract : Frontend.AstContract} {state : State}
+    (hPre : pre ≠ []) :
+    Yul.InteractionSemantics.execSeq fuel
+        (pre ++ suffix) (some contract) state =
+      Simulation.Interaction.bind
+        (Yul.InteractionSemantics.execSeq fuel
+          pre (some contract) state)
+        (fun stateAfterPre =>
+          match stateAfterPre with
+          | .Ok _ _ =>
+              Yul.InteractionSemantics.execSeq (fuel - pre.length) suffix
+                (some contract) stateAfterPre
+          | .OutOfFuel | .Checkpoint _ => pure stateAfterPre) := by
+  induction pre generalizing fuel state with
+  | nil => exact (hPre rfl).elim
+  | cons head rest ih =>
+      cases fuel with
+      | zero =>
+          simp [Yul.InteractionSemantics.ExecSeq.zero,
+            Yul.InteractionSemantics.Primitive.fail]
+      | succ residual =>
+          rw [List.cons_append]
+          rw [Yul.InteractionSemantics.ExecSeq.cons_succ]
+          rw [Yul.InteractionSemantics.ExecSeq.cons_succ]
+          rw [Simulation.Interaction.bind_assoc]
+          apply congrArg
+          funext stateAfterHead
+          cases stateAfterHead with
+          | OutOfFuel => rfl
+          | Checkpoint jump => rfl
+          | Ok shared vars =>
+              cases rest with
+              | nil =>
+                  cases residual with
+                  | zero =>
+                      simp [Yul.InteractionSemantics.ExecSeq.zero,
+                        Yul.InteractionSemantics.Primitive.fail]
+                  | succ tailFuel =>
+                      rw [Yul.InteractionSemantics.ExecSeq.nil_succ]
+                      change _ =
+                        Simulation.Interaction.bind
+                          (Simulation.Interaction.done
+                            (.ok (EvmYul.Yul.State.Ok shared vars))) _
+                      rw [Simulation.Interaction.bind_done_ok]
+                      simp
+              | cons next tail =>
+                  rw [ih (by simp)]
+                  simp only [List.length_cons]
+                  rw [show residual - (tail.length + 1) =
+                    residual + 1 - (tail.length + 1 + 1) by omega]
+
 private theorem orderedExecSeq_append_of_nonempty
     {fuel : Nat} {pre suffix : List Frontend.AstStmt}
     {contract : Frontend.AstContract} {state : State}
@@ -8092,37 +8235,63 @@ private theorem orderedExecSeq_append_of_nonempty
               Yul.InteractionSemantics.execSeq fuel suffix
                 (some contract) stateAfterPre
           | .OutOfFuel | .Checkpoint _ => pure stateAfterPre) := by
-  induction pre generalizing fuel state with
-  | nil => exact (hPre rfl).elim
-  | cons head rest ih =>
-      rw [show fuel + (head :: rest).length =
-        (fuel + rest.length) + 1 by simp [Nat.add_assoc]]
-      rw [List.cons_append]
-      rw [Yul.InteractionSemantics.ExecSeq.cons_succ]
-      rw [Yul.InteractionSemantics.ExecSeq.cons_succ]
-      rw [Simulation.Interaction.bind_assoc]
-      apply congrArg
-      funext stateAfterHead
-      cases stateAfterHead with
-      | OutOfFuel => rfl
-      | Checkpoint jump => rfl
-      | Ok shared vars =>
-          cases rest with
-          | nil =>
-              cases fuel with
-              | zero =>
-                  simp [Yul.InteractionSemantics.ExecSeq.zero,
-                    Yul.InteractionSemantics.Primitive.fail]
-              | succ residual =>
-                  simp only [List.length_nil, Nat.add_zero, List.nil_append]
-                  rw [Yul.InteractionSemantics.ExecSeq.nil_succ]
-                  change _ =
-                    Simulation.Interaction.bind
-                      (Simulation.Interaction.done
-                        (.ok (EvmYul.Yul.State.Ok shared vars))) _
-                  rw [Simulation.Interaction.bind_done_ok]
-          | cons next tail =>
-              exact ih (by simp)
+  simpa using
+    (orderedExecSeq_append (fuel := fuel + pre.length) hPre)
+
+/-- A regularly completed raw statement list must have consumed fewer list
+steps than the supplied source fuel. Abrupt states and errors impose no bound;
+they never enter an appended continuation. -/
+def RawSeqRegularFuelBound (fuel : Nat) (code : List Raw.Stmt) :
+    Except Failure State → Prop
+  | .ok (.Ok _ _) => code.length < fuel
+  | .error _ | .ok .OutOfFuel | .ok (.Checkpoint _) => True
+
+theorem rawExecSeq_allDone_regular_fuel_bound
+    (fuel : Nat) (context : Raw.SourceSemantics.Context)
+    (code : List Raw.Stmt) (state : State) :
+    Simulation.Interaction.AllDone
+      (RawSeqRegularFuelBound fuel code)
+      (Raw.SourceSemantics.execSeq fuel context code state) := by
+  induction fuel generalizing code state with
+  | zero =>
+      rw [Raw.SourceSemantics.execSeq_zero]
+      exact .done (by simp [RawSeqRegularFuelBound])
+  | succ fuel ih =>
+      cases code with
+      | nil =>
+          rw [Raw.SourceSemantics.ExecSeq.nil_succ]
+          exact .done (by cases state <;> simp [RawSeqRegularFuelBound])
+      | cons head rest =>
+          rw [Raw.SourceSemantics.ExecSeq.cons_succ]
+          refine
+            Simulation.Interaction.AllDone.bind
+              (Simulation.Interaction.AllDone.trivial
+                (Raw.SourceSemantics.exec fuel context head state)) ?_ ?_
+          · intro error _hError
+            simp [RawSeqRegularFuelBound]
+          · intro stateAfterHead _hHead
+            cases stateAfterHead with
+            | OutOfFuel =>
+                exact .done (by simp [RawSeqRegularFuelBound])
+            | Checkpoint jump =>
+                exact .done (by simp [RawSeqRegularFuelBound])
+            | Ok shared store =>
+                exact
+                  Simulation.Interaction.AllDone.mono
+                    (ih rest (.Ok shared store)) (by
+                      intro outcome hOutcome
+                      cases outcome with
+                      | error error =>
+                          simp [RawSeqRegularFuelBound]
+                      | ok finalState =>
+                          cases finalState with
+                          | OutOfFuel =>
+                              simp [RawSeqRegularFuelBound]
+                          | Checkpoint jump =>
+                              simp [RawSeqRegularFuelBound]
+                          | Ok finalShared finalStore =>
+                              simp [RawSeqRegularFuelBound] at hOutcome ⊢
+                              omega)
 
 private theorem orderedExecSeq_single_for
     {fuel : Nat} {condition : Frontend.AstExpr}
@@ -8564,7 +8733,6 @@ theorem stmtRunForward_for_nonempty
     (hScope : Raw.SourceSemantics.functionScope? rawPre = some scope)
     (hLength : orderedPre.length = rawPre.length)
     (hNonempty : orderedPre ≠ [])
-    (hSlack : rawPre.length + 1 ≤ slack)
     (hPre :
       Simulation.Interaction.ForwardRel
         Yul.FunctionsInteractionPrimitive.Truncated
@@ -8601,21 +8769,16 @@ theorem stmtRunForward_for_nonempty
   simp only [hScope]
   rw [show fuel + 2 + slack = (fuel + 1 + slack) + 1 by omega]
   rw [Yul.InteractionSemantics.Exec.block_succ]
-  have hTargetFuel :
-      fuel + 1 + slack =
-        (fuel + slack - (rawHead :: rawTail).length - 1 + 2) +
-          orderedPre.length := by
-    omega
-  rw [hTargetFuel]
-  rw [orderedExecSeq_append_of_nonempty hNonempty]
+  rw [orderedExecSeq_append hNonempty]
   simp only [Simulation.Interaction.bind_assoc]
-  have hPre' := hPre
-  rw [show fuel + (slack + 1) =
-    fuel + slack - (rawHead :: rawTail).length - 1 + 2 +
-      orderedPre.length by omega]
-    at hPre'
+  have hPre' :=
+    Simulation.Interaction.ForwardRel.strengthen_left hPre
+      (rawExecSeq_allDone_regular_fuel_bound fuel
+        (context.withFunctionScope scope) (rawHead :: rawTail) state)
+  rw [show fuel + (slack + 1) = fuel + 1 + slack by omega] at hPre'
   refine Simulation.Interaction.ForwardRel.bind_custom hPre' ?_
   intro rawPreDone orderedPreDone hPreDone
+  rcases hPreDone with ⟨hPreDone, hFuelBound⟩
   cases hPreDone with
   | error hError =>
       subst_vars
@@ -8624,6 +8787,11 @@ theorem stmtRunForward_for_nonempty
       cases rawState with
       | Ok shared vars =>
           subst orderedState
+          have hFuel : (rawHead :: rawTail).length < fuel := hFuelBound
+          rw [show fuel + 1 + slack - orderedPre.length =
+            (fuel + slack - (rawHead :: rawTail).length - 1) + 2 by
+              rw [hLength]
+              omega]
           exact loopRestrictedRunForward (hLoop (.Ok shared vars))
       | OutOfFuel =>
           cases hState with
@@ -9241,6 +9409,13 @@ def ScopedSeqPathRunForwardAt
       ScopedSeqRunForward entryStore rawFuel (rawFuel + slack)
         rawContext rawCode ordered contract state
 
+def ScopedSeqPathRunForwardBelow
+    (bound slack : Nat)
+    (builtinContext : Frontend.ObjectBuiltinContext)
+    (contract : Frontend.AstContract) : Prop :=
+  ∀ rawFuel, rawFuel < bound →
+    ScopedSeqPathRunForwardAt rawFuel slack builtinContext contract
+
 /-- Build the pointwise switch-case interface from the actual checked case-list
 elaboration path. Each case body is discharged by the generic recursive block
 theorem at the same source fuel. -/
@@ -9506,7 +9681,6 @@ theorem scopedStmtRunForward_for_withFunctions_of_path_below
     {entryStore : EvmYul.Yul.VarStore} {state : State}
     (hHasFunctions :
       Elab.Stmt.List.hasImmediateFunctionDefinition rawPre = true)
-    (hSlack : rawPre.length + 1 ≤ slack)
     (hContext :
       PathCompiledContext builtinContext contract
         rawContext elabState.functionScopes)
@@ -9976,7 +10150,7 @@ theorem scopedStmtRunForward_for_withFunctions_of_path_below
                                                 scopedStmtRunForward_of_exact
                                               apply stmtRunForward_for_nonempty
                                                 hRawScope hLengthOrdered
-                                                hOrderedNonempty hSlack hPreRun
+                                                hOrderedNonempty hPreRun
                                               intro loopState
                                               apply
                                                 loopRunForward_after_nonemptyPrefix
@@ -10053,7 +10227,6 @@ theorem scopedStmtRunForward_for_withoutFunctions_of_path_below
     {entryStore : EvmYul.Yul.VarStore} {state : State}
     (hNoFunctions :
       Elab.Stmt.List.hasImmediateFunctionDefinition rawPre = false)
-    (hSlack : rawPre.length + 1 ≤ slack)
     (hContext :
       PathCompiledContext builtinContext contract
         rawContext elabState.functionScopes)
@@ -10341,7 +10514,7 @@ theorem scopedStmtRunForward_for_withoutFunctions_of_path_below
                               apply scopedStmtRunForward_of_exact
                               apply stmtRunForward_for_nonempty
                                 hRawScope hLengthOrdered hOrderedNonempty
-                                hSlack hPreRun
+                                hPreRun
                               intro loopState
                               apply loopRunForward_after_nonemptyPrefix
                               · intro n hN conditionEntry
@@ -10388,7 +10561,6 @@ theorem scopedStmtRunForward_for_of_path_below
     {front : Frontend.Stmt} {ordered : Frontend.AstStmt}
     {elabState finalElabState : Elab.State}
     {entryStore : EvmYul.Yul.VarStore} {state : State}
-    (hSlack : rawPre.length + 1 ≤ slack)
     (hContext :
       PathCompiledContext builtinContext contract
         rawContext elabState.functionScopes)
@@ -10409,11 +10581,11 @@ theorem scopedStmtRunForward_for_of_path_below
       exact
         scopedStmtRunForward_for_withoutFunctions_of_path_below
           hExpr hBlock hSeq hInit
-          hHasFunctions hSlack hContext hPath hElab hNormalized
+          hHasFunctions hContext hPath hElab hNormalized
   | true =>
       exact
         scopedStmtRunForward_for_withFunctions_of_path_below
-          hExpr hBlock hSeq hHasFunctions hSlack hContext hPath
+          hExpr hBlock hSeq hHasFunctions hContext hPath
           hElab hNormalized
 
 theorem scopedStmtPathRunForwardAt_zero
@@ -11801,6 +11973,369 @@ theorem emptyForInitPathRunForwardAt_of_seq
   exact
     scopedSeqRunForward_of_elaborateBlock_false
       hSeq hNoFunctions hContext hPath hElab hNormalized
+
+/-- Every checked raw expression statement is routed through exactly one
+frontend-owned semantic path: an ordinary classified call, generated `clz`, or
+the checked `setimmutable` patch block. -/
+theorem scopedStmtRunForward_expressionStatement_of_path_below
+    {fuel slack : Nat}
+    {builtinContext : Frontend.ObjectBuiltinContext}
+    {contract : Frontend.AstContract}
+    (hSlack : sourceFuelFrontendSlack (fuel + 1) ≤ slack)
+    (hExpr :
+      ∀ extra,
+        ScopedExprPathRunForwardBelow
+          (fuel + 1) (slack + extra) builtinContext contract)
+    (hBlock :
+      ScopedBlockPathRunForwardBelow
+        (fuel + 1) slack builtinContext contract)
+    {rawContext : Raw.SourceSemantics.Context}
+    {rawExpr : Raw.Expr}
+    {front : Frontend.Stmt} {ordered : Frontend.AstStmt}
+    {elabState finalElabState : Elab.State}
+    {entryStore : EvmYul.Yul.VarStore} {state : State}
+    (hContext :
+      PathCompiledContext builtinContext contract
+        rawContext elabState.functionScopes)
+    (hPath :
+      FrontendCompilationPath builtinContext contract
+        elabState finalElabState)
+    (hElab :
+      (Elab.Stmt.elaborate (.expressionStatement rawExpr)).run elabState =
+        .ok (front, finalElabState))
+    (hNormalized : StmtNormalized builtinContext front ordered) :
+    ScopedStmtRunForward entryStore (fuel + 1) (fuel + 1 + slack)
+      rawContext (.expressionStatement rawExpr)
+      ordered contract state := by
+  cases rawExpr with
+  | literal literal =>
+      simp [Elab.Stmt.elaborate] at hElab
+      unfold Elab.throw at hElab
+      change (Except.error _ : Except String (Frontend.Stmt × Elab.State)) =
+        .ok (front, finalElabState) at hElab
+      cases hElab
+  | identifier name =>
+      simp [Elab.Stmt.elaborate] at hElab
+      unfold Elab.throw at hElab
+      change (Except.error _ : Except String (Frontend.Stmt × Elab.State)) =
+        .ok (front, finalElabState) at hElab
+      cases hElab
+  | functionCall name rawArgs =>
+      by_cases hClz : name = "clz"
+      · subst name
+        unfold Elab.Stmt.elaborate at hElab
+        have hSupported :
+            CallClass.supportedExpressionStatementCall? "clz" = true := by
+          cases hCallSupported :
+              CallClass.supportedExpressionStatementCall? "clz" with
+          | false =>
+              simp [hCallSupported] at hElab
+              unfold Elab.throw at hElab
+              change
+                (Except.error _ :
+                  Except String (Frontend.Stmt × Elab.State)) =
+                    .ok (front, finalElabState) at hElab
+              cases hElab
+          | true => rfl
+        simp [hSupported, StateT.run_bind] at hElab
+        cases hExprElab :
+            (Elab.Expr.elaborate
+              (.functionCall "clz" rawArgs)).run elabState with
+        | error error => simp [hExprElab] at hElab
+        | ok exprResult =>
+            rcases exprResult with ⟨frontExpr, exprState⟩
+            simp [hExprElab] at hElab
+            rcases hElab with ⟨rfl, rfl⟩
+            rcases clz_elaboration_parts hExprElab with
+              ⟨rawArg, frontArg, argState, generated, helperState,
+                rfl, hArgElab, hEnsure, rfl, rfl⟩
+            rcases
+                StmtNormalized.exprStmt_call_parts_of_not_setimmutable
+                  (Or.inl (by intro hKind; cases hKind)) hNormalized with
+              ⟨orderedExpr, rfl, ⟨hExprNormalized⟩⟩
+            cases fuel with
+            | zero =>
+                exact scopedStmtRunForward_of_exact
+                  (stmtRunForward_expressionStatement_call_one
+                    (orderedFuel := 1 + slack) (by decide))
+            | succ argFuel =>
+                have hCall :=
+                  stmtRunForward_of_path_elaborated_clz
+                    (rawArgFuel := argFuel) (slack := slack)
+                    (state := state)
+                    (hExpr 0 argFuel (by omega)) hContext hPath.clz
+                    hExprElab hExprNormalized (by
+                      unfold sourceFuelFrontendSlack at hSlack
+                      rw [Raw.ClzPreservation.helperBodyFuel_value] at hSlack
+                      omega) (by
+                      unfold sourceFuelFrontendSlack at hSlack
+                      omega)
+                exact scopedStmtRunForward_of_exact hCall
+      · by_cases hSetimmutable : name = "setimmutable"
+        · subst name
+          unfold Elab.Stmt.elaborate at hElab
+          have hSupported :
+              CallClass.supportedExpressionStatementCall?
+                "setimmutable" = true := rfl
+          simp [hSupported, StateT.run_bind] at hElab
+          cases hExprElab :
+              (Elab.Expr.elaborate
+                (.functionCall "setimmutable" rawArgs)).run elabState with
+          | error error => simp [hExprElab] at hElab
+          | ok exprResult =>
+              rcases exprResult with ⟨frontExpr, exprState⟩
+              simp [hExprElab] at hElab
+              rcases hElab with ⟨rfl, rfl⟩
+              rcases objectBuiltinCall_elaboration_parts
+                  (name := "setimmutable") (rawArgs := rawArgs)
+                  (by decide) (by decide) rfl hExprElab with
+                ⟨frontArgs, argsState, hArgs, hFront, hFinal⟩
+              subst argsState
+              subst frontExpr
+              rcases StmtNormalized.setimmutable_args_eq_three
+                  hNormalized with
+                ⟨frontBase, frontNameArg, frontValue, hFrontArgs⟩
+              subst frontArgs
+              have hLength := exprList_elaborate_length hArgs
+              have hRawLength : rawArgs.length = 3 := by
+                simpa using hLength.symm
+              rcases List.length_eq_three.mp hRawLength with
+                ⟨rawBase, rawNameArg, rawValue, rfl⟩
+              exact
+                scopedStmtRunForward_setimmutable_of_path_below
+                  hExpr hContext hPath.clz (by
+                    unfold Elab.Stmt.elaborate
+                    simp [hSupported, hExprElab]) hNormalized
+        · exact
+            scopedStmtRunForward_of_path_elaborated_callStatement_below
+              hExpr hBlock hContext hPath.clz hClz hSetimmutable
+              hElab hNormalized
+
+theorem scopedStmtSpecialRunForwardAt_zero
+    {slack : Nat}
+    {builtinContext : Frontend.ObjectBuiltinContext}
+    {contract : Frontend.AstContract} :
+    ScopedStmtSpecialRunForwardAt 0 slack builtinContext contract := by
+  intro rawContext rawStmt front ordered elabState finalElabState
+    entryStore state hSpecial hCompatible hContext hPath hElab hNormalized
+  exact scopedStmtRunForward_of_exact stmtRunForward_zero
+
+/-- One bundled provider for every semantically special statement family.
+All recursive obligations are strictly below the current source fuel and all
+frontend-generated evidence comes from the checked occurrence path. -/
+theorem scopedStmtSpecialRunForwardAt_succ
+    {fuel slack : Nat}
+    {builtinContext : Frontend.ObjectBuiltinContext}
+    {contract : Frontend.AstContract}
+    (hSlack : sourceFuelFrontendSlack (fuel + 1) ≤ slack)
+    (hExpr :
+      ∀ extra,
+        ScopedExprPathRunForwardBelow
+          (fuel + 1) (slack + extra) builtinContext contract)
+    (hBlock :
+      ∀ extra,
+        ScopedBlockPathRunForwardBelow
+          (fuel + 1) (slack + extra) builtinContext contract)
+    (hSeq :
+      ScopedSeqPathRunForwardBelow
+        (fuel + 1) (slack + 1) builtinContext contract) :
+    ScopedStmtSpecialRunForwardAt
+      (fuel + 1) slack builtinContext contract := by
+  intro rawContext rawStmt front ordered elabState finalElabState
+    entryStore state hSpecial hCompatible hContext hPath hElab hNormalized
+  cases hSpecial with
+  | expressionStatement rawExpr =>
+      exact
+        scopedStmtRunForward_expressionStatement_of_path_below
+          hSlack hExpr (hBlock 0) hContext hPath hElab hNormalized
+  | functionDefinition name params returns body =>
+      unfold Elab.Stmt.elaborate at hElab
+      simp [StateT.run_bind] at hElab
+      cases hResolve : (Elab.resolveFunction name).run elabState with
+      | error error => simp [hResolve] at hElab
+      | ok resolveResult =>
+          rcases resolveResult with ⟨generated, resolveState⟩
+          simp [hResolve] at hElab
+          cases hFunction :
+              (Elab.FunctionDef.elaborate params returns body).run
+                resolveState with
+          | error error => simp [hFunction] at hElab
+          | ok functionResult =>
+              rcases functionResult with ⟨frontFunction, functionState⟩
+              simp [hFunction] at hElab
+              rcases hElab with ⟨rfl, rfl⟩
+              have hOrdered :=
+                StmtNormalized.functionDef_ordered hNormalized
+              subst ordered
+              have hRun :=
+                scopedStmtRunForward_functionDefinition_stub_succ
+                  (rawFuel := fuel)
+                  (orderedFuel := fuel + slack - 1)
+                  (entryStore := entryStore)
+                  (name := name) (params := params) (returns := returns)
+                  (body := body)
+                  (context := rawContext) (contract := contract)
+                  (state := state) hCompatible
+              have hPositive : 1 ≤ slack := by
+                unfold sourceFuelFrontendSlack at hSlack
+                rw [Raw.ClzPreservation.helperBodyFuel_value] at hSlack
+                omega
+              have hTargetFuel :
+                  fuel + slack - 1 + 2 = fuel + 1 + slack := by
+                omega
+              rw [hTargetFuel] at hRun
+              exact hRun
+  | switch rawCondition rawCases rawDefault =>
+      exact
+        scopedStmtRunForward_switch_of_path_below
+          (hExpr 0) (hBlock 0) hContext hPath hElab hNormalized
+  | forLoop rawPre rawCondition rawPost rawBody =>
+      cases fuel with
+      | zero =>
+          exact scopedStmtRunForward_of_exact stmtRunForward_for_one
+      | succ loopFuel =>
+          have hExprBelow :
+              ∀ extra,
+                ScopedExprPathRunForwardBelow
+                  (loopFuel + 1) (slack + extra)
+                  builtinContext contract := by
+            intro extra childFuel hChild
+            exact hExpr extra childFuel (by omega)
+          have hBlockBelow :
+              ∀ extra,
+                ScopedBlockPathRunForwardBelow
+                  (loopFuel + 1) (slack + extra)
+                  builtinContext contract := by
+            intro extra childFuel hChild
+            exact hBlock extra childFuel (by omega)
+          have hInitSeq :
+              ScopedSeqPathRunForwardAt
+                loopFuel (slack + 1) builtinContext contract :=
+            hSeq loopFuel (by omega)
+          exact
+            scopedStmtRunForward_for_of_path_below
+              hExprBelow hBlockBelow hInitSeq
+              (emptyForInitPathRunForwardAt_of_seq hInitSeq)
+              hContext hPath hElab hNormalized
+
+structure FrontendPathRunForwardAt
+    (rawFuel slack : Nat)
+    (builtinContext : Frontend.ObjectBuiltinContext)
+    (contract : Frontend.AstContract) : Prop where
+  expr :
+    ScopedExprPathRunForwardAt rawFuel slack builtinContext contract
+  stmt :
+    ScopedStmtPathRunForwardAt rawFuel slack builtinContext contract
+  seq :
+    ScopedSeqPathRunForwardAt rawFuel slack builtinContext contract
+  block :
+    ScopedBlockPathRunForwardAt rawFuel slack builtinContext contract
+
+/-- Complete path-scoped frontend preservation by strong induction on raw
+semantic fuel. The target overhead is computed solely from source fuel; no
+generated-name, layout, replay, loop-prefix, or syntax-occurrence premise is
+exposed. -/
+theorem frontendPathRunForwardAt_of_slack
+    (rawFuel : Nat) :
+    ∀ {slack : Nat}
+      {builtinContext : Frontend.ObjectBuiltinContext}
+      {contract : Frontend.AstContract},
+      sourceFuelFrontendSlack rawFuel ≤ slack →
+        FrontendPathRunForwardAt
+          rawFuel slack builtinContext contract := by
+  induction rawFuel using Nat.strong_induction_on with
+  | h current ih =>
+      intro slack builtinContext contract hSlack
+      cases current with
+      | zero =>
+          exact
+            { expr := scopedExprPathRunForwardAt_zero
+              stmt := scopedStmtPathRunForwardAt_zero
+              seq := scopedSeqPathRunForwardAt_zero
+              block := scopedBlockPathRunForwardAt_zero }
+      | succ predecessor =>
+          have hExprBelow :
+              ∀ extra,
+                ScopedExprPathRunForwardBelow
+                  (predecessor + 1) (slack + extra)
+                  builtinContext contract := by
+            intro extra childFuel hChild
+            exact
+              (ih childFuel (by omega)
+                (slack := slack + extra) (by
+                  unfold sourceFuelFrontendSlack at hSlack ⊢
+                  omega)).expr
+          have hBlockBelow :
+              ∀ extra,
+                ScopedBlockPathRunForwardBelow
+                  (predecessor + 1) (slack + extra)
+                  builtinContext contract := by
+            intro extra childFuel hChild
+            exact
+              (ih childFuel (by omega)
+                (slack := slack + extra) (by
+                  unfold sourceFuelFrontendSlack at hSlack ⊢
+                  omega)).block
+          have hSeqBelowPlus :
+              ScopedSeqPathRunForwardBelow
+                (predecessor + 1) (slack + 1)
+                builtinContext contract := by
+            intro childFuel hChild
+            exact
+              (ih childFuel (by omega)
+                (slack := slack + 1) (by
+                  unfold sourceFuelFrontendSlack at hSlack ⊢
+                  omega)).seq
+          have hClz :
+              ClzPathRunForwardAt
+                (predecessor + 1) slack builtinContext contract := by
+            cases predecessor with
+            | zero =>
+                intro rawContext rawArgs front ordered
+                  elabState finalElabState state
+                  hContext hPath hElab hNormalized
+                rcases clz_elaboration_parts hElab with
+                  ⟨rawArg, frontArg, argState, generated, helperState,
+                    rfl, hArgElab, hEnsure, rfl, rfl⟩
+                exact exprValuesRunForward_clz_one
+            | succ argFuel =>
+                apply clzPathRunForwardAt_succ_succ_of_slack hSlack
+                exact
+                  (ih (argFuel + 1) (by omega)
+                    (slack := slack - 1) (by
+                      unfold sourceFuelFrontendSlack at hSlack ⊢
+                      omega)).expr
+          have hExprCurrent :
+              ScopedExprPathRunForwardAt
+                (predecessor + 1) slack builtinContext contract :=
+            scopedExprPathRunForwardAt_succ
+              hExprBelow (hBlockBelow 0) hClz
+          have hSpecial :
+              ScopedStmtSpecialRunForwardAt
+                (predecessor + 1) slack builtinContext contract :=
+            scopedStmtSpecialRunForwardAt_succ
+              hSlack hExprBelow hBlockBelow hSeqBelowPlus
+          have hStmtCurrent :
+              ScopedStmtPathRunForwardAt
+                (predecessor + 1) slack builtinContext contract :=
+            scopedStmtPathRunForwardAt_succ_of_special
+              hExprBelow hBlockBelow hSpecial
+          have hPrevious :
+              FrontendPathRunForwardAt
+                predecessor slack builtinContext contract :=
+            ih predecessor (by omega) (slack := slack)
+              (builtinContext := builtinContext) (contract := contract) (by
+              unfold sourceFuelFrontendSlack at hSlack ⊢
+              omega)
+          exact
+            { expr := hExprCurrent
+              stmt := hStmtCurrent
+              seq :=
+                scopedSeqPathRunForwardAt_succ
+                  hPrevious.stmt hPrevious.seq
+              block :=
+                scopedBlockPathRunForwardAt_succ_of_seq
+                  hPrevious.seq }
 
 /-- Raw block-body sequence preservation against the ordered dispatcher
 sequence, before both sides apply their lexical block store restriction. -/

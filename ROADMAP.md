@@ -850,9 +850,12 @@ Next raw frontend layer:
   constructor, and generic recursive lexical-block theorem now derive all
   nested alpha-renamed bindings from successful elaboration. Checked retained-
   and empty-scope initializer constructors now close the complete `for`
-  statement from successful elaboration. Remaining work is a compiler-computed
-  whole-source frontend fuel bound, the mutual source-fuel statement/list/block
-  constructor, and its lift through the selected raw object into the public
+  statement from successful elaboration. A generic arbitrary-fuel append law
+  plus raw regular-prefix fuel sufficiency remove the former initializer-length
+  premise; `sourceFuelFrontendSlack` is computed from source fuel alone.
+  `frontendPathRunForwardAt_of_slack` now closes the mutual expression,
+  statement, list, and lexical-block preservation theorem. Remaining work is
+  its lift through the selected raw object and checked artifact into the public
   end-to-end theorem.
 
 ## Migration
