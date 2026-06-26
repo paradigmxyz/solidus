@@ -723,13 +723,21 @@ theorem Stmt.elaborate_preserves_clzAllocation
           exact PreservesClzAllocation.throw
             "Yul expression statement expects a function call"
       | functionCall name args =>
-          simp only [Stmt.elaborate]
-          exact
-            PreservesClzAllocation.bind
-              (Expr.elaborate_preserves_clzAllocation
-                (.functionCall name args))
-              (fun expr => PreservesClzAllocation.pure
-                (Frontend.Stmt.exprStmt expr))
+          cases hSupported :
+              CallClass.supportedExpressionStatementCall? name with
+          | false =>
+              simp only [Stmt.elaborate, hSupported, Bool.false_eq_true,
+                ↓reduceIte]
+              exact PreservesClzAllocation.throw
+                "unsupported Yul expression statement call"
+          | true =>
+              simp only [Stmt.elaborate, hSupported, ↓reduceIte]
+              exact
+                PreservesClzAllocation.bind
+                  (Expr.elaborate_preserves_clzAllocation
+                    (.functionCall name args))
+                  (fun expr => PreservesClzAllocation.pure
+                    (Frontend.Stmt.exprStmt expr))
   | functionDefinition name params returns body =>
       simp only [Stmt.elaborate]
       exact

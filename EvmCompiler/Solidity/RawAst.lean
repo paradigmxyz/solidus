@@ -5000,6 +5000,19 @@ def classifyCall (name : Name) : Frontend.CallKind :=
       else
         .user
 
+/-- Calls whose normalized result remains a canonical call statement, plus
+the statement-only `setimmutable` expansion. -/
+def supportedExpressionStatementCall? (name : Name) : Bool :=
+  match classifyCall name with
+  | .primitive | .user => true
+  | .objectBuiltin => name == "datacopy" || name == "setimmutable"
+  | .dialectBuiltin => false
+
+theorem supportedExpressionStatementCall_of_user
+    {name : Name} (hClass : classifyCall name = .user) :
+    supportedExpressionStatementCall? name = true := by
+  simp [supportedExpressionStatementCall?, hClass]
+
 def reservedBindingName? (name : Name) : Bool :=
   (Frontend.Primitive.ofName? name).isSome ||
     objectBuiltins.contains name ||
@@ -6371,8 +6384,11 @@ mutual
     | .expressionStatement expr =>
         match expr with
         | .functionCall name args => do
-            let expr ← Expr.elaborate (.functionCall name args)
-            pure (.exprStmt expr)
+            if CallClass.supportedExpressionStatementCall? name then
+              let expr ← Expr.elaborate (.functionCall name args)
+              pure (.exprStmt expr)
+            else
+              throw "unsupported Yul expression statement call"
         | _ => throw "Yul expression statement expects a function call"
     | .functionDefinition name params returns body => do
         let generated ← resolveFunction name
@@ -6504,6 +6520,28 @@ theorem Stmt.elaborate_expressionStatement_identifier_rejected
     (Stmt.elaborate (.expressionStatement (.identifier name))).run state =
       .error "Yul expression statement expects a function call" := by
   unfold Stmt.elaborate EvmCompiler.Solidity.RawAst.Elab.throw
+  rfl
+
+theorem Stmt.elaborate_expressionStatement_unsupported_call_rejected
+    (state : State) (name : Name) (args : List Raw.Expr)
+    (hUnsupported :
+      CallClass.supportedExpressionStatementCall? name = false) :
+    (Stmt.elaborate
+        (.expressionStatement (.functionCall name args))).run state =
+      .error "unsupported Yul expression statement call" := by
+  unfold Stmt.elaborate
+  simp [hUnsupported]
+  change
+    (Except.error "unsupported Yul expression statement call" :
+      Except String (Frontend.Stmt × State)) = _
+  rfl
+
+theorem Stmt.elaborate_expressionStatement_memoryguard_rejected
+    (state : State) (args : List Raw.Expr) :
+    (Stmt.elaborate
+        (.expressionStatement (.functionCall "memoryguard" args))).run state =
+      .error "unsupported Yul expression statement call" := by
+  apply Stmt.elaborate_expressionStatement_unsupported_call_rejected
   rfl
 
 theorem Stmt.elaborate_expressionStatement_primitive_call
@@ -8481,24 +8519,34 @@ theorem elaborate_incoming_scope_source_user_call_occurrence
           | direct hDirect => cases hDirect
       | functionCall callee callArgs =>
           unfold Stmt.elaborate at hElab
-          simp [StateT.run_bind] at hElab
-          cases hExpr :
-              (Expr.elaborate (.functionCall callee callArgs)).run state with
-          | error err =>
-              simp [hExpr] at hElab
-          | ok exprResult =>
-              rcases exprResult with ⟨frontExpr, exprState⟩
-              rcases
-                Expr.elaborate_source_user_call_occurrence
-                  hExprOccurs hNameOk hLookup hScopes hExpr with
-                ⟨args', hOccurrence⟩
-              simp [hExpr] at hElab
-              rcases hElab with ⟨hFront, _hState⟩
-              rw [← hFront]
-              exact
-                ⟨args',
-                  FrontendOccurrence.StmtIncomingUserCall.expressionStatement
-                    hOccurrence⟩
+          cases hSupported :
+              CallClass.supportedExpressionStatementCall? callee with
+          | false =>
+              simp [hSupported] at hElab
+              change
+                (Except.error "unsupported Yul expression statement call" :
+                  Except String (Frontend.Stmt × State)) =
+                    .ok (front, finalState) at hElab
+              cases hElab
+          | true =>
+              simp [hSupported, StateT.run_bind] at hElab
+              cases hExpr :
+                  (Expr.elaborate (.functionCall callee callArgs)).run state with
+              | error err =>
+                  simp [hExpr] at hElab
+              | ok exprResult =>
+                  rcases exprResult with ⟨frontExpr, exprState⟩
+                  rcases
+                    Expr.elaborate_source_user_call_occurrence
+                      hExprOccurs hNameOk hLookup hScopes hExpr with
+                    ⟨args', hOccurrence⟩
+                  simp [hExpr] at hElab
+                  rcases hElab with ⟨hFront, _hState⟩
+                  rw [← hFront]
+                  exact
+                    ⟨args',
+                      FrontendOccurrence.StmtIncomingUserCall.expressionStatement
+                        hOccurrence⟩
   | @switchScrutinee scrutinee cases default name args hExprOccurs =>
       unfold Stmt.elaborate at hElab
       simp [StateT.run_bind] at hElab
@@ -8642,24 +8690,34 @@ theorem elaborate_resolved_incoming_scope_source_user_call_occurrence
           | direct hDirect => cases hDirect
       | functionCall callee callArgs =>
           unfold Stmt.elaborate at hElab
-          simp [StateT.run_bind] at hElab
-          cases hExpr :
-              (Expr.elaborate (.functionCall callee callArgs)).run state with
-          | error err =>
-              simp [hExpr] at hElab
-          | ok exprResult =>
-              rcases exprResult with ⟨frontExpr, exprState⟩
-              rcases
-                Expr.elaborate_resolved_source_user_call_occurrence
-                  hExprOccurs hNameOk hResolve hExpr with
-                ⟨args', hOccurrence⟩
-              simp [hExpr] at hElab
-              rcases hElab with ⟨hFront, _hState⟩
-              rw [← hFront]
-              exact
-                ⟨args',
-                  FrontendOccurrence.StmtIncomingUserCall.expressionStatement
-                    hOccurrence⟩
+          cases hSupported :
+              CallClass.supportedExpressionStatementCall? callee with
+          | false =>
+              simp [hSupported] at hElab
+              change
+                (Except.error "unsupported Yul expression statement call" :
+                  Except String (Frontend.Stmt × State)) =
+                    .ok (front, finalState) at hElab
+              cases hElab
+          | true =>
+              simp [hSupported, StateT.run_bind] at hElab
+              cases hExpr :
+                  (Expr.elaborate (.functionCall callee callArgs)).run state with
+              | error err =>
+                  simp [hExpr] at hElab
+              | ok exprResult =>
+                  rcases exprResult with ⟨frontExpr, exprState⟩
+                  rcases
+                    Expr.elaborate_resolved_source_user_call_occurrence
+                      hExprOccurs hNameOk hResolve hExpr with
+                    ⟨args', hOccurrence⟩
+                  simp [hExpr] at hElab
+                  rcases hElab with ⟨hFront, _hState⟩
+                  rw [← hFront]
+                  exact
+                    ⟨args',
+                      FrontendOccurrence.StmtIncomingUserCall.expressionStatement
+                        hOccurrence⟩
   | @switchScrutinee scrutinee cases default name args hExprOccurs =>
       unfold Stmt.elaborate at hElab
       simp [StateT.run_bind] at hElab
@@ -9049,13 +9107,21 @@ theorem Stmt.elaborate_preserves_hoistedFunction_mem
           exact PreservesHoisted.throw
             "Yul expression statement expects a function call"
       | functionCall name args =>
-          simp only [Stmt.elaborate]
-          exact
-            PreservesHoisted.bind
-              (Expr.elaborate_preserves_hoistedFunction_mem
-                (.functionCall name args))
-              (fun expr => PreservesHoisted.pure
-                (Frontend.Stmt.exprStmt expr))
+          cases hSupported :
+              CallClass.supportedExpressionStatementCall? name with
+          | false =>
+              simp only [Stmt.elaborate, hSupported, Bool.false_eq_true,
+                ↓reduceIte]
+              exact PreservesHoisted.throw
+                "unsupported Yul expression statement call"
+          | true =>
+              simp only [Stmt.elaborate, hSupported, ↓reduceIte]
+              exact
+                PreservesHoisted.bind
+                  (Expr.elaborate_preserves_hoistedFunction_mem
+                    (.functionCall name args))
+                  (fun expr => PreservesHoisted.pure
+                    (Frontend.Stmt.exprStmt expr))
   | functionDefinition name params returns body =>
       simp only [Stmt.elaborate]
       exact
@@ -9502,13 +9568,21 @@ theorem Stmt.elaborate_preserves_functionScopes
           exact PreservesFunctionScopes.throw
             "Yul expression statement expects a function call"
       | functionCall name args =>
-          simp only [Stmt.elaborate]
-          exact
-            PreservesFunctionScopes.bind
-              (Expr.elaborate_preserves_functionScopes
-                (.functionCall name args))
-              (fun expr => PreservesFunctionScopes.pure
-                (Frontend.Stmt.exprStmt expr))
+          cases hSupported :
+              CallClass.supportedExpressionStatementCall? name with
+          | false =>
+              simp only [Stmt.elaborate, hSupported, Bool.false_eq_true,
+                ↓reduceIte]
+              exact PreservesFunctionScopes.throw
+                "unsupported Yul expression statement call"
+          | true =>
+              simp only [Stmt.elaborate, hSupported, ↓reduceIte]
+              exact
+                PreservesFunctionScopes.bind
+                  (Expr.elaborate_preserves_functionScopes
+                    (.functionCall name args))
+                  (fun expr => PreservesFunctionScopes.pure
+                    (Frontend.Stmt.exprStmt expr))
   | functionDefinition name params returns body =>
       simp only [Stmt.elaborate]
       exact
@@ -11280,7 +11354,9 @@ theorem elaborate_source_local_call_mem
       cases hArgs : (Expr.List.elaborate callArgs).run state with
       | error err =>
           simp [Stmt.elaborate, Expr.elaborate, hNotMemoryguard, hNotClz,
-            hArgs, hClass] at hElab
+            hArgs, hClass,
+            CallClass.supportedExpressionStatementCall_of_user hClass]
+            at hElab
       | ok argResult =>
           rcases argResult with ⟨args', argState⟩
           have hArgScopes :
@@ -11303,7 +11379,8 @@ theorem elaborate_source_local_call_mem
                   (.functionCall callName callArgs))).run state =
                 .ok
                   (.exprStmt (.call .user generated args'), argState) := by
-            simp [Stmt.elaborate, StateT.run_bind, hCallElab]
+            simp [Stmt.elaborate, StateT.run_bind, hCallElab,
+              CallClass.supportedExpressionStatementCall_of_user hClass]
           simp [hHead] at hElab
           cases hTail :
               (Stmt.List.elaborate rest).run argState with
@@ -11431,7 +11508,9 @@ theorem sourceLocalFunction_elaborateBlock_false_head_user_call_entry
                           (Expr.List.elaborate args).run hoistState with
                       | error err =>
                           simp [Stmt.elaborate, Expr.elaborate,
-                            hNotMemoryguard, hNotClz, hArgs, hClass] at hElab
+                            hNotMemoryguard, hNotClz, hArgs, hClass,
+                            CallClass.supportedExpressionStatementCall_of_user
+                              hClass] at hElab
                       | ok argResult =>
                           rcases argResult with ⟨args', argState⟩
                           rcases
@@ -11458,7 +11537,9 @@ theorem sourceLocalFunction_elaborateBlock_false_head_user_call_entry
                                   (.exprStmt
                                     (.call .user generated args'),
                                     argState) := by
-                            simp [Stmt.elaborate, StateT.run_bind, hCall]
+                            simp [Stmt.elaborate, StateT.run_bind, hCall,
+                              CallClass.supportedExpressionStatementCall_of_user
+                                hClass]
                           simp [hHead] at hElab
                           cases hTail :
                               (Stmt.List.elaborate rest).run argState with
@@ -11891,7 +11972,9 @@ theorem sourceLocalFunction_elaborateBlock_true_head_user_call_entry
                                     hoistState with
                               | error err =>
                                   simp [Stmt.elaborate, Expr.elaborate,
-                                    hNotMemoryguard, hNotClz, hArgs, hClass]
+                                    hNotMemoryguard, hNotClz, hArgs, hClass,
+                                    CallClass.supportedExpressionStatementCall_of_user
+                                      hClass]
                                     at hElab
                               | ok argResult =>
                                   rcases argResult with ⟨args', argState⟩
@@ -11922,7 +12005,9 @@ theorem sourceLocalFunction_elaborateBlock_true_head_user_call_entry
                                             (.call .user generated args'),
                                             argState) := by
                                     simp [Stmt.elaborate, StateT.run_bind,
-                                      hCall]
+                                      hCall,
+                                      CallClass.supportedExpressionStatementCall_of_user
+                                        hClass]
                                   simp [hHead] at hElab
                                   cases hTail :
                                       (Stmt.List.elaborate rest).run
