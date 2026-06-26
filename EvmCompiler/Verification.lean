@@ -1382,5 +1382,11 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Assembly.GasfulBridge.runRefinesOpen_recursive_of_postPrechecks
 #print axioms EvmCompiler.Assembly.GasfulBridge.positiveResourceStep
 #print axioms EvmCompiler.Assembly.GasfulBridge.runRefinesOpen_recursive_of_positiveRemainingPrim
+#print axioms EvmCompiler.Assembly.GasfulBridge.primStep_run_exists_of_checks
+#print axioms EvmCompiler.Assembly.GasfulBridge.positiveContinuingStep
+#print axioms EvmCompiler.Assembly.GasfulBridge.theta_error_eq_outOfFuel
+#print axioms EvmCompiler.Assembly.GasfulBridge.evm_call_error_eq_outOfFuel
+#print axioms EvmCompiler.Assembly.GasfulBridge.positiveExternalPrimRefinement
+#print axioms EvmCompiler.Assembly.GasfulBridge.runRefinesOpen_recursive
 #print axioms EvmCompiler.Yul.EndToEnd.optimizedSolcYulToRawBytecodeFinished
 #print axioms EvmCompiler.Yul.EndToEnd.optimizedSolcYulToRawBytecodeFinishedLegacy

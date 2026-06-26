@@ -215,10 +215,13 @@ Gasful EVM bridge checkpoint:
 - [x] Compose the existing Yul-to-open-raw-bytecode theorem with the named
   gasful target bridge premise in
   `Yul.EndToEnd.optimizedSolcYulToGasfulRawBytecodeOfOpenRunBridge`.
-- [ ] Assemble the complete recursive `EVM.X` simulation from the checked
+- [x] Assemble the complete recursive `EVM.X` simulation from the checked
   ordinary, exceptional, OOG, terminal, and actual CALL/CREATE step theorems,
-  using `OpenStateRel` plus compiler-derived reachable-PC decode compatibility,
-  then discharge the public gasful end-to-end bridge premise.
+  using `OpenStateRel` and a reachable-PC `FrameCodeInvariant`. The concrete
+  CALL/CREATE step determines the open response, including EIP-150 and returned
+  gas; CALL proof-fuel exhaustion and CREATE parent OOG remain explicit prefix
+  outcomes. Next derive the frame-code invariant from the compiler artifact and
+  discharge the public gasful end-to-end bridge premise.
 
 `Compiler.StackArtifact` is the sole code-body artifact and
 `Solidity.Frontend.VerifiedStackObjectArtifact` is the sole recursive object
