@@ -318,6 +318,54 @@ theorem memoryguard_elaboration_parts
               .ok (front, finalElabState) at hElab
           cases hElab
 
+theorem clz_elaboration_parts
+    {rawArgs : List Raw.Expr}
+    {elabState finalElabState : Elab.State}
+    {front : Frontend.Expr}
+    (hElab :
+      (Elab.Expr.elaborate (.functionCall "clz" rawArgs)).run
+        elabState = .ok (front, finalElabState)) :
+    ∃ rawArg frontArg argState helper helperState,
+      rawArgs = [rawArg] ∧
+        (Elab.Expr.elaborate rawArg).run elabState =
+          .ok (frontArg, argState) ∧
+        Elab.ensureClzHelper.run argState = .ok (helper, helperState) ∧
+        front = .call .user helper [frontArg] ∧
+        finalElabState = helperState := by
+  cases rawArgs with
+  | nil =>
+      simp [Elab.Expr.elaborate] at hElab
+      unfold Elab.throw at hElab
+      change
+        (Except.error _ : Except String (Frontend.Expr × Elab.State)) =
+          .ok (front, finalElabState) at hElab
+      cases hElab
+  | cons rawArg rest =>
+      cases rest with
+      | nil =>
+          unfold Elab.Expr.elaborate at hElab
+          cases hArg : (Elab.Expr.elaborate rawArg).run elabState with
+          | error err => simp [hArg] at hElab
+          | ok argResult =>
+              rcases argResult with ⟨frontArg, argState⟩
+              simp [hArg] at hElab
+              cases hHelper : Elab.ensureClzHelper.run argState with
+              | error err => simp [hHelper] at hElab
+              | ok helperResult =>
+                  rcases helperResult with ⟨helper, helperState⟩
+                  simp [hHelper] at hElab
+                  rcases hElab with ⟨rfl, rfl⟩
+                  exact
+                    ⟨rawArg, frontArg, argState, helper, helperState,
+                      rfl, hArg, hHelper, rfl, rfl⟩
+      | cons extra tail =>
+          simp [Elab.Expr.elaborate] at hElab
+          unfold Elab.throw at hElab
+          change
+            (Except.error _ : Except String (Frontend.Expr × Elab.State)) =
+              .ok (front, finalElabState) at hElab
+          cases hElab
+
 def SameDoneRel {α : Type} :
     Except Failure α → Except Failure α → Prop :=
   Eq
@@ -836,6 +884,40 @@ theorem user_call_parts
                 resolved := resolvedArgs
                 resolve := hArgsResolve
                 toYul := hArgsToYul }⟩⟩
+
+theorem dialect_call_false
+    {context : Frontend.ObjectBuiltinContext}
+    {callee : Name} {args : List Frontend.Expr}
+    {ordered : Frontend.AstExpr}
+    (hNormalized :
+      ExprNormalized context (.call .dialectBuiltin callee args) ordered) :
+    False := by
+  rcases hNormalized with ⟨resolved, hResolve, hToYul⟩
+  unfold Frontend.Expr.resolveObjectBuiltinsIn? at hResolve
+  cases hArgsResolve :
+      Frontend.Expr.List.resolveObjectBuiltinsIn? args context with
+  | none => simp [hArgsResolve] at hResolve
+  | some resolvedArgs =>
+      simp [hArgsResolve] at hResolve
+      subst resolved
+      simp [Frontend.Expr.toYul?] at hToYul
+
+theorem setimmutable_call_false
+    {context : Frontend.ObjectBuiltinContext}
+    {args : List Frontend.Expr} {ordered : Frontend.AstExpr}
+    (hNormalized :
+      ExprNormalized context
+        (.call .objectBuiltin "setimmutable" args) ordered) :
+    False := by
+  rcases hNormalized with ⟨resolved, hResolve, hToYul⟩
+  unfold Frontend.Expr.resolveObjectBuiltinsIn? at hResolve
+  cases hArgsResolve :
+      Frontend.Expr.List.resolveObjectBuiltinsIn? args context with
+  | none => simp [hArgsResolve] at hResolve
+  | some resolvedArgs =>
+      simp [hArgsResolve] at hResolve
+      subst resolved
+      simp [Frontend.Expr.toYul?] at hToYul
 
 end ExprNormalized
 
@@ -1622,6 +1704,26 @@ theorem scopedBlockElaborationRunForwardAt_zero
   intro rawContext rawCode front ordered elabState finalElabState state
     hContext hElab hNormalized
   exact blockCodeRunForward_zero
+
+/-- Private semantic interface for compiler-generated `clz` replacement at one
+fuel. The final frontend theorem discharges this from helper generation,
+ordered lookup, and the helper-body execution theorem. -/
+def ClzElaborationRunForwardAt
+    (rawFuel slack : Nat)
+    (builtinContext : Frontend.ObjectBuiltinContext)
+    (contract : Frontend.AstContract) : Prop :=
+  ∀ {rawContext : Raw.SourceSemantics.Context}
+    {rawArgs : List Raw.Expr}
+    {front : Frontend.Expr} {ordered : Frontend.AstExpr}
+    {elabState finalElabState : Elab.State} {state : State},
+    CompiledContext builtinContext contract
+        rawContext elabState.functionScopes →
+      (Elab.Expr.elaborate (.functionCall "clz" rawArgs)).run elabState =
+          .ok (front, finalElabState) →
+        ExprNormalized builtinContext front ordered →
+          ExprValuesRunForward rawFuel (rawFuel + slack)
+            rawContext (.functionCall "clz" rawArgs)
+            ordered contract state
 
 /-- Pointwise checked expression compilation, independent of the order in
 which runtime argument evaluation visits the list. -/
@@ -2466,6 +2568,59 @@ theorem exprValuesRunForward_of_scoped_elaborated_primitiveCall_below
         exprValuesRunForward_primitiveCall_of_runs
           hNotClz hClass hOp hArgsRun (hPrimitive op hOp)
       exact hCall
+
+theorem exprValuesRunForward_userCall_one
+    {orderedFuel : Nat}
+    {rawContext : Raw.SourceSemantics.Context}
+    {name : Name} {rawArgs : List Raw.Expr}
+    {ordered : Frontend.AstExpr}
+    {contract : Frontend.AstContract} {state : State}
+    (hNotClz : name ≠ "clz")
+    (hClass : CallClass.classifyCall name = .user) :
+    ExprValuesRunForward 1 orderedFuel rawContext
+      (.functionCall name rawArgs) ordered contract state := by
+  unfold ExprValuesRunForward
+  rw [Raw.SourceSemantics.EvalValues.functionCall_succ_of_ne_clz
+    0 rawContext name rawArgs state hNotClz]
+  simp only [hClass]
+  rw [Raw.SourceSemantics.evalArgs_zero]
+  exact
+    Simulation.Interaction.ForwardRel.truncated
+      (by simp [Yul.FunctionsInteractionPrimitive.Truncated])
+
+theorem exprValuesRunForward_objectBuiltinCall_one
+    {orderedFuel : Nat}
+    {rawContext : Raw.SourceSemantics.Context}
+    {name : Name} {rawArgs : List Raw.Expr}
+    {ordered : Frontend.AstExpr}
+    {contract : Frontend.AstContract} {state : State}
+    (hNotClz : name ≠ "clz")
+    (hClass : CallClass.classifyCall name = .objectBuiltin) :
+    ExprValuesRunForward 1 orderedFuel rawContext
+      (.functionCall name rawArgs) ordered contract state := by
+  unfold ExprValuesRunForward
+  rw [Raw.SourceSemantics.EvalValues.functionCall_succ_of_ne_clz
+    0 rawContext name rawArgs state hNotClz]
+  simp only [hClass]
+  unfold Raw.SourceSemantics.evalObjectBuiltin
+  exact
+    Simulation.Interaction.ForwardRel.truncated
+      (by simp [Yul.FunctionsInteractionPrimitive.Truncated])
+
+theorem exprValuesRunForward_clz_one
+    {orderedFuel : Nat}
+    {rawContext : Raw.SourceSemantics.Context}
+    {rawArg : Raw.Expr} {ordered : Frontend.AstExpr}
+    {contract : Frontend.AstContract} {state : State} :
+    ExprValuesRunForward 1 orderedFuel rawContext
+      (.functionCall "clz" [rawArg]) ordered contract state := by
+  unfold ExprValuesRunForward
+  rw [Raw.SourceSemantics.EvalValues.clz_succ 0 rawContext rawArg state]
+  unfold Raw.SourceSemantics.eval
+  simp only [Raw.SourceSemantics.evalValues]
+  exact
+    Simulation.Interaction.ForwardRel.truncated
+      (by simp [Yul.FunctionsInteractionPrimitive.Truncated])
 
 theorem exprValuesRunForward_userCall_succ
     {rawFuel orderedFuel : Nat}
@@ -3417,6 +3572,158 @@ theorem exprValuesRunForward_of_scoped_elaborated_memoryguard_below
       (orderedFuel := valueFuel + slack + 1)
       hValueRun
   simpa [Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using hRun
+
+/-- Generic successor expression constructor. Primitive, ordinary user-call,
+and object-builtin cases are selected from the canonical Lean classifier;
+unsupported dialect calls and expression-position `setimmutable` are rejected
+by successful normalization. `clz` remains the one private generated-helper
+interface to discharge. -/
+theorem scopedExprElaborationRunForwardAt_succ
+    {fuel slack : Nat}
+    {builtinContext : Frontend.ObjectBuiltinContext}
+    {contract : Frontend.AstContract}
+    (hExpr :
+      ∀ extra,
+        ScopedExprElaborationRunForwardBelow
+          (fuel + 1) (slack + extra) builtinContext contract)
+    (hBlock :
+      ScopedBlockElaborationRunForwardBelow
+        (fuel + 1) slack builtinContext contract)
+    (hClz :
+      ClzElaborationRunForwardAt
+        (fuel + 1) slack builtinContext contract) :
+    ScopedExprElaborationRunForwardAt
+      (fuel + 1) slack builtinContext contract := by
+  intro rawContext rawExpr front ordered elabState finalElabState state
+    hContext hElab hNormalized
+  cases rawExpr with
+  | literal literal =>
+      simpa [Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using
+        (exprValuesRunForward_of_elaborated_literal
+          (rawFuel := fuel) (orderedFuel := fuel + slack)
+          (context := rawContext) (contract := contract) (state := state)
+          hElab hNormalized)
+  | identifier name =>
+      simpa [Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using
+        (exprValuesRunForward_of_elaborated_identifier
+          (rawFuel := fuel) (orderedFuel := fuel + slack)
+          (context := rawContext) (contract := contract) (state := state)
+          hElab hNormalized)
+  | functionCall name rawArgs =>
+      by_cases hMemoryguard : name = "memoryguard"
+      · subst name
+        cases fuel with
+        | zero =>
+            exact
+              exprValuesRunForward_objectBuiltinCall_one
+                (orderedFuel := 1 + slack) (by decide) rfl
+        | succ residual =>
+            have hValueExpr :
+                ScopedExprElaborationRunForwardBelow
+                  (residual + 1) (slack + 2)
+                  builtinContext contract := by
+              intro childFuel hChild
+              exact hExpr 2 childFuel (by omega)
+            simpa [Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using
+              (exprValuesRunForward_of_scoped_elaborated_memoryguard_below
+                (slack := slack) (valueFuel := residual)
+                hValueExpr hContext hElab hNormalized)
+      · by_cases hClzName : name = "clz"
+        · subst name
+          exact hClz hContext hElab hNormalized
+        · cases hClass : CallClass.classifyCall name with
+          | primitive =>
+              have hArgExpr :
+                  ScopedExprElaborationRunForwardBelow
+                    fuel slack builtinContext contract := by
+                intro childFuel hChild
+                exact hExpr 0 childFuel (by omega)
+              simpa [Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using
+                (exprValuesRunForward_of_scoped_elaborated_primitiveCall_below
+                  (slack := slack) (argsFuel := fuel)
+                  hArgExpr hContext hMemoryguard hClzName hClass
+                  hElab hNormalized
+                  (fun op _hOp stateAfterArgs values =>
+                    primitiveRunForward_slack fuel slack
+                      stateAfterArgs op values.reverse))
+          | user =>
+              cases fuel with
+              | zero =>
+                  exact
+                    exprValuesRunForward_userCall_one
+                      (orderedFuel := 1 + slack)
+                      hClzName hClass
+              | succ residual =>
+                  have hRecursiveExpr :
+                      ScopedExprElaborationRunForwardBelow
+                        (residual + 2) slack builtinContext contract := by
+                    simpa using hExpr 0
+                  have hRecursiveBlock :
+                      ScopedBlockElaborationRunForwardBelow
+                        (residual + 2) slack builtinContext contract := by
+                    simpa using hBlock
+                  simpa [Nat.add_assoc, Nat.add_comm,
+                    Nat.add_left_comm] using
+                    (exprValuesRunForward_of_scoped_elaborated_userCall_below
+                      (slack := slack) (callFuel := residual)
+                      hRecursiveExpr hRecursiveBlock hContext
+                      hMemoryguard hClzName hClass hElab hNormalized)
+          | objectBuiltin =>
+              cases fuel with
+              | zero =>
+                  exact
+                    exprValuesRunForward_objectBuiltinCall_one
+                      (orderedFuel := 1 + slack)
+                      hClzName hClass
+              | succ residual =>
+                  have hObjectName := classifyCall_objectBuiltin_mem hClass
+                  simp [CallClass.objectBuiltins] at hObjectName
+                  rcases hObjectName with
+                    (rfl | rfl | rfl | rfl | rfl | rfl | rfl)
+                  · exact
+                      exprValuesRunForward_of_scoped_elaborated_datasize
+                        (slack := slack) (rawFuel := residual)
+                        hContext.objectBuiltins hElab hNormalized
+                  · exact
+                      exprValuesRunForward_of_scoped_elaborated_dataoffset
+                        (slack := slack) (rawFuel := residual)
+                        hContext.objectBuiltins hElab hNormalized
+                  · have hArgExpr :
+                        ScopedExprElaborationRunForwardBelow
+                          residual (slack + 1)
+                          builtinContext contract := by
+                      intro childFuel hChild
+                      exact hExpr 1 childFuel (by omega)
+                    exact
+                      exprValuesRunForward_of_scoped_elaborated_datacopy_below
+                        (slack := slack) (argsFuel := residual)
+                        hArgExpr hContext hElab hNormalized
+                  · rcases objectBuiltinCall_elaboration_parts
+                        hMemoryguard hClzName hClass hElab with
+                      ⟨frontArgs, argsState, hArgs, rfl, rfl⟩
+                    exact False.elim
+                      (ExprNormalized.setimmutable_call_false hNormalized)
+                  · exact
+                      exprValuesRunForward_of_scoped_elaborated_loadimmutable
+                        (slack := slack) (rawFuel := residual)
+                        hContext.objectBuiltins hElab hNormalized
+                  · exact
+                      exprValuesRunForward_of_scoped_elaborated_linkersymbol
+                        (slack := slack) (rawFuel := residual)
+                        hContext.objectBuiltins hElab hNormalized
+                  · exact False.elim (hMemoryguard rfl)
+          | dialectBuiltin =>
+              unfold Elab.Expr.elaborate at hElab
+              simp [StateT.run_bind] at hElab
+              cases hArgs :
+                  (Elab.Expr.List.elaborate rawArgs).run elabState with
+              | error err => simp [hArgs] at hElab
+              | ok argsResult =>
+                  rcases argsResult with ⟨frontArgs, argsState⟩
+                  simp [hArgs, hClass] at hElab
+                  rcases hElab with ⟨rfl, rfl⟩
+                  exact False.elim
+                    (ExprNormalized.dialect_call_false hNormalized)
 
 /-- Exact pre-block statement preservation used by the recursive frontend
 proof. Lexical-store restriction is handled only by block constructors. -/
