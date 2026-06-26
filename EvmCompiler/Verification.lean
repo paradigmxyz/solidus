@@ -1378,5 +1378,9 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Assembly.GasfulBridge.runRefinesOpen_stackUnderflow_rel
 #print axioms EvmCompiler.Assembly.GasfulBridge.runRefinesOpen_invalid_returndatacopy_rel
 #print axioms EvmCompiler.Assembly.GasfulBridge.runRefinesOpen_recursive_of_postStackLimit
+#print axioms EvmCompiler.Assembly.GasfulBridge.runRefinesOpen_staticModeViolation_rel
+#print axioms EvmCompiler.Assembly.GasfulBridge.runRefinesOpen_recursive_of_postPrechecks
+#print axioms EvmCompiler.Assembly.GasfulBridge.positiveResourceStep
+#print axioms EvmCompiler.Assembly.GasfulBridge.runRefinesOpen_recursive_of_positiveRemainingPrim
 #print axioms EvmCompiler.Yul.EndToEnd.optimizedSolcYulToRawBytecodeFinished
 #print axioms EvmCompiler.Yul.EndToEnd.optimizedSolcYulToRawBytecodeFinishedLegacy

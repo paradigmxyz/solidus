@@ -206,6 +206,12 @@ Gasful EVM bridge checkpoint:
   stack underflow (including explicit static/stack check-order collapse at the
   frame-failure boundary), bad jumps, invalid return-data copy, and stack
   overflow now refine arbitrary related open states without external queries.
+- [x] Extend the recursive dispatcher through all remaining prechecks and
+  deterministic positive steps: exact static failures, SSTORE/CREATE OOG,
+  zero-step proof-fuel exhaustion, concrete ordered GAS/MSIZE observations,
+  PUSH/control execution, and STOP/RETURN/REVERT/SELFDESTRUCT are discharged.
+  The residual premise is restricted to ordinary continuing and CALL/CREATE
+  primitives after all checks pass.
 - [x] Compose the existing Yul-to-open-raw-bytecode theorem with the named
   gasful target bridge premise in
   `Yul.EndToEnd.optimizedSolcYulToGasfulRawBytecodeOfOpenRunBridge`.
