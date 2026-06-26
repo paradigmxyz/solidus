@@ -1,5 +1,5 @@
 import EvmCompiler.Yul.EndToEnd
-import EvmCompiler.Assembly.GasfulBridgeDecode
+import EvmCompiler.Assembly.GasfulBridgeRecursive
 
 namespace EvmCompiler
 namespace Yul

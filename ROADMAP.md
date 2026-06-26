@@ -198,6 +198,10 @@ Gasful EVM bridge checkpoint:
   other than unsupported `PUSH0` yields a valid Compact instruction (including
   a proved width bound for decoded PUSH payloads), so reachability only has to
   exclude decode misses and `PUSH0` at concrete frame PCs.
+- [x] Add the responder-agnostic recursive frame skeleton: reachable code
+  yields the exact current Compact instruction, fuel induction composes local
+  refinements, and the first dispatcher layer discharges fuel exhaustion,
+  memory/dynamic OOG, and `INVALID` before an opcode-valid local obligation.
 - [x] Compose the existing Yul-to-open-raw-bytecode theorem with the named
   gasful target bridge premise in
   `Yul.EndToEnd.optimizedSolcYulToGasfulRawBytecodeOfOpenRunBridge`.
