@@ -114,6 +114,34 @@ def patchSetImmutableStmts? :
       let tail ← patchSetImmutableStmts? rest base value
       some (head :: tail)
 
+theorem patchSetImmutableStmts?_functionScope
+    {references : List Frontend.ImmutableReference}
+    {base value : Expr} {stmts : List Stmt}
+    (hPatch : patchSetImmutableStmts? references base value = some stmts) :
+    functionScope? stmts = some [] := by
+  induction references generalizing stmts with
+  | nil =>
+      simp [patchSetImmutableStmts?] at hPatch
+      subst stmts
+      rfl
+  | cons reference rest ih =>
+      unfold patchSetImmutableStmts? at hPatch
+      cases hHead : patchSetImmutableStmt? reference base value with
+      | none => simp [hHead] at hPatch
+      | some head =>
+          cases hTail : patchSetImmutableStmts? rest base value with
+          | none => simp [hHead, hTail] at hPatch
+          | some tail =>
+              simp [hHead, hTail] at hPatch
+              subst stmts
+              unfold patchSetImmutableStmt? at hHead
+              split at hHead
+              next hPatchable =>
+                simp at hHead
+                subst head
+                simp [functionScope?, ih hTail]
+              next hNotPatchable => simp at hHead
+
 def selectSwitchCase (value : Word) (default : List Stmt) :
     List (SwitchCaseValue × List Stmt) → Option (List Stmt)
   | [] => some default
@@ -407,6 +435,102 @@ mutual
       | omega
 
 end
+
+@[simp] theorem lookupFunctionWithLexicalScopes_with_empty_scope
+    (ctx : Context) (name : FunctionName) :
+    lookupFunctionWithLexicalScopes (ctx.withFunctionScope []) name =
+      lookupFunctionWithLexicalScopes ctx name := by
+  simp [Context.withFunctionScope, lookupFunctionWithLexicalScopes,
+    lookupFunctionWithLexicalScopesIn, lookupFunctionInScope]
+
+theorem call_with_empty_function_scope
+    (fuel : Nat) (ctx : Context) (args : List Word)
+    (functionName : FunctionName) (state : State) :
+    call fuel (ctx.withFunctionScope []) args functionName state =
+      call fuel ctx args functionName state := by
+  cases fuel with
+  | zero => simp [call]
+  | succ residual =>
+      unfold call
+      rw [lookupFunctionWithLexicalScopes_with_empty_scope]
+      rfl
+
+/-- Adding an empty lexical function frame is observationally inert for raw
+expression evaluation. Generated `setimmutable` patch blocks use exactly this
+case, while nonempty block scopes remain visible to ordinary lexical calls. -/
+structure EmptyFunctionScopeEvalEq (fuel : Nat) (ctx : Context) : Prop where
+  evalTail :
+    ∀ args result,
+      evalTail fuel (ctx.withFunctionScope []) args result =
+        evalTail fuel ctx args result
+  evalArgs :
+    ∀ args state,
+      evalArgs fuel (ctx.withFunctionScope []) args state =
+        evalArgs fuel ctx args state
+  evalValues :
+    ∀ expr state,
+      evalValues fuel (ctx.withFunctionScope []) expr state =
+        evalValues fuel ctx expr state
+  eval :
+    ∀ expr state,
+      eval fuel (ctx.withFunctionScope []) expr state =
+        eval fuel ctx expr state
+  evalObjectBuiltin :
+    ∀ name args state,
+      evalObjectBuiltin fuel (ctx.withFunctionScope []) name args state =
+        evalObjectBuiltin fuel ctx name args state
+
+theorem emptyFunctionScopeEvalEq (fuel : Nat) (ctx : Context) :
+    EmptyFunctionScopeEvalEq fuel ctx := by
+  induction fuel with
+  | zero =>
+      constructor <;> intros <;>
+        simp [evalTail, evalArgs, evalValues, eval, evalObjectBuiltin]
+  | succ residual ih =>
+      have hEvalTail :
+          ∀ args result,
+            evalTail (residual + 1) (ctx.withFunctionScope []) args result =
+              evalTail (residual + 1) ctx args result := by
+        intro args result
+        unfold evalTail
+        simp_rw [ih.evalArgs]
+      have hEvalArgs :
+          ∀ args state,
+            evalArgs (residual + 1) (ctx.withFunctionScope []) args state =
+              evalArgs (residual + 1) ctx args state := by
+        intro args state
+        unfold evalArgs
+        simp_rw [ih.eval, ih.evalTail]
+      have hObjectBuiltin :
+          ∀ name args state,
+            evalObjectBuiltin (residual + 1)
+                (ctx.withFunctionScope []) name args state =
+              evalObjectBuiltin (residual + 1) ctx name args state := by
+        intro name args state
+        unfold evalObjectBuiltin
+        simp_rw [ih.eval, ih.evalArgs]
+        simp [Context.withFunctionScope]
+      have hEvalValues :
+          ∀ expr state,
+            evalValues (residual + 1) (ctx.withFunctionScope []) expr state =
+              evalValues (residual + 1) ctx expr state := by
+        intro expr state
+        unfold evalValues
+        simp_rw [ih.eval, ih.evalArgs, ih.evalObjectBuiltin,
+          call_with_empty_function_scope]
+      have hEval :
+          ∀ expr state,
+            eval (residual + 1) (ctx.withFunctionScope []) expr state =
+              eval (residual + 1) ctx expr state := by
+        intro expr state
+        unfold eval
+        rw [hEvalValues]
+      exact
+        { evalTail := hEvalTail
+          evalArgs := hEvalArgs
+          evalValues := hEvalValues
+          eval := hEval
+          evalObjectBuiltin := hObjectBuiltin }
 
 def execCode (fuel : Nat) (ctx : Context) (code : List Stmt)
     (state : State) : Open State :=
