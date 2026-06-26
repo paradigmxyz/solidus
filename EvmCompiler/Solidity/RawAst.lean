@@ -965,6 +965,34 @@ inductive UserCall : Frontend.Expr → Name → List Frontend.Expr → Prop wher
 
 namespace UserCall
 
+private theorem list_containsUserCall?_eq_true_of_mem
+    {exprs : List Frontend.Expr} {expr : Frontend.Expr}
+    (hMem : expr ∈ exprs)
+    (hContains : Frontend.Expr.containsUserCall? expr = true) :
+    Frontend.Expr.List.containsUserCall? exprs = true := by
+  induction exprs with
+  | nil => simp at hMem
+  | cons head rest ih =>
+      simp at hMem
+      rcases hMem with hHead | hTail
+      · subst head
+        simp [Frontend.Expr.List.containsUserCall?, hContains]
+      · have hRest := ih hTail
+        simp [Frontend.Expr.List.containsUserCall?, hRest]
+
+theorem containsUserCall?_eq_true
+    {expr : Frontend.Expr} {generated : Name}
+    {args : List Frontend.Expr}
+    (hOccurrence : UserCall expr generated args) :
+    Frontend.Expr.containsUserCall? expr = true := by
+  induction hOccurrence with
+  | here => rfl
+  | @arg kind callee callArgs arg generated generatedArgs
+      hMem _hOccurrence ih =>
+      cases kind <;>
+        simp [Frontend.Expr.containsUserCall?,
+          list_containsUserCall?_eq_true_of_mem hMem ih]
+
 theorem headArg
     {kind : Frontend.CallKind} {callee : Name}
     {arg : Frontend.Expr} {args : List Frontend.Expr}
@@ -1926,6 +1954,43 @@ theorem resolveObjectBuiltinsIn?_occurrence
                                             | none =>
                                                 simp [hName, hBase, hValue,
                                                   hRefs] at hResolve
+                                                rcases hResolve with
+                                                  ⟨hNoCalls, rfl⟩
+                                                cases hExpr with
+                                                | arg hMem hArg =>
+                                                    simp at hMem
+                                                    rcases hMem with
+                                                      hBaseMem |
+                                                      hNameMem |
+                                                      hValueMem
+                                                    · subst_vars
+                                                      rcases
+                                                          UserCall.resolveObjectBuiltinsIn?_occurrence
+                                                            hBase hArg with
+                                                        ⟨args', hArgs,
+                                                          hBase'⟩
+                                                      have hContains :=
+                                                        UserCall.containsUserCall?_eq_true
+                                                          hBase'
+                                                      rw [hNoCalls.1] at hContains
+                                                      contradiction
+                                                    · subst_vars
+                                                      have hNone :=
+                                                        UserCall.objectBuiltinNameArg?_none
+                                                          hArg
+                                                      rw [hName] at hNone
+                                                      simp at hNone
+                                                    · subst_vars
+                                                      rcases
+                                                          UserCall.resolveObjectBuiltinsIn?_occurrence
+                                                            hValue hArg with
+                                                        ⟨args', hArgs,
+                                                          hValue'⟩
+                                                      have hContains :=
+                                                        UserCall.containsUserCall?_eq_true
+                                                          hValue'
+                                                      rw [hNoCalls.2] at hContains
+                                                      contradiction
                                             | some references =>
                                                 cases hPatch :
                                                     Frontend.ImmutableReference.List.patchStmts?

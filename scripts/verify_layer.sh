@@ -37,9 +37,9 @@ case "$layer" in
     modules=(
       EvmCompiler.TypedCfg
       EvmCompiler.TypedCfg.Preservation
-      EvmCompiler.Compiler.AllocatedTypedCfg
       EvmCompiler.Structured.ControlLabels
       EvmCompiler.Structured.TypedCfgCompiler
+      EvmCompiler.Compiler.StackArtifact
     )
     ;;
   public)

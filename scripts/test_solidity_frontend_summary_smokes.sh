@@ -3,6 +3,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SOLC_BIN="${SOLC:-solc}"
+PYTHON_BIN="$("$ROOT/scripts/find_schema_python.sh")"
 
 TMPDIR="${TMPDIR:-/tmp}"
 OUTDIR="$(mktemp -d "$TMPDIR/evm-compiler-frontend-summary-smokes.XXXXXX")"
@@ -34,25 +35,25 @@ run_summary_case() {
   mkdir -p "$case_dir"
   printf 'frontend_summary_smoke=%s\n' "$name"
 
-  python3 "$ROOT/scripts/solidity_to_yul_lean.py" "$ROOT/examples/$source" \
+  "$PYTHON_BIN" "$ROOT/scripts/solidity_to_yul_lean.py" "$ROOT/examples/$source" \
     --solc "$SOLC_BIN" \
     --format bridge-json \
     --all-contracts \
     --bridge-json-dir "$bridge_dir" \
     --output "$manifest"
 
-  python3 "$ROOT/scripts/validate_bridge_json.py" --quiet "$manifest"
+  "$PYTHON_BIN" "$ROOT/scripts/validate_bridge_json.py" --quiet "$manifest"
 
-  python3 "$ROOT/scripts/solidity_to_yul_lean.py" "$manifest" \
+  "$PYTHON_BIN" "$ROOT/scripts/solidity_to_yul_lean.py" "$manifest" \
     --input-format bridge-json-manifest \
     --format bridge-json-summary \
     --contract "$contract" \
     --object runtime \
     --output "$summary"
 
-  python3 "$ROOT/scripts/validate_bridge_json.py" --quiet "$summary"
+  "$PYTHON_BIN" "$ROOT/scripts/validate_bridge_json.py" --quiet "$summary"
 
-  python3 - \
+  "$PYTHON_BIN" - \
     "$name" \
     "$manifest" \
     "$bridge_dir" \
@@ -175,9 +176,9 @@ run_summary_case \
   ExternalCallBox.sol \
   ExternalCallBox \
   2 \
-  blocked \
+  ready \
   call,delegatecall,staticcall,returndatacopy,returndatasize,gas \
-  gas \
+  "" \
   "open external-boundary"
 
 run_summary_case \
@@ -205,9 +206,9 @@ run_summary_case \
   TryCatchBox.sol \
   TryCatchBox \
   4 \
-  blocked \
+  ready \
   call,returndatacopy,returndatasize,revert,log2,gas \
-  gas \
+  "" \
   "open external-boundary"
 
 run_summary_case \
@@ -235,9 +236,9 @@ run_summary_case \
   FactoryBox.sol \
   FactoryBox \
   4 \
-  blocked \
+  ready \
   create,create2,gas \
-  gas \
+  "" \
   "open external-boundary"
 
 run_summary_case \

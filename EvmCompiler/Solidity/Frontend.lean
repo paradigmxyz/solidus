@@ -846,6 +846,24 @@ mutual
 end
 
 mutual
+  /-- Whether an expression contains a call to a Yul function. This is used
+  when a `setimmutable` name has no patch sites: the object dialect treats
+  that case as a no-op, but dropping it must not silently erase a user call. -/
+  def Expr.containsUserCall? : Expr → Bool
+    | .lit _ => false
+    | .stringLit _ => false
+    | .bytesLit _ => false
+    | .var _ => false
+    | .call .user _ _ => true
+    | .call _ _ args => Expr.List.containsUserCall? args
+
+  def Expr.List.containsUserCall? : List Expr → Bool
+    | [] => false
+    | expr :: rest =>
+        Expr.containsUserCall? expr || Expr.List.containsUserCall? rest
+end
+
+mutual
   def Stmt.loadImmutableNames : Stmt → List Name
     | .block stmts => Stmt.List.loadImmutableNames stmts
     | .letDecl _ none => []
@@ -2026,10 +2044,17 @@ mutual
         let name ← Expr.objectBuiltinNameArg? nameArg
         let base' ← base.resolveObjectBuiltinsIn? context
         let value' ← value.resolveObjectBuiltinsIn? context
-        let references ← context.findImmutableReferences? name
-        let stmts ←
-          ImmutableReference.List.patchStmts? references base' value'
-        some (.block stmts)
+        match context.findImmutableReferences? name with
+        | some references => do
+            let stmts ←
+              ImmutableReference.List.patchStmts? references base' value'
+            some (.block stmts)
+        | none =>
+            if Expr.containsUserCall? base' ||
+                Expr.containsUserCall? value' then
+              none
+            else
+              some (.block [])
     | .exprStmt expr => do
         let expr' ← expr.resolveObjectBuiltinsIn? context
         some (.exprStmt expr')
