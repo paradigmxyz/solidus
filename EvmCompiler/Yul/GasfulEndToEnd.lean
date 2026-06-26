@@ -190,6 +190,95 @@ theorem verifiedArtifact_frameLayoutInvariant_of_artifactFrameInvariant
   exact Assembly.GasfulBridge.frameLayoutInvariant_of_artifactFrameInvariant
     hCompact hFrame
 
+theorem verifiedArtifact_initialArtifactFramePoint
+    {object : Solidity.Frontend.Object}
+    {linkerSymbols : List
+      (Solidity.Frontend.Name × Solidity.Frontend.Word)}
+    {artifact : Solidity.Frontend.VerifiedStackObjectArtifact}
+    {baseSource : EvmYul.SharedState .Yul}
+    {gasfulInitial : Assembly.EVMState}
+    (hObject :
+      object.compileVerifiedStackObjectArtifactWithLinkerSymbols?
+          linkerSymbols = some artifact)
+    (hInitial :
+      Assembly.GasfulBridge.OpenStateRel gasfulInitial
+        { (initialExpressionsState artifact baseSource).evm with
+          pc := EvmYul.UInt256.ofNat 0 }) :
+    Assembly.GasfulBridge.ArtifactFramePoint
+      artifact.codeArtifact.compact
+      (Assembly.Bytecode.ofList artifact.image.bytes)
+      gasfulInitial := by
+  obtain ⟨_children, _plan, _codeArtifact, _hChildren, _hPlan, _hFinish,
+      hCode, _hArtifactChildren, _hContext, _hChildImages, _hPayload,
+      _hImage⟩ :=
+    Solidity.Frontend.Object.compileVerifiedStackObjectArtifactWithLinkerSymbols?_parts
+      hObject
+  obtain ⟨_hResolved, _hOrdered, _hLower, _hStack, _pinnedPushPcs,
+      _hPins, hCompact, _hBytes, _hMarker⟩ :=
+    Solidity.Frontend.Object.compileVerifiedStackCodeArtifactIn?_parts hCode
+  apply Assembly.GasfulBridge.artifactFramePoint_initial hCompact
+  · calc
+      gasfulInitial.executionEnv.code =
+          ({ (initialExpressionsState artifact baseSource).evm with
+            pc := EvmYul.UInt256.ofNat 0 } : Assembly.EVMState).executionEnv.code :=
+        hInitial.code_eq
+      _ = Assembly.Bytecode.ofList artifact.image.bytes := by
+        simp [initialExpressionsState, initialFunctionsState,
+          Functions.StackRelation.initialTarget, Structured.RunState.initial,
+          FunctionsInteractionRelation.ScopedStateRel.initialTarget,
+          FunctionsInteractionRelation.ScopedStateRel.installedSourceShared,
+          FunctionsInteractionRelation.SharedRel.toEVM,
+          FunctionsInteractionRelation.ExecutionEnvRel.toEVM]
+        simp [Simulation.OpenWorld.installEVMShared,
+          Simulation.OpenWorld.installEVM]
+  · simpa using hInitial.pc_eq
+
+theorem verifiedArtifact_frameStepInvariant_of_ordinaryBoundary
+    {object : Solidity.Frontend.Object}
+    {linkerSymbols : List
+      (Solidity.Frontend.Name × Solidity.Frontend.Word)}
+    {artifact : Solidity.Frontend.VerifiedStackObjectArtifact}
+    (hObject :
+      object.compileVerifiedStackObjectArtifactWithLinkerSymbols?
+          linkerSymbols = some artifact)
+    {validJumps : Array Assembly.Word}
+    (hOrdinary :
+      Assembly.GasfulBridge.ArtifactOrdinaryBoundaryStepInvariant
+        artifact.codeArtifact.compact
+        (Assembly.Bytecode.ofList artifact.image.bytes)
+        validJumps) :
+    Assembly.GasfulBridge.ArtifactFrameStepInvariant
+      artifact.codeArtifact.compact
+      (Assembly.Bytecode.ofList artifact.image.bytes)
+      validJumps := by
+  obtain ⟨_children, _plan, _codeArtifact, _hChildren, _hPlan, _hFinish,
+      hCode, _hArtifactChildren, _hContext, _hChildImages, _hPayload,
+      _hImage⟩ :=
+    Solidity.Frontend.Object.compileVerifiedStackObjectArtifactWithLinkerSymbols?_parts
+      hObject
+  obtain ⟨_hResolved, _hOrdered, _hLower, _hStack, _pinnedPushPcs,
+      _hPins, hCompact, _hBytes, _hMarker⟩ :=
+    Solidity.Frontend.Object.compileVerifiedStackCodeArtifactIn?_parts hCode
+  obtain ⟨plan, hImage⟩ :=
+    Solidity.Frontend.Object.compileVerifiedStackObjectArtifactWithLinkerSymbols?_sentinelImage
+      hObject
+  have hSentinel : Assembly.Compact.decodeAt
+      (Assembly.Bytecode.ofList artifact.image.bytes)
+      (Assembly.Compact.Program.codeByteLength
+        artifact.codeArtifact.compact.program.code)
+      (.prim .invalid) := by
+    rw [hImage]
+    simpa [Solidity.Frontend.Object.verifiedCodeSentinel,
+      List.append_assoc] using
+      (Assembly.GasfulBridge.compact_compile_sentinel_decodeAt
+        hCompact plan.payload)
+  intro current next stepFuel hPoint hPrefix hStep hContinues
+  exact (Assembly.GasfulBridge.artifactFrameStepInvariant_of_ordinaryBoundary
+    (validJumps := validJumps) hCompact
+    (Solidity.Frontend.Object.compileVerifiedStackObjectArtifactWithLinkerSymbols?_decodingCorrect
+      hObject)
+    hSentinel hOrdinary) hPoint hPrefix hStep hContinues
+
 theorem optimizedSolcYulToGasfulRawBytecodeOfRecursiveFrameBridge
     {object : Solidity.Frontend.Object}
     {linkerSymbols : List
@@ -201,14 +290,13 @@ theorem optimizedSolcYulToGasfulRawBytecodeOfRecursiveFrameBridge
     (hObject :
       object.compileVerifiedStackObjectArtifactWithLinkerSymbols?
           linkerSymbols = some artifact)
-    (hFrame :
-      Assembly.GasfulBridge.ArtifactFrameInvariant
+    (hOrdinary :
+      Assembly.GasfulBridge.ArtifactOrdinaryBoundaryStepInvariant
         artifact.codeArtifact.compact
         (Assembly.Bytecode.ofList artifact.image.bytes)
         (EvmYul.EVM.D_J
           (Assembly.Bytecode.ofList artifact.image.bytes)
-          (EvmYul.UInt256.ofNat 0))
-        gasfulInitial)
+          (EvmYul.UInt256.ofNat 0)))
     (hInitial :
       Assembly.GasfulBridge.OpenStateRel gasfulInitial
         { (initialExpressionsState artifact baseSource).evm with
@@ -266,6 +354,22 @@ theorem optimizedSolcYulToGasfulRawBytecodeOfRecursiveFrameBridge
   obtain ⟨structuredFuel, hAccepted, hForward⟩ :=
     optimizedSolcYulToRawBytecode (sourceFuel := sourceFuel)
       (baseSource := baseSource) hObject
+  have hInitialPoint :=
+    verifiedArtifact_initialArtifactFramePoint hObject hInitial
+  have hStepInvariant : Assembly.GasfulBridge.ArtifactFrameStepInvariant
+      artifact.codeArtifact.compact
+      (Assembly.Bytecode.ofList artifact.image.bytes)
+      (EvmYul.EVM.D_J
+        (Assembly.Bytecode.ofList artifact.image.bytes)
+        (EvmYul.UInt256.ofNat 0)) := by
+    intro current next stepFuel hPoint hPrefix hStep hContinues
+    exact (verifiedArtifact_frameStepInvariant_of_ordinaryBoundary
+      (validJumps := EvmYul.EVM.D_J
+        (Assembly.Bytecode.ofList artifact.image.bytes)
+        (EvmYul.UInt256.ofNat 0)) hObject hOrdinary)
+      hPoint hPrefix hStep hContinues
+  have hFrame := Assembly.GasfulBridge.artifactFrameInvariant_of_step
+    hInitialPoint hStepInvariant
   have hLayout :=
     verifiedArtifact_frameLayoutInvariant_of_artifactFrameInvariant
       hObject hFrame

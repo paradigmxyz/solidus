@@ -495,6 +495,31 @@ theorem artifactFramePoint_branch_push_step
   rw [hNext]
   exact artifactFramePoint_branch_push_next hCode hBlock hInstr hLookup hPc
 
+theorem artifactFramePoint_boundary_branch_step
+    {source : Assembly.Program} {pinnedPushPcs : List Nat}
+    {artifact : Compact.Artifact} {bytes : ByteArray}
+    {state next : EVMState} {block : Compact.SourceBlock}
+    {label : Label} {isJumpi : Bool} {stepFuel : Nat}
+    (hCompile : Compact.compile? source pinnedPushPcs = some artifact)
+    (hDecode : Compact.DecodingCorrect artifact.program bytes)
+    (hCode : state.executionEnv.code = bytes)
+    (hBlock : block ∈ artifact.blocks)
+    (hInstr : block.sourceInstr =
+      if isJumpi then .jumpi label else .jump label)
+    (hPc : state.pc = EvmYul.UInt256.ofNat block.compactPc)
+    (hStep :
+      EvmYul.EVM.step stepFuel (dynamicGasCostAt state)
+        (some
+          ((EvmYul.EVM.decode state.executionEnv.code state.pc).getD
+            (EvmYul.Operation.STOP, none)))
+        (afterMemoryChargeAt state) = .ok next) :
+    ArtifactFramePoint artifact bytes next := by
+  cases stepFuel with
+  | zero => simp [EvmYul.EVM.step] at hStep
+  | succ fuel =>
+      exact artifactFramePoint_branch_push_step hCompile hDecode hCode
+        hBlock hInstr hPc hStep
+
 theorem artifactFramePoint_branchMid_jump_next
     {source : Assembly.Program} {pinnedPushPcs : List Nat}
     {artifact : Compact.Artifact} {bytes : ByteArray}
@@ -659,6 +684,182 @@ theorem artifactFramePoint_branchMid_jumpi_step
   exact artifactFramePoint_branchMid_jumpi_next hCompile hCode hBlock
     hInstr hLookup hPc
 
+theorem artifactFramePoint_branchMid_step
+    {source : Assembly.Program} {pinnedPushPcs : List Nat}
+    {artifact : Compact.Artifact} {bytes : ByteArray}
+    {validJumps : Array Word} {state next : EVMState}
+    {block : Compact.SourceBlock} {label : Label} {isJumpi : Bool}
+    {dest : Nat} {rest : EvmYul.Stack Word} {stepFuel : Nat}
+    (hCompile : Compact.compile? source pinnedPushPcs = some artifact)
+    (hDecode : Compact.DecodingCorrect artifact.program bytes)
+    (hCode : state.executionEnv.code = bytes)
+    (hBlock : block ∈ artifact.blocks)
+    (hInstr : block.sourceInstr =
+      if isJumpi then .jumpi label else .jump label)
+    (hLookup : Compact.lookupLabel? artifact.labels label = some dest)
+    (hPc : state.pc = EvmYul.UInt256.ofNat
+      (block.compactPc + artifact.branchWidth + 1))
+    (hStack : state.stack = EvmYul.UInt256.ofNat dest :: rest)
+    (hPrefix : XSstoreStipendChecksPass validJumps state)
+    (hStep :
+      EvmYul.EVM.step stepFuel (dynamicGasCostAt state)
+        (some
+          ((EvmYul.EVM.decode state.executionEnv.code state.pc).getD
+            (EvmYul.Operation.STOP, none)))
+        (afterMemoryChargeAt state) = .ok next) :
+    ArtifactFramePoint artifact bytes next := by
+  cases stepFuel with
+  | zero => simp [EvmYul.EVM.step] at hStep
+  | succ fuel =>
+      cases hJumpi : isJumpi
+      · simp [hJumpi] at hInstr
+        exact artifactFramePoint_branchMid_jump_step hCompile hDecode hCode
+          hBlock hInstr hLookup hPc hStack hStep
+      · simp [hJumpi] at hInstr
+        obtain ⟨located, hMem, hLocatedPc, hLocatedInstr⟩ :=
+          compact_branch_midpoint_mem hCompile hBlock
+            (isJumpi := true) (by simpa using hInstr)
+        obtain ⟨decoded, hInstrDecoded, hBytesDecoded⟩ :=
+          hDecode.decodes located hMem
+        rw [hLocatedInstr] at hInstrDecoded
+        simp [Compact.Instr.decoded?] at hInstrDecoded
+        subst decoded
+        have hStatePc : state.pc = EvmYul.UInt256.ofNat located.pc :=
+          hPc.trans (congrArg EvmYul.UInt256.ofNat hLocatedPc.symm)
+        have hDecoded :
+            EvmYul.EVM.decode state.executionEnv.code state.pc =
+              some (EvmYul.Operation.JUMPI, none) := by
+          simpa [hCode, hStatePc] using hBytesDecoded
+        have hPair :
+            ((EvmYul.EVM.decode state.executionEnv.code state.pc).getD
+              (EvmYul.Operation.STOP, none)) =
+              (EvmYul.Operation.JUMPI, none) := by
+          simp [hDecoded]
+        have hEnough : ¬ state.stack.length < 2 := by
+          simpa [decodedOperationAt, hPair, EvmYul.EVM.δ] using
+            hPrefix.static.stackLimit.memoryAccess.jumps.stack.stackEnough
+        cases rest with
+        | nil =>
+            exfalso
+            apply hEnough
+            simp [hStack]
+        | cons cond tail =>
+            have hStack' : state.stack =
+                EvmYul.UInt256.ofNat dest :: cond :: tail := by
+              simpa using hStack
+            exact artifactFramePoint_branchMid_jumpi_step hCompile hDecode
+              hCode hBlock hInstr hLookup hPc hStack' hStep
+
+theorem artifactFramePoint_sentinel_no_success
+    {artifact : Compact.Artifact} {bytes : ByteArray}
+    {state next : EVMState} {stepFuel : Nat}
+    (hSentinel : Compact.decodeAt bytes
+      (Compact.Program.codeByteLength artifact.program.code)
+      (.prim .invalid))
+    (hCode : state.executionEnv.code = bytes)
+    (hPc : state.pc = EvmYul.UInt256.ofNat
+      (Compact.Program.codeByteLength artifact.program.code))
+    (hStep :
+      EvmYul.EVM.step stepFuel (dynamicGasCostAt state)
+        (some
+          ((EvmYul.EVM.decode state.executionEnv.code state.pc).getD
+            (EvmYul.Operation.STOP, none)))
+        (afterMemoryChargeAt state) = .ok next) : False := by
+  obtain ⟨decoded, hInstrDecoded, hBytesDecoded⟩ := hSentinel
+  simp [Compact.Instr.decoded?] at hInstrDecoded
+  subst decoded
+  have hDecoded :
+      EvmYul.EVM.decode state.executionEnv.code state.pc =
+        some (EvmYul.Operation.INVALID, none) := by
+    simpa [hCode, hPc] using hBytesDecoded
+  cases stepFuel with
+  | zero => simp [EvmYul.EVM.step] at hStep
+  | succ fuel =>
+      rw [hDecoded] at hStep
+      simp only [Option.getD_some] at hStep
+      change EvmYul.step (τ := .EVM) EvmYul.Operation.INVALID none
+        { { afterMemoryChargeAt state with
+              execLength := (afterMemoryChargeAt state).execLength + 1 } with
+          gasAvailable := (afterMemoryChargeAt state).gasAvailable -
+            EvmYul.UInt256.ofNat (dynamicGasCostAt state) } =
+        Except.ok next at hStep
+      change Except.error EvmYul.EVM.ExecutionException.InvalidInstruction =
+        Except.ok next at hStep
+      cases hStep
+
+def ArtifactFrameStepInvariant
+    (artifact : Compact.Artifact) (bytes : ByteArray)
+    (validJumps : Array Word) : Prop :=
+  ∀ {current next : EVMState} {stepFuel : Nat},
+    ArtifactFramePoint artifact bytes current →
+    XSstoreStipendChecksPass validJumps current →
+    EvmYul.EVM.step stepFuel (dynamicGasCostAt current)
+        (some
+          ((EvmYul.EVM.decode current.executionEnv.code current.pc).getD
+            (EvmYul.Operation.STOP, none)))
+        (afterMemoryChargeAt current) = .ok next →
+    haltOutputAt next (decodedOperationAt current) = none →
+    ArtifactFramePoint artifact bytes next
+
+def ArtifactOrdinaryBoundaryStepInvariant
+    (artifact : Compact.Artifact) (bytes : ByteArray)
+    (validJumps : Array Word) : Prop :=
+  ∀ {current next : EVMState} {block : Compact.SourceBlock}
+      {stepFuel : Nat},
+    current.executionEnv.code = bytes →
+    block ∈ artifact.blocks →
+    current.pc = EvmYul.UInt256.ofNat block.compactPc →
+    (∀ target, block.sourceInstr ≠ .jump target) →
+    (∀ target, block.sourceInstr ≠ .jumpi target) →
+    XSstoreStipendChecksPass validJumps current →
+    EvmYul.EVM.step stepFuel (dynamicGasCostAt current)
+        (some
+          ((EvmYul.EVM.decode current.executionEnv.code current.pc).getD
+            (EvmYul.Operation.STOP, none)))
+        (afterMemoryChargeAt current) = .ok next →
+    haltOutputAt next (decodedOperationAt current) = none →
+    ArtifactFramePoint artifact bytes next
+
+/-- Generated branches and the sentinel are discharged internally; only
+ordinary source-block boundaries remain in the local preservation premise. -/
+theorem artifactFrameStepInvariant_of_ordinaryBoundary
+    {source : Assembly.Program} {pinnedPushPcs : List Nat}
+    {artifact : Compact.Artifact} {bytes : ByteArray}
+    {validJumps : Array Word}
+    (hCompile : Compact.compile? source pinnedPushPcs = some artifact)
+    (hDecode : Compact.DecodingCorrect artifact.program bytes)
+    (hSentinel : Compact.decodeAt bytes
+      (Compact.Program.codeByteLength artifact.program.code)
+      (.prim .invalid))
+    (hOrdinary :
+      ArtifactOrdinaryBoundaryStepInvariant artifact bytes validJumps) :
+    ArtifactFrameStepInvariant artifact bytes validJumps := by
+  intro current next stepFuel hPoint hPrefix hStep hContinues
+  rcases hPoint with ⟨hCode, hControl⟩
+  cases hControl with
+  | boundary block hBlock hPc =>
+      generalize hInstr : block.sourceInstr = instr
+      cases instr with
+      | jump label =>
+          exact artifactFramePoint_boundary_branch_step hCompile hDecode
+            hCode hBlock (isJumpi := false) (by simpa using hInstr)
+              hPc hStep
+      | jumpi label =>
+          exact artifactFramePoint_boundary_branch_step hCompile hDecode
+            hCode hBlock (isJumpi := true) (by simpa using hInstr)
+              hPc hStep
+      | label name | prim op | push value | pushLabel target | jumpDynamic =>
+          exact hOrdinary hCode hBlock hPc
+            (by intro target; simp [hInstr])
+            (by intro target; simp [hInstr])
+            hPrefix hStep hContinues
+  | branchMid block hBlock label isJumpi dest rest hInstr hLookup hPc hStack =>
+      exact artifactFramePoint_branchMid_step hCompile hDecode hCode hBlock
+        hInstr hLookup hPc hStack hPrefix hStep
+  | sentinel hPc =>
+      exact False.elim
+        (artifactFramePoint_sentinel_no_success hSentinel hCode hPc hStep)
+
 theorem CompactControlPoint.layoutPoint
     {source : Assembly.Program} {pinnedPushPcs : List Nat}
     {artifact : Compact.Artifact} {state : EVMState}
@@ -719,16 +920,7 @@ theorem artifactFrameInvariant_of_step
     {artifact : Compact.Artifact} {bytes : ByteArray}
     {validJumps : Array Word} {initial : EVMState}
     (hInitial : ArtifactFramePoint artifact bytes initial)
-    (hPreserve : ∀ {current next : EVMState} {stepFuel : Nat},
-      ArtifactFramePoint artifact bytes current →
-      XSstoreStipendChecksPass validJumps current →
-      EvmYul.EVM.step stepFuel (dynamicGasCostAt current)
-          (some
-            ((EvmYul.EVM.decode current.executionEnv.code current.pc).getD
-              (EvmYul.Operation.STOP, none)))
-          (afterMemoryChargeAt current) = .ok next →
-      haltOutputAt next (decodedOperationAt current) = none →
-      ArtifactFramePoint artifact bytes next) :
+    (hPreserve : ArtifactFrameStepInvariant artifact bytes validJumps) :
     ArtifactFrameInvariant artifact bytes validJumps initial := by
   intro state hReach
   induction hReach with
