@@ -241,6 +241,9 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.PathScopedExprListCompiled.reverse
 #check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.argsRunForward_of_path_scoped_compiled_fuel_below
 #check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.exprValuesRunForward_of_path_elaborated_primitiveCall_below
+#check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.PathCompiledFunctionScopes.resolve
+#check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.PathCompiledFunctionBinding.block_parts
+#check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.exprValuesRunForward_of_path_elaborated_userCall_below
 #check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.ArtifactRawSourceContext.clzBindingResolverAt
 #check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.scopedExprElaborationRunForwardAt_succ
 #check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.StmtRunForward
@@ -1156,6 +1159,8 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.clzPathRunForwardAt_succ_succ
 #print axioms EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.argsRunForward_of_path_scoped_compiled_fuel_below
 #print axioms EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.exprValuesRunForward_of_path_elaborated_primitiveCall_below
+#print axioms EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.PathCompiledFunctionBinding.block_parts
+#print axioms EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.exprValuesRunForward_of_path_elaborated_userCall_below
 #print axioms EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.ArtifactRawSourceContext.clzBindingResolverAt
 #print axioms EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.scopedExprElaborationRunForwardAt_succ
 #print axioms EvmCompiler.Solidity.RawAst.Raw.ClzPreservation.clzHelperBody_exec

@@ -1461,6 +1461,285 @@ theorem suffixPath
 
 end ClzCompilationPath
 
+/-- Checked raw-function binding augmented with the exact generated-helper path
+through that function's elaboration. No semantic call premise is stored. -/
+structure PathCompiledFunctionBinding
+    (builtinContext : Frontend.ObjectBuiltinContext)
+    (contract : Frontend.AstContract)
+    (generated : Name)
+    (rawFn : Raw.SourceSemantics.FunctionDef)
+    (generatedScopes : List (List (Name × Name))) where
+  frontFn : Frontend.FunctionDef
+  functionState : Elab.State
+  finalFunctionState : Elab.State
+  orderedBody : List Frontend.AstStmt
+  functionScopes : functionState.functionScopes = generatedScopes
+  elaborates :
+    (Elab.FunctionDef.elaborate rawFn.params rawFn.returns rawFn.body).run
+        functionState = .ok (frontFn, finalFunctionState)
+  bodyNormalized :
+    StmtListNormalized builtinContext frontFn.body orderedBody
+  orderedLookup :
+    contract.functions.lookup generated =
+      some (.Def rawFn.params rawFn.returns orderedBody)
+  clzPath :
+    ClzCompilationPath contract functionState finalFunctionState
+
+namespace PathCompiledFunctionBinding
+
+def toCompiled
+    {builtinContext : Frontend.ObjectBuiltinContext}
+    {contract : Frontend.AstContract}
+    {generated : Name}
+    {rawFn : Raw.SourceSemantics.FunctionDef}
+    {generatedScopes : List (List (Name × Name))}
+    (binding :
+      PathCompiledFunctionBinding builtinContext contract
+        generated rawFn generatedScopes) :
+    CompiledFunctionBinding builtinContext contract
+      generated rawFn generatedScopes where
+  frontFn := binding.frontFn
+  functionState := binding.functionState
+  finalFunctionState := binding.finalFunctionState
+  orderedBody := binding.orderedBody
+  functionScopes := binding.functionScopes
+  elaborates := binding.elaborates
+  bodyNormalized := binding.bodyNormalized
+  orderedLookup := binding.orderedLookup
+
+theorem block_parts
+    {builtinContext : Frontend.ObjectBuiltinContext}
+    {contract : Frontend.AstContract}
+    {generated : Name}
+    {rawFn : Raw.SourceSemantics.FunctionDef}
+    {generatedScopes : List (List (Name × Name))}
+    (binding :
+      PathCompiledFunctionBinding builtinContext contract
+        generated rawFn generatedScopes) :
+    ∃ bodyState finalBodyState frontBody orderedBody,
+      bodyState.functionScopes = generatedScopes ∧
+        (Elab.Stmt.List.elaborateBlock rawFn.body true).run bodyState =
+          .ok (frontBody, finalBodyState) ∧
+        Nonempty (StmtListNormalized builtinContext frontBody orderedBody) ∧
+        contract.functions.lookup generated =
+          some (.Def rawFn.params rawFn.returns orderedBody) ∧
+        Nonempty
+          (ClzCompilationPath contract bodyState finalBodyState) := by
+  have hFunction := binding.elaborates
+  unfold Elab.FunctionDef.elaborate at hFunction
+  simp [StateT.run_bind] at hFunction
+  cases hPush : Elab.pushIdentifierScope.run binding.functionState with
+  | error err => simp [hPush] at hFunction
+  | ok pushResult =>
+      rcases pushResult with ⟨_, pushedState⟩
+      have hPushExt :=
+        Elab.pushIdentifierScope_preserves_clzAllocation
+          hPush binding.clzPath.entryValid
+      have hPushScopes :
+          pushedState.functionScopes =
+            binding.functionState.functionScopes :=
+        Elab.pushIdentifierScope_preserves_functionScopes hPush
+      simp [hPush] at hFunction
+      cases hDeclare :
+          (Elab.declareIdentifiers (rawFn.params ++ rawFn.returns)
+            "function parameter/result").run pushedState with
+      | error err => simp [hDeclare] at hFunction
+      | ok declareResult =>
+          rcases declareResult with ⟨_, declaredState⟩
+          have hDeclareExt :=
+            Elab.declareIdentifiers_preserves_clzAllocation
+              (rawFn.params ++ rawFn.returns)
+              "function parameter/result" hDeclare hPushExt.after_valid
+          have hDeclareScopes :
+              declaredState.functionScopes = pushedState.functionScopes :=
+            Elab.declareIdentifiers_preserves_functionScopes
+              (rawFn.params ++ rawFn.returns)
+              "function parameter/result" hDeclare
+          simp [hDeclare] at hFunction
+          cases hBody :
+              (Elab.Stmt.List.elaborateBlock rawFn.body true).run
+                declaredState with
+          | error err => simp [hBody] at hFunction
+          | ok bodyResult =>
+              rcases bodyResult with ⟨frontBody, bodyState⟩
+              have hBodyExt :=
+                Elab.Stmt.List.elaborateBlock_preserves_clzAllocation
+                  rawFn.body true hBody hDeclareExt.after_valid
+              simp [hBody] at hFunction
+              cases hPop : Elab.popIdentifierScope.run bodyState with
+              | error err => simp [hPop] at hFunction
+              | ok popResult =>
+                  rcases popResult with ⟨_, poppedState⟩
+                  have hPopExt :=
+                    Elab.popIdentifierScope_preserves_clzAllocation
+                      hPop hBodyExt.after_valid
+                  simp [hPop] at hFunction
+                  rcases hFunction with ⟨hFrontFn, hFinalState⟩
+                  have hFinalResolver :
+                      ClzBindingResolverAt contract poppedState := by
+                    rw [hFinalState]
+                    exact binding.clzPath.finalResolver
+                  have hBodyPath :
+                      ClzCompilationPath contract declaredState bodyState :=
+                    { entryValid := hDeclareExt.after_valid
+                      finalResolver :=
+                        ClzBindingResolverAt.of_extends
+                          hPopExt hFinalResolver }
+                  have hFrontBody : binding.frontFn.body = frontBody := by
+                    rw [← hFrontFn]
+                  have hNormalized := binding.bodyNormalized
+                  rw [hFrontBody] at hNormalized
+                  refine
+                    ⟨declaredState, bodyState, frontBody,
+                      binding.orderedBody, ?_, hBody, ⟨hNormalized⟩,
+                      binding.orderedLookup, ⟨hBodyPath⟩⟩
+                  rw [hDeclareScopes, hPushScopes, binding.functionScopes]
+
+end PathCompiledFunctionBinding
+
+structure PathCompiledFunctionScope
+    (builtinContext : Frontend.ObjectBuiltinContext)
+    (contract : Frontend.AstContract)
+    (rawScope : Raw.SourceSemantics.FunctionScope)
+    (generatedScope : List (Name × Name))
+    (generatedScopes : List (List (Name × Name))) : Prop where
+  binding :
+    ∀ {rawName generated},
+      Elab.lookupFunctionInScope rawName generatedScope = some generated →
+        ∃ rawFn,
+          Raw.SourceSemantics.lookupFunctionInScope rawName rawScope =
+              some rawFn ∧
+            Nonempty
+              (PathCompiledFunctionBinding builtinContext contract
+                generated rawFn generatedScopes)
+  rawLookupNone :
+    ∀ {rawName},
+      Elab.lookupFunctionInScope rawName generatedScope = none →
+        Raw.SourceSemantics.lookupFunctionInScope rawName rawScope = none
+
+inductive PathCompiledFunctionScopes
+    (builtinContext : Frontend.ObjectBuiltinContext)
+    (contract : Frontend.AstContract) :
+    List Raw.SourceSemantics.FunctionScope →
+      List (List (Name × Name)) → Prop where
+  | nil : PathCompiledFunctionScopes builtinContext contract [] []
+  | cons
+      {rawScope : Raw.SourceSemantics.FunctionScope}
+      {rawRest : List Raw.SourceSemantics.FunctionScope}
+      {generatedScope : List (Name × Name)}
+      {generatedRest : List (List (Name × Name))}
+      (head :
+        PathCompiledFunctionScope builtinContext contract rawScope
+          generatedScope (generatedScope :: generatedRest))
+      (tail :
+        PathCompiledFunctionScopes builtinContext contract
+          rawRest generatedRest) :
+      PathCompiledFunctionScopes builtinContext contract
+        (rawScope :: rawRest) (generatedScope :: generatedRest)
+
+namespace PathCompiledFunctionScopes
+
+theorem resolve
+    {builtinContext : Frontend.ObjectBuiltinContext}
+    {contract : Frontend.AstContract}
+    {rawScopes : List Raw.SourceSemantics.FunctionScope}
+    {generatedScopes : List (List (Name × Name))}
+    (hScopes :
+      PathCompiledFunctionScopes builtinContext contract
+        rawScopes generatedScopes)
+    {rawName generated : Name}
+    (hResolve :
+      Elab.resolveFunctionIn rawName generatedScopes = some generated) :
+    ∃ rawFn rawLexical generatedLexical,
+      Raw.SourceSemantics.lookupFunctionWithLexicalScopesIn
+          rawName rawScopes = some (rawFn, rawLexical) ∧
+        Nonempty
+          (PathCompiledFunctionBinding builtinContext contract
+            generated rawFn generatedLexical) ∧
+        PathCompiledFunctionScopes builtinContext contract
+          rawLexical generatedLexical := by
+  induction hScopes with
+  | nil =>
+      simp [Elab.resolveFunctionIn] at hResolve
+  | @cons rawScope rawRest generatedScope generatedRest hHead hTail ih =>
+      cases hLookup : Elab.lookupFunctionInScope rawName generatedScope with
+      | none =>
+          have hRawNone := hHead.rawLookupNone hLookup
+          have hOuter :
+              Elab.resolveFunctionIn rawName generatedRest = some generated := by
+            simpa [Elab.resolveFunctionIn, hLookup] using hResolve
+          rcases ih hOuter with
+            ⟨rawFn, rawLexical, generatedLexical,
+              hRawResolve, hBinding, hLexical⟩
+          refine
+            ⟨rawFn, rawLexical, generatedLexical, ?_, hBinding, hLexical⟩
+          simp [Raw.SourceSemantics.lookupFunctionWithLexicalScopesIn,
+            hRawNone, hRawResolve]
+      | some resolved =>
+          have hGenerated : resolved = generated := by
+            simpa [Elab.resolveFunctionIn, hLookup] using hResolve
+          subst resolved
+          rcases hHead.binding hLookup with
+            ⟨rawFn, hRawLookup, hBinding⟩
+          refine
+            ⟨rawFn, rawScope :: rawRest, generatedScope :: generatedRest,
+              ?_, hBinding, .cons hHead hTail⟩
+          simp [Raw.SourceSemantics.lookupFunctionWithLexicalScopesIn,
+            hRawLookup]
+
+theorem toCompiled
+    {builtinContext : Frontend.ObjectBuiltinContext}
+    {contract : Frontend.AstContract}
+    {rawScopes : List Raw.SourceSemantics.FunctionScope}
+    {generatedScopes : List (List (Name × Name))}
+    (hScopes :
+      PathCompiledFunctionScopes builtinContext contract
+        rawScopes generatedScopes) :
+    CompiledFunctionScopes builtinContext contract
+      rawScopes generatedScopes := by
+  induction hScopes with
+  | nil => exact .nil
+  | cons head tail ih =>
+      exact .cons
+        { binding := by
+            intro rawName generated hLookup
+            rcases head.binding hLookup with
+              ⟨rawFn, hRaw, ⟨binding⟩⟩
+            exact ⟨rawFn, hRaw, ⟨binding.toCompiled⟩⟩
+          rawLookupNone := head.rawLookupNone }
+        ih
+
+end PathCompiledFunctionScopes
+
+/-- Object metadata plus lexical function bindings, each carrying its actual
+function-elaboration helper path. This is the context used only by the new
+path-scoped semantic recursion. -/
+structure PathCompiledContext
+    (builtinContext : Frontend.ObjectBuiltinContext)
+    (contract : Frontend.AstContract)
+    (rawContext : Raw.SourceSemantics.Context)
+    (generatedScopes : List (List (Name × Name))) : Prop where
+  objectBuiltins :
+    ObjectBuiltinContextsAgree rawContext.objectBuiltins builtinContext
+  functionScopes :
+    PathCompiledFunctionScopes builtinContext contract
+      rawContext.functionScopes generatedScopes
+
+namespace PathCompiledContext
+
+def toCompiled
+    {builtinContext : Frontend.ObjectBuiltinContext}
+    {contract : Frontend.AstContract}
+    {rawContext : Raw.SourceSemantics.Context}
+    {generatedScopes : List (List (Name × Name))}
+    (context :
+      PathCompiledContext builtinContext contract rawContext generatedScopes) :
+    CompiledContext builtinContext contract rawContext generatedScopes where
+  objectBuiltins := context.objectBuiltins
+  functionScopes := context.functionScopes.toCompiled
+
+end PathCompiledContext
+
 /-- Temporary recursive callback used by the generic expression classifier.
 It remains private scaffolding until statement continuation preservation
 constructs `ClzBindingResolverAt` for each reachable final state. -/
@@ -1731,7 +2010,7 @@ def ScopedExprPathRunForwardAt
     {rawExpr : Raw.Expr} {front : Frontend.Expr}
     {ordered : Frontend.AstExpr}
     {elabState finalElabState : Elab.State} {state : State},
-    CompiledContext builtinContext contract
+    PathCompiledContext builtinContext contract
         rawContext elabState.functionScopes →
       ClzCompilationPath contract elabState finalElabState →
       (Elab.Expr.elaborate rawExpr).run elabState =
@@ -1802,7 +2081,7 @@ def ScopedBlockPathRunForwardAt
     {rawCode : List Raw.Stmt} {front : List Frontend.Stmt}
     {ordered : List Frontend.AstStmt}
     {elabState finalElabState : Elab.State} {state : State},
-    CompiledContext builtinContext contract
+    PathCompiledContext builtinContext contract
         rawContext elabState.functionScopes →
       ClzCompilationPath contract elabState finalElabState →
       (Elab.Stmt.List.elaborateBlock rawCode true).run elabState =
@@ -1910,7 +2189,7 @@ def ClzPathRunForwardAt
     {rawArgs : List Raw.Expr}
     {front : Frontend.Expr} {ordered : Frontend.AstExpr}
     {elabState finalElabState : Elab.State} {state : State},
-    CompiledContext builtinContext contract
+    PathCompiledContext builtinContext contract
         rawContext elabState.functionScopes →
       ClzCompilationPath contract elabState finalElabState →
       (Elab.Expr.elaborate (.functionCall "clz" rawArgs)).run elabState =
@@ -2671,7 +2950,7 @@ theorem argsRunForward_of_path_scoped_compiled_fuel_below
     {generatedScopes : List (List (Name × Name))}
     {rawExprs : List Raw.Expr} {ordered : List Frontend.AstExpr}
     (hContext :
-      CompiledContext builtinContext contract rawContext generatedScopes)
+      PathCompiledContext builtinContext contract rawContext generatedScopes)
     (hCompiled :
       PathScopedExprListCompiled builtinContext contract generatedScopes
         rawExprs ordered)
@@ -2716,7 +2995,7 @@ theorem argsRunForward_of_path_scoped_compiled_fuel_below
                   elabState finalElabState hElab hScopes hNormalized
                   hHeadPath hTail =>
                   have hHeadContext :
-                      CompiledContext builtinContext contract rawContext
+                      PathCompiledContext builtinContext contract rawContext
                         elabState.functionScopes :=
                     { objectBuiltins := hContext.objectBuiltins
                       functionScopes := by
@@ -2766,7 +3045,7 @@ theorem argsRunForward_reverse_of_path_elaboration_fuel_below
     {ordered : List Frontend.AstExpr}
     {elabState finalElabState : Elab.State}
     (hContext :
-      CompiledContext builtinContext contract
+      PathCompiledContext builtinContext contract
         rawContext elabState.functionScopes)
     (hPath :
       ClzCompilationPath contract elabState finalElabState)
@@ -3063,7 +3342,7 @@ theorem exprValuesRunForward_of_path_elaborated_primitiveCall_below
       ScopedExprPathRunForwardBelow
         argsFuel slack builtinContext contract)
     (hContext :
-      CompiledContext builtinContext contract
+      PathCompiledContext builtinContext contract
         rawContext elabState.functionScopes)
     (hPath :
       ClzCompilationPath contract elabState finalElabState)
@@ -3324,7 +3603,7 @@ theorem exprValuesRunForward_of_scoped_elaborated_clz_path
       ScopedExprPathRunForwardAt
         rawArgFuel slack builtinContext contract)
     (hContext :
-      CompiledContext builtinContext contract
+      PathCompiledContext builtinContext contract
         context elabState.functionScopes)
     (hPath :
       ClzCompilationPath contract elabState finalElabState)
@@ -3764,6 +4043,127 @@ theorem exprValuesRunForward_of_scoped_elaborated_userCall_below
                   Nat.add_comm, Nat.add_left_comm] using hBody }
           have hCall := exprValuesRunForward_userCall_succ hRun
           exact hCall
+
+/-- Path-scoped ordinary user calls. The lexical lookup returns a checked
+callee binding carrying its own function-body elaboration path, so recursive
+calls and generated `clz` inside nested functions require no semantic oracle. -/
+theorem exprValuesRunForward_of_path_elaborated_userCall_below
+    {slack callFuel : Nat}
+    {builtinContext : Frontend.ObjectBuiltinContext}
+    {rawContext : Raw.SourceSemantics.Context}
+    {name : Name} {rawArgs : List Raw.Expr}
+    {elabState finalElabState : Elab.State}
+    {front : Frontend.Expr} {ordered : Frontend.AstExpr}
+    {contract : Frontend.AstContract} {state : State}
+    (hExpr :
+      ScopedExprPathRunForwardBelow
+        (callFuel + 2) slack builtinContext contract)
+    (hBlock :
+      ScopedBlockPathRunForwardBelow
+        (callFuel + 2) slack builtinContext contract)
+    (hContext :
+      PathCompiledContext builtinContext contract
+        rawContext elabState.functionScopes)
+    (hPath :
+      ClzCompilationPath contract elabState finalElabState)
+    (hNotMemoryguard : name ≠ "memoryguard")
+    (hNotClz : name ≠ "clz")
+    (hClass : CallClass.classifyCall name = .user)
+    (hElab :
+      (Elab.Expr.elaborate (.functionCall name rawArgs)).run elabState =
+        .ok (front, finalElabState))
+    (hNormalized : ExprNormalized builtinContext front ordered) :
+    ExprValuesRunForward
+      (callFuel + 2)
+      ((callFuel + slack) + 2)
+      rawContext (.functionCall name rawArgs) ordered contract state := by
+  unfold Elab.Expr.elaborate at hElab
+  simp [StateT.run_bind] at hElab
+  cases hArgs : (Elab.Expr.List.elaborate rawArgs).run elabState with
+  | error err => simp [hArgs] at hElab
+  | ok argsResult =>
+      rcases argsResult with ⟨frontArgs, argsState⟩
+      have hArgsScopes :
+          argsState.functionScopes = elabState.functionScopes :=
+        Elab.Expr.List.elaborate_preserves_functionScopes rawArgs hArgs
+      have hArgsContext :
+          PathCompiledContext builtinContext contract rawContext
+            argsState.functionScopes :=
+        { objectBuiltins := hContext.objectBuiltins
+          functionScopes := by
+            simpa [hArgsScopes] using hContext.functionScopes }
+      simp [hArgs, hClass] at hElab
+      cases hResolve :
+          Elab.resolveFunctionIn name argsState.functionScopes with
+      | none =>
+          simp [Elab.resolveFunction, StateT.run_bind,
+            StateT.run_get, hResolve] at hElab
+          unfold Elab.throw at hElab
+          change
+            (Except.error _ : Except String (Frontend.Expr × Elab.State)) =
+              .ok (front, finalElabState) at hElab
+          cases hElab
+      | some generated =>
+          simp [Elab.resolveFunction, hResolve] at hElab
+          rcases hElab with ⟨rfl, rfl⟩
+          rcases ExprNormalized.user_call_parts hNormalized with
+            ⟨orderedArgs, rfl, ⟨hArgsNormalized⟩⟩
+          rcases PathCompiledFunctionScopes.resolve
+              hArgsContext.functionScopes hResolve with
+            ⟨rawFn, rawLexical, generatedLexical,
+              hRawResolve, ⟨hBinding⟩, hLexicalScopes⟩
+          rcases PathCompiledFunctionBinding.block_parts hBinding with
+            ⟨bodyElabState, finalBodyElabState, frontBody, orderedBody,
+              hBodyScopes, hBodyElab, ⟨hBodyNormalized⟩,
+              hOrderedLookup, ⟨hBodyPath⟩⟩
+          have hBodyContext :
+              PathCompiledContext builtinContext contract
+                { rawContext with functionScopes := rawLexical }
+                bodyElabState.functionScopes :=
+            { objectBuiltins := by
+                simpa using hContext.objectBuiltins
+              functionScopes := by
+                simpa [hBodyScopes] using hLexicalScopes }
+          have hArgsRun :=
+            argsRunForward_reverse_of_path_elaboration_fuel_below
+              (rawFuel := callFuel + 1)
+              (fun fuel hFuel => hExpr fuel (by omega))
+              hContext hPath hArgs hArgsNormalized state
+          have hRawLookup :
+              Raw.SourceSemantics.lookupFunctionWithLexicalScopes
+                  rawContext name = some (rawFn, rawLexical) := by
+            simpa [Raw.SourceSemantics.lookupFunctionWithLexicalScopes]
+              using hRawResolve
+          have hRun :
+              GeneratedUserCallRun callFuel (callFuel + slack)
+                rawContext name rawArgs generated orderedArgs contract state :=
+            { fn := rawFn
+              lexicalScopes := rawLexical
+              orderedBody := orderedBody
+              notClz := hNotClz
+              callClass := hClass
+              rawLookup := hRawLookup
+              orderedLookup := hOrderedLookup
+              argsForward := by
+                simpa [Nat.add_assoc, Nat.add_comm,
+                  Nat.add_left_comm] using hArgsRun
+              bodyForward := by
+                intro stateAfterArgs values
+                have hBody :=
+                  hBlock callFuel (by omega)
+                    (rawContext :=
+                      { rawContext with functionScopes := rawLexical })
+                    hBodyContext hBodyPath
+                    (state :=
+                      Yul.InteractionSemantics.stateModel.withSource
+                        stateAfterArgs
+                        (EvmYul.Yul.State.mkOk
+                          (stateAfterArgs.initcall rawFn.params
+                            rawFn.returns values.reverse)))
+                    hBodyElab hBodyNormalized
+                simpa [Nat.add_assoc,
+                  Nat.add_comm, Nat.add_left_comm] using hBody }
+          exact exprValuesRunForward_userCall_succ hRun
 
 namespace ExprNormalized
 
