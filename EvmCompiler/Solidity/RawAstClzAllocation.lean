@@ -713,12 +713,23 @@ theorem Stmt.elaborate_preserves_clzAllocation
               (fun value => PreservesClzAllocation.pure
                 (Frontend.Stmt.assign names value)))
   | expressionStatement expr =>
-      simp only [Stmt.elaborate]
-      exact
-        PreservesClzAllocation.bind
-          (Expr.elaborate_preserves_clzAllocation expr)
-          (fun expr => PreservesClzAllocation.pure
-            (Frontend.Stmt.exprStmt expr))
+      cases expr with
+      | literal literal =>
+          simp only [Stmt.elaborate]
+          exact PreservesClzAllocation.throw
+            "Yul expression statement expects a function call"
+      | identifier name =>
+          simp only [Stmt.elaborate]
+          exact PreservesClzAllocation.throw
+            "Yul expression statement expects a function call"
+      | functionCall name args =>
+          simp only [Stmt.elaborate]
+          exact
+            PreservesClzAllocation.bind
+              (Expr.elaborate_preserves_clzAllocation
+                (.functionCall name args))
+              (fun expr => PreservesClzAllocation.pure
+                (Frontend.Stmt.exprStmt expr))
   | functionDefinition name params returns body =>
       simp only [Stmt.elaborate]
       exact

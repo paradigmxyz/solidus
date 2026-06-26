@@ -6368,9 +6368,12 @@ mutual
         requireIdentifiersVisible names "assignment"
         let value ← Expr.elaborate value
         pure (.assign names value)
-    | .expressionStatement expr => do
-        let expr ← Expr.elaborate expr
-        pure (.exprStmt expr)
+    | .expressionStatement expr =>
+        match expr with
+        | .functionCall name args => do
+            let expr ← Expr.elaborate (.functionCall name args)
+            pure (.exprStmt expr)
+        | _ => throw "Yul expression statement expects a function call"
     | .functionDefinition name params returns body => do
         let generated ← resolveFunction name
         let fn ← FunctionDef.elaborate params returns body
@@ -6488,6 +6491,29 @@ mutual
     popIdentifierScope
     pure { params, returns, body }
 end
+
+theorem Stmt.elaborate_expressionStatement_literal_rejected
+    (state : State) (literal : Raw.Literal) :
+    (Stmt.elaborate (.expressionStatement (.literal literal))).run state =
+      .error "Yul expression statement expects a function call" := by
+  unfold Stmt.elaborate EvmCompiler.Solidity.RawAst.Elab.throw
+  rfl
+
+theorem Stmt.elaborate_expressionStatement_identifier_rejected
+    (state : State) (name : Name) :
+    (Stmt.elaborate (.expressionStatement (.identifier name))).run state =
+      .error "Yul expression statement expects a function call" := by
+  unfold Stmt.elaborate EvmCompiler.Solidity.RawAst.Elab.throw
+  rfl
+
+theorem Stmt.elaborate_expressionStatement_primitive_call
+    (state : State) :
+    (Stmt.elaborate
+        (.expressionStatement (.functionCall "stop" []))).run state =
+      .ok (.exprStmt (.call .primitive "stop" []), state) := by
+  simp [Stmt.elaborate, Expr.elaborate, Expr.List.elaborate,
+    CallClass.classifyCall, Frontend.Primitive.ofName?]
+  rfl
 
 def PreservesHoisted {α : Type} (action : ElabM α) : Prop :=
   ∀ {state state' : State} {value : α}
@@ -8446,24 +8472,33 @@ theorem elaborate_incoming_scope_source_user_call_occurrence
                   FrontendOccurrence.StmtIncomingUserCall.assignmentValue
                     hOccurrence⟩
   | @expressionStatement expr name args hExprOccurs =>
-      unfold Stmt.elaborate at hElab
-      simp [StateT.run_bind] at hElab
-      cases hExpr : (Expr.elaborate expr).run state with
-      | error err =>
-          simp [hExpr] at hElab
-      | ok exprResult =>
-          rcases exprResult with ⟨frontExpr, exprState⟩
-          rcases
-            Expr.elaborate_source_user_call_occurrence
-              hExprOccurs hNameOk hLookup hScopes hExpr with
-            ⟨args', hOccurrence⟩
-          simp [hExpr] at hElab
-          rcases hElab with ⟨hFront, _hState⟩
-          rw [← hFront]
-          exact
-            ⟨args',
-              FrontendOccurrence.StmtIncomingUserCall.expressionStatement
-                hOccurrence⟩
+      cases expr with
+      | literal literal =>
+          cases hExprOccurs with
+          | direct hDirect => cases hDirect
+      | identifier identifier =>
+          cases hExprOccurs with
+          | direct hDirect => cases hDirect
+      | functionCall callee callArgs =>
+          unfold Stmt.elaborate at hElab
+          simp [StateT.run_bind] at hElab
+          cases hExpr :
+              (Expr.elaborate (.functionCall callee callArgs)).run state with
+          | error err =>
+              simp [hExpr] at hElab
+          | ok exprResult =>
+              rcases exprResult with ⟨frontExpr, exprState⟩
+              rcases
+                Expr.elaborate_source_user_call_occurrence
+                  hExprOccurs hNameOk hLookup hScopes hExpr with
+                ⟨args', hOccurrence⟩
+              simp [hExpr] at hElab
+              rcases hElab with ⟨hFront, _hState⟩
+              rw [← hFront]
+              exact
+                ⟨args',
+                  FrontendOccurrence.StmtIncomingUserCall.expressionStatement
+                    hOccurrence⟩
   | @switchScrutinee scrutinee cases default name args hExprOccurs =>
       unfold Stmt.elaborate at hElab
       simp [StateT.run_bind] at hElab
@@ -8598,24 +8633,33 @@ theorem elaborate_resolved_incoming_scope_source_user_call_occurrence
                   FrontendOccurrence.StmtIncomingUserCall.assignmentValue
                     hOccurrence⟩
   | @expressionStatement expr name args hExprOccurs =>
-      unfold Stmt.elaborate at hElab
-      simp [StateT.run_bind] at hElab
-      cases hExpr : (Expr.elaborate expr).run state with
-      | error err =>
-          simp [hExpr] at hElab
-      | ok exprResult =>
-          rcases exprResult with ⟨frontExpr, exprState⟩
-          rcases
-            Expr.elaborate_resolved_source_user_call_occurrence
-              hExprOccurs hNameOk hResolve hExpr with
-            ⟨args', hOccurrence⟩
-          simp [hExpr] at hElab
-          rcases hElab with ⟨hFront, _hState⟩
-          rw [← hFront]
-          exact
-            ⟨args',
-              FrontendOccurrence.StmtIncomingUserCall.expressionStatement
-                hOccurrence⟩
+      cases expr with
+      | literal literal =>
+          cases hExprOccurs with
+          | direct hDirect => cases hDirect
+      | identifier identifier =>
+          cases hExprOccurs with
+          | direct hDirect => cases hDirect
+      | functionCall callee callArgs =>
+          unfold Stmt.elaborate at hElab
+          simp [StateT.run_bind] at hElab
+          cases hExpr :
+              (Expr.elaborate (.functionCall callee callArgs)).run state with
+          | error err =>
+              simp [hExpr] at hElab
+          | ok exprResult =>
+              rcases exprResult with ⟨frontExpr, exprState⟩
+              rcases
+                Expr.elaborate_resolved_source_user_call_occurrence
+                  hExprOccurs hNameOk hResolve hExpr with
+                ⟨args', hOccurrence⟩
+              simp [hExpr] at hElab
+              rcases hElab with ⟨hFront, _hState⟩
+              rw [← hFront]
+              exact
+                ⟨args',
+                  FrontendOccurrence.StmtIncomingUserCall.expressionStatement
+                    hOccurrence⟩
   | @switchScrutinee scrutinee cases default name args hExprOccurs =>
       unfold Stmt.elaborate at hElab
       simp [StateT.run_bind] at hElab
@@ -8995,12 +9039,23 @@ theorem Stmt.elaborate_preserves_hoistedFunction_mem
               (fun value => PreservesHoisted.pure
                 (Frontend.Stmt.assign names value)))
   | expressionStatement expr =>
-      simp only [Stmt.elaborate]
-      exact
-        PreservesHoisted.bind
-          (Expr.elaborate_preserves_hoistedFunction_mem expr)
-          (fun expr => PreservesHoisted.pure
-            (Frontend.Stmt.exprStmt expr))
+      cases expr with
+      | literal literal =>
+          simp only [Stmt.elaborate]
+          exact PreservesHoisted.throw
+            "Yul expression statement expects a function call"
+      | identifier name =>
+          simp only [Stmt.elaborate]
+          exact PreservesHoisted.throw
+            "Yul expression statement expects a function call"
+      | functionCall name args =>
+          simp only [Stmt.elaborate]
+          exact
+            PreservesHoisted.bind
+              (Expr.elaborate_preserves_hoistedFunction_mem
+                (.functionCall name args))
+              (fun expr => PreservesHoisted.pure
+                (Frontend.Stmt.exprStmt expr))
   | functionDefinition name params returns body =>
       simp only [Stmt.elaborate]
       exact
@@ -9437,12 +9492,23 @@ theorem Stmt.elaborate_preserves_functionScopes
               (fun value => PreservesFunctionScopes.pure
                 (Frontend.Stmt.assign names value)))
   | expressionStatement expr =>
-      simp only [Stmt.elaborate]
-      exact
-        PreservesFunctionScopes.bind
-          (Expr.elaborate_preserves_functionScopes expr)
-          (fun expr => PreservesFunctionScopes.pure
-            (Frontend.Stmt.exprStmt expr))
+      cases expr with
+      | literal literal =>
+          simp only [Stmt.elaborate]
+          exact PreservesFunctionScopes.throw
+            "Yul expression statement expects a function call"
+      | identifier name =>
+          simp only [Stmt.elaborate]
+          exact PreservesFunctionScopes.throw
+            "Yul expression statement expects a function call"
+      | functionCall name args =>
+          simp only [Stmt.elaborate]
+          exact
+            PreservesFunctionScopes.bind
+              (Expr.elaborate_preserves_functionScopes
+                (.functionCall name args))
+              (fun expr => PreservesFunctionScopes.pure
+                (Frontend.Stmt.exprStmt expr))
   | functionDefinition name params returns body =>
       simp only [Stmt.elaborate]
       exact
