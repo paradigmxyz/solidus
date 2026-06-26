@@ -224,10 +224,14 @@ Gasful EVM bridge checkpoint:
 - [x] Compose that recursive theorem with the public optimized-Yul theorem in
   `optimizedSolcYulToGasfulRawBytecodeOfRecursiveFrameBridge`; this removes the
   caller-supplied whole-run bridge and external-response oracle. Its remaining
-  semantic premises are `FrameCodeInvariant` and the initial `OpenStateRel`.
-- [ ] Derive `FrameCodeInvariant` from the compiler artifact's control/stack
-  invariant. Decoding correctness alone is insufficient because `D_J` scans
-  appended object payload bytes as well as laid-out executable code.
+  semantic premises are `FrameLayoutInvariant` and the initial `OpenStateRel`.
+- [x] Derive `FrameCodeInvariant` from artifact `DecodingCorrect`, compact
+  program validity, and `FrameLayoutInvariant`; compact instruction decoding
+  also proves that reachable instructions cannot be unsupported `PUSH0`.
+- [ ] Prove `FrameLayoutInvariant` from the compiler artifact's control/stack
+  invariant. Decoding correctness alone cannot establish reachable layout
+  membership because `D_J` scans appended object payload bytes as well as
+  laid-out executable code.
 
 `Compiler.StackArtifact` is the sole code-body artifact and
 `Solidity.Frontend.VerifiedStackObjectArtifact` is the sole recursive object

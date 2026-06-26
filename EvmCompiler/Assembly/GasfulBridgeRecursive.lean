@@ -528,6 +528,56 @@ def FrameCodeInvariant
     (bytes : ByteArray) (validJumps : Array Word) (initial : EVMState) : Prop :=
   ∀ state, FrameReachable validJumps initial state → FrameCodeAt bytes state
 
+theorem compact_instr_decoded_ne_push0
+    {instr : Compact.Instr}
+    {decoded : EvmYul.Operation .EVM × Option (Word × Nat)}
+    (hValid : instr.Valid)
+    (hDecoded : instr.decoded? = some decoded) :
+    decoded.1 ≠ EvmYul.Operation.PUSH0 := by
+  cases instr with
+  | push width value =>
+      have hPositive : 0 < width := hValid.1
+      have hBound : width ≤ 32 := hValid.2.1
+      interval_cases width <;>
+        simp [Compact.Instr.decoded?, Compact.pushOp?] at hDecoded
+      all_goals (subst decoded; simp)
+  | jump | jumpi | jumpdest =>
+      simp [Compact.Instr.decoded?] at hDecoded
+      subst decoded
+      simp
+  | prim op =>
+      simp [Compact.Instr.decoded?] at hDecoded
+      subst decoded
+      cases op <;> simp [PrimOp.toEVM]
+
+/-- Exact compiler-side control fact needed beyond decoding correctness:
+concrete parent execution remains at a member of the compact instruction
+layout and retains the installed object image. -/
+def FrameLayoutInvariant
+    (program : Compact.Program) (bytes : ByteArray)
+    (validJumps : Array Word) (initial : EVMState) : Prop :=
+  ∀ state, FrameReachable validJumps initial state →
+    state.executionEnv.code = bytes ∧
+      ∃ located, located ∈ program.code ∧
+        state.pc = EvmYul.UInt256.ofNat located.pc
+
+theorem frameCodeInvariant_of_layout
+    {program : Compact.Program} {bytes : ByteArray}
+    {validJumps : Array Word} {initial : EVMState}
+    (hValid : program.Valid)
+    (hDecode : Compact.DecodingCorrect program bytes)
+    (hLayout : FrameLayoutInvariant program bytes validJumps initial) :
+    FrameCodeInvariant bytes validJumps initial := by
+  intro state hReach
+  obtain ⟨hCode, located, hMem, hPc⟩ := hLayout state hReach
+  obtain ⟨decoded, hInstrDecoded, hBytesDecoded⟩ :=
+    hDecode.decodes located hMem
+  have hInstrValid : located.instr.Valid :=
+    (List.forall_iff_forall_mem.mp hValid) located hMem
+  refine ⟨hCode, decoded.1, decoded.2, ?_, ?_⟩
+  · simpa [hPc] using hBytesDecoded
+  · exact compact_instr_decoded_ne_push0 hInstrValid hInstrDecoded
+
 theorem executionException_beq_outOfFuel_iff
     (err : EvmYul.EVM.ExecutionException) :
     (err == EvmYul.EVM.ExecutionException.OutOfFuel) = true ↔
