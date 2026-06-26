@@ -1002,6 +1002,41 @@ theorem assign_parts
                 resolve := hValueResolve
                 toYul := hValueToYul }⟩⟩
 
+/-- Generic expression-statement normalization outside the dedicated
+`setimmutable` expansion. The caller proves that the frontend resolver takes
+its ordinary expression route; successful normalization then supplies the
+exact canonical call expression. -/
+theorem exprStmt_parts_of_generic_resolve
+    {context : Frontend.ObjectBuiltinContext}
+    {expr : Frontend.Expr} {ordered : Frontend.AstStmt}
+    (hGeneric :
+      Frontend.Stmt.resolveObjectBuiltinsIn? (.exprStmt expr) context =
+        (do
+          let resolvedExpr ← expr.resolveObjectBuiltinsIn? context
+          some (.exprStmt resolvedExpr)))
+    (hNormalized : StmtNormalized context (.exprStmt expr) ordered) :
+    ∃ orderedExpr,
+      ordered = .ExprStmtCall orderedExpr ∧
+        Nonempty (ExprNormalized context expr orderedExpr) := by
+  rcases hNormalized with ⟨resolved, hResolve, hToYul⟩
+  rw [hGeneric] at hResolve
+  cases hExprResolve : expr.resolveObjectBuiltinsIn? context with
+  | none => simp [hExprResolve] at hResolve
+  | some resolvedExpr =>
+      simp [hExprResolve] at hResolve
+      subst resolved
+      unfold Frontend.Stmt.toYul? at hToYul
+      cases hExprToYul : resolvedExpr.toYul? with
+      | none => simp [hExprToYul] at hToYul
+      | some orderedExpr =>
+          simp [hExprToYul] at hToYul
+          exact
+            ⟨orderedExpr, hToYul.symm,
+              ⟨{
+                resolved := resolvedExpr
+                resolve := hExprResolve
+                toYul := hExprToYul }⟩⟩
+
 theorem block_parts
     {context : Frontend.ObjectBuiltinContext}
     {body : List Frontend.Stmt} {ordered : Frontend.AstStmt}
@@ -1068,6 +1103,24 @@ theorem if_parts
                         resolved := resolvedBody
                         resolve := hBodyResolve
                         toYul := hBodyToYul }⟩⟩
+
+theorem functionDef_ordered
+    {context : Frontend.ObjectBuiltinContext}
+    {name : Name} {params returns : List Name}
+    {body : List Frontend.Stmt} {ordered : Frontend.AstStmt}
+    (hNormalized :
+      StmtNormalized context
+        (.functionDef name params returns body) ordered) :
+    ordered = .Block [] := by
+  rcases hNormalized with ⟨resolved, hResolve, hToYul⟩
+  unfold Frontend.Stmt.resolveObjectBuiltinsIn? at hResolve
+  cases hBodyResolve :
+      Frontend.Stmt.List.resolveObjectBuiltinsIn? body context with
+  | none => simp [hBodyResolve] at hResolve
+  | some resolvedBody =>
+      simp [hBodyResolve] at hResolve
+      subst resolved
+      simpa [Frontend.Stmt.toYul?] using hToYul.symm
 
 theorem break_ordered
     {context : Frontend.ObjectBuiltinContext}
@@ -1367,7 +1420,8 @@ end CompiledFunctionBinding
 /-- Bundled semantic evidence for one elaborated raw user call. The frontend
 derivation supplies the generated callee lookup; recursive preservation
 supplies the callee body for every argument result. -/
-structure GeneratedUserCallRun (rawFuel orderedFuel : Nat)
+structure GeneratedUserCallRun
+    (rawFuel orderedArgsFuel orderedBodyFuel : Nat)
     (context : Raw.SourceSemantics.Context)
     (rawName : Name) (rawArgs : List Raw.Expr)
     (generated : Name) (orderedArgs : List Frontend.AstExpr)
@@ -1384,11 +1438,11 @@ structure GeneratedUserCallRun (rawFuel orderedFuel : Nat)
     contract.functions.lookup generated =
       some (.Def fn.params fn.returns orderedBody)
   argsForward :
-    ArgsRunForward (rawFuel + 1) (orderedFuel + 1)
+    ArgsRunForward (rawFuel + 1) (orderedArgsFuel + 1)
       context rawArgs.reverse orderedArgs.reverse contract state
   bodyForward :
     ∀ (stateAfterArgs : State) (values : List Frontend.Word),
-      BlockCodeRunForward rawFuel orderedFuel
+      BlockCodeRunForward rawFuel orderedBodyFuel
         { context with functionScopes := lexicalScopes }
         fn.body orderedBody contract
         (Yul.InteractionSemantics.stateModel.withSource stateAfterArgs
@@ -3819,13 +3873,50 @@ theorem clzPathRunForwardAt_succ_succ
   simpa [clzFrontendSlack, Nat.add_assoc, Nat.add_comm,
     Nat.add_left_comm] using hCall
 
+/-- Call-body execution and caller restoration supplied by one bundled
+generated-call occurrence, independently of its argument-fuel schedule. -/
+theorem generatedUserCallRun_call_succ
+    {rawFuel orderedArgsFuel orderedBodyFuel : Nat}
+    {context : Raw.SourceSemantics.Context}
+    {rawName : Name} {rawArgs : List Raw.Expr}
+    {generated : Name} {orderedArgs : List Frontend.AstExpr}
+    {contract : Frontend.AstContract} {entryState stateAfterArgs : State}
+    {reversedValues : List Frontend.Word}
+    (hRun :
+      GeneratedUserCallRun rawFuel orderedArgsFuel orderedBodyFuel
+        context rawName rawArgs generated orderedArgs contract entryState) :
+    Simulation.Interaction.ForwardRel
+      Yul.FunctionsInteractionPrimitive.Truncated SameDoneRel
+      (Raw.SourceSemantics.call (rawFuel + 1) context
+        reversedValues.reverse rawName stateAfterArgs)
+      (Yul.InteractionSemantics.call (orderedBodyFuel + 1)
+        reversedValues.reverse (some generated) (some contract)
+        stateAfterArgs) := by
+  rw [Raw.SourceSemantics.Call.explicit_succ
+    rawFuel context reversedValues.reverse rawName stateAfterArgs
+    hRun.fn hRun.lexicalScopes hRun.rawLookup]
+  rw [Yul.InteractionSemantics.Call.explicit_succ
+    orderedBodyFuel reversedValues.reverse generated contract
+    hRun.fn.params hRun.fn.returns hRun.orderedBody stateAfterArgs
+    hRun.orderedLookup]
+  have hBodyForward := hRun.bodyForward stateAfterArgs reversedValues
+  unfold BlockCodeRunForward at hBodyForward
+  refine
+    Simulation.Interaction.ForwardRel.bind_custom hBodyForward ?_
+  intro rawBodyDone orderedBodyDone hBodyDone
+  unfold SameDoneRel at hBodyDone
+  subst orderedBodyDone
+  cases rawBodyDone with
+  | error error => exact Simulation.Interaction.ForwardRel.done rfl
+  | ok stateAfterBody => exact Simulation.Interaction.ForwardRel.done rfl
+
 theorem exprValuesRunForward_userCall_succ
     {rawFuel orderedFuel : Nat}
     {context : Raw.SourceSemantics.Context}
     {rawName : Name} {rawArgs : List Raw.Expr}
     {generated : Name} {orderedArgs : List Frontend.AstExpr}
     {contract : Frontend.AstContract} {state : State}
-    (hRun : GeneratedUserCallRun rawFuel orderedFuel context
+    (hRun : GeneratedUserCallRun rawFuel orderedFuel orderedFuel context
       rawName rawArgs generated orderedArgs contract state) :
     ExprValuesRunForward (rawFuel + 2) (orderedFuel + 2)
       context (.functionCall rawName rawArgs)
@@ -3847,35 +3938,7 @@ theorem exprValuesRunForward_userCall_succ
       exact Simulation.Interaction.ForwardRel.done rfl
   | ok argsResult =>
       rcases argsResult with ⟨stateAfterArgs, reversedValues⟩
-      change
-        Simulation.Interaction.ForwardRel
-          Yul.FunctionsInteractionPrimitive.Truncated SameDoneRel
-          (Raw.SourceSemantics.call (rawFuel + 1) context
-            reversedValues.reverse rawName stateAfterArgs)
-          (Yul.InteractionSemantics.call (orderedFuel + 1)
-            reversedValues.reverse (some generated) (some contract)
-            stateAfterArgs)
-      rw [Raw.SourceSemantics.Call.explicit_succ
-        rawFuel context reversedValues.reverse rawName stateAfterArgs
-        hRun.fn hRun.lexicalScopes hRun.rawLookup]
-      rw [Yul.InteractionSemantics.Call.explicit_succ
-        orderedFuel reversedValues.reverse generated contract
-        hRun.fn.params hRun.fn.returns hRun.orderedBody stateAfterArgs
-        hRun.orderedLookup]
-      have hBodyForward :=
-        hRun.bodyForward stateAfterArgs reversedValues
-      unfold BlockCodeRunForward at hBodyForward
-      refine
-        Simulation.Interaction.ForwardRel.bind_custom
-          hBodyForward ?_
-      intro rawBodyDone orderedBodyDone hBodyDone
-      unfold SameDoneRel at hBodyDone
-      subst orderedBodyDone
-      cases rawBodyDone with
-      | error error =>
-          exact Simulation.Interaction.ForwardRel.done rfl
-      | ok stateAfterBody =>
-          exact Simulation.Interaction.ForwardRel.done rfl
+      exact generatedUserCallRun_call_succ hRun
 
 /-- Frontend-owned provider for a direct elaborated user call. The recursive
 source-fuel proof will construct it from lexical compilation evidence; callers
@@ -3898,6 +3961,7 @@ def UserCallElaborationRunForward
             Nonempty
               (GeneratedUserCallRun
                 (rawBase + 2 * rawArgs.length)
+                ((rawBase + slack) + 2 * rawArgs.length)
                 ((rawBase + slack) + 2 * rawArgs.length)
                 rawContext name rawArgs generated orderedArgs contract state)
 
@@ -4024,6 +4088,7 @@ theorem exprValuesRunForward_of_scoped_elaborated_userCall_below
               using hRawResolve
           have hRun :
               GeneratedUserCallRun callFuel (callFuel + slack)
+                (callFuel + slack)
                 rawContext name rawArgs generated orderedArgs contract state :=
             { fn := rawFn
               lexicalScopes := rawLexical
@@ -4054,11 +4119,11 @@ theorem exprValuesRunForward_of_scoped_elaborated_userCall_below
           have hCall := exprValuesRunForward_userCall_succ hRun
           exact hCall
 
-/-- Path-scoped ordinary user calls. The lexical lookup returns a checked
-callee binding carrying its own function-body elaboration path, so recursive
-calls and generated `clz` inside nested functions require no semantic oracle. -/
-theorem exprValuesRunForward_of_path_elaborated_userCall_below
-    {slack callFuel : Nat}
+/-- Construct the bundled generated-call execution evidence from one actual
+checked path. Both value-position calls and expression statements consume this
+same interface; generated names and callee layouts remain existential. -/
+theorem generatedUserCallRun_of_path_elaboration_below
+    {argsSlack bodySlack callFuel : Nat}
     {builtinContext : Frontend.ObjectBuiltinContext}
     {rawContext : Raw.SourceSemantics.Context}
     {name : Name} {rawArgs : List Raw.Expr}
@@ -4067,10 +4132,10 @@ theorem exprValuesRunForward_of_path_elaborated_userCall_below
     {contract : Frontend.AstContract} {state : State}
     (hExpr :
       ScopedExprPathRunForwardBelow
-        (callFuel + 2) slack builtinContext contract)
+        (callFuel + 2) argsSlack builtinContext contract)
     (hBlock :
       ScopedBlockPathRunForwardBelow
-        (callFuel + 2) slack builtinContext contract)
+        (callFuel + 2) bodySlack builtinContext contract)
     (hContext :
       PathCompiledContext builtinContext contract
         rawContext elabState.functionScopes)
@@ -4083,10 +4148,12 @@ theorem exprValuesRunForward_of_path_elaborated_userCall_below
       (Elab.Expr.elaborate (.functionCall name rawArgs)).run elabState =
         .ok (front, finalElabState))
     (hNormalized : ExprNormalized builtinContext front ordered) :
-    ExprValuesRunForward
-      (callFuel + 2)
-      ((callFuel + slack) + 2)
-      rawContext (.functionCall name rawArgs) ordered contract state := by
+    ∃ generated orderedArgs,
+      ordered = .Call (.inr generated) orderedArgs ∧
+        Nonempty
+          (GeneratedUserCallRun callFuel (callFuel + argsSlack)
+            (callFuel + bodySlack)
+            rawContext name rawArgs generated orderedArgs contract state) := by
   unfold Elab.Expr.elaborate at hElab
   simp [StateT.run_bind] at hElab
   cases hArgs : (Elab.Expr.List.elaborate rawArgs).run elabState with
@@ -4145,7 +4212,8 @@ theorem exprValuesRunForward_of_path_elaborated_userCall_below
             simpa [Raw.SourceSemantics.lookupFunctionWithLexicalScopes]
               using hRawResolve
           have hRun :
-              GeneratedUserCallRun callFuel (callFuel + slack)
+              GeneratedUserCallRun callFuel (callFuel + argsSlack)
+                (callFuel + bodySlack)
                 rawContext name rawArgs generated orderedArgs contract state :=
             { fn := rawFn
               lexicalScopes := rawLexical
@@ -4173,7 +4241,46 @@ theorem exprValuesRunForward_of_path_elaborated_userCall_below
                     hBodyElab hBodyNormalized
                 simpa [Nat.add_assoc,
                   Nat.add_comm, Nat.add_left_comm] using hBody }
-          exact exprValuesRunForward_userCall_succ hRun
+          exact ⟨generated, orderedArgs, rfl, ⟨hRun⟩⟩
+
+/-- Path-scoped ordinary user calls. The lexical lookup returns a checked
+callee binding carrying its own function-body elaboration path, so recursive
+calls and generated `clz` inside nested functions require no semantic oracle. -/
+theorem exprValuesRunForward_of_path_elaborated_userCall_below
+    {slack callFuel : Nat}
+    {builtinContext : Frontend.ObjectBuiltinContext}
+    {rawContext : Raw.SourceSemantics.Context}
+    {name : Name} {rawArgs : List Raw.Expr}
+    {elabState finalElabState : Elab.State}
+    {front : Frontend.Expr} {ordered : Frontend.AstExpr}
+    {contract : Frontend.AstContract} {state : State}
+    (hExpr :
+      ScopedExprPathRunForwardBelow
+        (callFuel + 2) slack builtinContext contract)
+    (hBlock :
+      ScopedBlockPathRunForwardBelow
+        (callFuel + 2) slack builtinContext contract)
+    (hContext :
+      PathCompiledContext builtinContext contract
+        rawContext elabState.functionScopes)
+    (hPath :
+      ClzCompilationPath contract elabState finalElabState)
+    (hNotMemoryguard : name ≠ "memoryguard")
+    (hNotClz : name ≠ "clz")
+    (hClass : CallClass.classifyCall name = .user)
+    (hElab :
+      (Elab.Expr.elaborate (.functionCall name rawArgs)).run elabState =
+        .ok (front, finalElabState))
+    (hNormalized : ExprNormalized builtinContext front ordered) :
+    ExprValuesRunForward
+      (callFuel + 2)
+      ((callFuel + slack) + 2)
+      rawContext (.functionCall name rawArgs) ordered contract state := by
+  rcases generatedUserCallRun_of_path_elaboration_below
+      hExpr hBlock hContext hPath hNotMemoryguard hNotClz hClass
+      hElab hNormalized with
+    ⟨generated, orderedArgs, rfl, ⟨hRun⟩⟩
+  exact exprValuesRunForward_userCall_succ hRun
 
 namespace ExprNormalized
 
@@ -5440,6 +5547,111 @@ theorem stmtRunForward_assignment_succ
       | error error => exact Simulation.Interaction.ForwardRel.done rfl
       | ok result => exact Simulation.Interaction.ForwardRel.done rfl
 
+/-- Primitive expression statements consume the shared expression simulation
+and discard its values through the canonical empty destination list. -/
+theorem stmtRunForward_expressionStatement_primitive_succ
+    {rawFuel orderedFuel : Nat}
+    {context : Raw.SourceSemantics.Context}
+    {name : Name} {rawArgs : List Raw.Expr}
+    {op : EvmYul.Operation .Yul}
+    {orderedArgs : List Frontend.AstExpr}
+    {contract : Frontend.AstContract} {state : State}
+    (hNotSetimmutable : name ≠ "setimmutable")
+    (hValues :
+      ExprValuesRunForward rawFuel orderedFuel context
+        (.functionCall name rawArgs) (.Call (.inl op) orderedArgs)
+        contract state) :
+    StmtRunForward (rawFuel + 1) orderedFuel context
+      (.expressionStatement (.functionCall name rawArgs))
+      (.ExprStmtCall (.Call (.inl op) orderedArgs)) contract state := by
+  unfold StmtRunForward
+  rw [Raw.SourceSemantics.Exec.expressionStatement_succ]
+  simp [hNotSetimmutable]
+  rw [Yul.InteractionSemantics.Exec.expr_primitive]
+  unfold ExprValuesRunForward at hValues
+  refine Simulation.Interaction.ForwardRel.bind_custom hValues ?_
+  intro rawDone orderedDone hDone
+  unfold SameDoneRel at hDone
+  subst orderedDone
+  cases rawDone with
+  | error error => exact Simulation.Interaction.ForwardRel.done rfl
+  | ok result =>
+      rcases result with ⟨stateAfterExpr, values⟩
+      cases stateAfterExpr <;>
+        exact Simulation.Interaction.ForwardRel.done rfl
+
+/-- The expression-statement constructor consumes the same generated-call
+evidence with one additional unit of target argument fuel. Callee-body fuel,
+lookup, return restoration, and value discard remain shared with value-position
+calls. -/
+theorem stmtRunForward_expressionStatement_userCall_succ
+    {rawFuel orderedFuel : Nat}
+    {context : Raw.SourceSemantics.Context}
+    {rawName : Name} {rawArgs : List Raw.Expr}
+    {generated : Name} {orderedArgs : List Frontend.AstExpr}
+    {contract : Frontend.AstContract} {state : State}
+    (hRun :
+      GeneratedUserCallRun rawFuel (orderedFuel + 1) orderedFuel
+        context rawName rawArgs generated orderedArgs contract state) :
+    StmtRunForward (rawFuel + 3) (orderedFuel + 3)
+      context (.expressionStatement (.functionCall rawName rawArgs))
+      (.ExprStmtCall (.Call (.inr generated) orderedArgs))
+      contract state := by
+  have hNotSetimmutable : rawName ≠ "setimmutable" := by
+    intro hName
+    subst rawName
+    have hClass := hRun.callClass
+    simp [CallClass.classifyCall, CallClass.objectBuiltins,
+      Frontend.Primitive.ofName?] at hClass
+  unfold StmtRunForward
+  rw [show rawFuel + 3 = (rawFuel + 2) + 1 by omega]
+  rw [Raw.SourceSemantics.Exec.expressionStatement_succ]
+  simp [hNotSetimmutable, hRun.notClz]
+  rw [Raw.SourceSemantics.EvalValues.functionCall_succ_of_ne_clz
+    (rawFuel + 1) context rawName rawArgs state hRun.notClz]
+  simp only [hRun.callClass]
+  rw [show orderedFuel + 3 = (orderedFuel + 1) + 2 by omega]
+  rw [Yul.InteractionSemantics.Exec.expr_internal_succ]
+  change
+    Simulation.Interaction.ForwardRel
+      Yul.FunctionsInteractionPrimitive.Truncated SameDoneRel
+      (Simulation.Interaction.bind
+        (Simulation.Interaction.bind
+          (Raw.SourceSemantics.evalArgs (rawFuel + 1) context
+            rawArgs.reverse state)
+          (fun argsResult =>
+            Raw.SourceSemantics.call (rawFuel + 1) context
+              argsResult.2.reverse rawName argsResult.1))
+        (fun callResult => pure callResult.1))
+      _
+  rw [Simulation.Interaction.bind_assoc]
+  have hArgsForward := hRun.argsForward
+  unfold ArgsRunForward at hArgsForward
+  refine
+    Simulation.Interaction.ForwardRel.bind_custom hArgsForward ?_
+  intro rawArgsDone orderedArgsDone hArgsDone
+  unfold SameDoneRel at hArgsDone
+  subst orderedArgsDone
+  cases rawArgsDone with
+  | error error => exact Simulation.Interaction.ForwardRel.done rfl
+  | ok argsResult =>
+      rcases argsResult with ⟨stateAfterArgs, reversedValues⟩
+      have hCallForward :=
+        generatedUserCallRun_call_succ
+          (stateAfterArgs := stateAfterArgs)
+          (reversedValues := reversedValues) hRun
+      refine
+        Simulation.Interaction.ForwardRel.bind_custom hCallForward ?_
+      intro rawCallDone orderedCallDone hCallDone
+      unfold SameDoneRel at hCallDone
+      subst orderedCallDone
+      cases rawCallDone with
+      | error error => exact Simulation.Interaction.ForwardRel.done rfl
+      | ok callResult =>
+          rcases callResult with ⟨stateAfterCall, values⟩
+          cases stateAfterCall <;>
+            exact Simulation.Interaction.ForwardRel.done rfl
+
 theorem stmtRunForward_block_succ
     {rawFuel orderedFuel : Nat}
     {context : Raw.SourceSemantics.Context}
@@ -5595,6 +5807,44 @@ theorem stmtRunForward_functionDefinition_stub_succ
         (EvmYul.Yul.State.restrictVarStore store store)))
   rw [Yul.VarStoreRestriction.restrict_self]
   exact Simulation.Interaction.ForwardRel.done rfl
+
+/-- Erased nested function declarations are exact on regular states. On an
+abrupt block entry, their administrative empty block may apply the enclosing
+entry-store restriction early. -/
+theorem scopedStmtRunForward_functionDefinition_stub_succ
+    {rawFuel orderedFuel : Nat}
+    {entryStore : EvmYul.Yul.VarStore}
+    {context : Raw.SourceSemantics.Context}
+    {name : Name} {params returns : List Name} {body : List Raw.Stmt}
+    {contract : Frontend.AstContract} {state : State}
+    (hCompatible : BlockEntryCompatible entryStore state) :
+    ScopedStmtRunForward entryStore (rawFuel + 1) (orderedFuel + 2)
+      context (.functionDefinition name params returns body)
+      (.Block []) contract state := by
+  cases state with
+  | Ok shared store =>
+      exact scopedStmtRunForward_of_exact
+        stmtRunForward_functionDefinition_stub_succ
+  | OutOfFuel =>
+      unfold ScopedStmtRunForward
+      rw [Raw.SourceSemantics.Exec.functionDefinition_succ]
+      rw [show orderedFuel + 2 = (orderedFuel + 1) + 1 by omega]
+      rw [Yul.InteractionSemantics.Exec.block_succ]
+      rw [Yul.InteractionSemantics.ExecSeq.nil_succ]
+      exact
+        Simulation.Interaction.ForwardRel.done
+          (Simulation.Interaction.ExceptRel.ok (Or.inl rfl))
+  | Checkpoint jump =>
+      unfold ScopedStmtRunForward
+      rw [Raw.SourceSemantics.Exec.functionDefinition_succ]
+      rw [show orderedFuel + 2 = (orderedFuel + 1) + 1 by omega]
+      rw [Yul.InteractionSemantics.Exec.block_succ]
+      rw [Yul.InteractionSemantics.ExecSeq.nil_succ]
+      rw [← hCompatible]
+      cases jump <;>
+        exact
+          Simulation.Interaction.ForwardRel.done
+            (Simulation.Interaction.ExceptRel.ok (Or.inr rfl))
 
 def BlockElaborationRunForward
     (slack : Nat)
