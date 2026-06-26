@@ -854,9 +854,13 @@ Next raw frontend layer:
   plus raw regular-prefix fuel sufficiency remove the former initializer-length
   premise; `sourceFuelFrontendSlack` is computed from source fuel alone.
   `frontendPathRunForwardAt_of_slack` now closes the mutual expression,
-  statement, list, and lexical-block preservation theorem. Remaining work is
-  its lift through the selected raw object and checked artifact into the public
-  end-to-end theorem.
+  statement, list, and lexical-block preservation theorem. The checked
+  `TopLevelDispatcherElaboration` view now reconstructs the real
+  `elaborateTopLevel` traversal, preserves its dispatcher projection, omits
+  top-level function declarations semantically, and closes the ordered
+  dispatcher block. Remaining work is construction of the top raw/generated
+  function-scope binding from the accumulated function table, followed by the
+  selected-object/artifact lift and public end-to-end composition.
 
 ## Migration
 

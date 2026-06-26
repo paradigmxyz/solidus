@@ -11153,6 +11153,42 @@ theorem seqRunForward_cons_functionDefinition_omitted_ok
   rw [Raw.SourceSemantics.Exec.functionDefinition_succ]
   simpa [Simulation.Interaction.bind_pure]
 
+theorem scopedSeqRunForward_cons_functionDefinition_omitted_ok
+    {fuel orderedFuel : Nat}
+    {entryStore : EvmYul.Yul.VarStore}
+    {context : Raw.SourceSemantics.Context}
+    {name : Name} {params returns : List Name} {body rest : List Raw.Stmt}
+    {orderedCode : List Frontend.AstStmt}
+    {contract : Frontend.AstContract}
+    {shared : EvmYul.SharedState .Yul} {vars : EvmYul.Yul.VarStore}
+    (hRest :
+      ScopedSeqRunForward entryStore (fuel + 1) orderedFuel
+        context rest orderedCode contract (.Ok shared vars)) :
+    ScopedSeqRunForward entryStore (fuel + 2) orderedFuel
+      context
+      (.functionDefinition name params returns body :: rest)
+      orderedCode contract (.Ok shared vars) := by
+  unfold ScopedSeqRunForward at *
+  rw [Raw.SourceSemantics.ExecSeq.cons_succ]
+  rw [Raw.SourceSemantics.Exec.functionDefinition_succ]
+  simpa [Simulation.Interaction.bind_pure]
+
+theorem scopedSeqRunForward_cons_one
+    {orderedFuel : Nat}
+    {entryStore : EvmYul.Yul.VarStore}
+    {context : Raw.SourceSemantics.Context}
+    {rawHead : Raw.Stmt} {rawRest : List Raw.Stmt}
+    {orderedCode : List Frontend.AstStmt}
+    {contract : Frontend.AstContract} {state : State} :
+    ScopedSeqRunForward entryStore 1 orderedFuel
+      context (rawHead :: rawRest) orderedCode contract state := by
+  unfold ScopedSeqRunForward
+  rw [Raw.SourceSemantics.ExecSeq.cons_succ]
+  simp [Raw.SourceSemantics.exec, Raw.SourceSemantics.fail]
+  exact
+    Simulation.Interaction.ForwardRel.truncated
+      (by simp [Yul.FunctionsInteractionPrimitive.Truncated])
+
 /-- Generic lexical-block constructor. A recursively preserved statement list
 under the block's raw function scope yields exact block outcomes because both
 semantics apply the same entry-store restriction. -/
@@ -12448,6 +12484,144 @@ theorem dispatcherSeqRunForward_of_seq
   rw [hRight]
   exact hRestricted
 
+/-- Close the ordered dispatcher around the generic scoped sequence relation.
+Administrative function-declaration stubs may already have restricted abrupt
+states; the final dispatcher restriction is idempotent in exactly those cases. -/
+theorem dispatcherSeqRunForward_of_scopedSeq
+    {rawFuel orderedFuel : Nat}
+    {context : Frontend.ObjectBuiltinContext}
+    {scope : Raw.SourceSemantics.FunctionScope}
+    {rawCode : List Raw.Stmt} {orderedCode : List Frontend.AstStmt}
+    {ordered : Yul.OrderedProgram} {state : State}
+    (hDispatcher :
+      ordered.program.contract.dispatcher = .Block orderedCode)
+    (hSeq :
+      ScopedSeqRunForward state.store rawFuel orderedFuel
+        ((Raw.SourceSemantics.contextForObject context).withFunctionScope scope)
+        rawCode orderedCode ordered.program.contract state) :
+    DispatcherSeqRunForward rawFuel (orderedFuel + 2)
+      context scope rawCode ordered state := by
+  unfold DispatcherSeqRunForward ScopedSeqRunForward at *
+  have hRestricted :=
+    Simulation.Interaction.ForwardRel.bind_right
+      (rightNext := fun orderedState : State =>
+        pure (orderedState.restrictStoreTo state.store))
+      (targetDoneRel := PendingBlockDoneRel state.store)
+      hSeq (by
+      intro rawDone orderedDone hDone
+      cases hDone with
+      | error hError =>
+          subst_vars
+          exact
+            Simulation.Interaction.ForwardRel.done
+              (Simulation.Interaction.ExceptRel.error rfl)
+      | @ok rawState orderedState hState =>
+          cases rawState with
+          | Ok shared store =>
+              subst orderedState
+              exact
+                Simulation.Interaction.ForwardRel.done
+                  (Simulation.Interaction.ExceptRel.ok rfl)
+          | OutOfFuel =>
+              cases hState with
+              | inl hExact =>
+                  subst orderedState
+                  exact
+                    Simulation.Interaction.ForwardRel.done
+                      (Simulation.Interaction.ExceptRel.ok rfl)
+              | inr hRestricted =>
+                  subst orderedState
+                  change
+                    Simulation.Interaction.ForwardRel
+                      Yul.FunctionsInteractionPrimitive.Truncated
+                      (PendingBlockDoneRel state.store)
+                      (pure (EvmYul.Yul.State.OutOfFuel : State))
+                      (pure
+                        (((EvmYul.Yul.State.OutOfFuel : State).restrictStoreTo
+                          state.store).restrictStoreTo state.store))
+                  rw [Yul.InteractionSemantics.State.restrictStoreTo_idem]
+                  exact
+                    Simulation.Interaction.ForwardRel.done
+                      (Simulation.Interaction.ExceptRel.ok rfl)
+          | Checkpoint jump =>
+              cases hState with
+              | inl hExact =>
+                  subst orderedState
+                  exact
+                    Simulation.Interaction.ForwardRel.done
+                      (Simulation.Interaction.ExceptRel.ok rfl)
+              | inr hRestricted =>
+                  subst orderedState
+                  change
+                    Simulation.Interaction.ForwardRel
+                      Yul.FunctionsInteractionPrimitive.Truncated
+                      (PendingBlockDoneRel state.store)
+                      (pure (EvmYul.Yul.State.Checkpoint jump))
+                      (pure
+                        (((EvmYul.Yul.State.Checkpoint jump).restrictStoreTo
+                          state.store).restrictStoreTo state.store))
+                  rw [Yul.InteractionSemantics.State.restrictStoreTo_idem]
+                  exact
+                    Simulation.Interaction.ForwardRel.done
+                      (Simulation.Interaction.ExceptRel.ok rfl))
+  rw [hDispatcher]
+  rw [show orderedFuel + 2 = (orderedFuel + 1) + 1 by omega]
+  rw [Yul.InteractionSemantics.ExecSeq.cons_succ]
+  rw [Yul.InteractionSemantics.Exec.block_succ]
+  simp only [Yul.InteractionSemantics.ExecSeq.nil_succ]
+  have hContinue :
+      (fun stateAfterStmt : State =>
+        match stateAfterStmt with
+        | .Ok _ _ =>
+            (Simulation.Interaction.pure stateAfterStmt : Open State)
+        | .OutOfFuel | .Checkpoint _ =>
+            (Simulation.Interaction.pure stateAfterStmt : Open State)) =
+      (fun stateAfterStmt =>
+        (Simulation.Interaction.pure stateAfterStmt : Open State)) := by
+    funext stateAfterStmt
+    cases stateAfterStmt <;> rfl
+  have hRight :
+      Simulation.Interaction.bind
+          (Simulation.Interaction.bind
+            (Yul.InteractionSemantics.execSeq orderedFuel orderedCode
+              (some ordered.program.contract) state)
+            (fun stateAfterBody =>
+              pure (stateAfterBody.restrictStoreTo state.store)))
+          (fun stateAfterStmt : State =>
+            match stateAfterStmt with
+            | .Ok _ _ =>
+                (Simulation.Interaction.pure stateAfterStmt : Open State)
+            | .OutOfFuel | .Checkpoint _ =>
+                (Simulation.Interaction.pure stateAfterStmt : Open State)) =
+        Simulation.Interaction.bind
+          (Yul.InteractionSemantics.execSeq orderedFuel orderedCode
+            (some ordered.program.contract) state)
+          (fun stateAfterBody =>
+            pure (stateAfterBody.restrictStoreTo state.store)) := by
+    rw [hContinue]
+    exact Simulation.Interaction.bind_pure _
+  change
+    Simulation.Interaction.ForwardRel
+      Yul.FunctionsInteractionPrimitive.Truncated
+      (PendingBlockDoneRel state.store)
+      (Raw.SourceSemantics.execSeq rawFuel
+        ((Raw.SourceSemantics.contextForObject context).withFunctionScope scope)
+        rawCode state)
+      (Simulation.Interaction.bind
+        (Simulation.Interaction.bind
+          (Yul.InteractionSemantics.execSeq orderedFuel orderedCode
+            (some ordered.program.contract) state)
+          (fun stateAfterBody =>
+            pure (stateAfterBody.restrictStoreTo state.store)))
+        (fun stateAfterStmt : State =>
+          match stateAfterStmt with
+          | .Ok _ _ =>
+              (Simulation.Interaction.pure stateAfterStmt : Open State)
+          | .OutOfFuel | .Checkpoint _ =>
+              (Simulation.Interaction.pure stateAfterStmt : Open State)))
+  rw [hRight]
+  exact hRestricted
+
 theorem dispatcherSeqRunForward_zero
     {orderedFuel : Nat}
     {context : Frontend.ObjectBuiltinContext}
@@ -12480,6 +12654,419 @@ theorem dispatcherSeqRunForward_cons_functionDefinition_ok
   rw [Raw.SourceSemantics.ExecSeq.cons_succ]
   rw [Raw.SourceSemantics.Exec.functionDefinition_succ]
   simpa [Simulation.Interaction.bind_pure]
+
+inductive TopLevelNonFunction : Raw.Stmt → Prop where
+  | block (body : List Raw.Stmt) : TopLevelNonFunction (.block body)
+  | variableDeclaration (names : List Name) (value : Option Raw.Expr) :
+      TopLevelNonFunction (.variableDeclaration names value)
+  | assignment (names : List Name) (value : Raw.Expr) :
+      TopLevelNonFunction (.assignment names value)
+  | expressionStatement (expr : Raw.Expr) :
+      TopLevelNonFunction (.expressionStatement expr)
+  | switch (scrutinee : Raw.Expr)
+      (cases : List (Raw.SwitchCaseValue × List Raw.Stmt))
+      (default : List Raw.Stmt) :
+      TopLevelNonFunction (.switch scrutinee cases default)
+  | forLoop (pre : List Raw.Stmt) (condition : Raw.Expr)
+      (post body : List Raw.Stmt) :
+      TopLevelNonFunction (.forLoop pre condition post body)
+  | ifThen (condition : Raw.Expr) (body : List Raw.Stmt) :
+      TopLevelNonFunction (.ifThen condition body)
+  | «break» : TopLevelNonFunction .break
+  | «continue» : TopLevelNonFunction .continue
+  | «leave» : TopLevelNonFunction .leave
+
+namespace TopLevelNonFunction
+
+theorem elaborateTopLevel_cons
+    {stmt : Raw.Stmt} (hStmt : TopLevelNonFunction stmt)
+    (rest : List Raw.Stmt) (dispatcher : List Frontend.Stmt)
+    (topFunctions : List (Name × Frontend.FunctionDef)) :
+    Elab.elaborateTopLevel (stmt :: rest) dispatcher topFunctions =
+      Elab.Stmt.elaborate stmt >>= fun front =>
+        Elab.elaborateTopLevel rest (front :: dispatcher) topFunctions := by
+  cases hStmt <;> rfl
+
+end TopLevelNonFunction
+
+/-- Source-order view of the real top-level elaborator. Function declarations
+change frontend state and populate the final function table but emit no
+dispatcher statement; every other source statement emits exactly one entry. -/
+inductive TopLevelDispatcherElaboration :
+    List Raw.Stmt → Elab.State → List Frontend.Stmt → Elab.State → Prop where
+  | nil (state : Elab.State) :
+      TopLevelDispatcherElaboration [] state [] state
+  | functionDefinition
+      {name : Name} {params returns : List Name} {body rest : List Raw.Stmt}
+      {state functionState finalState : Elab.State}
+      {frontFunction : Frontend.FunctionDef}
+      {frontRest : List Frontend.Stmt}
+      (functionElaborates :
+        (Elab.FunctionDef.elaborate params returns body).run state =
+          .ok (frontFunction, functionState))
+      (tail :
+        TopLevelDispatcherElaboration
+          rest functionState frontRest finalState) :
+      TopLevelDispatcherElaboration
+        (.functionDefinition name params returns body :: rest)
+        state frontRest finalState
+  | statement
+      {rawHead : Raw.Stmt} {rawRest : List Raw.Stmt}
+      {state headState finalState : Elab.State}
+      {frontHead : Frontend.Stmt} {frontRest : List Frontend.Stmt}
+      (nonFunction : TopLevelNonFunction rawHead)
+      (headElaborates :
+        (Elab.Stmt.elaborate rawHead).run state =
+          .ok (frontHead, headState))
+      (tail :
+        TopLevelDispatcherElaboration
+          rawRest headState frontRest finalState) :
+      TopLevelDispatcherElaboration
+        (rawHead :: rawRest) state (frontHead :: frontRest) finalState
+
+namespace TopLevelDispatcherElaboration
+
+theorem clzExtends
+    {rawCode : List Raw.Stmt} {state finalState : Elab.State}
+    {front : List Frontend.Stmt}
+    (view : TopLevelDispatcherElaboration rawCode state front finalState)
+    (hValid : Elab.ClzAllocationValid state) :
+    Elab.ClzAllocationExtends state finalState := by
+  induction view with
+  | nil => exact Elab.ClzAllocationExtends.refl _ hValid
+  | @functionDefinition name params returns body rest state functionState
+      finalState frontFunction frontRest hFunction tail ih =>
+      have hHead :=
+        Elab.FunctionDef.elaborate_preserves_clzAllocation
+          params returns body hFunction hValid
+      exact Elab.ClzAllocationExtends.trans hHead (ih hHead.after_valid)
+  | @statement rawHead rawRest state headState finalState
+      frontHead frontRest hNonFunction hHead tail ih =>
+      have hHeadExt :=
+        Elab.Stmt.elaborate_preserves_clzAllocation
+          rawHead hHead hValid
+      exact Elab.ClzAllocationExtends.trans hHeadExt
+        (ih hHeadExt.after_valid)
+
+theorem hoistedExtends
+    {rawCode : List Raw.Stmt} {state finalState : Elab.State}
+    {front : List Frontend.Stmt}
+    (view : TopLevelDispatcherElaboration rawCode state front finalState) :
+    HoistedFunctionsExtend state finalState := by
+  induction view with
+  | nil => exact HoistedFunctionsExtend.refl _
+  | @functionDefinition name params returns body rest state functionState
+      finalState frontFunction frontRest hFunction tail ih =>
+      apply HoistedFunctionsExtend.trans
+      · intro entry hEntry
+        exact
+          Elab.FunctionDef.elaborate_preserves_hoistedFunction_mem
+            params returns body hFunction hEntry
+      · exact ih
+  | @statement rawHead rawRest state headState finalState
+      frontHead frontRest hNonFunction hHead tail ih =>
+      apply HoistedFunctionsExtend.trans
+      · intro entry hEntry
+        exact
+          Elab.Stmt.elaborate_preserves_hoistedFunction_mem
+            rawHead hHead hEntry
+      · exact ih
+
+theorem functionScopes
+    {rawCode : List Raw.Stmt} {state finalState : Elab.State}
+    {front : List Frontend.Stmt}
+    (view : TopLevelDispatcherElaboration rawCode state front finalState) :
+    finalState.functionScopes = state.functionScopes := by
+  induction view with
+  | nil => rfl
+  | @functionDefinition name params returns body rest state functionState
+      finalState frontFunction frontRest hFunction tail ih =>
+      rw [ih]
+      exact
+        Elab.FunctionDef.elaborate_preserves_functionScopes
+          params returns body hFunction
+  | @statement rawHead rawRest state headState finalState
+      frontHead frontRest hNonFunction hHead tail ih =>
+      rw [ih]
+      exact Elab.Stmt.elaborate_preserves_functionScopes rawHead hHead
+
+end TopLevelDispatcherElaboration
+
+private theorem topLevelDispatcherElaboration_of_nonFunction
+    {rawHead : Raw.Stmt} {rawRest : List Raw.Stmt}
+    (hNonFunction : TopLevelNonFunction rawHead)
+    (ih :
+      ∀ {state : Elab.State} {dispatcher : List Frontend.Stmt}
+        {topFunctions : List (Name × Frontend.FunctionDef)}
+        {outDispatcher : List Frontend.Stmt}
+        {outFunctions : List (Name × Frontend.FunctionDef)}
+        {finalState : Elab.State},
+        (Elab.elaborateTopLevel rawRest dispatcher topFunctions).run state =
+            .ok ((outDispatcher, outFunctions), finalState) →
+          ∃ emitted,
+            outDispatcher = dispatcher.reverse ++ emitted ∧
+              TopLevelDispatcherElaboration
+                rawRest state emitted finalState)
+    {state finalState : Elab.State}
+    {dispatcher outDispatcher : List Frontend.Stmt}
+    {topFunctions outFunctions : List (Name × Frontend.FunctionDef)}
+    (hRun :
+      (Elab.elaborateTopLevel
+        (rawHead :: rawRest) dispatcher topFunctions).run state =
+          .ok ((outDispatcher, outFunctions), finalState)) :
+    ∃ emitted,
+      outDispatcher = dispatcher.reverse ++ emitted ∧
+        TopLevelDispatcherElaboration
+          (rawHead :: rawRest) state emitted finalState := by
+  rw [hNonFunction.elaborateTopLevel_cons] at hRun
+  simp [StateT.run_bind] at hRun
+  symm at hRun
+  cases hHead : (Elab.Stmt.elaborate rawHead).run state with
+  | error error => simp [hHead] at hRun
+  | ok headResult =>
+      rcases headResult with ⟨frontHead, headState⟩
+      simp [hHead] at hRun
+      cases hTail :
+          (Elab.elaborateTopLevel rawRest
+            (frontHead :: dispatcher) topFunctions).run headState with
+      | error error => simp [hTail] at hRun
+      | ok tailResult =>
+          rcases tailResult with ⟨out, tailState⟩
+          rcases out with ⟨tailDispatcher, tailFunctions⟩
+          simp [hTail] at hRun
+          rcases hRun with ⟨⟨rfl, rfl⟩, rfl⟩
+          rcases ih hTail with ⟨emitted, hDispatcher, hView⟩
+          refine ⟨frontHead :: emitted, ?_, .statement hNonFunction hHead hView⟩
+          rw [hDispatcher]
+          simp [List.reverse_cons, List.append_assoc]
+
+theorem topLevelDispatcherElaboration_of_run
+    {rawCode : List Raw.Stmt}
+    {state finalState : Elab.State}
+    {dispatcher outDispatcher : List Frontend.Stmt}
+    {topFunctions outFunctions : List (Name × Frontend.FunctionDef)}
+    (hRun :
+      (Elab.elaborateTopLevel rawCode dispatcher topFunctions).run state =
+        .ok ((outDispatcher, outFunctions), finalState)) :
+    ∃ emitted,
+      outDispatcher = dispatcher.reverse ++ emitted ∧
+        TopLevelDispatcherElaboration rawCode state emitted finalState := by
+  induction rawCode generalizing state dispatcher topFunctions
+      outDispatcher outFunctions finalState with
+  | nil =>
+      unfold Elab.elaborateTopLevel at hRun
+      simp [StateT.run_pure] at hRun
+      rcases hRun with ⟨rfl, rfl⟩
+      exact ⟨[], by simp, .nil state⟩
+  | cons rawHead rawRest ih =>
+      cases rawHead with
+      | functionDefinition name params returns body =>
+          unfold Elab.elaborateTopLevel at hRun
+          simp [StateT.run_bind] at hRun
+          symm at hRun
+          cases hFunction :
+              (Elab.FunctionDef.elaborate params returns body).run state with
+          | error error => simp [hFunction] at hRun
+          | ok functionResult =>
+              rcases functionResult with ⟨frontFunction, functionState⟩
+              simp [hFunction] at hRun
+              cases hTail :
+                  (Elab.elaborateTopLevel rawRest dispatcher
+                    ((name, frontFunction) :: topFunctions)).run
+                      functionState with
+              | error error => simp [hTail] at hRun
+              | ok tailResult =>
+                  rcases tailResult with ⟨out, tailState⟩
+                  rcases out with ⟨tailDispatcher, tailFunctions⟩
+                  simp [hTail] at hRun
+                  rcases hRun with ⟨⟨rfl, rfl⟩, rfl⟩
+                  rcases ih hTail with ⟨emitted, hDispatcher, hView⟩
+                  exact
+                    ⟨emitted, hDispatcher,
+                      .functionDefinition hFunction hView⟩
+      | block body =>
+          exact
+            topLevelDispatcherElaboration_of_nonFunction
+              (.block body) ih hRun
+      | variableDeclaration names value =>
+          exact
+            topLevelDispatcherElaboration_of_nonFunction
+              (.variableDeclaration names value) ih hRun
+      | assignment names value =>
+          exact
+            topLevelDispatcherElaboration_of_nonFunction
+              (.assignment names value) ih hRun
+      | expressionStatement expr =>
+          exact
+            topLevelDispatcherElaboration_of_nonFunction
+              (.expressionStatement expr) ih hRun
+      | switch scrutinee cases default =>
+          exact
+            topLevelDispatcherElaboration_of_nonFunction
+              (.switch scrutinee cases default) ih hRun
+      | forLoop pre condition post body =>
+          exact
+            topLevelDispatcherElaboration_of_nonFunction
+              (.forLoop pre condition post body) ih hRun
+      | ifThen condition body =>
+          exact
+            topLevelDispatcherElaboration_of_nonFunction
+              (.ifThen condition body) ih hRun
+      | «break» =>
+          exact
+            topLevelDispatcherElaboration_of_nonFunction
+              .break ih hRun
+      | «continue» =>
+          exact
+            topLevelDispatcherElaboration_of_nonFunction
+              .continue ih hRun
+      | «leave» =>
+          exact
+            topLevelDispatcherElaboration_of_nonFunction
+              .leave ih hRun
+
+namespace TopLevelDispatcherElaboration
+
+/-- Preserve the dispatcher projection of a checked top-level elaboration.
+Top-level function declarations consume raw administrative fuel but emit no
+dispatcher statement; their runtime effect is identity on regular states. -/
+theorem scopedSeqRunForward
+    (rawFuel : Nat)
+    {rawCode : List Raw.Stmt}
+    {elabState finalElabState : Elab.State}
+    {front : List Frontend.Stmt}
+    (view :
+      TopLevelDispatcherElaboration
+        rawCode elabState front finalElabState) :
+    ∀ {slack : Nat}
+      {builtinContext : Frontend.ObjectBuiltinContext}
+      {contract : Frontend.AstContract}
+      {rawContext : Raw.SourceSemantics.Context}
+      {ordered : List Frontend.AstStmt}
+      {entryStore : EvmYul.Yul.VarStore}
+      {shared : EvmYul.SharedState .Yul} {vars : EvmYul.Yul.VarStore},
+      sourceFuelFrontendSlack rawFuel ≤ slack →
+        PathCompiledContext builtinContext contract
+          rawContext elabState.functionScopes →
+        FrontendCompilationPath builtinContext contract
+          elabState finalElabState →
+        StmtListNormalized builtinContext front ordered →
+        ScopedSeqRunForward entryStore rawFuel (rawFuel + slack)
+          rawContext rawCode ordered contract (.Ok shared vars) := by
+  induction rawFuel using Nat.strong_induction_on generalizing
+      rawCode elabState finalElabState front with
+  | h current ih =>
+      intro slack builtinContext contract rawContext ordered entryStore
+        shared vars hSlack hContext hPath hNormalized
+      cases current with
+      | zero =>
+          exact scopedSeqRunForward_of_exact seqRunForward_zero
+      | succ predecessor =>
+          cases view with
+          | nil state =>
+              have hOrdered := StmtListNormalized.nil_ordered hNormalized
+              subst ordered
+              simpa [Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using
+                (scopedSeqRunForward_of_exact
+                  (entryStore := entryStore)
+                  (seqRunForward_nil_succ
+                    (rawFuel := predecessor)
+                    (orderedFuel := predecessor + slack)
+                    (context := rawContext) (contract := contract)
+                    (state := (.Ok shared vars : State))))
+          | @functionDefinition name params returns body rest state
+              functionState finalState frontFunction frontRest
+              hFunction tail =>
+              cases predecessor with
+              | zero =>
+                  exact
+                    scopedSeqRunForward_cons_one
+                      (orderedFuel := 1 + slack)
+              | succ tailFuel =>
+                  have hHeadExt :=
+                    Elab.FunctionDef.elaborate_preserves_clzAllocation
+                      params returns body hFunction hPath.entryValid
+                  have hTailPath :
+                      FrontendCompilationPath builtinContext contract
+                        functionState finalElabState :=
+                    hPath.suffixPath hHeadExt
+                  have hFunctionScopes :
+                      functionState.functionScopes =
+                        elabState.functionScopes :=
+                    Elab.FunctionDef.elaborate_preserves_functionScopes
+                      params returns body hFunction
+                  have hTailContext :
+                      PathCompiledContext builtinContext contract
+                        rawContext functionState.functionScopes := by
+                    simpa [hFunctionScopes] using hContext
+                  have hTailRun :=
+                    ih (tailFuel + 1) (by omega) tail
+                      (slack := slack + 1)
+                      (entryStore := entryStore)
+                      (shared := shared) (vars := vars) (by
+                        unfold sourceFuelFrontendSlack at hSlack ⊢
+                        omega) hTailContext hTailPath hNormalized
+                  simpa [Nat.add_assoc, Nat.add_comm,
+                    Nat.add_left_comm] using
+                      (scopedSeqRunForward_cons_functionDefinition_omitted_ok
+                        (name := name) (params := params) (returns := returns)
+                        (body := body) hTailRun)
+          | @statement rawHead rawRest state headState finalState
+              frontHead frontRest hNonFunction hHead tail =>
+              rcases StmtListNormalized.cons_parts hNormalized with
+                ⟨orderedHead, orderedTail, rfl,
+                  ⟨hHeadNormalized⟩, ⟨hTailNormalized⟩⟩
+              have hHeadExt :=
+                Elab.Stmt.elaborate_preserves_clzAllocation
+                  rawHead hHead hPath.entryValid
+              have hTailExt := tail.clzExtends hHeadExt.after_valid
+              have hTailHoisted :
+                  HoistedFunctionsExtend headState finalElabState :=
+                tail.hoistedExtends
+              have hHeadPath :
+                  FrontendCompilationPath builtinContext contract
+                    elabState headState :=
+                hPath.prefixPath hTailExt hTailHoisted
+              have hTailPath :
+                  FrontendCompilationPath builtinContext contract
+                    headState finalElabState :=
+                hPath.suffixPath hHeadExt
+              have hHeadScopes :
+                  headState.functionScopes = elabState.functionScopes :=
+                Elab.Stmt.elaborate_preserves_functionScopes rawHead hHead
+              have hTailContext :
+                  PathCompiledContext builtinContext contract
+                    rawContext headState.functionScopes := by
+                simpa [hHeadScopes] using hContext
+              have hCurrent :=
+                frontendPathRunForwardAt_of_slack predecessor
+                  (slack := slack) (builtinContext := builtinContext)
+                  (contract := contract) (by
+                    unfold sourceFuelFrontendSlack at hSlack ⊢
+                    omega)
+              have hHeadRun :=
+                hCurrent.stmt
+                  (entryStore := entryStore)
+                  (state := (.Ok shared vars : State))
+                  (by simp [BlockEntryCompatible])
+                  hContext hHeadPath hHead hHeadNormalized
+              have hTailRun :
+                  ∀ tailShared tailVars,
+                    ScopedSeqRunForward entryStore predecessor
+                      (predecessor + slack) rawContext rawRest orderedTail
+                      contract (.Ok tailShared tailVars) := by
+                intro tailShared tailVars
+                exact
+                  ih predecessor (by omega) tail
+                    (slack := slack) (entryStore := entryStore)
+                    (shared := tailShared) (vars := tailVars) (by
+                      unfold sourceFuelFrontendSlack at hSlack ⊢
+                      omega) hTailContext hTailPath hTailNormalized
+              simpa [Nat.add_assoc, Nat.add_comm,
+                Nat.add_left_comm] using
+                  (scopedSeqRunForward_cons hHeadRun hTailRun)
+
+end TopLevelDispatcherElaboration
 
 theorem blockRunForward_of_scope_seq
     {rawFuel orderedFuel : Nat}
