@@ -233,6 +233,10 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.RawAst.Elab.Stmt.List.elaborateBlock_preserves_clzAllocation
 #check EvmCompiler.Solidity.RawAst.Elab.FunctionDef.elaborate_preserves_clzAllocation
 #check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.exprValuesRunForward_of_scoped_elaborated_clz_at
+#check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.ClzCompilationPath.prefixPath
+#check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.ClzCompilationPath.suffixPath
+#check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.exprValuesRunForward_of_scoped_elaborated_clz_path
+#check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.clzPathRunForwardAt_succ_succ
 #check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.ArtifactRawSourceContext.clzBindingResolverAt
 #check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.scopedExprElaborationRunForwardAt_succ
 #check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.StmtRunForward
@@ -1144,6 +1148,8 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.RawAst.Elab.Stmt.List.elaborateBlock_preserves_clzAllocation
 #print axioms EvmCompiler.Solidity.RawAst.Elab.FunctionDef.elaborate_preserves_clzAllocation
 #print axioms EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.exprValuesRunForward_of_scoped_elaborated_clz_at
+#print axioms EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.exprValuesRunForward_of_scoped_elaborated_clz_path
+#print axioms EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.clzPathRunForwardAt_succ_succ
 #print axioms EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.ArtifactRawSourceContext.clzBindingResolverAt
 #print axioms EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.scopedExprElaborationRunForwardAt_succ
 #print axioms EvmCompiler.Solidity.RawAst.Raw.ClzPreservation.clzHelperBody_exec
