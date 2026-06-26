@@ -12790,6 +12790,113 @@ theorem functionScopes
       rw [ih]
       exact Elab.Stmt.elaborate_preserves_functionScopes rawHead hHead
 
+/-- Compiler-derived evidence for one raw top-level function declaration.  It
+ties that declaration to the actual output function table while retaining the
+state path needed to reuse the generic function-body preservation theorem. -/
+inductive TopLevelFunctionWitness
+    (state finalState : Elab.State)
+    (outFunctions : List (Name × Frontend.FunctionDef))
+    (name : Name) (params returns : List Name) (body : List Raw.Stmt) : Prop where
+  | mk
+      (functionState finalFunctionState : Elab.State)
+      (frontFunction : Frontend.FunctionDef)
+      (elaborates :
+        (Elab.FunctionDef.elaborate params returns body).run functionState =
+          .ok (frontFunction, finalFunctionState))
+      (functionScopes : functionState.functionScopes = state.functionScopes)
+      (memOutput : (name, frontFunction) ∈ outFunctions)
+      (prefixClz : Elab.ClzAllocationExtends state functionState)
+      (suffixClz : Elab.ClzAllocationExtends finalFunctionState finalState)
+      (suffixHoisted : HoistedFunctionsExtend finalFunctionState finalState) :
+      TopLevelFunctionWitness state finalState outFunctions
+        name params returns body
+
+theorem topLevelFunctionWitness_of_run_mem
+    {rawCode : List Raw.Stmt} {state finalState : Elab.State}
+    {front : List Frontend.Stmt}
+    (view : TopLevelDispatcherElaboration rawCode state front finalState)
+    {dispatcher outDispatcher : List Frontend.Stmt}
+    {topFunctions outFunctions : List (Name × Frontend.FunctionDef)}
+    (hRun :
+      (Elab.elaborateTopLevel rawCode dispatcher topFunctions).run state =
+        .ok ((outDispatcher, outFunctions), finalState))
+    (hValid : Elab.ClzAllocationValid state)
+    {name : Name} {params returns : List Name} {body : List Raw.Stmt}
+    (hMem : .functionDefinition name params returns body ∈ rawCode) :
+    Nonempty
+      (TopLevelFunctionWitness state finalState outFunctions
+        name params returns body) := by
+  induction view generalizing dispatcher topFunctions outDispatcher outFunctions with
+  | nil => simp at hMem
+  | @functionDefinition headName headParams headReturns headBody rest
+      state headState finalState headFunction frontRest hHead tail ih =>
+      unfold Elab.elaborateTopLevel at hRun
+      simp [StateT.run_bind, hHead] at hRun
+      have hTailRun :
+          (Elab.elaborateTopLevel rest dispatcher
+            ((headName, headFunction) :: topFunctions)).run headState =
+              .ok ((outDispatcher, outFunctions), finalState) := by
+        simpa using hRun
+      have hHeadExt :=
+        Elab.FunctionDef.elaborate_preserves_clzAllocation
+          headParams headReturns headBody hHead hValid
+      simp only [List.mem_cons] at hMem
+      rcases hMem with hHere | hTail
+      · rcases hHere with ⟨rfl, rfl, rfl, rfl⟩
+        have hOutput : (name, headFunction) ∈ outFunctions :=
+          Elab.elaborateTopLevel_preserves_topFunction_mem hTailRun (by simp)
+        exact ⟨TopLevelFunctionWitness.mk
+          state headState headFunction hHead rfl hOutput
+          (Elab.ClzAllocationExtends.refl _ hValid)
+          (tail.clzExtends hHeadExt.after_valid)
+          tail.hoistedExtends⟩
+      · rcases ih hTailRun hHeadExt.after_valid hTail with ⟨witness⟩
+        cases witness with
+        | mk functionState finalFunctionState frontFunction
+            hElaborates hScopes hOutput hPrefix hSuffix hHoisted =>
+            exact ⟨TopLevelFunctionWitness.mk
+              functionState finalFunctionState frontFunction
+              hElaborates (by
+                rw [hScopes]
+                exact
+                  Elab.FunctionDef.elaborate_preserves_functionScopes
+                    headParams headReturns headBody hHead)
+              hOutput
+              (Elab.ClzAllocationExtends.trans hHeadExt hPrefix)
+              hSuffix hHoisted⟩
+  | @statement rawHead rawRest state headState finalState
+      frontHead frontRest hNonFunction hHead tail ih =>
+      rw [hNonFunction.elaborateTopLevel_cons] at hRun
+      simp [StateT.run_bind, hHead] at hRun
+      have hTailRun :
+          (Elab.elaborateTopLevel rawRest (frontHead :: dispatcher)
+            topFunctions).run headState =
+              .ok ((outDispatcher, outFunctions), finalState) := by
+        simpa using hRun
+      have hHeadExt :=
+        Elab.Stmt.elaborate_preserves_clzAllocation rawHead hHead hValid
+      have hNe :
+          rawHead ≠ .functionDefinition name params returns body := by
+        cases hNonFunction <;> simp
+      have hTail :
+          .functionDefinition name params returns body ∈ rawRest := by
+        simp only [List.mem_cons] at hMem
+        rcases hMem with hHere | hTail
+        · exact False.elim (hNe hHere.symm)
+        · exact hTail
+      rcases ih hTailRun hHeadExt.after_valid hTail with ⟨witness⟩
+      cases witness with
+      | mk functionState finalFunctionState frontFunction
+          hElaborates hScopes hOutput hPrefix hSuffix hHoisted =>
+          exact ⟨TopLevelFunctionWitness.mk
+            functionState finalFunctionState frontFunction
+            hElaborates (by
+              rw [hScopes]
+              exact Elab.Stmt.elaborate_preserves_functionScopes rawHead hHead)
+            hOutput
+            (Elab.ClzAllocationExtends.trans hHeadExt hPrefix)
+            hSuffix hHoisted⟩
+
 end TopLevelDispatcherElaboration
 
 private theorem topLevelDispatcherElaboration_of_nonFunction
@@ -13403,6 +13510,7 @@ theorem collectTopFunctions_rawFunctionScope
           rcases ih hTail with ⟨rawTail, hRawTail, hNameRel⟩
           refine ⟨rawTail, ?_, hNameRel⟩
           simp [Raw.SourceSemantics.functionScope?, hRawTail]
+
       | variableDeclaration names value? =>
           have hTail :
               (Elab.collectTopFunctions rest).run state =
@@ -13475,6 +13583,504 @@ theorem collectTopFunctions_rawFunctionScope
           rcases ih hTail with ⟨rawTail, hRawTail, hNameRel⟩
           refine ⟨rawTail, ?_, hNameRel⟩
           simp [Raw.SourceSemantics.functionScope?, hRawTail]
+
+private theorem collectTopFunctions_preserves_functionScopes
+    (stmts : List Raw.Stmt) :
+    Elab.PreservesFunctionScopes (Elab.collectTopFunctions stmts) := by
+  intro state finalState scope hRun
+  induction stmts generalizing state finalState scope with
+  | nil =>
+      simp [Elab.collectTopFunctions, StateT.run_pure] at hRun
+      cases hRun
+      rfl
+  | cons stmt rest ih =>
+      cases stmt with
+      | functionDefinition name params returns body =>
+          unfold Elab.collectTopFunctions at hRun
+          simp [StateT.run_bind] at hRun
+          cases hTail : (Elab.collectTopFunctions rest).run state with
+          | error err => simp [hTail] at hRun
+          | ok tailResult =>
+              rcases tailResult with ⟨tail, tailState⟩
+              have hTailScopes := ih hTail
+              simp [hTail] at hRun
+              cases hDuplicate : tail.any fun entry => entry.fst == name with
+              | true =>
+                  simp [hDuplicate] at hRun
+                  unfold Elab.throw at hRun
+                  cases hRun
+              | false =>
+                  cases hDeclare :
+                      (Elab.declareIdentifiers [name] "function").run tailState with
+                  | error err => simp [hDuplicate, hDeclare] at hRun
+                  | ok declareResult =>
+                      rcases declareResult with ⟨_, declaredState⟩
+                      have hDeclareScopes :=
+                        Elab.declareIdentifiers_preserves_functionScopes
+                          [name] "function" hDeclare
+                      simp [hDuplicate, hDeclare, StateT.run_bind,
+                        StateT.run_modify, StateT.run_pure] at hRun
+                      rcases hRun with ⟨rfl, rfl⟩
+                      exact hDeclareScopes.trans hTailScopes
+      | block nested => exact ih (by simpa [Elab.collectTopFunctions] using hRun)
+      | variableDeclaration names value =>
+          exact ih (by simpa [Elab.collectTopFunctions] using hRun)
+      | assignment names value =>
+          exact ih (by simpa [Elab.collectTopFunctions] using hRun)
+      | expressionStatement expr =>
+          exact ih (by simpa [Elab.collectTopFunctions] using hRun)
+      | switch scrutinee cases default =>
+          exact ih (by simpa [Elab.collectTopFunctions] using hRun)
+      | forLoop pre condition post body =>
+          exact ih (by simpa [Elab.collectTopFunctions] using hRun)
+      | ifThen condition body =>
+          exact ih (by simpa [Elab.collectTopFunctions] using hRun)
+      | «break» => exact ih (by simpa [Elab.collectTopFunctions] using hRun)
+      | «continue» => exact ih (by simpa [Elab.collectTopFunctions] using hRun)
+      | «leave» => exact ih (by simpa [Elab.collectTopFunctions] using hRun)
+
+private theorem collectTopFunctions_preserves_clzAllocation
+    (stmts : List Raw.Stmt) :
+    Elab.PreservesClzAllocation (Elab.collectTopFunctions stmts) := by
+  intro state finalState scope hRun hValid
+  induction stmts generalizing state finalState scope with
+  | nil =>
+      simp [Elab.collectTopFunctions, StateT.run_pure] at hRun
+      cases hRun
+      exact Elab.ClzAllocationExtends.refl state hValid
+  | cons stmt rest ih =>
+      cases stmt with
+      | functionDefinition name params returns body =>
+          unfold Elab.collectTopFunctions at hRun
+          simp [StateT.run_bind] at hRun
+          cases hTail : (Elab.collectTopFunctions rest).run state with
+          | error err => simp [hTail] at hRun
+          | ok tailResult =>
+              rcases tailResult with ⟨tail, tailState⟩
+              have hTailExt := ih hTail hValid
+              simp [hTail] at hRun
+              cases hDuplicate : tail.any fun entry => entry.fst == name with
+              | true =>
+                  simp [hDuplicate] at hRun
+                  unfold Elab.throw at hRun
+                  cases hRun
+              | false =>
+                  cases hDeclare :
+                      (Elab.declareIdentifiers [name] "function").run tailState with
+                  | error err => simp [hDuplicate, hDeclare] at hRun
+                  | ok declareResult =>
+                      rcases declareResult with ⟨_, declaredState⟩
+                      have hDeclareExt :=
+                        Elab.declareIdentifiers_preserves_clzAllocation
+                          [name] "function" hDeclare hTailExt.after_valid
+                      simp [hDuplicate, hDeclare, StateT.run_bind,
+                        StateT.run_modify, StateT.run_pure] at hRun
+                      rcases hRun with ⟨rfl, rfl⟩
+                      exact hTailExt.trans
+                        (hDeclareExt.trans
+                          (Elab.ClzAllocationExtends.of_fields_eq
+                            hDeclareExt.after_valid rfl rfl rfl))
+      | block nested => exact ih (by simpa [Elab.collectTopFunctions] using hRun) hValid
+      | variableDeclaration names value =>
+          exact ih (by simpa [Elab.collectTopFunctions] using hRun) hValid
+      | assignment names value =>
+          exact ih (by simpa [Elab.collectTopFunctions] using hRun) hValid
+      | expressionStatement expr =>
+          exact ih (by simpa [Elab.collectTopFunctions] using hRun) hValid
+      | switch scrutinee cases default =>
+          exact ih (by simpa [Elab.collectTopFunctions] using hRun) hValid
+      | forLoop pre condition post body =>
+          exact ih (by simpa [Elab.collectTopFunctions] using hRun) hValid
+      | ifThen condition body =>
+          exact ih (by simpa [Elab.collectTopFunctions] using hRun) hValid
+      | «break» => exact ih (by simpa [Elab.collectTopFunctions] using hRun) hValid
+      | «continue» => exact ih (by simpa [Elab.collectTopFunctions] using hRun) hValid
+      | «leave» => exact ih (by simpa [Elab.collectTopFunctions] using hRun) hValid
+
+private def TopFunctionScopeIdentity (scope : List (Name × Name)) : Prop :=
+  ∀ {source target}, (source, target) ∈ scope → target = source
+
+private theorem collectTopFunctions_scopeIdentity
+    {stmts : List Raw.Stmt} {state finalState : Elab.State}
+    {scope : List (Name × Name)}
+    (hRun :
+      (Elab.collectTopFunctions stmts).run state = .ok (scope, finalState)) :
+    TopFunctionScopeIdentity scope := by
+  induction stmts generalizing state finalState scope with
+  | nil =>
+      simp [Elab.collectTopFunctions, StateT.run_pure] at hRun
+      rcases hRun with ⟨rfl, rfl⟩
+      intro source target hMem
+      simp at hMem
+  | cons stmt rest ih =>
+      cases stmt with
+      | functionDefinition name params returns body =>
+          unfold Elab.collectTopFunctions at hRun
+          simp [StateT.run_bind] at hRun
+          cases hTail : (Elab.collectTopFunctions rest).run state with
+          | error err => simp [hTail] at hRun
+          | ok tailResult =>
+              rcases tailResult with ⟨tail, tailState⟩
+              have hTailIdentity : TopFunctionScopeIdentity tail := ih hTail
+              simp [hTail] at hRun
+              cases hDuplicate : tail.any fun entry => entry.fst == name with
+              | true =>
+                  simp [hDuplicate] at hRun
+                  unfold Elab.throw at hRun
+                  cases hRun
+              | false =>
+                  cases hDeclare :
+                      (Elab.declareIdentifiers [name] "function").run tailState with
+                  | error err => simp [hDuplicate, hDeclare] at hRun
+                  | ok declareResult =>
+                      rcases declareResult with ⟨_, declaredState⟩
+                      simp [hDuplicate, hDeclare, StateT.run_bind,
+                        StateT.run_modify, StateT.run_pure] at hRun
+                      rcases hRun with ⟨rfl, rfl⟩
+                      intro source target hMem
+                      simp at hMem
+                      rcases hMem with hHead | hTailMem
+                      · rcases hHead with ⟨rfl, rfl⟩
+                        rfl
+                      · exact hTailIdentity hTailMem
+      | block nested =>
+          exact ih (by simpa [Elab.collectTopFunctions] using hRun)
+      | variableDeclaration names value =>
+          exact ih (by simpa [Elab.collectTopFunctions] using hRun)
+      | assignment names value =>
+          exact ih (by simpa [Elab.collectTopFunctions] using hRun)
+      | expressionStatement expr =>
+          exact ih (by simpa [Elab.collectTopFunctions] using hRun)
+      | switch scrutinee cases default =>
+          exact ih (by simpa [Elab.collectTopFunctions] using hRun)
+      | forLoop pre condition post body =>
+          exact ih (by simpa [Elab.collectTopFunctions] using hRun)
+      | ifThen condition body =>
+          exact ih (by simpa [Elab.collectTopFunctions] using hRun)
+      | «break» => exact ih (by simpa [Elab.collectTopFunctions] using hRun)
+      | «continue» => exact ih (by simpa [Elab.collectTopFunctions] using hRun)
+      | «leave» => exact ih (by simpa [Elab.collectTopFunctions] using hRun)
+
+/-- Checked decomposition of the real code elaborator at its only semantic
+boundary: the source-order top-level run. Administrative setup and teardown are
+summarized by scope, allocation, and hoisted-function invariants. -/
+structure ElaborateCodeCorePath
+    (code : List Raw.Stmt) (dispatcher : List Frontend.Stmt)
+    (finalState : Elab.State) where
+  rawScope : Raw.SourceSemantics.FunctionScope
+  topScope : List (Name × Name)
+  topFunctions : List (Name × Frontend.FunctionDef)
+  entryState : Elab.State
+  topLevelState : Elab.State
+  rawScope_eq : Raw.SourceSemantics.functionScope? code = some rawScope
+  scopeNames : FunctionScopeNameRel rawScope topScope
+  scopeIdentity : TopFunctionScopeIdentity topScope
+  entryScopes : entryState.functionScopes = [topScope]
+  entryValid : Elab.ClzAllocationValid entryState
+  topLevelRun :
+    (Elab.elaborateTopLevel code [] []).run entryState =
+      .ok ((dispatcher, topFunctions), topLevelState)
+  view :
+    TopLevelDispatcherElaboration code entryState dispatcher topLevelState
+  suffixClz : Elab.ClzAllocationExtends topLevelState finalState
+  suffixHoisted : HoistedFunctionsExtend topLevelState finalState
+  topFunctionsFinal :
+    ∀ {entry}, entry ∈ topFunctions → entry ∈ finalState.hoistedFunctions
+
+theorem elaborateCodeCore_path
+    {code : List Raw.Stmt} {dispatcher : List Frontend.Stmt}
+    {finalState : Elab.State}
+    (hCore :
+      Elab.elaborateCodeCore code = .ok (dispatcher, finalState)) :
+    Nonempty (ElaborateCodeCorePath code dispatcher finalState) := by
+  unfold Elab.elaborateCodeCore Elab.elaborateCodeAction at hCore
+  simp [StateT.run_bind] at hCore
+  cases hPushIdentifier : Elab.pushIdentifierScope.run ({} : Elab.State) with
+  | error err => simp [hPushIdentifier] at hCore
+  | ok pushIdentifierResult =>
+      rcases pushIdentifierResult with ⟨_, identifierPushedState⟩
+      simp [hPushIdentifier] at hCore
+      cases hCollect :
+          (Elab.collectTopFunctions code).run identifierPushedState with
+      | error err => simp [hCollect] at hCore
+      | ok collectResult =>
+          rcases collectResult with ⟨topScope, collectState⟩
+          simp [hCollect] at hCore
+          cases hPushFunction :
+              (Elab.pushFunctionScope topScope).run collectState with
+          | error err => simp [hPushFunction] at hCore
+          | ok pushFunctionResult =>
+              rcases pushFunctionResult with ⟨_, entryState⟩
+              simp [hPushFunction] at hCore
+              cases hTopLevel :
+                  (Elab.elaborateTopLevel code [] []).run entryState with
+              | error err => simp [hTopLevel] at hCore
+              | ok topLevelResult =>
+                  rcases topLevelResult with ⟨topLevelValue, topLevelState⟩
+                  rcases topLevelValue with ⟨topDispatcher, topFunctions⟩
+                  simp [hTopLevel] at hCore
+                  cases hPopFunction :
+                      Elab.popFunctionScope.run topLevelState with
+                  | error err => simp [hPopFunction] at hCore
+                  | ok popFunctionResult =>
+                      rcases popFunctionResult with ⟨_, functionPoppedState⟩
+                      simp [hPopFunction] at hCore
+                      cases hPopIdentifier :
+                          Elab.popIdentifierScope.run functionPoppedState with
+                      | error err => simp [hPopIdentifier] at hCore
+                      | ok popIdentifierResult =>
+                          rcases popIdentifierResult with
+                            ⟨_, identifierPoppedState⟩
+                          simp [hPopIdentifier, StateT.run_bind,
+                            StateT.run_get, StateT.run_set] at hCore
+                          rcases hCore with ⟨hDispatcher, hFinal⟩
+                          cases hDispatcher
+                          cases hFinal
+                          rcases collectTopFunctions_rawFunctionScope hCollect with
+                            ⟨rawScope, hRawScope, hScopeNames⟩
+                          have hScopeIdentity :
+                              TopFunctionScopeIdentity topScope :=
+                            collectTopFunctions_scopeIdentity hCollect
+                          have hPushIdentifierScopes :=
+                            Elab.pushIdentifierScope_preserves_functionScopes
+                              hPushIdentifier
+                          have hCollectScopes :=
+                            collectTopFunctions_preserves_functionScopes code
+                              hCollect
+                          have hEntryScopes :
+                              entryState.functionScopes = [topScope] := by
+                            have hPushed :
+                                entryState.functionScopes =
+                                  topScope :: collectState.functionScopes := by
+                              unfold Elab.pushFunctionScope at hPushFunction
+                              simp [StateT.run_modify] at hPushFunction
+                              cases hPushFunction
+                              rfl
+                            rw [hPushed, hCollectScopes,
+                              hPushIdentifierScopes]
+                          have hPushIdentifierExt :=
+                            Elab.pushIdentifierScope_preserves_clzAllocation
+                              hPushIdentifier Elab.initial_clzAllocationValid
+                          have hCollectExt :=
+                            collectTopFunctions_preserves_clzAllocation code
+                              hCollect hPushIdentifierExt.after_valid
+                          have hPushFunctionExt :=
+                            Elab.pushFunctionScope_preserves_clzAllocation
+                              topScope hPushFunction hCollectExt.after_valid
+                          have hEntryValid := hPushFunctionExt.after_valid
+                          rcases topLevelDispatcherElaboration_of_run hTopLevel with
+                            ⟨emitted, hEmitted, hView⟩
+                          simp at hEmitted
+                          subst emitted
+                          have hTopLevelExt := hView.clzExtends hEntryValid
+                          have hPopFunctionExt :=
+                            Elab.popFunctionScope_preserves_clzAllocation
+                              hPopFunction hTopLevelExt.after_valid
+                          have hPopIdentifierExt :=
+                            Elab.popIdentifierScope_preserves_clzAllocation
+                              hPopIdentifier hPopFunctionExt.after_valid
+                          have hFinishExt :
+                              Elab.ClzAllocationExtends identifierPoppedState
+                                { identifierPoppedState with
+                                  hoistedFunctions :=
+                                    identifierPoppedState.hoistedFunctions ++
+                                      topFunctions } :=
+                            Elab.ClzAllocationExtends.of_fields_eq
+                              hPopIdentifierExt.after_valid rfl rfl rfl
+                          have hSuffixClz :
+                              Elab.ClzAllocationExtends topLevelState
+                                { identifierPoppedState with
+                                  hoistedFunctions :=
+                                    identifierPoppedState.hoistedFunctions ++
+                                      topFunctions } :=
+                            hPopFunctionExt.trans
+                              (hPopIdentifierExt.trans hFinishExt)
+                          have hPopFunctionHoisted :
+                              HoistedFunctionsExtend topLevelState
+                                functionPoppedState := by
+                            intro entry hEntry
+                            exact
+                              Elab.popFunctionScope_preserves_hoistedFunction_mem
+                                hPopFunction hEntry
+                          have hPopIdentifierHoisted :
+                              HoistedFunctionsExtend functionPoppedState
+                                identifierPoppedState := by
+                            intro entry hEntry
+                            exact
+                              Elab.popIdentifierScope_preserves_hoistedFunction_mem
+                                hPopIdentifier hEntry
+                          have hFinishHoisted :
+                              HoistedFunctionsExtend identifierPoppedState
+                                { identifierPoppedState with
+                                  hoistedFunctions :=
+                                    identifierPoppedState.hoistedFunctions ++
+                                      topFunctions } := by
+                            intro entry hEntry
+                            exact List.mem_append_left _ hEntry
+                          have hSuffixHoisted :
+                              HoistedFunctionsExtend topLevelState
+                                { identifierPoppedState with
+                                  hoistedFunctions :=
+                                    identifierPoppedState.hoistedFunctions ++
+                                      topFunctions } :=
+                            hPopFunctionHoisted.trans
+                              (hPopIdentifierHoisted.trans hFinishHoisted)
+                          exact ⟨{
+                            rawScope := rawScope
+                            topScope := topScope
+                            topFunctions := topFunctions
+                            entryState := entryState
+                            topLevelState := topLevelState
+                            rawScope_eq := hRawScope
+                            scopeNames := hScopeNames
+                            scopeIdentity := hScopeIdentity
+                            entryScopes := hEntryScopes
+                            entryValid := hEntryValid
+                            topLevelRun := hTopLevel
+                            view := hView
+                            suffixClz := hSuffixClz
+                            suffixHoisted := hSuffixHoisted
+                            topFunctionsFinal := by
+                              intro entry hEntry
+                              exact List.mem_append_right _ hEntry }⟩
+
+private theorem generatedLookup_mem
+    {scope : List (Name × Name)} {source target : Name}
+    (hLookup : Elab.lookupFunctionInScope source scope = some target) :
+    (source, target) ∈ scope := by
+  induction scope with
+  | nil => simp [Elab.lookupFunctionInScope] at hLookup
+  | cons entry rest ih =>
+      rcases entry with ⟨headSource, headTarget⟩
+      by_cases hName : headSource = source
+      · subst headSource
+        simp [Elab.lookupFunctionInScope] at hLookup
+        subst target
+        simp
+      · simp [Elab.lookupFunctionInScope, hName] at hLookup
+        exact List.mem_cons_of_mem _ (ih hLookup)
+
+private theorem generatedLookup_some_of_any
+    {scope : List (Name × Name)} {source : Name}
+    (hAny : (scope.any fun entry => entry.fst == source) = true) :
+    ∃ target, Elab.lookupFunctionInScope source scope = some target := by
+  induction scope with
+  | nil => simp at hAny
+  | cons entry rest ih =>
+      rcases entry with ⟨headSource, headTarget⟩
+      by_cases hName : headSource = source
+      · subst headSource
+        exact ⟨headTarget, by simp [Elab.lookupFunctionInScope]⟩
+      · have hHeadFalse : (headSource == source) = false := by
+          simp [hName]
+        change
+          ((headSource == source) ||
+            (rest.any fun entry => entry.fst == source)) = true at hAny
+        rw [hHeadFalse] at hAny
+        rcases ih hAny with ⟨target, hLookup⟩
+        exact ⟨target, by simp [Elab.lookupFunctionInScope, hName, hLookup]⟩
+
+private theorem rawLookup_none_any_eq_false
+    {scope : Raw.SourceSemantics.FunctionScope} {source : Name}
+    (hLookup :
+      Raw.SourceSemantics.lookupFunctionInScope source scope = none) :
+    (scope.any fun entry => entry.fst == source) = false := by
+  induction scope with
+  | nil => rfl
+  | cons entry rest ih =>
+      rcases entry with ⟨headName, headFn⟩
+      by_cases hName : headName = source
+      · subst headName
+        simp [Raw.SourceSemantics.lookupFunctionInScope] at hLookup
+      · simp [Raw.SourceSemantics.lookupFunctionInScope, hName] at hLookup
+        simp [hName, ih hLookup]
+
+namespace ElaborateCodeCorePath
+
+theorem topScopeCompiled
+    {code : List Raw.Stmt} {dispatcher : List Frontend.Stmt}
+    {finalState : Elab.State}
+    (core : ElaborateCodeCorePath code dispatcher finalState)
+    {builtinContext : Frontend.ObjectBuiltinContext}
+    {contract : Frontend.AstContract}
+    (hPath :
+      FrontendCompilationPath builtinContext contract
+        core.entryState finalState) :
+    PathCompiledFunctionScope builtinContext contract
+      core.rawScope core.topScope [core.topScope] where
+  binding := by
+    intro rawName generated hGeneratedLookup
+    have hGeneratedMem := generatedLookup_mem hGeneratedLookup
+    have hGeneratedEq : generated = rawName :=
+      core.scopeIdentity hGeneratedMem
+    subst generated
+    have hGeneratedAny :=
+      Elab.Stmt.List.lookupFunctionInScope_any_eq_true hGeneratedLookup
+    have hRawAny :
+        (core.rawScope.any fun entry => entry.fst == rawName) = true := by
+      rw [core.scopeNames rawName]
+      exact hGeneratedAny
+    cases hRawLookup :
+        Raw.SourceSemantics.lookupFunctionInScope rawName core.rawScope with
+    | none =>
+        have hImpossible :
+            (core.rawScope.any fun entry => entry.fst == rawName) = false := by
+          exact rawLookup_none_any_eq_false hRawLookup
+        rw [hImpossible] at hRawAny
+        cases hRawAny
+    | some rawFn =>
+        rcases
+            Raw.SourceSemantics.functionScope?_lookup_functionDefinition
+              core.rawScope_eq hRawLookup with
+          ⟨params, returns, body, hMem, hRawFn⟩
+        subst rawFn
+        rcases core.view.topLevelFunctionWitness_of_run_mem
+            core.topLevelRun core.entryValid hMem with
+          ⟨witness⟩
+        cases witness with
+        | mk functionState finalFunctionState frontFunction
+            hElaborates hScopes hOutput hPrefix hSuffix hHoisted =>
+            rcases hPath.hoistedResolver
+                (core.topFunctionsFinal hOutput) with
+              ⟨hOrdered⟩
+            have hFrontFields :=
+              Elab.FunctionDef.elaborate_params_returns hElaborates
+            have hOrderedLookup := hOrdered.orderedLookup
+            rw [hFrontFields.1, hFrontFields.2] at hOrderedLookup
+            refine
+              ⟨{ params := params, returns := returns, body := body },
+                rfl, ?_⟩
+            exact ⟨{
+                  frontFn := frontFunction
+                  functionState := functionState
+                  finalFunctionState := finalFunctionState
+                  orderedBody := hOrdered.orderedBody
+                  functionScopes := hScopes.trans core.entryScopes
+                  elaborates := hElaborates
+                  bodyNormalized := hOrdered.bodyNormalized
+                  orderedLookup := hOrderedLookup
+                  compilationPath :=
+                    hPath.subpath hPrefix
+                      (hSuffix.trans core.suffixClz)
+                      (hHoisted.trans core.suffixHoisted) }⟩
+  rawLookupNone := by
+    intro rawName hGeneratedNone
+    cases hRawLookup :
+        Raw.SourceSemantics.lookupFunctionInScope rawName core.rawScope with
+    | none => rfl
+    | some rawFn =>
+        have hRawAny :=
+          Raw.SourceSemantics.lookupFunctionInScope_some_any hRawLookup
+        have hGeneratedAny :
+            (core.topScope.any fun entry => entry.fst == rawName) = true := by
+          rw [← core.scopeNames rawName]
+          exact hRawAny
+        rcases generatedLookup_some_of_any hGeneratedAny with
+          ⟨generated, hGenerated⟩
+        rw [hGeneratedNone] at hGenerated
+        cases hGenerated
+
+end ElaborateCodeCorePath
 
 theorem elaborateCodeCore_rawFunctionScope
     {stmts : List Raw.Stmt}
@@ -13833,6 +14439,131 @@ theorem dispatcher_normalized
         toYul := hToYul }⟩,
       hOrdered⟩
 
+theorem dispatcher_empty_of_code_none
+    {rawJson : String} {selection : Selection}
+    {artifact : Frontend.Program.Artifact}
+    (ctx : ArtifactRawSourceContext rawJson selection artifact)
+    (hCode : ctx.selected.root.code? = none) :
+    artifact.codeArtifact.ordered.program.contract.dispatcher = .Block [] := by
+  rcases Raw.Object.elaborate?_parts ctx.raw_elaborates with
+    ⟨_itemFuel, dispatcher, functions, helper?, arg?, ret?,
+      _data, _objects, _items, _hFuel, hCodeElab, _hItems, hFrontend⟩
+  rw [hCode] at hCodeElab
+  have hProgramDispatcher : ctx.program.object.dispatcher = [] := by
+    rw [hFrontend]
+    exact hCodeElab.1
+  rcases Frontend.Object.resolveObjectBuiltinsIn?_dispatcher ctx.resolved with
+    ⟨_memoryContract, resolvedDispatcher, _hMemory,
+      hResolve, hResolvedDispatcher⟩
+  rw [hProgramDispatcher] at hResolve
+  simp [Frontend.Stmt.List.resolveObjectBuiltinsIn?] at hResolve
+  subst resolvedDispatcher
+  rcases Frontend.Object.toSolcYulOrderedProgram?_dispatcher ctx.ordered with
+    ⟨orderedDispatcher, hToYul, hOrderedDispatcher⟩
+  rw [hResolve] at hToYul
+  simp [Frontend.Stmt.List.toYul?] at hToYul
+  subst orderedDispatcher
+  exact hOrderedDispatcher
+
+/-- Successful raw compilation constructs the complete top-level semantic path
+for every regular Yul state. Generated scopes, helper/function resolvers,
+normalization, and artifact lookup are all discharged internally. -/
+theorem dispatcherSeqRunForward_ok
+    {rawJson : String} {selection : Selection}
+    {artifact : Frontend.Program.Artifact}
+    (ctx : ArtifactRawSourceContext rawJson selection artifact)
+    {code : List Raw.Stmt}
+    (hCode : ctx.selected.root.code? = some code)
+    {rawScope : Raw.SourceSemantics.FunctionScope}
+    (hRawScope : Raw.SourceSemantics.functionScope? code = some rawScope)
+    (rawFuel : Nat)
+    (shared : EvmYul.SharedState .Yul) (vars : EvmYul.Yul.VarStore) :
+    ∃ orderedFuel,
+      DispatcherSeqRunForward rawFuel orderedFuel
+        ctx.context rawScope code artifact.codeArtifact.ordered
+        (.Ok shared vars) := by
+  rcases ctx.dispatcher_normalized hCode with
+    ⟨helper?, arg?, ret?, memoryContract, orderedDispatcher,
+      hElab, hMemory, ⟨hNormalized⟩, hDispatcher⟩
+  rcases Elab.elaborateCode_parts hElab with
+    ⟨finalState, hCore, _hFunctions, _hHelper, _hArg, _hRet⟩
+  rcases elaborateCodeCore_path hCore with ⟨core⟩
+  have hScopeEq : rawScope = core.rawScope :=
+    Option.some.inj (hRawScope.symm.trans core.rawScope_eq)
+  subst rawScope
+  rcases ctx.clzBindingResolverAt hCode with
+    ⟨clzDispatcher, clzState, hClzCore, hClzResolver⟩
+  have hClzParts :
+      (ctx.program.object.dispatcher, finalState) =
+        (clzDispatcher, clzState) :=
+    Except.ok.inj (hCore.symm.trans hClzCore)
+  rcases Prod.mk.inj hClzParts with ⟨hClzDispatcher, hClzState⟩
+  subst clzDispatcher
+  subst clzState
+  rcases ctx.hoistedFunctionResolverAt hCode with
+    ⟨hoistedDispatcher, hoistedState, hoistedMemoryContract,
+      hHoistedCore, hHoistedMemory, hHoistedResolver⟩
+  have hHoistedParts :
+      (ctx.program.object.dispatcher, finalState) =
+        (hoistedDispatcher, hoistedState) :=
+    Except.ok.inj (hCore.symm.trans hHoistedCore)
+  rcases Prod.mk.inj hHoistedParts with
+    ⟨hHoistedDispatcher, hHoistedState⟩
+  subst hoistedDispatcher
+  subst hoistedState
+  have hMemoryContract : hoistedMemoryContract = memoryContract := by
+    rw [hMemory] at hHoistedMemory
+  subst hoistedMemoryContract
+  let builtinContext : Frontend.ObjectBuiltinContext :=
+    { ctx.context with memoryContract := memoryContract }
+  have hOverallPath :
+      FrontendCompilationPath builtinContext
+        artifact.codeArtifact.ordered.program.contract
+        core.entryState finalState :=
+    { entryValid := core.entryValid
+      finalResolver := hClzResolver
+      hoistedResolver := hHoistedResolver }
+  have hTopPath :
+      FrontendCompilationPath builtinContext
+        artifact.codeArtifact.ordered.program.contract
+        core.entryState core.topLevelState :=
+    hOverallPath.prefixPath core.suffixClz core.suffixHoisted
+  have hTopScope :
+      PathCompiledFunctionScope builtinContext
+        artifact.codeArtifact.ordered.program.contract
+        core.rawScope core.topScope [core.topScope] :=
+    core.topScopeCompiled hOverallPath
+  let rawContext : Raw.SourceSemantics.Context :=
+    (Raw.SourceSemantics.contextForObject ctx.context).withFunctionScope
+      core.rawScope
+  have hContext :
+      PathCompiledContext builtinContext
+        artifact.codeArtifact.ordered.program.contract rawContext
+        [core.topScope] :=
+    { objectBuiltins := by
+        exact
+          ObjectBuiltinContextsAgree.withMemoryContract
+            ctx.context memoryContract
+      functionScopes := .cons hTopScope .nil }
+  have hContextAtEntry :
+      PathCompiledContext builtinContext
+        artifact.codeArtifact.ordered.program.contract rawContext
+        core.entryState.functionScopes := by
+    rw [core.entryScopes]
+    exact hContext
+  have hScoped :=
+    core.view.scopedSeqRunForward rawFuel
+      (slack := sourceFuelFrontendSlack rawFuel)
+      (builtinContext := builtinContext)
+      (contract := artifact.codeArtifact.ordered.program.contract)
+      (rawContext := rawContext) (ordered := orderedDispatcher)
+      (entryStore := vars) (shared := shared) (vars := vars)
+      (by omega) hContextAtEntry hTopPath hNormalized
+  subst rawContext
+  exact
+    ⟨rawFuel + sourceFuelFrontendSlack rawFuel + 2,
+      dispatcherSeqRunForward_of_scopedSeq hDispatcher hScoped⟩
+
 theorem code_functionScope
     {rawJson : String} {selection : Selection}
     {artifact : Frontend.Program.Artifact}
@@ -14079,6 +14810,230 @@ theorem rawSourceCodePreservedToRawBytecode
               pc := EvmYul.UInt256.ofNat 0 }) :=
   rawSourcePreservedToRawBytecode
     (ctx.withSourceCodePreserved hCode hCodeRun)
+
+/-- End-to-end finite-prefix preservation from the selected raw solc object,
+specialized to the canonical installed source state used by the public backend
+theorem. No frontend preservation premise or generated certificate is exposed. -/
+theorem rawSourceCodeInstalledPreservedToRawBytecode
+    {rawJson : String} {selection : Selection}
+    {artifact : Frontend.Program.Artifact}
+    {rawFuel : Nat}
+    {baseSource : EvmYul.SharedState .Yul}
+    (ctx : ArtifactRawSourceContext rawJson selection artifact)
+    {code : List Raw.Stmt}
+    (hCode : ctx.selected.root.code? = some code) :
+    ∃ structuredFuel : Nat,
+      Assembly.Accepted artifact.codeArtifact.compiled.certified.target ∧
+        Simulation.Interaction.ForwardRel
+          Yul.FunctionsInteractionPrimitive.Truncated
+          (RawSourceBytecodePrefixDoneRel artifact)
+          (rawObjectRun (rawFuel + 1) ctx.context ctx.selected.root
+            (Yul.EndToEnd.installedSourceState artifact baseSource))
+          (Assembly.Compact.InteractionSemantics.openRunNResult
+            (Assembly.Bytecode.ofList artifact.image.bytes)
+            (2 *
+              ((Structured.InteractionStaticCost.blockBudget
+                  artifact.codeArtifact.compiled.expressions.toStructured
+                  structuredFuel
+                  artifact.codeArtifact.compiled.expressions.toStructured.body +
+                    1) *
+                TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
+                  artifact.codeArtifact.compiled.cfg))
+            { (Yul.EndToEnd.initialExpressionsState artifact baseSource).evm with
+              pc := EvmYul.UInt256.ofNat 0 }) := by
+  rcases ctx.code_functionScope hCode with ⟨rawScope, hScope⟩
+  let installedShared : EvmYul.SharedState .Yul :=
+    Yul.FunctionsInteractionRelation.ScopedStateRel.installedSourceShared
+      artifact.codeArtifact.ordered.program.contract
+      (Assembly.Bytecode.ofList artifact.image.bytes) baseSource
+  rcases ctx.dispatcherSeqRunForward_ok hCode hScope rawFuel
+      installedShared (default : EvmYul.Yul.VarStore) with
+    ⟨orderedSeqFuel, hSeq⟩
+  have hBlock := blockRunForward_of_scope_seq hScope hSeq
+  have hRawOrdered :
+      RunForward (rawFuel + 1) (orderedSeqFuel + 1)
+        ctx.context ctx.selected.root artifact.codeArtifact.ordered
+        (Yul.EndToEnd.installedSourceState artifact baseSource) := by
+    unfold RunForward BlockRunForward at *
+    rw [rawObjectRun_some_code_succ hCode]
+    simpa [Yul.EndToEnd.installedSourceState,
+      Yul.FunctionsInteractionRelation.ScopedStateRel.installedSourceState,
+      installedShared] using hBlock
+  rcases
+      Yul.EndToEnd.optimizedSolcYulToRawBytecode
+        (object := ctx.program.object)
+        (linkerSymbols := ctx.linkerSymbols)
+        (artifact := artifact)
+        (sourceFuel := orderedSeqFuel)
+        (baseSource := baseSource)
+        ctx.compile with
+    ⟨structuredFuel, hAccepted, hOrderedBytecode⟩
+  refine ⟨structuredFuel, hAccepted, ?_⟩
+  exact
+    Simulation.Interaction.ForwardRel.trans
+      hRawOrdered hOrderedBytecode
+      (by
+        intro rawDone orderedError hSame hTruncated
+        subst rawDone
+        exact ⟨orderedError, rfl, hTruncated⟩)
+
+theorem rawSourceNoCodeInstalledPreservedToRawBytecode
+    {rawJson : String} {selection : Selection}
+    {artifact : Frontend.Program.Artifact}
+    {rawFuel : Nat}
+    {baseSource : EvmYul.SharedState .Yul}
+    (ctx : ArtifactRawSourceContext rawJson selection artifact)
+    (hCode : ctx.selected.root.code? = none) :
+    ∃ structuredFuel : Nat,
+      Assembly.Accepted artifact.codeArtifact.compiled.certified.target ∧
+        Simulation.Interaction.ForwardRel
+          Yul.FunctionsInteractionPrimitive.Truncated
+          (RawSourceBytecodePrefixDoneRel artifact)
+          (rawObjectRun (rawFuel + 1) ctx.context ctx.selected.root
+            (Yul.EndToEnd.installedSourceState artifact baseSource))
+          (Assembly.Compact.InteractionSemantics.openRunNResult
+            (Assembly.Bytecode.ofList artifact.image.bytes)
+            (2 *
+              ((Structured.InteractionStaticCost.blockBudget
+                  artifact.codeArtifact.compiled.expressions.toStructured
+                  structuredFuel
+                  artifact.codeArtifact.compiled.expressions.toStructured.body +
+                    1) *
+                TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
+                  artifact.codeArtifact.compiled.cfg))
+            { (Yul.EndToEnd.initialExpressionsState artifact baseSource).evm with
+              pc := EvmYul.UInt256.ofNat 0 }) := by
+  have hDispatcher := ctx.dispatcher_empty_of_code_none hCode
+  let installedShared : EvmYul.SharedState .Yul :=
+    Yul.FunctionsInteractionRelation.ScopedStateRel.installedSourceShared
+      artifact.codeArtifact.ordered.program.contract
+      (Assembly.Bytecode.ofList artifact.image.bytes) baseSource
+  have hInstalled :
+      Yul.EndToEnd.installedSourceState artifact baseSource =
+        (.Ok installedShared default : State) := rfl
+  have hPure (state : State) :
+      (pure state : Open State) = .done (.ok state) := rfl
+  have hRestrict :
+      ((.Ok installedShared default : State).restrictStoreTo default) =
+        (.Ok installedShared default : State) := rfl
+  have hStore :
+      (.Ok installedShared default : State).store = default := rfl
+  have hOrderedRun :
+      orderedRun 4 artifact.codeArtifact.ordered
+          (Yul.EndToEnd.installedSourceState artifact baseSource) =
+        pure (Yul.EndToEnd.installedSourceState artifact baseSource) := by
+    unfold orderedRun
+    rw [hDispatcher]
+    rw [show 4 = 3 + 1 by omega]
+    rw [Yul.InteractionSemantics.Exec.block_succ]
+    rw [show 3 = 2 + 1 by omega]
+    rw [Yul.InteractionSemantics.ExecSeq.cons_succ]
+    rw [show 2 = 1 + 1 by omega]
+    rw [Yul.InteractionSemantics.Exec.block_succ]
+    rw [Yul.InteractionSemantics.ExecSeq.nil_succ]
+    rw [hInstalled]
+    simp only [hPure, Simulation.Interaction.bind_done_ok, hStore, hRestrict,
+      Yul.InteractionSemantics.ExecSeq.nil_succ]
+  have hRawRun :
+      rawObjectRun (rawFuel + 1) ctx.context ctx.selected.root
+          (Yul.EndToEnd.installedSourceState artifact baseSource) =
+        pure (Yul.EndToEnd.installedSourceState artifact baseSource) :=
+    rawObjectRun_none_code hCode
+  have hRawOrdered :
+      RunForward (rawFuel + 1) 4 ctx.context ctx.selected.root
+        artifact.codeArtifact.ordered
+        (Yul.EndToEnd.installedSourceState artifact baseSource) :=
+    runForward_of_eq (hRawRun.trans hOrderedRun.symm)
+  rcases
+      Yul.EndToEnd.optimizedSolcYulToRawBytecode
+        (object := ctx.program.object)
+        (linkerSymbols := ctx.linkerSymbols)
+        (artifact := artifact)
+        (sourceFuel := 3)
+        (baseSource := baseSource)
+        ctx.compile with
+    ⟨structuredFuel, hAccepted, hOrderedBytecode⟩
+  refine ⟨structuredFuel, hAccepted, ?_⟩
+  exact
+    Simulation.Interaction.ForwardRel.trans
+      hRawOrdered hOrderedBytecode
+      (by
+        intro rawDone orderedError hSame hTruncated
+        subst rawDone
+        exact ⟨orderedError, rfl, hTruncated⟩)
+
+/-- Public raw-frontend preservation theorem. Successful compilation alone
+constructs the selected-object semantics and its preservation path to emitted
+bytecode; code-bearing and empty-code objects are both covered internally. -/
+theorem rawSourceInstalledPreservedToRawBytecode
+    {rawJson : String} {selection : Selection}
+    {artifact : Frontend.Program.Artifact}
+    {rawFuel : Nat}
+    {baseSource : EvmYul.SharedState .Yul}
+    (ctx : ArtifactRawSourceContext rawJson selection artifact) :
+    ∃ structuredFuel : Nat,
+      Assembly.Accepted artifact.codeArtifact.compiled.certified.target ∧
+        Simulation.Interaction.ForwardRel
+          Yul.FunctionsInteractionPrimitive.Truncated
+          (RawSourceBytecodePrefixDoneRel artifact)
+          (rawObjectRun (rawFuel + 1) ctx.context ctx.selected.root
+            (Yul.EndToEnd.installedSourceState artifact baseSource))
+          (Assembly.Compact.InteractionSemantics.openRunNResult
+            (Assembly.Bytecode.ofList artifact.image.bytes)
+            (2 *
+              ((Structured.InteractionStaticCost.blockBudget
+                  artifact.codeArtifact.compiled.expressions.toStructured
+                  structuredFuel
+                  artifact.codeArtifact.compiled.expressions.toStructured.body +
+                    1) *
+                TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
+                  artifact.codeArtifact.compiled.cfg))
+            { (Yul.EndToEnd.initialExpressionsState artifact baseSource).evm with
+              pc := EvmYul.UInt256.ofNat 0 }) := by
+  cases hCode : ctx.selected.root.code? with
+  | none => exact rawSourceNoCodeInstalledPreservedToRawBytecode ctx hCode
+  | some code => exact rawSourceCodeInstalledPreservedToRawBytecode ctx hCode
+
+/-- Raw Standard JSON entry theorem. The selected `irOptimizedAst` object and
+its object-builtin context are constructed from successful checked compilation;
+the semantic conclusion executes that raw object before composing with the
+verified backend. -/
+theorem optimizedRawSolcIrToRawSourceBytecode
+    {rawJson : String} {selection : Selection}
+    {artifact : Frontend.Program.Artifact}
+    {rawFuel : Nat}
+    {baseSource : EvmYul.SharedState .Yul}
+    (hCompile :
+      compileArtifactFromRawSolcIr? rawJson selection = some artifact) :
+    ∃ (json : Lean.Json) (selected : SelectedIr)
+        (context : Frontend.ObjectBuiltinContext) (structuredFuel : Nat),
+      Lean.Json.parse rawJson = .ok json ∧
+        decodeSelectedIr json selection = .ok selected ∧
+          Assembly.Accepted
+            artifact.codeArtifact.compiled.certified.target ∧
+            Simulation.Interaction.ForwardRel
+              Yul.FunctionsInteractionPrimitive.Truncated
+              (RawSourceBytecodePrefixDoneRel artifact)
+              (rawObjectRun (rawFuel + 1) context selected.root
+                (Yul.EndToEnd.installedSourceState artifact baseSource))
+              (Assembly.Compact.InteractionSemantics.openRunNResult
+                (Assembly.Bytecode.ofList artifact.image.bytes)
+                (2 *
+                  ((Structured.InteractionStaticCost.blockBudget
+                      artifact.codeArtifact.compiled.expressions.toStructured
+                      structuredFuel
+                      artifact.codeArtifact.compiled.expressions.toStructured.body +
+                        1) *
+                    TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
+                      artifact.codeArtifact.compiled.cfg))
+                { (Yul.EndToEnd.initialExpressionsState artifact baseSource).evm with
+                  pc := EvmYul.UInt256.ofNat 0 }) := by
+  rcases ArtifactRawSourceContext.nonempty_of_compile hCompile with ⟨ctx⟩
+  rcases rawSourceInstalledPreservedToRawBytecode ctx with
+    ⟨structuredFuel, hAccepted, hForward⟩
+  exact
+    ⟨ctx.json, ctx.selected, ctx.context, structuredFuel,
+      ctx.parse, ctx.selected_ok, hAccepted, hForward⟩
 
 theorem rawSourceDispatcherSeqPreservedToRawBytecode
     {rawJson : String} {selection : Selection}

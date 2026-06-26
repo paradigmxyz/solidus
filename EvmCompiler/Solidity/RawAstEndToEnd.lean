@@ -1,23 +1,23 @@
 import EvmCompiler.Solidity.RawAstPublic
+import EvmCompiler.Solidity.RawAstSourcePreservation
 import EvmCompiler.Yul.EndToEnd
+import EvmCompiler.Yul.GasfulEndToEnd
 
 /-!
 Raw solc Standard JSON to bytecode theorem composition.
 
-The raw decoder/elaborator and artifact wrapper stay Solidity-owned. This
-module is only the thin public composition that feeds their checked artifact
-result into the existing optimized-Yul end-to-end theorem.
+The raw decoder, independent source semantics, elaborator, and preservation
+proof stay Solidity-owned. This module publishes their composition with the
+ordered-Yul backend and the concrete gasful EVM frame refinement.
 -/
 
 namespace EvmCompiler
 namespace Solidity
 namespace RawAst
 
-/-- Primary raw-solc theorem. A successful checked compilation from raw solc
-Standard JSON internally decodes the selected `irOptimizedAst`, elaborates it to
-`Solidity.Frontend`, extracts linker metadata, and preserves every finite
-ordered open-world prefix to the emitted raw bytecode image. -/
-theorem optimizedRawSolcIrToRawBytecode
+/-- Compatibility theorem for the canonical ordered artifact projection. The
+primary raw-solc theorem below starts from the selected raw-object semantics. -/
+theorem optimizedRawSolcIrArtifactToRawBytecode
     {rawJson : String} {selection : Selection}
     {artifact : Frontend.Program.Artifact}
     {sourceFuel : Nat}
@@ -57,6 +57,169 @@ theorem optimizedRawSolcIrToRawBytecode
       (sourceFuel := sourceFuel)
       (baseSource := baseSource)
       hProgramCompile
+
+/-- Primary raw-solc theorem. A successful checked compilation decodes the
+selected `irOptimizedAst`, executes its independent raw-object semantics, and
+preserves every finite open-world prefix to the emitted bytecode image. -/
+theorem optimizedRawSolcIrToRawBytecode
+    {rawJson : String} {selection : Selection}
+    {artifact : Frontend.Program.Artifact}
+    {sourceFuel : Nat}
+    {baseSource : EvmYul.SharedState .Yul}
+    (hCompile :
+      compileArtifactFromRawSolcIr? rawJson selection = some artifact) :
+    ∃ (json : Lean.Json) (selected : SelectedIr)
+        (context : Frontend.ObjectBuiltinContext) (structuredFuel : Nat),
+      Lean.Json.parse rawJson = .ok json ∧
+        decodeSelectedIr json selection = .ok selected ∧
+          Assembly.Accepted
+            artifact.codeArtifact.compiled.certified.target ∧
+            Simulation.Interaction.ForwardRel
+              Yul.FunctionsInteractionPrimitive.Truncated
+              (Raw.SourcePreservation.RawSourceBytecodePrefixDoneRel artifact)
+              (Raw.SourcePreservation.rawObjectRun (sourceFuel + 1)
+                context selected.root
+                (Yul.EndToEnd.installedSourceState artifact baseSource))
+              (Assembly.Compact.InteractionSemantics.openRunNResult
+                (Assembly.Bytecode.ofList artifact.image.bytes)
+                (2 *
+                  ((Structured.InteractionStaticCost.blockBudget
+                      artifact.codeArtifact.compiled.expressions.toStructured
+                      structuredFuel
+                      artifact.codeArtifact.compiled.expressions.toStructured.body +
+                        1) *
+                    TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
+                      artifact.codeArtifact.compiled.cfg))
+                { (Yul.EndToEnd.initialExpressionsState artifact baseSource).evm with
+                  pc := EvmYul.UInt256.ofNat 0 }) :=
+  Raw.SourcePreservation.optimizedRawSolcIrToRawSourceBytecode hCompile
+
+/-- Concrete gasful-EVM corollary of the raw-source theorem. The recursive
+frame bridge constructs the open-bytecode transcript from the checked artifact;
+the only runtime premise relates the caller's concrete initial EVM state to the
+compiler's canonical initial state. -/
+theorem optimizedRawSolcIrToGasfulRawBytecode
+    {rawJson : String} {selection : Selection}
+    {artifact : Frontend.Program.Artifact}
+    {sourceFuel : Nat}
+    {baseSource : EvmYul.SharedState .Yul}
+    {gasfulInitial : Assembly.EVMState}
+    (hCompile :
+      compileArtifactFromRawSolcIr? rawJson selection = some artifact)
+    (hInitial :
+      Assembly.GasfulBridge.OpenStateRel gasfulInitial
+        { (Yul.EndToEnd.initialExpressionsState artifact baseSource).evm with
+          pc := EvmYul.UInt256.ofNat 0 }) :
+    ∃ (json : Lean.Json) (selected : SelectedIr)
+        (context : Frontend.ObjectBuiltinContext)
+        (structuredFuel : Nat)
+        (transcript : Simulation.Interaction.Transcript),
+      Lean.Json.parse rawJson = .ok json ∧
+        decodeSelectedIr json selection = .ok selected ∧
+          Assembly.Accepted
+            artifact.codeArtifact.compiled.certified.target ∧
+            Simulation.Interaction.ForwardRel
+              Yul.FunctionsInteractionPrimitive.Truncated
+              (Raw.SourcePreservation.RawSourceBytecodePrefixDoneRel artifact)
+              (Raw.SourcePreservation.rawObjectRun (sourceFuel + 1)
+                context selected.root
+                (Yul.EndToEnd.installedSourceState artifact baseSource))
+              (Assembly.Compact.InteractionSemantics.openRunNResult
+                (Assembly.Bytecode.ofList artifact.image.bytes)
+                (2 *
+                  ((Structured.InteractionStaticCost.blockBudget
+                      artifact.codeArtifact.compiled.expressions.toStructured
+                      structuredFuel
+                      artifact.codeArtifact.compiled.expressions.toStructured.body +
+                        1) *
+                    TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
+                      artifact.codeArtifact.compiled.cfg))
+                { (Yul.EndToEnd.initialExpressionsState artifact baseSource).evm with
+                  pc := EvmYul.UInt256.ofNat 0 }) ∧
+            Assembly.GasfulBridge.RunRefinesOpen
+              (EvmYul.EVM.X
+                (2 *
+                  ((Structured.InteractionStaticCost.blockBudget
+                      artifact.codeArtifact.compiled.expressions.toStructured
+                      structuredFuel
+                      artifact.codeArtifact.compiled.expressions.toStructured.body +
+                        1) *
+                    TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
+                      artifact.codeArtifact.compiled.cfg))
+                (EvmYul.EVM.D_J
+                  (Assembly.Bytecode.ofList artifact.image.bytes)
+                  (EvmYul.UInt256.ofNat 0))
+                gasfulInitial)
+              (Assembly.Compact.InteractionSemantics.openRunNResult
+                (Assembly.Bytecode.ofList artifact.image.bytes)
+                (2 *
+                  ((Structured.InteractionStaticCost.blockBudget
+                      artifact.codeArtifact.compiled.expressions.toStructured
+                      structuredFuel
+                      artifact.codeArtifact.compiled.expressions.toStructured.body +
+                        1) *
+                    TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
+                      artifact.codeArtifact.compiled.cfg))
+                { (Yul.EndToEnd.initialExpressionsState artifact baseSource).evm with
+                  pc := EvmYul.UInt256.ofNat 0 })
+              transcript := by
+  rcases optimizedRawSolcIrToRawBytecode
+      (sourceFuel := sourceFuel) (baseSource := baseSource) hCompile with
+    ⟨json, selected, context, structuredFuel,
+      hParse, hSelected, hAccepted, hForward⟩
+  rcases compileArtifactFromRawSolcIr?_decoded hCompile with
+    ⟨program, linkerSymbols, _hDecode, _hLinker, hProgramCompile⟩
+  have hInitialPoint :=
+    Yul.EndToEnd.verifiedArtifact_initialArtifactFramePoint
+      hProgramCompile hInitial
+  have hOrdinary :
+      Assembly.GasfulBridge.ArtifactOrdinaryBoundaryStepInvariant
+        artifact.codeArtifact.compact
+        (Assembly.Bytecode.ofList artifact.image.bytes)
+        (EvmYul.EVM.D_J
+          (Assembly.Bytecode.ofList artifact.image.bytes)
+          (EvmYul.UInt256.ofNat 0)) :=
+    Yul.EndToEnd.verifiedArtifact_ordinaryBoundaryInvariant
+      hProgramCompile
+      (EvmYul.EVM.D_J
+        (Assembly.Bytecode.ofList artifact.image.bytes)
+        (EvmYul.UInt256.ofNat 0))
+  have hStepInvariant :
+      Assembly.GasfulBridge.ArtifactFrameStepInvariant
+        artifact.codeArtifact.compact
+        (Assembly.Bytecode.ofList artifact.image.bytes)
+        (EvmYul.EVM.D_J
+          (Assembly.Bytecode.ofList artifact.image.bytes)
+          (EvmYul.UInt256.ofNat 0)) := by
+    intro current next stepFuel hPoint hPrefix hStep hContinues
+    exact
+      (Yul.EndToEnd.verifiedArtifact_frameStepInvariant_of_ordinaryBoundary
+        (validJumps := EvmYul.EVM.D_J
+          (Assembly.Bytecode.ofList artifact.image.bytes)
+          (EvmYul.UInt256.ofNat 0)) hProgramCompile hOrdinary)
+        hPoint hPrefix hStep hContinues
+  have hFrame :=
+    Assembly.GasfulBridge.artifactFrameInvariant_of_step
+      hInitialPoint hStepInvariant
+  have hLayout :=
+    Yul.EndToEnd.verifiedArtifact_frameLayoutInvariant_of_artifactFrameInvariant
+      hProgramCompile hFrame
+  have hCode :=
+    Yul.EndToEnd.verifiedArtifact_frameCodeInvariant_of_layout
+      hProgramCompile hLayout
+  obtain ⟨transcript, hGasful⟩ :=
+    Assembly.GasfulBridge.runRefinesOpen_recursive hCode
+      (2 *
+        ((Structured.InteractionStaticCost.blockBudget
+            artifact.codeArtifact.compiled.expressions.toStructured
+            structuredFuel
+            artifact.codeArtifact.compiled.expressions.toStructured.body + 1) *
+          TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
+            artifact.codeArtifact.compiled.cfg))
+      Assembly.GasfulBridge.FrameReachable.initial hInitial
+  exact
+    ⟨json, selected, context, structuredFuel, transcript,
+      hParse, hSelected, hAccepted, hForward, hGasful⟩
 
 /-- Raw-solc finite-prefix theorem with source-local nested-call evidence.
 
@@ -129,7 +292,7 @@ theorem optimizedRawSolcIrToRawBytecode_sourceLocalFunction_noShadow
     ⟨program, linkerSymbols, generated, localFn, args', topFn,
       hDecode, hLinker, hProgramCompile, hValid, hTopEntry,
       hOccurrence, hLocalEntry⟩
-  rcases optimizedRawSolcIrToRawBytecode
+  rcases optimizedRawSolcIrArtifactToRawBytecode
       (sourceFuel := sourceFuel) (baseSource := baseSource) hCompile with
     ⟨structuredFuel, hAccepted, hForward⟩
   exact
@@ -202,7 +365,7 @@ theorem optimizedRawSolcIrToRawBytecode_sourceLocalFunction_noShadow_alphaPreser
       hCompile hParse hSelected hCode hTop hLocal hOccurs with
     ⟨program, linkerSymbols, hDecode, hLinker, hProgramCompile,
       hValid, hAlpha⟩
-  rcases optimizedRawSolcIrToRawBytecode
+  rcases optimizedRawSolcIrArtifactToRawBytecode
       (sourceFuel := sourceFuel) (baseSource := baseSource) hCompile with
     ⟨structuredFuel, hAccepted, hForward⟩
   exact
@@ -7907,7 +8070,7 @@ theorem optimizedRawSolcIrToRawBytecode_sourceLocalFunction_noShadow_bodyRouteEv
       hCompile hParse hSelected hCode hTop hLocal hOccurs with
     ⟨program, linkerSymbols, hDecode, hLinker, hProgramCompile,
       hValid, hAlpha⟩
-  rcases optimizedRawSolcIrToRawBytecode
+  rcases optimizedRawSolcIrArtifactToRawBytecode
       (sourceFuel := sourceFuel) (baseSource := baseSource) hCompile with
     ⟨structuredFuel, hAccepted, hForward⟩
   refine

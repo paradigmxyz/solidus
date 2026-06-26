@@ -15,38 +15,43 @@ they were written and must not be read as current status.
 
 ## Public Theorem
 
-The primary theorem is
-`Yul.EndToEnd.optimizedSolcYulToRawBytecode`. Its only explicit hypothesis is:
+The primary raw-input theorem is
+`RawAst.optimizedRawSolcIrToRawBytecode`. Its only explicit hypothesis is:
 
-1. `hObject`: running the checked recursive object compiler produced the named
-   artifact.
+1. `hCompile`: running the checked raw Standard JSON compiler produced the
+   named artifact.
 
-`hObject` is the graph equation of an executable partial compiler, not
+Its conclusion identifies the parsed JSON, selected `irOptimizedAst` object,
+and object-builtin context, then relates execution of that raw object to the
+emitted byte image. The adjacent theorem
+`Yul.EndToEnd.optimizedSolcYulToRawBytecode` remains available when the declared
+source is already canonical ordered Yul.
+
+`hCompile` is the graph equation of an executable partial compiler, not
 externally supplied proof evidence. The theorem names an `artifact`, so the
-equation ties that value to the exact result computed from `object` and
-`linkerSymbols`; an arbitrary artifact cannot satisfy it. A caller obtains the
+equation ties that value to the exact result computed from `rawJson` and
+`selection`; an arbitrary artifact cannot satisfy it. A caller obtains the
 equation directly by evaluating and case-splitting on the compiler:
 
 ```lean
 match hCompile :
-    object.compileVerifiedStackObjectArtifactWithLinkerSymbols?
-      linkerSymbols with
+    compileArtifactFromRawSolcIr? rawJson selection with
 | none => -- checked rejection; there is no artifact to execute
 | some artifact =>
-    Yul.EndToEnd.optimizedSolcYulToRawBytecode hCompile
+    RawAst.optimizedRawSolcIrToRawBytecode hCompile
 ```
 
 The equation cannot be derived for every input because the checked compiler is
 intentionally fail-closed: malformed, unsupported, or unschedulable inputs
 return `none`. An unconditional theorem returning an artifact for every object
 would incorrectly assert compiler totality. A theorem stated by matching on the
-compiler result could hide `hObject` syntactically, but would have exactly the
+compiler result could hide `hCompile` syntactically, but would have exactly the
 same logical content.
 
-The primary theorem has no `hFinished`, `hTerminal`, or source-completion
-premise. For every source semantic-fuel bound it preserves the exact ordered
-interaction prefix up to source `OutOfFuel`; at truncation it makes no claim
-about the target suffix. The derived theorem
+The primary raw and canonical theorems have no `hFinished`, `hTerminal`, or
+source-completion premise. For every source semantic-fuel bound they preserve
+the exact ordered interaction prefix up to source `OutOfFuel`; at truncation
+they make no claim about the target suffix. The derived theorem
 `Yul.EndToEnd.optimizedSolcYulToRawBytecodeFinished` accepts `hFinished` only
 when a caller wants to upgrade that prefix result to a related final outcome.
 There `hFinished` is an execution fact saying every open-world branch reaches a
@@ -54,7 +59,7 @@ genuine halt or supported runtime error without exhausting the chosen source
 semantic fuel. It is not an assumption of primary compiler correctness, and
 arbitrary recursive Yul cannot satisfy it uniformly.
 
-Malformed-source exclusion is not hidden in either theorem:
+Malformed-source exclusion is not hidden in these theorems:
 `truncated_iff_outOfFuel` proves that public truncation is exactly source
 `OutOfFuel`, while checked validation and scoped preservation derive
 missing-name, arity, expression, and contract/function facts internally.
@@ -96,18 +101,18 @@ counters, stack layouts, and private locals is related at its owning layer.
 
 At a terminal halt, the relation intentionally omits scratch return-data
 bookkeeping and dead control/stack data that no continuation can observe. It
-retains output, memory, active words, the available-gas field in the
-parameterized model, the execution environment, and the open world. This does
-not claim that the field has been updated by gasful EVM charging. Therefore the
-claim is observational state equivalence, not literal equality of every record
-field.
+retains output, memory, active words, the execution environment, and the open
+world. The canonical open semantics carries a parameterized available-gas
+field; the gasful bridge instead relates the concrete target after erasing its
+target-only gas/control bookkeeping. Therefore the claim is observational
+state equivalence, not literal equality of every record field.
 
 ## Source Boundary And Frontend
 
-The normalized entry point accepts a checked `Solidity.Frontend.Object`. Its
-execution-side source in the public theorem is the canonical ordered Yul
-contract retained in the successful artifact. The backend preservation spine
-from that ordered Yul program through emitted bytes is checked.
+The production raw entry point accepts Standard JSON containing solc's selected
+optimized-Yul `irOptimizedAst`. Its execution-side source is the independently
+interpreted raw Yul object, before frontend elaboration. The canonical ordered
+Yul contract retained in the artifact is an internal adjacent boundary.
 
 The raw entry point decodes and elaborates selected Standard JSON
 `irOptimizedAst` in Lean and then invokes the same checked compiler. Python may
@@ -124,13 +129,13 @@ Lean compilation checks their structural consequences: missing metadata is
 rejected, and an object containing instructions unavailable in its declared
 fork cannot produce an artifact.
 
-One compiler-preservation obligation remains if the claimed source is the raw
-selected Yul AST rather than the canonical ordered Yul program: the local
-decoding/elaboration facts, especially nested-function hoisting and
-alpha-renaming through complete caller/control contexts, must be composed into
-a whole-source same-observation theorem. The current raw theorem executes the
-elaborated ordered source; successful raw decoding by itself is not that
-semantic bridge.
+`RawAst.Raw.SourcePreservation.optimizedRawSolcIrToRawSourceBytecode` composes
+the complete raw frontend path. It covers lexical scope resolution,
+nested-function hoisting and alpha-renaming through recursive caller/control
+contexts, generated `clz` expansion, object/data ordering and builtins,
+memoryguard inference, top-level function-table construction, and empty-code
+objects. No generated-name, layout, replay, or preservation certificate is a
+public premise.
 
 The raw frontend additionally checks solc's `difficulty()`/`prevrandao()` split
 before both spellings lower to opcode `0x44`; successful conversion derives
@@ -149,54 +154,24 @@ compiler provenance.
 Universal quantification over a shared response is the intended compiler
 semantics, not an unfinished implementation of external contracts. A real
 callee, reentrant contract, or precompile can instantiate the same response;
-the compiler does not need to verify that external program. What remains is a
-target-side contextual/refinement theorem showing that a gasful EVM frame can
-be decomposed into these requests and responses while preserving the caller's
-observable result.
+the compiler does not need to verify that external program. The checked
+recursive `EVM.X` frame refinement decomposes gasful CALL/CREATE execution into
+these requests and responses while preserving the caller's observable result.
 
-## Remaining Compiler-Preservation Obligations
+## Completed Compiler-Preservation Chain
 
-Only the following are current gaps in a preservation theorem from the claimed
-Yul source to the actual gasful EVM runner:
+There is no known unfinished compiler pass in the finite-prefix theorem chain.
+`RawAst.optimizedRawSolcIrToGasfulRawBytecode` packages both:
 
-1. **Source-facing frontend preservation, when that is the declared source.**
-   Complete and compose the remaining raw-Yul elaboration and object-resolution
-   preservation facts so the theorem starts from execution of the selected
-   source AST rather than only execution of its elaborated ordered program. The
-   known active frontier is nested-function hoisting/alpha-renaming through full
-   caller and control contexts.
-2. **Gasful target refinement.** Relate EVMYulLean's gasful execution of the
-   emitted byte image to the public open bytecode interaction after erasing
-   target-only gas/control data. This bridge must:
-   - use the gasful run's actual `GAS` and `MSIZE` observations to resolve the
-     already-matched resource queries;
-   - relate runner fuel, byte decoding, PC advance, termination, the supplied
-     valid-jump table, and the decoder-window representation bound;
-   - account for ordinary and dynamic charging, including memory expansion,
-     warm/cold account and storage access, copy/log/hash/storage/create costs,
-     EIP-150 effective forwarding, stipends, and returned gas, without adding a
-     cost semantics to Yul;
-   - treat out-of-gas and real EVM exceptional conditions, including stack
-     underflow/overflow, invalid opcodes/jumps, return-data copy bounds, static
-     restrictions, and intrinsic CALL/CREATE failures, either through an
-     honest outcome relation or explicit source-facing resource premises;
-   - decompose successful CALL/CREATE execution, including caller-local
-     memory/returndata/gas effects and child commit/revert selection, through
-     the existing shared external strategy rather than requiring verified
-     external programs or precompiles.
-3. **Public composition.** Compose that target refinement with
-   `optimizedSolcYulToRawBytecode` so the final theorem names the actual gasful
-   EVM runner and contains no compiler-generated oracle or certificate premise.
+- raw selected-object execution to emitted open-bytecode forward preservation;
+- recursive gasful `EVM.X` frame refinement to that same open-bytecode run at
+  the compiler-derived budget and transcript.
 
-For the deliberately narrower source boundary consisting of the already-
-elaborated canonical ordered Yul contract, item 1 is out of scope and item 2 is
-the only missing semantic bridge. A claim beginning at the selected raw Yul
-object requires both items.
-
-The existing open theorem has already completed the compiler-side part of
-target-derived gas observations: for every answer, source and target expose the
-same resource query and use the same value. The missing theorem proves that the
-gasful target execution supplies the answers and related outcome.
+Its only runtime premise is `GasfulBridge.OpenStateRel` for the concrete initial
+frame. It has no `hFinished`, response oracle, replay, generated-name, layout, or
+certificate premise. The result is intentionally frame-level and finite-prefix:
+source semantic fuel may truncate an unobserved suffix, while transaction and
+chain finalization remain outside the declared theorem boundary.
 
 ## Not Compiler-Preservation Gaps
 
@@ -223,8 +198,8 @@ EVM frame semantics:
 
 `Assembly.OutOfGasPolicyAssumption` and
 `Assembly.CurrentContractProjectionAssumption` are documentation markers with
-`True` fields. They do not discharge the gasful target-refinement obligation
-and are not used to inflate the optimized-Yul end-to-end theorem.
+`True` fields. They are not used to discharge or inflate the raw, canonical, or
+gasful end-to-end theorems.
 
 ## Release Evidence
 
@@ -234,10 +209,13 @@ pressure and semantic surfaces, executable local/external code inspection,
 constructor success/revert/rollback and CREATE2 collision, delegated proxy
 state/reentrancy/rollback/upgrade execution, exact Permit2, linked Aave Pool,
 linked PoolManager creation/runtime, full pinned Safe and ERC-4337 EntryPoint
-creation/runtime, and fourteen pinned real-repository suites. Safe and
+creation/runtime, and fourteen pinned real-repository suites. Permit2 remains an
+exact solc-0.8.17 legacy/version-boundary gate because that compiler emits no
+structured `irOptimizedAst`; the raw compiler rejects its missing AST. Safe and
 EntryPoint are compile gates; only cases for which solc emits a reference image
 are counted as differential execution tests. The kernel proof gate reports
-only `propext`, `Classical.choice`, and `Quot.sound` for the public theorem.
+only `propext`, `Classical.choice`, and `Quot.sound` for both primary public
+theorems.
 The supported-version matrix also compiles honest London and Cancun fixtures
 and rejects Cancun-only `MCOPY`/transient-storage syntax relabeled as London.
 It separately compiles London `difficulty()` and Paris `prevrandao()`, then

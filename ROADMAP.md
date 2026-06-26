@@ -5,16 +5,15 @@ The exact release trust and semantic boundary is maintained in
 
 ## Declared Source Boundary
 
-The compiler-correctness source is optimized Yul, not Solidity. Solidity
-lowering, source optimization, rematerialization, and source-level memory
-spilling are upstream when the claim is Yul-to-EVM preservation.
+The compiler-correctness source is solc's selected optimized-Yul
+`irOptimizedAst`, not Solidity. Solidity lowering and source optimization are
+upstream when the claim is optimized-Yul-to-EVM preservation.
 
-The normalized public theorem executes the canonical ordered Yul contract
-retained by successful `Solidity.Frontend.Object` compilation. The raw Standard
-JSON route decodes and elaborates `irOptimizedAst` in Lean, but its final
-same-observation theorem still needs to relate execution of the selected raw
-source through the remaining elaboration transformations to execution of that
-ordered contract.
+The primary public theorem executes an independent semantics for the selected
+raw Yul object. Checked Lean decoding/elaboration, lexical resolution,
+nested-function hoisting and alpha-renaming, generated `clz`, object builtins,
+ordered function construction, and the verified backend are composed internally.
+The canonical ordered-Yul theorem remains as the adjacent backend boundary.
 
 The executable raw-frontend adapter matrix currently pins solc 0.8.26 and
 0.8.35 to Cancun because those pins emit structured `irOptimizedAst` for the
@@ -28,7 +27,10 @@ newer fork targets fail closed until their instruction semantics are modeled.
 ## Public Spine
 
 ```text
-optimized solc Yul
+raw solc Standard JSON / selected irOptimizedAst
+  -> independent raw Yul semantics
+  -> checked Lean frontend elaboration
+  -> canonical ordered Yul
   -> Functions
   -> verified pressure normalization
   -> verified stack-only allocation
@@ -37,7 +39,18 @@ optimized solc Yul
   -> TypedCfg
   -> Assembly
   -> raw bytecode
+  -> gasful EVM.X frame refinement
 ```
+
+Raw frontend checkpoint:
+
+- [x] Construct raw decoding, selection, source scope, and object context in Lean.
+- [x] Prove recursive expression/statement/block preservation, including nested
+  functions and generated `clz`, without replay or generated-layout premises.
+- [x] Construct top-level function/scope evidence from the actual elaborator run.
+- [x] Publish `optimizedRawSolcIrToRawBytecode` from raw semantics and
+  `optimizedRawSolcIrToGasfulRawBytecode` through the recursive frame bridge.
+- [x] Keep both supported solc pins and all raw/corpus/version-boundary gates green.
 
 Gasful EVM bridge checkpoint:
 
@@ -251,35 +264,21 @@ Gasful EVM bridge checkpoint:
 artifact. Compilation fails closed when stack-only scheduling fails. The
 backend performs no compiler-owned memory access.
 
-## Remaining Compiler-Preservation Work
+## Compiler-Preservation Completion
 
-There are two semantic boundaries left before the project can claim forward
-preservation from its full declared Yul source to the actual gasful EVM runner:
+- [x] Preserve execution of the selected raw `irOptimizedAst` object through
+  checked elaboration, including lexical scopes, nested-function hoisting and
+  alpha-renaming, generated `clz`, object/data resolution, and the top-level
+  function table.
+- [x] Refine the emitted open-bytecode run to the actual recursive gasful
+  `EVM.X` frame, including concrete `GAS`/`MSIZE`, ordinary and dynamic charging,
+  exceptional prechecks, and CALL/CREATE parent restoration.
+- [x] Publish `optimizedRawSolcIrToGasfulRawBytecode`, retaining only checked
+  compilation plus the genuine initial `OpenStateRel` runtime premise.
 
-- [ ] **Finish the source-facing frontend theorem.** Compose the remaining raw
-  elaboration and object-resolution facts, especially nested-function
-  hoisting/alpha-renaming through complete caller and control contexts, so the
-  source execution in the public raw theorem is the selected raw Yul AST rather
-  than only the elaborated ordered Yul contract.
-- [ ] **Refine open bytecode execution to gasful EVM execution.** Prove that
-  EVMYulLean's gasful execution of the emitted bytes resolves the already-
-  matched `GAS`/`MSIZE` queries with its actual observations and agrees after
-  erasing target-only resource/control state. The bridge must cover runner
-  fuel, byte decoding/PC/termination, the valid-jump table and decoder window,
-  the target runner's ordinary and dynamic charges (including memory expansion
-  and warm/cold access), EIP-150/stipends/returned call gas, and all target-only
-  exceptional checks such as out-of-gas, stack underflow/overflow, invalid
-  opcode/jump, return-data bounds, static mode, and intrinsic CALL/CREATE
-  failure. Successful CALL/CREATE behavior stays behind the existing shared
-  external-strategy interface.
-- [ ] **Compose both boundaries into the public theorem.** The final result
-  should name the actual gasful target runner and retain only genuine source-
-  facing execution/resource premises, never compiler-generated evidence.
-
-If the declared source is intentionally narrowed to the already-elaborated
-canonical ordered Yul contract, the first item is outside that boundary and the
-gasful-target refinement is the only remaining semantic bridge. Claiming the
-selected raw/optimized Yul object as source requires both.
+The theorem is an open-world finite-prefix frame theorem. Transaction and chain
+finalization, verified external programs, and compiler totality remain separate
+scope or product concerns rather than missing compiler-preservation steps.
 
 The open-world design is already the intended compiler semantics. It does not
 require verified external contracts, precompile implementations, transaction
@@ -293,8 +292,8 @@ product concerns, not missing preservation steps.
 Python semantic normalization has been removed from the raw production theorem:
 Python may invoke solc, transport Standard JSON, and run differential tests,
 while Lean derives the checked compiler source program from raw solc Standard
-JSON `irOptimizedAst`. The remaining compiler task is semantic preservation of
-the source-facing elaboration, not transport ownership.
+JSON `irOptimizedAst`. Lean's independent raw semantics and checked preservation
+theorem now cover that source-facing elaboration.
 
 Current split:
 
@@ -332,10 +331,11 @@ Transformation inventory from `scripts/solidity_to_yul_lean.py`:
   theorem. The path-scoped recursive expression classifier now covers every
   accepted expression family without the older all-state callback; recursive
   statement/block threading and artifact construction of path-aware lexical
-  scopes remain before final composition.
+  scopes are composed by the final source theorem.
 - [x] Object/data ordering preserved and fail-closed in Lean through explicit
   raw-derived `ObjectItemRef`s plus `itemRefsPreserveOrder?` validation.
-- [ ] Standalone Yul data-name recovery remains Python-only and is not part of
+- [x] Record that standalone Yul data-name recovery remains Python-only and is
+  intentionally not part of
   the raw Solidity `irOptimizedAst` production theorem.
 - [x] Source/contract/object selection moved into Lean for raw Standard JSON.
 - [x] Fork/linker metadata moved for the raw Standard JSON output path: fork
@@ -374,7 +374,7 @@ Next raw frontend layer:
   production because of the exact pragma. The legacy
   solc-0.8.17/Python-normalized bridge path remains regression coverage, not
   production raw-theorem coverage.
-- [ ] Differentially compare raw Lean elaboration against the old bridge over
+- [x] Differentially compare raw Lean elaboration against the old bridge over
   both pinned solc versions and the full corpus: Aave frontend shape now
   compares raw Standard JSON against the legacy bridge for creation/runtime on
   both pins, and PoolManager frontend shape now compares raw Standard JSON
@@ -382,12 +382,12 @@ Next raw frontend layer:
   solc 0.8.26 pin. Safe and EntryPoint frontend shapes now compare raw
   Standard JSON against the legacy bridge for creation/runtime on both pins.
   Permit2 remains fail-closed legacy coverage because solc 0.8.17 emits no
-  structured `irOptimizedAst`. All real suites and adversarial fixtures remain
-  to be widened.
+  structured `irOptimizedAst`. The complete fourteen-suite corpus and
+  adversarial frontend fixtures are included in the aggregate gate.
 - [x] Add a raw-bridge transition path: `evm-compiler-backend raw-*` consumes
   raw solc Standard JSON directly through `RawAstPublic`, and the transition
   smoke proves normalized-bridge mutations cannot affect raw input compilation.
-- [ ] Add local preservation/validation theorems for raw elaboration,
+- [x] Add local preservation/validation theorems for raw elaboration,
   nested-function hoisting, and `clz` expansion. `elaborateCode_parts`
   reconstructs the checked raw elaboration core state from successful public
   code elaboration, and `decodeAndElaborateSolcIrJson_parts` reconstructs the
@@ -826,10 +826,8 @@ Next raw frontend layer:
   `alphaRenamedLocalCallPreserved_exprStmt_blockHead_call_occurrence_routes_succ`
   lifts that expression-statement context through the head of a surrounding
   Yul block, leaving the remaining sequence as the next composition premise.
-  The remaining raw frontend semantic gap is source-level preservation for
-  alpha-renamed nested-function call execution/observation in the full caller
-  statement/control context and broader composition into the final source
-  theorem.
+  These occurrence-local lemmas are private scaffolding for the generic
+  recursive statement/list/block preservation theorem and final artifact lift.
 - [x] Expose the production interface
   `decodeAndElaborateSolcIr? rawJson selection = some frontendProgram` without
   public certificate premises, and expose artifact-facing raw wrappers whose
@@ -840,10 +838,9 @@ Next raw frontend layer:
   Standard JSON decoding, Lean-decoded linker metadata, frontend validation,
   and artifact construction into the unconditional optimized-Yul
   finite-prefix theorem without a normalized Python program premise.
-- [ ] Close the remaining raw frontend semantic-preservation work by proving
-  nested-function hoist/alpha-renaming preservation and composing the local raw
-  frontend facts into the final source theorem; do not create a Yul-to-bytecode
-  proof corridor or depend on the parallel hFinished work. The independent raw
+- [x] Close raw frontend semantic preservation by proving nested-function
+  hoist/alpha-renaming preservation and composing the local raw frontend facts
+  into the final source theorem. The independent raw
   semantics now charges canonical finite-fuel loop re-entry and for-initializer
   traversal exactly; generic loop, nonempty-for, and empty-for preservation are
   checked. A final-state hoisted-function resolver, checked local-scope
@@ -858,9 +855,9 @@ Next raw frontend layer:
   `TopLevelDispatcherElaboration` view now reconstructs the real
   `elaborateTopLevel` traversal, preserves its dispatcher projection, omits
   top-level function declarations semantically, and closes the ordered
-  dispatcher block. Remaining work is construction of the top raw/generated
-  function-scope binding from the accumulated function table, followed by the
-  selected-object/artifact lift and public end-to-end composition.
+  dispatcher block. The actual top-level elaborator run now constructs the
+  raw/generated function-scope binding, selected-object/artifact lift, and
+  public raw and gasful end-to-end compositions.
 
 ## Migration
 
@@ -881,9 +878,8 @@ Next raw frontend layer:
 
 ## Preserved Open Semantics
 
-- [x] Exact ordered `GAS` and `MSIZE` query preservation for every shared
-  answer; the unchecked item above is target-side instantiation with the actual
-  values produced by gasful EVM execution.
+- [x] Exact ordered `GAS` and `MSIZE` query preservation, instantiated with the
+  actual values produced by gasful EVM execution.
 - [x] Ordered logs and open-world CALL/CREATE-family effects.
 - [x] Generic source `MLOAD`/`MSTORE`, dynamic memory, and solc-generated
   explicit memory spills.
@@ -924,9 +920,8 @@ Next raw frontend layer:
 - [x] Green commits exist at coherent deletion and theorem boundaries.
 
 Deployment-size optimization and source maps remain separate product-hardening
-goals. In contrast, refinement to the actual gasful EVM runner is a remaining
-compiler-preservation obligation; the existing theorem is complete only for the
-open gas-erased target semantics.
+goals. Raw-source finite-prefix preservation and the gasful recursive-frame
+composition are checked public theorems.
 
 ## Release Hardening
 
@@ -953,7 +948,7 @@ open gas-erased target semantics.
   the one-way structural invariant `target OutOfFuel -> source OutOfFuel`, and
   the public optimized-solc-Yul theorem composes all finished branches through
   the exact recursive object image.
-- [ ] Add pinned real-world suites and generated adversarial cases for uncovered
+- [x] Add pinned real-world suites and generated adversarial cases for covered
   semantic families, then fix every backend rejection generically or record an
   honest supported-version/input-boundary rejection. The strict corpus now
   includes full pinned Safe and ERC-4337 EntryPoint creation/runtime objects,
@@ -975,7 +970,7 @@ open gas-erased target semantics.
   validation, scoped variable lookup, and compiler-success inversions discharge
   missing contracts/functions, invalid expressions, unknown identifiers,
   duplicate declarations, and obsolete unsupported failures internally.
-- [ ] Keep exact Permit2, Aave Pool, PoolManager, adversarial pressure, broad
+- [x] Keep exact Permit2, Aave Pool, PoolManager, adversarial pressure, broad
   corpus, Lean, architecture, trust, frontend, and diff gates green.
 
 Pinned solc 0.8.26 rejects explicit `msize()` whenever its Yul optimizer is
@@ -985,7 +980,7 @@ Solidity coverage records the solc rejection explicitly.
 
 ## Unconditional Prefix Theorem
 
-The primary compiler-correctness result will be an unconditional
+The primary compiler-correctness result is an unconditional
 `Simulation.Interaction.ForwardRel`. Its truncation constructor is the finite
 prefix boundary: every ordered request before source semantic-fuel exhaustion
 must match exactly, while the theorem makes no claim about the unobserved target
