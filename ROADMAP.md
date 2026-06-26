@@ -183,6 +183,10 @@ Gasful EVM bridge checkpoint:
   memory load/store/copy/hash, return-data size and copy, and their checked
   opcode classifier now compose charged recursive continuations without a
   caller-provided compatibility witness.
+- [x] Complete relational successful continuing primitives: normalized account
+  reads/code copy/hash, `SLOAD`/`SSTORE`, `TLOAD`/`TSTORE`, and `LOG0..4` now
+  preserve `OpenStateRel`; every `continuingStep?` success except resource
+  `MSIZE` and error-only `INVALID` is derived by the checked family classifier.
 - [x] Compose the existing Yul-to-open-raw-bytecode theorem with the named
   gasful target bridge premise in
   `Yul.EndToEnd.optimizedSolcYulToGasfulRawBytecodeOfOpenRunBridge`.

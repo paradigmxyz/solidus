@@ -1319,6 +1319,7 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Assembly.GasfulBridge.runRefinesOpen_continuing_success_rel
 #print axioms EvmCompiler.Assembly.GasfulBridge.runRefinesOpen_continuing_pureStack_success_rel
 #print axioms EvmCompiler.Assembly.GasfulBridge.runRefinesOpen_continuing_frameLocalPrim_success_rel
+#print axioms EvmCompiler.Assembly.GasfulBridge.runRefinesOpen_continuing_nonResource_success_rel
 #print axioms EvmCompiler.Assembly.GasfulBridge.runRefinesOpen_continuing_prim_success
 #print axioms EvmCompiler.Assembly.GasfulBridge.dynamicGasCostAt_call_args_eq_parentGasCost
 #print axioms EvmCompiler.Assembly.GasfulBridge.dynamicGasCostAt_create_args_eq_parentGasCost

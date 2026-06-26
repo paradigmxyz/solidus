@@ -2770,6 +2770,765 @@ theorem sharedTernaryCompatible_codeCopy :
     simp_all
     exact ⟨rfl, rfl, rfl, rfl⟩
 
+namespace StateDataRel
+
+theorem accounts
+    {left right : EvmYul.State EvmYul.OperationType.EVM}
+    (hRel : StateDataRel left right) :
+    (OpenWorld.ofEVMState left).accounts =
+      (OpenWorld.ofEVMState right).accounts :=
+  congrArg OpenWorld.accounts hRel.world
+
+theorem substate
+    {left right : EvmYul.State EvmYul.OperationType.EVM}
+    (hRel : StateDataRel left right) :
+    left.substate = right.substate :=
+  congrArg OpenWorld.substate hRel.world
+
+theorem createdAccounts
+    {left right : EvmYul.State EvmYul.OperationType.EVM}
+    (hRel : StateDataRel left right) :
+    left.createdAccounts = right.createdAccounts :=
+  congrArg OpenWorld.createdAccounts hRel.world
+
+theorem accountViews
+    {left right : EvmYul.State EvmYul.OperationType.EVM}
+    (hRel : StateDataRel left right)
+    (address : EvmYul.AccountAddress) :
+    (left.accountMap.find? address).map OpenAccount.ofEVM =
+      (right.accountMap.find? address).map OpenAccount.ofEVM := by
+  have hLookup := congrArg (fun accounts => accounts.find? address) hRel.accounts
+  simpa [OpenWorld.ofEVMState, OpenWorld.find?_mapVal_const] using hLookup
+
+theorem accountValueEq
+    {left right : EvmYul.State EvmYul.OperationType.EVM}
+    (hRel : StateDataRel left right)
+    (address : EvmYul.AccountAddress)
+    {α : Type} (defaultValue : α) (value : OpenAccount → α) :
+    (left.accountMap.find? address).option defaultValue
+        (fun account => value (OpenAccount.ofEVM account)) =
+      (right.accountMap.find? address).option defaultValue
+        (fun account => value (OpenAccount.ofEVM account)) := by
+  have hViews := hRel.accountViews address
+  cases hLeft : left.accountMap.find? address with
+  | none =>
+      rw [hLeft] at hViews
+      cases hRight : right.accountMap.find? address with
+      | none => rfl
+      | some rightAccount => simp [hRight] at hViews
+  | some leftAccount =>
+      rw [hLeft] at hViews
+      cases hRight : right.accountMap.find? address with
+      | none => simp [hRight] at hViews
+      | some rightAccount =>
+          rw [hRight] at hViews
+          have hAccount : OpenAccount.ofEVM leftAccount =
+              OpenAccount.ofEVM rightAccount := by
+            simpa using Option.some.inj hViews
+          simpa [hLeft, hRight] using congrArg value hAccount
+
+theorem accountElimValueEq
+    {left right : EvmYul.State EvmYul.OperationType.EVM}
+    (hRel : StateDataRel left right)
+    (address : EvmYul.AccountAddress)
+    {α : Type} (defaultValue : α) (value : OpenAccount → α) :
+    (left.accountMap.find? address).elim defaultValue
+        (fun account => value (OpenAccount.ofEVM account)) =
+      (right.accountMap.find? address).elim defaultValue
+        (fun account => value (OpenAccount.ofEVM account)) := by
+  have hViews := hRel.accountViews address
+  cases hLeft : left.accountMap.find? address with
+  | none =>
+      rw [hLeft] at hViews
+      cases hRight : right.accountMap.find? address with
+      | none => rfl
+      | some rightAccount => simp [hRight] at hViews
+  | some leftAccount =>
+      rw [hLeft] at hViews
+      cases hRight : right.accountMap.find? address with
+      | none => simp [hRight] at hViews
+      | some rightAccount =>
+          rw [hRight] at hViews
+          have hAccount : OpenAccount.ofEVM leftAccount =
+              OpenAccount.ofEVM rightAccount := by
+            simpa using Option.some.inj hViews
+          simpa [hLeft, hRight] using congrArg value hAccount
+
+theorem dead_eq
+    {left right : EvmYul.State EvmYul.OperationType.EVM}
+    (hRel : StateDataRel left right) (address : EvmYul.AccountAddress) :
+    CodeErasedState.dead left.accountMap address =
+      CodeErasedState.dead right.accountMap address := by
+  unfold CodeErasedState.dead
+  simpa [OpenAccount.ofAccount_evm] using
+    hRel.accountValueEq address true OpenAccount.empty
+
+theorem addAccessedAccount
+    {left right : EvmYul.State EvmYul.OperationType.EVM}
+    (hRel : StateDataRel left right) (address : EvmYul.AccountAddress) :
+    StateDataRel (left.addAccessedAccount address)
+      (right.addAccessedAccount address) := by
+  exact
+    { world := by
+        apply OpenWorld.ext_of_fields
+        · simpa [OpenWorld.ofEVMState, EvmYul.State.addAccessedAccount]
+            using hRel.accounts
+        · simp [OpenWorld.ofEVMState, EvmYul.State.addAccessedAccount,
+            hRel.substate]
+        · simpa [OpenWorld.ofEVMState, EvmYul.State.addAccessedAccount]
+            using hRel.createdAccounts
+      initialAccounts := by
+        simpa [EvmYul.State.addAccessedAccount] using hRel.initialAccounts
+      totalGasUsedInBlock := by
+        simpa [EvmYul.State.addAccessedAccount] using hRel.totalGasUsedInBlock
+      transactionReceipts := by
+        simpa [EvmYul.State.addAccessedAccount] using hRel.transactionReceipts
+      executionEnv := by
+        simpa [EvmYul.State.addAccessedAccount] using hRel.executionEnv
+      blocks := by simpa [EvmYul.State.addAccessedAccount] using hRel.blocks
+      genesisBlockHeader := by
+        simpa [EvmYul.State.addAccessedAccount] using hRel.genesisBlockHeader }
+
+theorem addAccessedStorageKey
+    {left right : EvmYul.State EvmYul.OperationType.EVM}
+    (hRel : StateDataRel left right)
+    (storageKey : EvmYul.AccountAddress × Word) :
+    StateDataRel (left.addAccessedStorageKey storageKey)
+      (right.addAccessedStorageKey storageKey) := by
+  exact
+    { world := by
+        apply OpenWorld.ext_of_fields
+        · simpa [OpenWorld.ofEVMState, EvmYul.State.addAccessedStorageKey]
+            using hRel.accounts
+        · simp [OpenWorld.ofEVMState, EvmYul.State.addAccessedStorageKey,
+            hRel.substate]
+        · simpa [OpenWorld.ofEVMState, EvmYul.State.addAccessedStorageKey]
+            using hRel.createdAccounts
+      initialAccounts := by
+        simpa [EvmYul.State.addAccessedStorageKey] using hRel.initialAccounts
+      totalGasUsedInBlock := by
+        simpa [EvmYul.State.addAccessedStorageKey]
+          using hRel.totalGasUsedInBlock
+      transactionReceipts := by
+        simpa [EvmYul.State.addAccessedStorageKey]
+          using hRel.transactionReceipts
+      executionEnv := by
+        simpa [EvmYul.State.addAccessedStorageKey] using hRel.executionEnv
+      blocks := by simpa [EvmYul.State.addAccessedStorageKey] using hRel.blocks
+      genesisBlockHeader := by
+        simpa [EvmYul.State.addAccessedStorageKey]
+          using hRel.genesisBlockHeader }
+
+end StateDataRel
+
+theorem stateReadCompatible_selfbalance :
+    StateReadCompatible EvmYul.State.selfbalance := by
+  intro left right hRel
+  let owner := left.executionEnv.codeOwner
+  have hOwner : right.executionEnv.codeOwner = owner := by
+    simpa [owner] using congrArg EvmYul.ExecutionEnv.codeOwner
+      hRel.executionEnv.symm
+  rw [EvmYul.State.selfbalance, EvmYul.State.selfbalance, hOwner]
+  simpa [OpenAccount.ofEVM] using
+    hRel.accountElimValueEq owner (EvmYul.UInt256.ofNat 0)
+      OpenAccount.balance
+
+theorem stateUnaryCompatible_balance :
+    StateUnaryCompatible EvmYul.State.balance := by
+  intro left right value hRel
+  let address := EvmYul.AccountAddress.ofUInt256 value
+  constructor
+  · exact hRel.addAccessedAccount address
+  · simpa [EvmYul.State.balance, address, OpenAccount.ofEVM] using
+      hRel.accountElimValueEq address (EvmYul.UInt256.ofNat 0)
+        OpenAccount.balance
+
+theorem stateUnaryCompatible_extCodeSize :
+    StateUnaryCompatible EvmYul.State.extCodeSize := by
+  intro left right value hRel
+  let address := EvmYul.AccountAddress.ofUInt256 value
+  constructor
+  · exact hRel.addAccessedAccount address
+  · simpa [EvmYul.State.extCodeSize, address, OpenAccount.ofEVM,
+      EvmYul.State.accountCodeImage] using
+      hRel.accountValueEq address (EvmYul.UInt256.ofNat 0)
+        (fun account => EvmYul.UInt256.ofNat account.codeBytes.size)
+
+theorem stateUnaryCompatible_extCodeHash :
+    StateUnaryCompatible EvmYul.State.extCodeHash := by
+  intro left right value hRel
+  rw [← CodeErasedState.extCodeHash_evm,
+    ← CodeErasedState.extCodeHash_evm]
+  let address := EvmYul.AccountAddress.ofUInt256 value
+  have hDead := hRel.dead_eq address
+  have hHash :=
+    hRel.accountValueEq address (EvmYul.UInt256.ofNat 0)
+      (fun account =>
+        EvmYul.UInt256.ofNat <| EvmYul.fromByteArrayBigEndian
+          (ffi.KEC account.codeBytes))
+  unfold CodeErasedState.extCodeHash
+  dsimp only
+  rw [hDead]
+  by_cases h : CodeErasedState.dead right.accountMap address
+  · simp [h, address]
+    exact hRel.addAccessedAccount address
+  · simp [h, address]
+    constructor
+    · exact hRel.addAccessedAccount address
+    · simpa [address, OpenAccount.ofEVM,
+        EvmYul.State.accountCodeImage] using hHash
+
+theorem stateUnaryCompatible_sload :
+    StateUnaryCompatible EvmYul.State.sload := by
+  intro left right key hRel
+  let owner := left.executionEnv.codeOwner
+  have hOwner : right.executionEnv.codeOwner = owner := by
+    simpa [owner] using congrArg EvmYul.ExecutionEnv.codeOwner
+      hRel.executionEnv.symm
+  unfold EvmYul.State.sload
+  dsimp only
+  rw [hOwner]
+  constructor
+  · exact hRel.addAccessedStorageKey (owner, key)
+  · simpa [owner, OpenAccount.ofEVM, EvmYul.Account.lookupStorage] using
+      hRel.accountValueEq owner (EvmYul.UInt256.ofNat 0)
+        (fun account => account.storage.findD key (EvmYul.UInt256.ofNat 0))
+
+theorem stateUnaryCompatible_tload :
+    StateUnaryCompatible EvmYul.State.tload := by
+  intro left right key hRel
+  let owner := left.executionEnv.codeOwner
+  have hOwner : right.executionEnv.codeOwner = owner := by
+    simpa [owner] using congrArg EvmYul.ExecutionEnv.codeOwner
+      hRel.executionEnv.symm
+  unfold EvmYul.State.tload
+  dsimp only
+  rw [hOwner]
+  constructor
+  · exact hRel
+  · simpa [owner, OpenAccount.ofEVM,
+      EvmYul.Account.lookupTransientStorage] using
+      hRel.accountValueEq owner (EvmYul.UInt256.ofNat 0)
+        (fun account =>
+          account.transientStorage.findD key (EvmYul.UInt256.ofNat 0))
+
+namespace StateDataRel
+
+theorem updateAccount
+    {left right : EvmYul.State EvmYul.OperationType.EVM}
+    (hRel : StateDataRel left right)
+    (address : EvmYul.AccountAddress)
+    (leftAccount rightAccount : EvmYul.Account EvmYul.OperationType.EVM)
+    (hAccount : OpenAccount.ofEVM leftAccount = OpenAccount.ofEVM rightAccount) :
+    StateDataRel (left.updateAccount address leftAccount)
+      (right.updateAccount address rightAccount) := by
+  exact
+    { world := by
+        apply OpenWorld.ext_of_fields
+        · change
+            ((left.accountMap.insert address leftAccount).mapVal
+                fun _ account => OpenAccount.ofEVM account) =
+              ((right.accountMap.insert address rightAccount).mapVal
+                fun _ account => OpenAccount.ofEVM account)
+          rw [OpenWorld.mapVal_insert, OpenWorld.mapVal_insert]
+          have hAccounts := hRel.accounts
+          change
+            (left.accountMap.mapVal fun _ account => OpenAccount.ofEVM account) =
+              (right.accountMap.mapVal fun _ account => OpenAccount.ofEVM account)
+            at hAccounts
+          rw [hAccounts, hAccount]
+        · simpa [OpenWorld.ofEVMState, EvmYul.State.updateAccount]
+            using hRel.substate
+        · simpa [OpenWorld.ofEVMState, EvmYul.State.updateAccount]
+            using hRel.createdAccounts
+      initialAccounts := by
+        simpa [EvmYul.State.updateAccount] using hRel.initialAccounts
+      totalGasUsedInBlock := by
+        simpa [EvmYul.State.updateAccount] using hRel.totalGasUsedInBlock
+      transactionReceipts := by
+        simpa [EvmYul.State.updateAccount] using hRel.transactionReceipts
+      executionEnv := by
+        simpa [EvmYul.State.updateAccount] using hRel.executionEnv
+      blocks := by simpa [EvmYul.State.updateAccount] using hRel.blocks
+      genesisBlockHeader := by
+        simpa [EvmYul.State.updateAccount] using hRel.genesisBlockHeader }
+
+theorem updateTransientStorageAccount
+    {left right : EvmYul.Account EvmYul.OperationType.EVM}
+    (hAccount : OpenAccount.ofEVM left = OpenAccount.ofEVM right)
+    (key value : Word) :
+    OpenAccount.ofEVM (left.updateTransientStorage key value) =
+      OpenAccount.ofEVM (right.updateTransientStorage key value) := by
+  rw [← OpenAccount.ofAccount_evm, ← OpenAccount.ofAccount_evm,
+    OpenAccount.ofAccount_updateTransientStorage,
+    OpenAccount.ofAccount_updateTransientStorage]
+  rw [OpenAccount.ofAccount_evm, OpenAccount.ofAccount_evm, hAccount]
+  have hStorage := congrArg OpenAccount.transientStorage hAccount
+  change left.tstorage = right.tstorage at hStorage
+  simp [hStorage]
+
+theorem updateStorageAccount
+    {left right : EvmYul.Account EvmYul.OperationType.EVM}
+    (hAccount : OpenAccount.ofEVM left = OpenAccount.ofEVM right)
+    (key value : Word) :
+    OpenAccount.ofEVM (left.updateStorage key value) =
+      OpenAccount.ofEVM (right.updateStorage key value) := by
+  rw [← OpenAccount.ofAccount_evm, ← OpenAccount.ofAccount_evm,
+    OpenAccount.ofAccount_updateStorage,
+    OpenAccount.ofAccount_updateStorage]
+  rw [OpenAccount.ofAccount_evm, OpenAccount.ofAccount_evm, hAccount]
+  have hStorage := congrArg OpenAccount.storage hAccount
+  change left.storage = right.storage at hStorage
+  simp [hStorage]
+
+theorem withRefundBalance
+    {left right : EvmYul.State EvmYul.OperationType.EVM}
+    (hRel : StateDataRel left right) (refundBalance : Word) :
+    StateDataRel
+      { left with substate.refundBalance := refundBalance }
+      { right with substate.refundBalance := refundBalance } := by
+  exact
+    { world := by
+        apply OpenWorld.ext_of_fields
+        · simpa [OpenWorld.ofEVMState] using hRel.accounts
+        · simp [OpenWorld.ofEVMState, hRel.substate]
+        · simpa [OpenWorld.ofEVMState] using hRel.createdAccounts
+      initialAccounts := by simpa using hRel.initialAccounts
+      totalGasUsedInBlock := by simpa using hRel.totalGasUsedInBlock
+      transactionReceipts := by simpa using hRel.transactionReceipts
+      executionEnv := by simpa using hRel.executionEnv
+      blocks := by simpa using hRel.blocks
+      genesisBlockHeader := by simpa using hRel.genesisBlockHeader }
+
+theorem tstore
+    {left right : EvmYul.State EvmYul.OperationType.EVM}
+    (hRel : StateDataRel left right) (key value : Word) :
+    StateDataRel (left.tstore key value) (right.tstore key value) := by
+  let owner := left.executionEnv.codeOwner
+  have hRightOwner : right.executionEnv.codeOwner = owner := by
+    simpa [owner] using congrArg EvmYul.ExecutionEnv.codeOwner
+      hRel.executionEnv.symm
+  unfold EvmYul.State.tstore
+  dsimp only
+  rw [hRightOwner]
+  have hLookup := hRel.accountViews owner
+  cases hLeft : left.lookupAccount owner with
+  | none =>
+      change left.accountMap.find? owner = none at hLeft
+      rw [hLeft] at hLookup
+      cases hRight : right.lookupAccount owner with
+      | none => simpa [hLeft, hRight] using hRel
+      | some rightAccount =>
+          change right.accountMap.find? owner = some rightAccount at hRight
+          rw [hRight] at hLookup
+          simp at hLookup
+  | some leftAccount =>
+      change left.accountMap.find? owner = some leftAccount at hLeft
+      rw [hLeft] at hLookup
+      cases hRight : right.lookupAccount owner with
+      | none =>
+          change right.accountMap.find? owner = none at hRight
+          rw [hRight] at hLookup
+          simp at hLookup
+      | some rightAccount =>
+          change right.accountMap.find? owner = some rightAccount at hRight
+          rw [hRight] at hLookup
+          have hAccount : OpenAccount.ofEVM leftAccount =
+              OpenAccount.ofEVM rightAccount := by
+            simpa using Option.some.inj hLookup
+          simpa [hLeft, hRight] using
+            hRel.updateAccount owner
+              (leftAccount.updateTransientStorage key value)
+              (rightAccount.updateTransientStorage key value)
+              (updateTransientStorageAccount hAccount key value)
+
+theorem sstore
+    {left right : EvmYul.State EvmYul.OperationType.EVM}
+    (hRel : StateDataRel left right) (key value : Word) :
+    StateDataRel (left.sstore key value) (right.sstore key value) := by
+  let owner := left.executionEnv.codeOwner
+  have hRightOwner : right.executionEnv.codeOwner = owner := by
+    simpa [owner] using congrArg EvmYul.ExecutionEnv.codeOwner
+      hRel.executionEnv.symm
+  have hCurrent :
+      CodeErasedState.currentStorageValue left owner key =
+        CodeErasedState.currentStorageValue right owner key := by
+    have hLookup := hRel.accountViews owner
+    cases hLeft : left.accountMap.find? owner with
+    | none =>
+        rw [hLeft] at hLookup
+        cases hRight : right.accountMap.find? owner with
+        | none =>
+            simp [CodeErasedState.currentStorageValue,
+              Batteries.RBMap.find!, hLeft, hRight]
+        | some rightAccount => simp [hRight] at hLookup
+    | some leftAccount =>
+        rw [hLeft] at hLookup
+        cases hRight : right.accountMap.find? owner with
+        | none => simp [hRight] at hLookup
+        | some rightAccount =>
+            rw [hRight] at hLookup
+            have hAccount : OpenAccount.ofEVM leftAccount =
+                OpenAccount.ofEVM rightAccount := by
+              simpa using Option.some.inj hLookup
+            have hStorage := congrArg OpenAccount.storage hAccount
+            change leftAccount.storage = rightAccount.storage at hStorage
+            simp [CodeErasedState.currentStorageValue,
+              Batteries.RBMap.find!, hLeft, hRight, hStorage]
+  have hInitial :
+      CodeErasedState.initialStorageValue left owner key =
+        CodeErasedState.initialStorageValue right owner key := by
+    simp [CodeErasedState.initialStorageValue, hRel.initialAccounts]
+  have hRefund :
+      left.substate.refundBalance = right.substate.refundBalance := by
+    simpa using congrArg EvmYul.Substate.refundBalance hRel.substate
+  rw [CodeErasedState.sstore_eq, CodeErasedState.sstore_eq, hRightOwner]
+  let newRefund : Word :=
+    CodeErasedState.sstoreRefundBalance
+      (CodeErasedState.initialStorageValue left owner key)
+      (CodeErasedState.currentStorageValue left owner key)
+      value left.substate.refundBalance
+  have hNewRefund :
+      newRefund =
+        CodeErasedState.sstoreRefundBalance
+          (CodeErasedState.initialStorageValue right owner key)
+          (CodeErasedState.currentStorageValue right owner key)
+          value right.substate.refundBalance := by
+    simp [newRefund, hInitial, hCurrent, hRefund]
+  change
+    StateDataRel
+      ((left.lookupAccount owner).option left
+        (fun account =>
+          { (left.setAccount owner (account.updateStorage key value)
+              |>.addAccessedStorageKey (owner, key)) with
+            substate.refundBalance := newRefund }))
+      ((right.lookupAccount owner).option right
+        (fun account =>
+          { (right.setAccount owner (account.updateStorage key value)
+              |>.addAccessedStorageKey (owner, key)) with
+            substate.refundBalance :=
+              CodeErasedState.sstoreRefundBalance
+                (CodeErasedState.initialStorageValue right owner key)
+                (CodeErasedState.currentStorageValue right owner key)
+                value right.substate.refundBalance }))
+  rw [← hNewRefund]
+  have hLookup := hRel.accountViews owner
+  cases hLeft : left.lookupAccount owner with
+  | none =>
+      change left.accountMap.find? owner = none at hLeft
+      rw [hLeft] at hLookup
+      cases hRight : right.lookupAccount owner with
+      | none => simpa [hLeft, hRight] using hRel
+      | some rightAccount =>
+          change right.accountMap.find? owner = some rightAccount at hRight
+          rw [hRight] at hLookup
+          simp at hLookup
+  | some leftAccount =>
+      change left.accountMap.find? owner = some leftAccount at hLeft
+      rw [hLeft] at hLookup
+      cases hRight : right.lookupAccount owner with
+      | none =>
+          change right.accountMap.find? owner = none at hRight
+          rw [hRight] at hLookup
+          simp at hLookup
+      | some rightAccount =>
+          change right.accountMap.find? owner = some rightAccount at hRight
+          rw [hRight] at hLookup
+          have hAccount : OpenAccount.ofEVM leftAccount =
+              OpenAccount.ofEVM rightAccount := by
+            simpa using Option.some.inj hLookup
+          have hUpdated :=
+            hRel.updateAccount owner
+              (leftAccount.updateStorage key value)
+              (rightAccount.updateStorage key value)
+              (updateStorageAccount hAccount key value)
+          have hAccessed := hUpdated.addAccessedStorageKey (owner, key)
+          simpa [hLeft, hRight, EvmYul.State.setAccount] using
+            hAccessed.withRefundBalance newRefund
+
+end StateDataRel
+
+theorem stateBinaryCompatible_tstore :
+    StateBinaryCompatible EvmYul.State.tstore := by
+  intro left right key value hRel
+  exact hRel.tstore key value
+
+theorem stateBinaryCompatible_sstore :
+    StateBinaryCompatible EvmYul.State.sstore := by
+  intro left right key value hRel
+  exact hRel.sstore key value
+
+def SharedQuaternaryCompatible
+    (f : EvmYul.SharedState EvmYul.OperationType.EVM → Word → Word → Word →
+      Word → EvmYul.SharedState EvmYul.OperationType.EVM) : Prop :=
+  ∀ {left right} (a b c d : Word),
+    SharedDataRel left right →
+      SharedDataRel (f left a b c d) (f right a b c d)
+
+theorem openCompatible_quaternaryCopy
+    {f : EvmYul.SharedState EvmYul.OperationType.EVM → Word → Word → Word →
+      Word → EvmYul.SharedState EvmYul.OperationType.EVM}
+    (hCompatible : SharedQuaternaryCompatible f) :
+    OpenCompatibleStep (.quaternaryCopy f) := by
+  intro left right leftNext hRel hLeft
+  have hStack := hRel.stack_eq
+  cases hPop : right.stack.pop4 with
+  | none =>
+      have hLeftPop : left.stack.pop4 = none := by simpa [hStack]
+      simp [PrimStep.run, EvmYul.EVM.quaternaryCopyOp, hLeftPop] at hLeft
+  | some values =>
+      rcases values with ⟨rest, a, b, c, d⟩
+      have hLeftPop : left.stack.pop4 = some (rest, a, b, c, d) := by
+        simpa [hStack] using hPop
+      simp [PrimStep.run, EvmYul.EVM.quaternaryCopyOp, hLeftPop] at hLeft
+      simp only [Id.run, Except.ok.injEq] at hLeft
+      subst leftNext
+      let leftShared := f left.toSharedState a b c d
+      let rightShared := f right.toSharedState a b c d
+      have hShared : SharedDataRel leftShared rightShared :=
+        hCompatible a b c d hRel.sharedDataRel
+      let rightState : EVMState := { right with toSharedState := rightShared }
+      refine ⟨rightState.replaceStackAndIncrPC rest, ?_, ?_⟩
+      · simp [PrimStep.run, EvmYul.EVM.quaternaryCopyOp, hPop,
+          rightState, rightShared]
+        rfl
+      · apply OpenStateRel.replaceStackAndIncrPC
+          (hRel.withSharedState hShared)
+        rfl
+
+theorem sharedQuaternaryCompatible_extCodeCopy :
+    SharedQuaternaryCompatible EvmYul.SharedState.extCodeCopy' := by
+  intro left right account destination readStart size hRel
+  let address := EvmYul.AccountAddress.ofUInt256 account
+  have hCode :
+      (left.lookupAccount address).option ByteArray.empty
+          EvmYul.State.accountCodeImage =
+        (right.lookupAccount address).option ByteArray.empty
+          EvmYul.State.accountCodeImage := by
+    simpa [EvmYul.State.lookupAccount, OpenAccount.ofEVM,
+      EvmYul.State.accountCodeImage] using
+      hRel.state.accountValueEq address ByteArray.empty OpenAccount.codeBytes
+  have hState := hRel.state.addAccessedAccount address
+  constructor
+  · simpa [EvmYul.SharedState.extCodeCopy',
+      EvmYul.State.addAccessedAccount, address] using hState
+  · cases left
+    cases right
+    rcases hRel.machine with ⟨hActive, hMemory, hReturn, hHReturn⟩
+    simp [EvmYul.SharedState.extCodeCopy', address] at hCode ⊢
+    simp_all
+    exact ⟨rfl, rfl, rfl, rfl⟩
+
+theorem SharedDataRel.logOp
+    {left right : EvmYul.SharedState EvmYul.OperationType.EVM}
+    (hRel : SharedDataRel left right)
+    (offset size : Word) (topics : Array Word) :
+    SharedDataRel
+      (EvmYul.SharedState.logOp offset size topics left)
+      (EvmYul.SharedState.logOp offset size topics right) := by
+  constructor
+  · exact
+      { world := by
+          apply OpenWorld.ext_of_fields
+          · simpa [OpenWorld.ofEVMState, EvmYul.SharedState.logOp]
+              using hRel.state.accounts
+          · simp [OpenWorld.ofEVMState, EvmYul.SharedState.logOp,
+              hRel.state.substate, hRel.state.executionEnv,
+              hRel.machine.memory]
+          · simpa [OpenWorld.ofEVMState, EvmYul.SharedState.logOp]
+              using hRel.state.createdAccounts
+        initialAccounts := by
+          simpa [EvmYul.SharedState.logOp] using hRel.state.initialAccounts
+        totalGasUsedInBlock := by
+          simpa [EvmYul.SharedState.logOp]
+            using hRel.state.totalGasUsedInBlock
+        transactionReceipts := by
+          simpa [EvmYul.SharedState.logOp]
+            using hRel.state.transactionReceipts
+        executionEnv := by
+          simpa [EvmYul.SharedState.logOp] using hRel.state.executionEnv
+        blocks := by simpa [EvmYul.SharedState.logOp] using hRel.state.blocks
+        genesisBlockHeader := by
+          simpa [EvmYul.SharedState.logOp]
+            using hRel.state.genesisBlockHeader }
+  · cases left
+    cases right
+    rcases hRel.machine with ⟨hActive, hMemory, hReturn, hHReturn⟩
+    simp [EvmYul.SharedState.logOp] at hActive hMemory hReturn hHReturn ⊢
+    simp_all
+    exact ⟨rfl, rfl, rfl, rfl⟩
+
+theorem openCompatible_log0 : OpenCompatibleStep .log0 := by
+  intro left right leftNext hRel hLeft
+  have hStack := hRel.stack_eq
+  have hEnv := hRel.executionEnv_eq
+  cases hPerm : right.executionEnv.perm with
+  | false =>
+      have hLeftPerm : left.executionEnv.perm = false := by simpa [hEnv]
+      simp [PrimStep.run, hLeftPerm] at hLeft
+  | true =>
+      have hLeftPerm : left.executionEnv.perm = true := by simpa [hEnv]
+      cases hPop : right.stack.pop2 with
+      | none =>
+          have hLeftPop : left.stack.pop2 = none := by simpa [hStack]
+          simp [PrimStep.run, hLeftPerm, hLeftPop] at hLeft
+      | some values =>
+          rcases values with ⟨rest, offset, size⟩
+          have hLeftPop : left.stack.pop2 = some (rest, offset, size) := by
+            simpa [hStack] using hPop
+          simp [PrimStep.run, hLeftPerm, hLeftPop] at hLeft
+          subst leftNext
+          let leftShared :=
+            EvmYul.SharedState.logOp offset size #[] left.toSharedState
+          let rightShared :=
+            EvmYul.SharedState.logOp offset size #[] right.toSharedState
+          have hShared : SharedDataRel leftShared rightShared :=
+            hRel.sharedDataRel.logOp offset size #[]
+          let rightState : EVMState := { right with toSharedState := rightShared }
+          refine ⟨rightState.replaceStackAndIncrPC rest, ?_, ?_⟩
+          · simp [PrimStep.run, hPerm, hPop, rightState, rightShared]
+          · apply OpenStateRel.replaceStackAndIncrPC
+              (hRel.withSharedState hShared)
+            rfl
+
+theorem openCompatible_log1 : OpenCompatibleStep .log1 := by
+  intro left right leftNext hRel hLeft
+  have hStack := hRel.stack_eq
+  have hEnv := hRel.executionEnv_eq
+  cases hPerm : right.executionEnv.perm with
+  | false =>
+      have hLeftPerm : left.executionEnv.perm = false := by simpa [hEnv]
+      simp [PrimStep.run, hLeftPerm] at hLeft
+  | true =>
+      have hLeftPerm : left.executionEnv.perm = true := by simpa [hEnv]
+      cases hPop : right.stack.pop3 with
+      | none =>
+          have hLeftPop : left.stack.pop3 = none := by simpa [hStack]
+          simp [PrimStep.run, hLeftPerm, hLeftPop] at hLeft
+      | some values =>
+          rcases values with ⟨rest, offset, size, topic1⟩
+          have hLeftPop : left.stack.pop3 =
+              some (rest, offset, size, topic1) := by
+            simpa [hStack] using hPop
+          simp [PrimStep.run, hLeftPerm, hLeftPop] at hLeft
+          subst leftNext
+          let leftShared :=
+            EvmYul.SharedState.logOp offset size #[topic1] left.toSharedState
+          let rightShared :=
+            EvmYul.SharedState.logOp offset size #[topic1] right.toSharedState
+          have hShared : SharedDataRel leftShared rightShared :=
+            hRel.sharedDataRel.logOp offset size #[topic1]
+          let rightState : EVMState := { right with toSharedState := rightShared }
+          refine ⟨rightState.replaceStackAndIncrPC rest, ?_, ?_⟩
+          · simp [PrimStep.run, hPerm, hPop, rightState, rightShared]
+          · apply OpenStateRel.replaceStackAndIncrPC
+              (hRel.withSharedState hShared)
+            rfl
+
+theorem openCompatible_log2 : OpenCompatibleStep .log2 := by
+  intro left right leftNext hRel hLeft
+  have hStack := hRel.stack_eq
+  have hEnv := hRel.executionEnv_eq
+  cases hPerm : right.executionEnv.perm with
+  | false =>
+      have hLeftPerm : left.executionEnv.perm = false := by simpa [hEnv]
+      simp [PrimStep.run, hLeftPerm] at hLeft
+  | true =>
+      have hLeftPerm : left.executionEnv.perm = true := by simpa [hEnv]
+      cases hPop : right.stack.pop4 with
+      | none =>
+          have hLeftPop : left.stack.pop4 = none := by simpa [hStack]
+          simp [PrimStep.run, hLeftPerm, hLeftPop] at hLeft
+      | some values =>
+          rcases values with ⟨rest, offset, size, topic1, topic2⟩
+          have hLeftPop : left.stack.pop4 =
+              some (rest, offset, size, topic1, topic2) := by
+            simpa [hStack] using hPop
+          simp [PrimStep.run, hLeftPerm, hLeftPop] at hLeft
+          subst leftNext
+          let leftShared := EvmYul.SharedState.logOp
+            offset size #[topic1, topic2] left.toSharedState
+          let rightShared := EvmYul.SharedState.logOp
+            offset size #[topic1, topic2] right.toSharedState
+          have hShared : SharedDataRel leftShared rightShared :=
+            hRel.sharedDataRel.logOp offset size #[topic1, topic2]
+          let rightState : EVMState := { right with toSharedState := rightShared }
+          refine ⟨rightState.replaceStackAndIncrPC rest, ?_, ?_⟩
+          · simp [PrimStep.run, hPerm, hPop, rightState, rightShared]
+          · apply OpenStateRel.replaceStackAndIncrPC
+              (hRel.withSharedState hShared)
+            rfl
+
+theorem openCompatible_log3 : OpenCompatibleStep .log3 := by
+  intro left right leftNext hRel hLeft
+  have hStack := hRel.stack_eq
+  have hEnv := hRel.executionEnv_eq
+  cases hPerm : right.executionEnv.perm with
+  | false =>
+      have hLeftPerm : left.executionEnv.perm = false := by simpa [hEnv]
+      simp [PrimStep.run, hLeftPerm] at hLeft
+  | true =>
+      have hLeftPerm : left.executionEnv.perm = true := by simpa [hEnv]
+      cases hPop : right.stack.pop5 with
+      | none =>
+          have hLeftPop : left.stack.pop5 = none := by simpa [hStack]
+          simp [PrimStep.run, hLeftPerm, hLeftPop] at hLeft
+      | some values =>
+          rcases values with ⟨rest, offset, size, topic1, topic2, topic3⟩
+          have hLeftPop : left.stack.pop5 =
+              some (rest, offset, size, topic1, topic2, topic3) := by
+            simpa [hStack] using hPop
+          simp [PrimStep.run, hLeftPerm, hLeftPop] at hLeft
+          subst leftNext
+          let leftShared := EvmYul.SharedState.logOp
+            offset size #[topic1, topic2, topic3] left.toSharedState
+          let rightShared := EvmYul.SharedState.logOp
+            offset size #[topic1, topic2, topic3] right.toSharedState
+          have hShared : SharedDataRel leftShared rightShared :=
+            hRel.sharedDataRel.logOp offset size #[topic1, topic2, topic3]
+          let rightState : EVMState := { right with toSharedState := rightShared }
+          refine ⟨rightState.replaceStackAndIncrPC rest, ?_, ?_⟩
+          · simp [PrimStep.run, hPerm, hPop, rightState, rightShared]
+          · apply OpenStateRel.replaceStackAndIncrPC
+              (hRel.withSharedState hShared)
+            rfl
+
+theorem openCompatible_log4 : OpenCompatibleStep .log4 := by
+  intro left right leftNext hRel hLeft
+  have hStack := hRel.stack_eq
+  have hEnv := hRel.executionEnv_eq
+  cases hPerm : right.executionEnv.perm with
+  | false =>
+      have hLeftPerm : left.executionEnv.perm = false := by simpa [hEnv]
+      simp [PrimStep.run, hLeftPerm] at hLeft
+  | true =>
+      have hLeftPerm : left.executionEnv.perm = true := by simpa [hEnv]
+      cases hPop : right.stack.pop6 with
+      | none =>
+          have hLeftPop : left.stack.pop6 = none := by simpa [hStack]
+          simp [PrimStep.run, hLeftPerm, hLeftPop] at hLeft
+      | some values =>
+          rcases values with
+            ⟨rest, offset, size, topic1, topic2, topic3, topic4⟩
+          have hLeftPop : left.stack.pop6 =
+              some (rest, offset, size, topic1, topic2, topic3, topic4) := by
+            simpa [hStack] using hPop
+          simp [PrimStep.run, hLeftPerm, hLeftPop] at hLeft
+          subst leftNext
+          let leftShared := EvmYul.SharedState.logOp
+            offset size #[topic1, topic2, topic3, topic4] left.toSharedState
+          let rightShared := EvmYul.SharedState.logOp
+            offset size #[topic1, topic2, topic3, topic4] right.toSharedState
+          have hShared : SharedDataRel leftShared rightShared :=
+            hRel.sharedDataRel.logOp
+              offset size #[topic1, topic2, topic3, topic4]
+          let rightState : EVMState := { right with toSharedState := rightShared }
+          refine ⟨rightState.replaceStackAndIncrPC rest, ?_, ?_⟩
+          · simp [PrimStep.run, hPerm, hPop, rightState, rightShared]
+          · apply OpenStateRel.replaceStackAndIncrPC
+              (hRel.withSharedState hShared)
+            rfl
+
 inductive FrameLocalStep : PrimStep → Prop where
   | pure {step : PrimStep} (hPure : PureStackStep step) :
       FrameLocalStep step
@@ -2779,6 +3538,7 @@ inductive FrameLocalStep : PrimStep → Prop where
   | unaryExecutionEnv
       (f : EvmYul.ExecutionEnv EvmYul.OperationType.EVM → Word → Word) :
       FrameLocalStep (.unaryExecutionEnv f)
+  | balance : FrameLocalStep (.unaryState EvmYul.State.balance)
   | calldataload :
       FrameLocalStep
         (.unaryState
@@ -2786,6 +3546,10 @@ inductive FrameLocalStep : PrimStep → Prop where
   | calldatacopy :
       FrameLocalStep (.ternaryCopy EvmYul.SharedState.calldatacopy)
   | codecopy : FrameLocalStep (.ternaryCopy EvmYul.SharedState.codeCopy)
+  | extcodesize : FrameLocalStep (.unaryState EvmYul.State.extCodeSize)
+  | extcodecopy :
+      FrameLocalStep (.quaternaryCopy EvmYul.SharedState.extCodeCopy')
+  | extcodehash : FrameLocalStep (.unaryState EvmYul.State.extCodeHash)
   | blockhash :
       FrameLocalStep
         (.unaryState (fun state value => (state, EvmYul.State.blockHash state value)))
@@ -2796,19 +3560,29 @@ inductive FrameLocalStep : PrimStep → Prop where
   | number : FrameLocalStep (.state EvmYul.State.number)
   | gaslimit : FrameLocalStep (.state EvmYul.State.gasLimit)
   | chainid : FrameLocalStep (.state EvmYul.State.chainId)
+  | selfbalance : FrameLocalStep (.state EvmYul.State.selfbalance)
   | returndatasize :
       FrameLocalStep (.machineState EvmYul.MachineState.returndatasize)
   | mload : FrameLocalStep .mload
   | returndatacopy : FrameLocalStep .returndatacopy
   | mstore :
       FrameLocalStep (.binaryMachineState EvmYul.MachineState.mstore)
+  | sload : FrameLocalStep (.unaryState EvmYul.State.sload)
+  | sstore : FrameLocalStep (.binaryState EvmYul.State.sstore)
   | mstore8 :
       FrameLocalStep (.binaryMachineState EvmYul.MachineState.mstore8)
   | mcopy :
       FrameLocalStep (.ternaryMachineState EvmYul.MachineState.mcopy)
+  | tload : FrameLocalStep (.unaryState EvmYul.State.tload)
+  | tstore : FrameLocalStep (.binaryState EvmYul.State.tstore)
   | keccak256 :
       FrameLocalStep
         (.binaryMachineStateWithResult EvmYul.MachineState.keccak256)
+  | log0 : FrameLocalStep .log0
+  | log1 : FrameLocalStep .log1
+  | log2 : FrameLocalStep .log2
+  | log3 : FrameLocalStep .log3
+  | log4 : FrameLocalStep .log4
 
 theorem FrameLocalStep.openCompatible
     {step : PrimStep} (hLocal : FrameLocalStep step) :
@@ -2817,12 +3591,19 @@ theorem FrameLocalStep.openCompatible
   | pure hPure => exact hPure.openCompatible
   | executionEnv f => exact openCompatible_executionEnv f
   | unaryExecutionEnv f => exact openCompatible_unaryExecutionEnv f
+  | balance => exact openCompatible_unaryState stateUnaryCompatible_balance
   | calldataload =>
       exact openCompatible_unaryState
         (stateUnaryCompatible_of_read stateUnaryReadCompatible_calldataload)
   | calldatacopy =>
       exact openCompatible_ternaryCopy sharedTernaryCompatible_calldatacopy
   | codecopy => exact openCompatible_ternaryCopy sharedTernaryCompatible_codeCopy
+  | extcodesize =>
+      exact openCompatible_unaryState stateUnaryCompatible_extCodeSize
+  | extcodecopy =>
+      exact openCompatible_quaternaryCopy sharedQuaternaryCompatible_extCodeCopy
+  | extcodehash =>
+      exact openCompatible_unaryState stateUnaryCompatible_extCodeHash
   | blockhash =>
       exact openCompatible_unaryState
         (stateUnaryCompatible_of_read stateUnaryReadCompatible_blockHash)
@@ -2831,6 +3612,7 @@ theorem FrameLocalStep.openCompatible
   | number => exact openCompatible_state stateReadCompatible_number
   | gaslimit => exact openCompatible_state stateReadCompatible_gasLimit
   | chainid => exact openCompatible_state stateReadCompatible_chainId
+  | selfbalance => exact openCompatible_state stateReadCompatible_selfbalance
   | returndatasize =>
       exact openCompatible_machineState machineReadCompatible_returndatasize
   | mload => exact openCompatible_mload machineUnaryResultCompatible_mload
@@ -2839,23 +3621,28 @@ theorem FrameLocalStep.openCompatible
         machineTernaryCompatible_returndatacopy
   | mstore =>
       exact openCompatible_binaryMachineState machineBinaryCompatible_mstore
+  | sload => exact openCompatible_unaryState stateUnaryCompatible_sload
+  | sstore => exact openCompatible_binaryState stateBinaryCompatible_sstore
   | mstore8 =>
       exact openCompatible_binaryMachineState machineBinaryCompatible_mstore8
   | mcopy =>
       exact openCompatible_ternaryMachineState machineTernaryCompatible_mcopy
+  | tload => exact openCompatible_unaryState stateUnaryCompatible_tload
+  | tstore => exact openCompatible_binaryState stateBinaryCompatible_tstore
   | keccak256 =>
       exact openCompatible_binaryMachineStateWithResult
         machineBinaryResultCompatible_keccak256
+  | log0 => exact openCompatible_log0
+  | log1 => exact openCompatible_log1
+  | log2 => exact openCompatible_log2
+  | log3 => exact openCompatible_log3
+  | log4 => exact openCompatible_log4
 
-def FrameLocalPrimOp : PrimOp → Prop
+def PureStackPrimOp : PrimOp → Prop
   | .add | .mul | .sub | .div | .sdiv | .mod | .smod | .addmod | .mulmod
   | .exp | .signextend | .lt | .gt | .slt | .sgt | .eq | .iszero
   | .and | .or | .xor | .not | .byte | .shl | .shr | .sar
-  | .address | .origin | .caller | .callvalue | .calldataload | .calldatasize
-  | .calldatacopy | .codesize | .codecopy | .gasprice | .returndatasize
-  | .returndatacopy | .blockhash | .coinbase | .timestamp | .number
-  | .prevrandao | .gaslimit | .chainid | .basefee | .blobhash | .blobbasefee
-  | .pop | .mload | .mstore | .mstore8 | .mcopy | .keccak256
+  | .pop
   | .dup1 | .dup2 | .dup3 | .dup4 | .dup5 | .dup6 | .dup7 | .dup8
   | .dup9 | .dup10 | .dup11 | .dup12 | .dup13 | .dup14 | .dup15 | .dup16
   | .swap1 | .swap2 | .swap3 | .swap4 | .swap5 | .swap6 | .swap7 | .swap8
@@ -2863,18 +3650,48 @@ def FrameLocalPrimOp : PrimOp → Prop
   | .swap16 => True
   | _ => False
 
-theorem frameLocalStep_of_continuingStep
+def ProtectedPrimOp : PrimOp → Prop
+  | .address | .origin | .caller | .callvalue | .calldataload
+  | .calldatasize | .calldatacopy | .codesize | .codecopy | .gasprice
+  | .returndatasize | .returndatacopy | .blockhash | .coinbase | .timestamp
+  | .number | .prevrandao | .gaslimit | .chainid | .basefee | .blobhash
+  | .blobbasefee | .mload | .mstore | .mstore8 | .mcopy | .keccak256 => True
+  | _ => False
+
+def WorldPrimOp : PrimOp → Prop
+  | .balance | .extcodesize | .extcodecopy | .extcodehash | .selfbalance
+  | .sload | .sstore | .tload | .tstore
+  | .log0 | .log1 | .log2 | .log3 | .log4 => True
+  | _ => False
+
+def FrameLocalPrimOp (op : PrimOp) : Prop :=
+  PureStackPrimOp op ∨ ProtectedPrimOp op ∨ WorldPrimOp op
+
+theorem pureStackStep_of_continuingStep
     {op : PrimOp} {step : PrimStep}
-    (hLocal : FrameLocalPrimOp op)
+    (hPure : PureStackPrimOp op)
     (hStep : op.continuingStep? = some step) :
     FrameLocalStep step := by
   cases op <;>
-    simp [FrameLocalPrimOp, PrimOp.continuingStep?] at hLocal hStep
+    simp [PureStackPrimOp, PrimOp.continuingStep?] at hPure hStep
   all_goals cases hStep
   all_goals first
     | exact .pure (.bin _)
     | exact .pure (.un _)
     | exact .pure (.tri _)
+    | exact .pure .pop
+    | exact .pure (.dup _)
+    | exact .pure (.swap _)
+
+theorem protectedStep_of_continuingStep
+    {op : PrimOp} {step : PrimStep}
+    (hProtected : ProtectedPrimOp op)
+    (hStep : op.continuingStep? = some step) :
+    FrameLocalStep step := by
+  cases op <;>
+    simp [ProtectedPrimOp, PrimOp.continuingStep?] at hProtected hStep
+  all_goals cases hStep
+  all_goals first
     | exact .executionEnv _
     | exact .unaryExecutionEnv _
     | exact .calldataload
@@ -2888,14 +3705,54 @@ theorem frameLocalStep_of_continuingStep
     | exact .chainid
     | exact .returndatasize
     | exact .returndatacopy
-    | exact .pure .pop
     | exact .mload
     | exact .mstore
     | exact .mstore8
     | exact .mcopy
     | exact .keccak256
-    | exact .pure (.dup _)
-    | exact .pure (.swap _)
+
+theorem worldStep_of_continuingStep
+    {op : PrimOp} {step : PrimStep}
+    (hWorld : WorldPrimOp op)
+    (hStep : op.continuingStep? = some step) :
+    FrameLocalStep step := by
+  cases op <;>
+    simp [WorldPrimOp, PrimOp.continuingStep?] at hWorld hStep
+  all_goals cases hStep
+  all_goals first
+    | exact .balance
+    | exact .extcodesize
+    | exact .extcodecopy
+    | exact .extcodehash
+    | exact .selfbalance
+    | exact .sload
+    | exact .sstore
+    | exact .tload
+    | exact .tstore
+    | exact .log0
+    | exact .log1
+    | exact .log2
+    | exact .log3
+    | exact .log4
+
+theorem frameLocalStep_of_continuingStep
+    {op : PrimOp} {step : PrimStep}
+    (hLocal : FrameLocalPrimOp op)
+    (hStep : op.continuingStep? = some step) :
+    FrameLocalStep step := by
+  rcases hLocal with hPure | hProtected | hWorld
+  · exact pureStackStep_of_continuingStep hPure hStep
+  · exact protectedStep_of_continuingStep hProtected hStep
+  · exact worldStep_of_continuingStep hWorld hStep
+
+theorem frameLocalPrimOp_of_continuingStep
+    {op : PrimOp} {step : PrimStep}
+    (hStep : op.continuingStep? = some step)
+    (hMsize : op ≠ .msize) (hInvalid : op ≠ .invalid) :
+    FrameLocalPrimOp op := by
+  cases op <;>
+    simp [FrameLocalPrimOp, PureStackPrimOp, ProtectedPrimOp, WorldPrimOp,
+      PrimOp.continuingStep?] at hStep hMsize hInvalid ⊢
 
 theorem continuingPrim_open_success_rel_of_compatible
     {op : PrimOp} {step : PrimStep}
@@ -7804,6 +8661,43 @@ theorem runRefinesOpen_continuing_frameLocalPrim_success_rel
   exact runRefinesOpen_continuing_frameLocal_success_rel
     hRel hPrefix hDecodedPair hStep
     (frameLocalStep_of_continuingStep hLocal hStep)
+    hMsize hTransparent hDecode hPc hGasful hCont
+
+theorem runRefinesOpen_continuing_nonResource_success_rel
+    {fuel : Nat} {validJumps : Array Word}
+    {bytes : ByteArray} {pc : Nat} {gasful openState gasfulNext : EVMState}
+    {op : PrimOp} {step : PrimStep} {arg : Option (Word × Nat)}
+    {tailTranscript : Interaction.Transcript}
+    (hRel : OpenStateRel gasful openState)
+    (hPrefix : XSstoreStipendChecksPass validJumps gasful)
+    (hDecodedPair :
+      ((EvmYul.EVM.decode gasful.executionEnv.code gasful.pc).getD
+        (EvmYul.Operation.STOP, none)) = (op.toEVM, arg))
+    (hStep : op.continuingStep? = some step)
+    (hMsize : op ≠ .msize) (hInvalid : op ≠ .invalid)
+    (hTransparent : continuingPrimEVMStepTransparent op)
+    (hDecode : Compact.decodeAt bytes pc (.prim op))
+    (hPc : openState.pc = EvmYul.UInt256.ofNat pc)
+    (hGasful :
+      EvmYul.EVM.step (fuel + 1) (dynamicGasCostAt gasful)
+        (some (op.toEVM, arg)) (afterMemoryChargeAt gasful) =
+          .ok gasfulNext)
+    (hCont :
+      ∀ openNext,
+        OpenStateRel gasfulNext openNext →
+          RunRefinesOpen
+            (EvmYul.EVM.X (fuel + 1) validJumps gasfulNext)
+            (Compact.InteractionSemantics.openRunNResult
+              bytes (fuel + 1) openNext)
+            tailTranscript) :
+    RunRefinesOpen
+      (EvmYul.EVM.X (fuel + 1 + 1) validJumps gasful)
+      (Compact.InteractionSemantics.openRunNResult
+        bytes (fuel + 1 + 1) openState)
+      tailTranscript := by
+  exact runRefinesOpen_continuing_frameLocalPrim_success_rel
+    hRel hPrefix hDecodedPair hStep
+    (frameLocalPrimOp_of_continuingStep hStep hMsize hInvalid)
     hMsize hTransparent hDecode hPc hGasful hCont
 
 theorem runRefinesOpen_pc_success_rel
