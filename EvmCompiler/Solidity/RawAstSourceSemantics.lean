@@ -387,11 +387,19 @@ mutual
             let ctx' := ctx.withFunctionScope scope
             let stateAfterPre ← execSeq fuel' ctx' pre state
             let stateAfterLoop ←
-              match stateAfterPre with
-              | .Ok _ _ => loop fuel' ctx' condition post body stateAfterPre
-              | .OutOfFuel => pure stateAfterPre
-              | .Checkpoint _ => pure stateAfterPre
-            pure (stateAfterLoop.restrictStoreTo source.store)
+              match pre with
+              | [] =>
+                  loop (fuel' - 1) ctx' condition post body stateAfterPre
+              | _ =>
+                  match stateAfterPre with
+                  | .Ok _ _ =>
+                      loop (fuel' - pre.length - 1) ctx'
+                        condition post body stateAfterPre
+                  | .OutOfFuel => pure stateAfterPre
+                  | .Checkpoint _ => pure stateAfterPre
+            match pre with
+            | [] => pure stateAfterLoop
+            | _ => pure (stateAfterLoop.restrictStoreTo source.store)
   termination_by (fuel, 9, sizeOf pre + sizeOf condition + sizeOf post + sizeOf body, 0)
 
   def loop (fuel : Nat) (ctx : Context) (condition : Expr)
@@ -424,7 +432,7 @@ mutual
               | .Checkpoint (.Leave _ _) => pure sourceAfterPost
               | _ =>
                   let stateAfterLoop ←
-                    loop fuel' ctx condition post body sourceAfterPost
+                    loop (fuel' - 1) ctx condition post body sourceAfterPost
                   pure (stateAfterLoop.overwrite? source)
   termination_by (fuel, 10, sizeOf condition + sizeOf post + sizeOf body, 0)
 
@@ -1000,13 +1008,21 @@ theorem succ
             let stateAfterPre ←
               execSeq fuel (ctx.withFunctionScope scope) pre state
             let stateAfterLoop ←
-              match stateAfterPre with
-              | .Ok _ _ =>
-                  loop fuel (ctx.withFunctionScope scope)
+              match pre with
+              | [] =>
+                  loop (fuel - 1) (ctx.withFunctionScope scope)
                     condition post body stateAfterPre
-              | .OutOfFuel => pure stateAfterPre
-              | .Checkpoint _ => pure stateAfterPre
-            pure (stateAfterLoop.restrictStoreTo state.store)) := by
+              | _ =>
+                  match stateAfterPre with
+                  | .Ok _ _ =>
+                      loop (fuel - pre.length - 1)
+                        (ctx.withFunctionScope scope)
+                        condition post body stateAfterPre
+                  | .OutOfFuel => pure stateAfterPre
+                  | .Checkpoint _ => pure stateAfterPre
+            match pre with
+            | [] => pure stateAfterLoop
+            | _ => pure (stateAfterLoop.restrictStoreTo state.store)) := by
   simp [execFor]
 
 end ExecFor
@@ -1053,7 +1069,7 @@ theorem succ_succ
               | .Checkpoint (.Leave _ _) => pure sourceAfterPost
               | _ =>
                   let stateAfterLoop ←
-                    loop fuel ctx condition post body sourceAfterPost
+                    loop (fuel - 1) ctx condition post body sourceAfterPost
                   pure (stateAfterLoop.overwrite? state)) := by
   simp [loop]
 

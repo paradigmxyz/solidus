@@ -843,7 +843,11 @@ Next raw frontend layer:
 - [ ] Close the remaining raw frontend semantic-preservation work by proving
   nested-function hoist/alpha-renaming preservation and composing the local raw
   frontend facts into the final source theorem; do not create a Yul-to-bytecode
-  proof corridor or depend on the parallel hFinished work.
+  proof corridor or depend on the parallel hFinished work. The independent raw
+  semantics now charges canonical finite-fuel loop re-entry and for-initializer
+  traversal exactly; generic loop, nonempty-for, and empty-for preservation are
+  checked. Remaining for-loop work is construction of the initializer lexical
+  scope and recursive component interface from successful elaboration.
 
 ## Migration
 

@@ -210,6 +210,35 @@ theorem exprList_elaborate_length
               rcases hElab with ⟨rfl, rfl⟩
               simp [ih hTail]
 
+theorem stmtList_elaborate_length
+    {rawStmts : List Raw.Stmt} {fronts : List Frontend.Stmt}
+    {elabState finalElabState : Elab.State}
+    (hElab :
+      (Elab.Stmt.List.elaborate rawStmts).run elabState =
+        .ok (fronts, finalElabState)) :
+    fronts.length = rawStmts.length := by
+  induction rawStmts generalizing elabState finalElabState fronts with
+  | nil =>
+      simp [Elab.Stmt.List.elaborate] at hElab
+      rcases hElab with ⟨rfl, rfl⟩
+      rfl
+  | cons rawHead rawTail ih =>
+      unfold Elab.Stmt.List.elaborate at hElab
+      simp [StateT.run_bind] at hElab
+      cases hHead : (Elab.Stmt.elaborate rawHead).run elabState with
+      | error err => simp [hHead] at hElab
+      | ok headResult =>
+          rcases headResult with ⟨frontHead, headState⟩
+          simp [hHead] at hElab
+          cases hTail :
+              (Elab.Stmt.List.elaborate rawTail).run headState with
+          | error err => simp [hTail] at hElab
+          | ok tailResult =>
+              rcases tailResult with ⟨frontTail, tailState⟩
+              simp [hTail] at hElab
+              rcases hElab with ⟨rfl, rfl⟩
+              simp [ih hTail]
+
 theorem exprList_elaborate_single_head
     {rawExpr : Raw.Expr} {front : Frontend.Expr}
     {elabState finalElabState : Elab.State}
@@ -752,6 +781,19 @@ def SwitchCasesRunForward (rawFuel orderedFuel : Nat)
         BlockCodeRunForward rawFuel orderedFuel
           context rawBody orderedBody contract stateAfterCondition
 
+def LoopRunForward (rawFuel orderedFuel : Nat)
+    (context : Raw.SourceSemantics.Context)
+    (rawCondition : Raw.Expr) (rawPost rawBody : List Raw.Stmt)
+    (orderedCondition : Frontend.AstExpr)
+    (orderedPost orderedBody : List Frontend.AstStmt)
+    (contract : Frontend.AstContract) (state : State) : Prop :=
+  Simulation.Interaction.ForwardRel
+    Yul.FunctionsInteractionPrimitive.Truncated SameDoneRel
+    (Raw.SourceSemantics.loop rawFuel context
+      rawCondition rawPost rawBody state)
+    (Yul.InteractionSemantics.loop orderedFuel orderedCondition
+      orderedPost orderedBody (some contract) state)
+
 /-- Pointwise semantic correspondence for switch cases. Literal conversion and
 body preservation are stored once per case; selection is proved generically
 from this relation rather than replayed by each switch statement. -/
@@ -899,6 +941,14 @@ def orderedImmutablePatchStmts
   references.map fun reference =>
     orderedImmutablePatchStmt reference base value
 
+def orderedForStmt
+    (pre : List Frontend.AstStmt) (condition : Frontend.AstExpr)
+    (post body : List Frontend.AstStmt) : Frontend.AstStmt :=
+  let loop : Frontend.AstStmt := .For condition post body
+  match pre with
+  | [] => loop
+  | _ => .Block (pre ++ [loop])
+
 namespace ExprListNormalized
 
 def nil (context : Frontend.ObjectBuiltinContext) :
@@ -1022,6 +1072,20 @@ theorem cons_parts
                         resolved := resolvedTail
                         resolve := hTailResolve
                         toYul := hTailToYul }⟩⟩
+
+theorem length_eq
+    {context : Frontend.ObjectBuiltinContext}
+    {front : List Frontend.Stmt} {ordered : List Frontend.AstStmt}
+    (hNormalized : StmtListNormalized context front ordered) :
+    ordered.length = front.length := by
+  induction front generalizing ordered with
+  | nil =>
+      rw [nil_ordered hNormalized]
+      rfl
+  | cons frontHead frontTail ih =>
+      rcases cons_parts hNormalized with
+        ⟨orderedHead, orderedTail, rfl, _hHead, ⟨hTail⟩⟩
+      simp [ih hTail]
 
 end StmtListNormalized
 
@@ -1757,6 +1821,95 @@ theorem switch_parts
                                 resolved := resolvedDefault
                                 resolve := hDefaultResolve
                                 toYul := hDefaultToYul }⟩⟩
+
+theorem for_parts
+    {context : Frontend.ObjectBuiltinContext}
+    {pre : List Frontend.Stmt} {condition : Frontend.Expr}
+    {post body : List Frontend.Stmt} {ordered : Frontend.AstStmt}
+    (hNormalized :
+      StmtNormalized context (.forLoop pre condition post body) ordered) :
+    ∃ orderedPre orderedCondition orderedPost orderedBody,
+      ordered =
+        orderedForStmt orderedPre orderedCondition orderedPost orderedBody ∧
+        Nonempty (StmtListNormalized context pre orderedPre) ∧
+        Nonempty (ExprNormalized context condition orderedCondition) ∧
+        Nonempty (StmtListNormalized context post orderedPost) ∧
+        Nonempty (StmtListNormalized context body orderedBody) := by
+  rcases hNormalized with ⟨resolved, hResolve, hToYul⟩
+  unfold Frontend.Stmt.resolveObjectBuiltinsIn? at hResolve
+  cases hPreResolve :
+      Frontend.Stmt.List.resolveObjectBuiltinsIn? pre context with
+  | none => simp [hPreResolve] at hResolve
+  | some resolvedPre =>
+      cases hConditionResolve : condition.resolveObjectBuiltinsIn? context with
+      | none => simp [hPreResolve, hConditionResolve] at hResolve
+      | some resolvedCondition =>
+          cases hPostResolve :
+              Frontend.Stmt.List.resolveObjectBuiltinsIn? post context with
+          | none =>
+              simp [hPreResolve, hConditionResolve, hPostResolve] at hResolve
+          | some resolvedPost =>
+              cases hBodyResolve :
+                  Frontend.Stmt.List.resolveObjectBuiltinsIn? body context with
+              | none =>
+                  simp [hPreResolve, hConditionResolve, hPostResolve,
+                    hBodyResolve] at hResolve
+              | some resolvedBody =>
+                  simp [hPreResolve, hConditionResolve, hPostResolve,
+                    hBodyResolve] at hResolve
+                  subst resolved
+                  unfold Frontend.Stmt.toYul? at hToYul
+                  cases hPreToYul : Frontend.Stmt.List.toYul? resolvedPre with
+                  | none => simp [hPreToYul] at hToYul
+                  | some orderedPre =>
+                      cases hConditionToYul : resolvedCondition.toYul? with
+                      | none => simp [hPreToYul, hConditionToYul] at hToYul
+                      | some orderedCondition =>
+                          cases hPostToYul :
+                              Frontend.Stmt.List.toYul? resolvedPost with
+                          | none =>
+                              simp [hPreToYul, hConditionToYul,
+                                hPostToYul] at hToYul
+                          | some orderedPost =>
+                              cases hBodyToYul :
+                                  Frontend.Stmt.List.toYul? resolvedBody with
+                              | none =>
+                                  simp [hPreToYul, hConditionToYul,
+                                    hPostToYul, hBodyToYul] at hToYul
+                              | some orderedBody =>
+                                  simp [hPreToYul, hConditionToYul,
+                                    hPostToYul, hBodyToYul,
+                                    orderedForStmt] at hToYul
+                                  have hOrdered :
+                                      ordered =
+                                        orderedForStmt orderedPre
+                                          orderedCondition orderedPost
+                                          orderedBody := by
+                                    cases orderedPre with
+                                    | nil =>
+                                        simpa [orderedForStmt] using hToYul.symm
+                                    | cons head tail =>
+                                        simpa [orderedForStmt] using hToYul.symm
+                                  exact
+                                    ⟨orderedPre, orderedCondition,
+                                      orderedPost, orderedBody,
+                                      hOrdered,
+                                      ⟨{
+                                        resolved := resolvedPre
+                                        resolve := hPreResolve
+                                        toYul := hPreToYul }⟩,
+                                      ⟨{
+                                        resolved := resolvedCondition
+                                        resolve := hConditionResolve
+                                        toYul := hConditionToYul }⟩,
+                                      ⟨{
+                                        resolved := resolvedPost
+                                        resolve := hPostResolve
+                                        toYul := hPostToYul }⟩,
+                                      ⟨{
+                                        resolved := resolvedBody
+                                        resolve := hBodyResolve
+                                        toYul := hBodyToYul }⟩⟩
 
 theorem if_parts
     {context : Frontend.ObjectBuiltinContext}
@@ -7157,6 +7310,669 @@ theorem stmtRunForward_switch_succ
         ⟨rawBody, orderedBody, hRawSelected, hOrderedSelected, hBody⟩
       simp only [hRawSelected, hOrderedSelected]
       exact hBody
+
+private theorem loopZeroReentryRunForward
+    {orderedFuel : Nat}
+    {context : Raw.SourceSemantics.Context}
+    {rawCondition : Raw.Expr} {rawPost rawBody : List Raw.Stmt}
+    {orderedCondition : Frontend.AstExpr}
+    {orderedPost orderedBody : List Frontend.AstStmt}
+    {contract : Frontend.AstContract} {entry source : State} :
+    Simulation.Interaction.ForwardRel
+      Yul.FunctionsInteractionPrimitive.Truncated SameDoneRel
+      (do
+        let stateAfterLoop ←
+          Raw.SourceSemantics.loop 0 context rawCondition rawPost rawBody entry
+        pure (stateAfterLoop.overwrite? source))
+      (do
+        let stateAfterLoop ←
+          Yul.InteractionSemantics.exec orderedFuel
+            (.For orderedCondition orderedPost orderedBody)
+            (some contract) entry
+        pure (stateAfterLoop.overwrite? source)) := by
+  rw [Raw.SourceSemantics.Loop.zero]
+  unfold Raw.SourceSemantics.fail
+  change
+    Simulation.Interaction.ForwardRel
+      Yul.FunctionsInteractionPrimitive.Truncated SameDoneRel
+      (Simulation.Interaction.bind
+        (Yul.InteractionSemantics.Primitive.fail entry .OutOfFuel)
+        (fun stateAfterLoop : State =>
+          (pure (stateAfterLoop.overwrite? source) : Open State)))
+      _
+  rw [Yul.InteractionSemantics.Primitive.bind_fail]
+  exact
+    Simulation.Interaction.ForwardRel.truncated
+      (by simp [Yul.FunctionsInteractionPrimitive.Truncated])
+
+private theorem loopReentryRunForward
+    {fuel slack : Nat}
+    {context : Raw.SourceSemantics.Context}
+    {rawCondition : Raw.Expr} {rawPost rawBody : List Raw.Stmt}
+    {orderedCondition : Frontend.AstExpr}
+    {orderedPost orderedBody : List Frontend.AstStmt}
+    {contract : Frontend.AstContract} {entry source : State}
+    (hLoop :
+      LoopRunForward fuel (fuel + slack) context
+        rawCondition rawPost rawBody orderedCondition
+        orderedPost orderedBody contract entry) :
+    Simulation.Interaction.ForwardRel
+      Yul.FunctionsInteractionPrimitive.Truncated SameDoneRel
+      (do
+        let stateAfterLoop ←
+          Raw.SourceSemantics.loop fuel context
+            rawCondition rawPost rawBody entry
+        pure (stateAfterLoop.overwrite? source))
+      (do
+        let stateAfterLoop ←
+          Yul.InteractionSemantics.exec (fuel + slack + 1)
+            (.For orderedCondition orderedPost orderedBody)
+            (some contract) entry
+        pure (stateAfterLoop.overwrite? source)) := by
+  rw [Yul.InteractionSemantics.Exec.for_succ]
+  refine Simulation.Interaction.ForwardRel.bind_custom hLoop ?_
+  intro rawLoopDone orderedLoopDone hLoopDone
+  unfold SameDoneRel at hLoopDone
+  subst orderedLoopDone
+  cases rawLoopDone <;>
+    exact Simulation.Interaction.ForwardRel.done rfl
+
+private theorem orderedExecSeq_append_of_nonempty
+    {fuel : Nat} {pre suffix : List Frontend.AstStmt}
+    {contract : Frontend.AstContract} {state : State}
+    (hPre : pre ≠ []) :
+    Yul.InteractionSemantics.execSeq (fuel + pre.length)
+        (pre ++ suffix) (some contract) state =
+      Simulation.Interaction.bind
+        (Yul.InteractionSemantics.execSeq (fuel + pre.length)
+          pre (some contract) state)
+        (fun stateAfterPre =>
+          match stateAfterPre with
+          | .Ok _ _ =>
+              Yul.InteractionSemantics.execSeq fuel suffix
+                (some contract) stateAfterPre
+          | .OutOfFuel | .Checkpoint _ => pure stateAfterPre) := by
+  induction pre generalizing fuel state with
+  | nil => exact (hPre rfl).elim
+  | cons head rest ih =>
+      rw [show fuel + (head :: rest).length =
+        (fuel + rest.length) + 1 by simp [Nat.add_assoc]]
+      rw [List.cons_append]
+      rw [Yul.InteractionSemantics.ExecSeq.cons_succ]
+      rw [Yul.InteractionSemantics.ExecSeq.cons_succ]
+      rw [Simulation.Interaction.bind_assoc]
+      apply congrArg
+      funext stateAfterHead
+      cases stateAfterHead with
+      | OutOfFuel => rfl
+      | Checkpoint jump => rfl
+      | Ok shared vars =>
+          cases rest with
+          | nil =>
+              cases fuel with
+              | zero =>
+                  simp [Yul.InteractionSemantics.ExecSeq.zero,
+                    Yul.InteractionSemantics.Primitive.fail]
+              | succ residual =>
+                  simp only [List.length_nil, Nat.add_zero, List.nil_append]
+                  rw [Yul.InteractionSemantics.ExecSeq.nil_succ]
+                  change _ =
+                    Simulation.Interaction.bind
+                      (Simulation.Interaction.done
+                        (.ok (EvmYul.Yul.State.Ok shared vars))) _
+                  rw [Simulation.Interaction.bind_done_ok]
+          | cons next tail =>
+              exact ih (by simp)
+
+private theorem orderedExecSeq_single_for
+    {fuel : Nat} {condition : Frontend.AstExpr}
+    {post body : List Frontend.AstStmt}
+    {contract : Frontend.AstContract} {state : State} :
+    Yul.InteractionSemantics.execSeq (fuel + 2)
+        [.For condition post body] (some contract) state =
+      Yul.InteractionSemantics.loop fuel condition post body
+        (some contract) state := by
+  rw [show fuel + 2 = (fuel + 1) + 1 by omega]
+  rw [Yul.InteractionSemantics.ExecSeq.cons_succ]
+  rw [Yul.InteractionSemantics.Exec.for_succ]
+  simp only [Yul.InteractionSemantics.ExecSeq.nil_succ]
+  have hContinuation :
+      (fun stateAfterStmt : State =>
+        match stateAfterStmt with
+        | .Ok _ _ => (pure stateAfterStmt : Open State)
+        | .OutOfFuel | .Checkpoint _ =>
+            (pure stateAfterStmt : Open State)) =
+        (fun stateAfterStmt => (pure stateAfterStmt : Open State)) := by
+    funext stateAfterStmt
+    cases stateAfterStmt <;> rfl
+  calc
+    _ = Simulation.Interaction.bind
+        (Yul.InteractionSemantics.loop fuel condition post body
+          (some contract) state)
+        (fun stateAfterStmt => (pure stateAfterStmt : Open State)) :=
+      congrArg
+        (fun continuation =>
+          Simulation.Interaction.bind
+            (Yul.InteractionSemantics.loop fuel condition post body
+              (some contract) state)
+            continuation)
+        hContinuation
+    _ = _ := Simulation.Interaction.monad_bind_pure _
+
+private theorem loopRestrictedRunForward
+    {rawFuel orderedFuel : Nat}
+    {context : Raw.SourceSemantics.Context}
+    {rawCondition : Raw.Expr} {rawPost rawBody : List Raw.Stmt}
+    {orderedCondition : Frontend.AstExpr}
+    {orderedPost orderedBody : List Frontend.AstStmt}
+    {contract : Frontend.AstContract} {state : State}
+    {entryStore : EvmYul.Yul.VarStore}
+    (hLoop :
+      LoopRunForward rawFuel orderedFuel context
+        rawCondition rawPost rawBody orderedCondition
+        orderedPost orderedBody contract state) :
+    Simulation.Interaction.ForwardRel
+      Yul.FunctionsInteractionPrimitive.Truncated SameDoneRel
+      (do
+        let stateAfterLoop ←
+          Raw.SourceSemantics.loop rawFuel context
+            rawCondition rawPost rawBody state
+        pure (stateAfterLoop.restrictStoreTo entryStore))
+      (do
+        let stateAfterLoop ←
+          Yul.InteractionSemantics.execSeq (orderedFuel + 2)
+            [.For orderedCondition orderedPost orderedBody]
+            (some contract) state
+        pure (stateAfterLoop.restrictStoreTo entryStore)) := by
+  rw [orderedExecSeq_single_for]
+  refine Simulation.Interaction.ForwardRel.bind_custom hLoop ?_
+  intro rawLoopDone orderedLoopDone hLoopDone
+  unfold SameDoneRel at hLoopDone
+  subst orderedLoopDone
+  cases rawLoopDone <;>
+    exact Simulation.Interaction.ForwardRel.done rfl
+
+theorem loopRunForward_of_components
+    {fuel slack : Nat}
+    {context : Raw.SourceSemantics.Context}
+    {rawCondition : Raw.Expr} {rawPost rawBody : List Raw.Stmt}
+    {orderedCondition : Frontend.AstExpr}
+    {orderedPost orderedBody : List Frontend.AstStmt}
+    {contract : Frontend.AstContract} {state : State}
+    (hCondition :
+      ∀ n, n < fuel → ∀ state,
+        ExprRunForward n (n + slack)
+          context rawCondition orderedCondition contract state)
+    (hPost :
+      ∀ n, n < fuel → ∀ state,
+        BlockCodeRunForward n (n + slack)
+          context rawPost orderedPost contract state)
+    (hBody :
+      ∀ n, n < fuel → ∀ state,
+        BlockCodeRunForward n (n + slack)
+          context rawBody orderedBody contract state) :
+    LoopRunForward fuel (fuel + slack) context
+      rawCondition rawPost rawBody orderedCondition
+      orderedPost orderedBody contract state := by
+  induction fuel using Nat.strong_induction_on generalizing state with
+  | h fuel ih =>
+      cases fuel with
+      | zero =>
+          unfold LoopRunForward
+          rw [Raw.SourceSemantics.Loop.zero]
+          exact
+            Simulation.Interaction.ForwardRel.truncated
+              (by simp [Yul.FunctionsInteractionPrimitive.Truncated])
+      | succ predecessor =>
+          cases predecessor with
+          | zero =>
+              unfold LoopRunForward
+              rw [Raw.SourceSemantics.Loop.one]
+              exact
+                Simulation.Interaction.ForwardRel.truncated
+                  (by simp [Yul.FunctionsInteractionPrimitive.Truncated])
+          | succ residual =>
+              unfold LoopRunForward
+              rw [show residual + 1 + 1 + slack =
+                (residual + slack) + 1 + 1 by omega]
+              rw [Raw.SourceSemantics.Loop.succ_succ]
+              rw [Yul.InteractionSemantics.Exec.loop_succ_succ]
+              simp only [Yul.InteractionSemantics.stateModel, id_eq]
+              have hConditionRun :=
+                hCondition residual (by omega)
+                  (EvmYul.Yul.State.mkOk state)
+              refine
+                Simulation.Interaction.ForwardRel.bind_custom
+                  hConditionRun ?_
+              intro rawConditionDone orderedConditionDone hConditionDone
+              unfold SameDoneRel at hConditionDone
+              subst orderedConditionDone
+              cases rawConditionDone with
+              | error error =>
+                  exact Simulation.Interaction.ForwardRel.done rfl
+              | ok conditionResult =>
+                  rcases conditionResult with
+                    ⟨stateAfterCondition, conditionValue⟩
+                  dsimp
+                  split
+                  next hZero =>
+                    have hCanonicalZero :
+                        conditionValue = EvmYul.UInt256.ofNat 0 := by
+                      simpa [EvmYul.UInt256.ofNat] using hZero
+                    simp only [if_pos hCanonicalZero]
+                    exact Simulation.Interaction.ForwardRel.done rfl
+                  next hZero =>
+                    have hCanonicalNonzero :
+                        conditionValue ≠ EvmYul.UInt256.ofNat 0 := by
+                      simpa [EvmYul.UInt256.ofNat] using hZero
+                    simp only [if_neg hCanonicalNonzero]
+                    refine
+                      Simulation.Interaction.ForwardRel.bind_custom
+                        (hBody residual (by omega) stateAfterCondition) ?_
+                    intro rawBodyDone orderedBodyDone hBodyDone
+                    unfold SameDoneRel at hBodyDone
+                    subst orderedBodyDone
+                    cases rawBodyDone with
+                    | error error =>
+                        exact Simulation.Interaction.ForwardRel.done rfl
+                    | ok stateAfterBody =>
+                        cases stateAfterBody with
+                        | OutOfFuel =>
+                            exact Simulation.Interaction.ForwardRel.done rfl
+                        | Checkpoint jump =>
+                            cases jump with
+                            | Break shared store =>
+                                exact
+                                  Simulation.Interaction.ForwardRel.done rfl
+                            | Leave shared store =>
+                                exact
+                                  Simulation.Interaction.ForwardRel.done rfl
+                            | Continue shared store =>
+                                refine
+                                  Simulation.Interaction.ForwardRel.bind_custom
+                                    (hPost residual (by omega)
+                                      (.Ok shared store)) ?_
+                                intro rawPostDone orderedPostDone hPostDone
+                                unfold SameDoneRel at hPostDone
+                                subst orderedPostDone
+                                cases rawPostDone with
+                                | error error =>
+                                    exact
+                                      Simulation.Interaction.ForwardRel.done rfl
+                                | ok stateAfterPost =>
+                                    cases stateAfterPost with
+                                    | OutOfFuel =>
+                                        exact
+                                          Simulation.Interaction.ForwardRel.done
+                                            rfl
+                                    | Checkpoint postJump =>
+                                        cases postJump with
+                                        | Leave postShared postStore =>
+                                            exact
+                                              Simulation.Interaction.ForwardRel.done
+                                                rfl
+                                        | Break postShared postStore =>
+                                            simp only
+                                            cases residual with
+                                            | zero =>
+                                                exact loopZeroReentryRunForward
+                                            | succ recursiveFuel =>
+                                                rw [show recursiveFuel + 1 - 1 =
+                                                  recursiveFuel by omega]
+                                                rw [show recursiveFuel + 1 + slack =
+                                                  (recursiveFuel + slack) + 1 by
+                                                    omega]
+                                                exact loopReentryRunForward
+                                                  (ih recursiveFuel (by omega)
+                                                      (state :=
+                                                        (EvmYul.Yul.State.Checkpoint
+                                                          (.Break postShared
+                                                            postStore)).overwrite?
+                                                              state)
+                                                      (fun n hN state =>
+                                                        hCondition n (by omega)
+                                                          state)
+                                                      (fun n hN state =>
+                                                        hPost n (by omega) state)
+                                                      (fun n hN state =>
+                                                        hBody n (by omega) state))
+                                        | Continue postShared postStore =>
+                                            simp only
+                                            cases residual with
+                                            | zero =>
+                                                exact loopZeroReentryRunForward
+                                            | succ recursiveFuel =>
+                                                rw [show recursiveFuel + 1 - 1 =
+                                                  recursiveFuel by omega]
+                                                rw [show recursiveFuel + 1 + slack =
+                                                  (recursiveFuel + slack) + 1 by
+                                                    omega]
+                                                exact loopReentryRunForward
+                                                  (ih recursiveFuel (by omega)
+                                                      (state :=
+                                                        (EvmYul.Yul.State.Checkpoint
+                                                          (.Continue postShared
+                                                            postStore)).overwrite?
+                                                              state)
+                                                      (fun n hN state =>
+                                                        hCondition n (by omega)
+                                                          state)
+                                                      (fun n hN state =>
+                                                        hPost n (by omega) state)
+                                                      (fun n hN state =>
+                                                        hBody n (by omega) state))
+                                    | Ok postShared postStore =>
+                                        simp only
+                                        cases residual with
+                                        | zero =>
+                                            exact loopZeroReentryRunForward
+                                        | succ recursiveFuel =>
+                                            rw [show recursiveFuel + 1 - 1 =
+                                              recursiveFuel by omega]
+                                            rw [show recursiveFuel + 1 + slack =
+                                              (recursiveFuel + slack) + 1 by
+                                                omega]
+                                            exact loopReentryRunForward
+                                              (ih recursiveFuel (by omega)
+                                                  (state :=
+                                                    (EvmYul.Yul.State.Ok
+                                                      postShared postStore).overwrite?
+                                                      state)
+                                                  (fun n hN state =>
+                                                    hCondition n (by omega)
+                                                      state)
+                                                  (fun n hN state =>
+                                                    hPost n (by omega) state)
+                                                  (fun n hN state =>
+                                                    hBody n (by omega) state))
+                        | Ok shared store =>
+                            refine
+                              Simulation.Interaction.ForwardRel.bind_custom
+                                (hPost residual (by omega) (.Ok shared store)) ?_
+                            intro rawPostDone orderedPostDone hPostDone
+                            unfold SameDoneRel at hPostDone
+                            subst orderedPostDone
+                            cases rawPostDone with
+                            | error error =>
+                                exact Simulation.Interaction.ForwardRel.done rfl
+                            | ok stateAfterPost =>
+                                cases stateAfterPost with
+                                | OutOfFuel =>
+                                    exact
+                                      Simulation.Interaction.ForwardRel.done rfl
+                                | Checkpoint postJump =>
+                                    cases postJump with
+                                    | Leave postShared postStore =>
+                                        exact
+                                          Simulation.Interaction.ForwardRel.done
+                                            rfl
+                                    | Break postShared postStore =>
+                                        simp only
+                                        cases residual with
+                                        | zero =>
+                                            exact loopZeroReentryRunForward
+                                        | succ recursiveFuel =>
+                                            rw [show recursiveFuel + 1 - 1 =
+                                              recursiveFuel by omega]
+                                            rw [show recursiveFuel + 1 + slack =
+                                              (recursiveFuel + slack) + 1 by
+                                                omega]
+                                            exact loopReentryRunForward
+                                              (ih recursiveFuel (by omega)
+                                                  (state :=
+                                                    (EvmYul.Yul.State.Checkpoint
+                                                      (.Break postShared
+                                                        postStore)).overwrite? state)
+                                                  (fun n hN state =>
+                                                    hCondition n (by omega) state)
+                                                  (fun n hN state =>
+                                                    hPost n (by omega) state)
+                                                  (fun n hN state =>
+                                                    hBody n (by omega) state))
+                                    | Continue postShared postStore =>
+                                        simp only
+                                        cases residual with
+                                        | zero =>
+                                            exact loopZeroReentryRunForward
+                                        | succ recursiveFuel =>
+                                            rw [show recursiveFuel + 1 - 1 =
+                                              recursiveFuel by omega]
+                                            rw [show recursiveFuel + 1 + slack =
+                                              (recursiveFuel + slack) + 1 by
+                                                omega]
+                                            exact loopReentryRunForward
+                                              (ih recursiveFuel (by omega)
+                                                  (state :=
+                                                    (EvmYul.Yul.State.Checkpoint
+                                                      (.Continue postShared
+                                                        postStore)).overwrite? state)
+                                                  (fun n hN state =>
+                                                    hCondition n (by omega) state)
+                                                  (fun n hN state =>
+                                                    hPost n (by omega) state)
+                                                  (fun n hN state =>
+                                                    hBody n (by omega) state))
+                                | Ok postShared postStore =>
+                                    simp only
+                                    cases residual with
+                                    | zero =>
+                                        exact loopZeroReentryRunForward
+                                    | succ recursiveFuel =>
+                                        rw [show recursiveFuel + 1 - 1 =
+                                          recursiveFuel by omega]
+                                        rw [show recursiveFuel + 1 + slack =
+                                          (recursiveFuel + slack) + 1 by omega]
+                                        exact loopReentryRunForward
+                                          (ih recursiveFuel (by omega)
+                                              (state :=
+                                                (EvmYul.Yul.State.Ok
+                                                  postShared postStore).overwrite?
+                                                  state)
+                                              (fun n hN state =>
+                                                hCondition n (by omega) state)
+                                              (fun n hN state =>
+                                                hPost n (by omega) state)
+                                              (fun n hN state =>
+                                                hBody n (by omega) state))
+
+theorem stmtRunForward_for_nonempty
+    {fuel slack : Nat}
+    {context : Raw.SourceSemantics.Context}
+    {scope : Raw.SourceSemantics.FunctionScope}
+    {rawPre rawPost rawBody : List Raw.Stmt}
+    {rawCondition : Raw.Expr}
+    {orderedPre orderedPost orderedBody : List Frontend.AstStmt}
+    {orderedCondition : Frontend.AstExpr}
+    {contract : Frontend.AstContract} {state : State}
+    (hScope : Raw.SourceSemantics.functionScope? rawPre = some scope)
+    (hLength : orderedPre.length = rawPre.length)
+    (hNonempty : orderedPre ≠ [])
+    (hSlack : rawPre.length + 1 ≤ slack)
+    (hPre :
+      Simulation.Interaction.ForwardRel
+        Yul.FunctionsInteractionPrimitive.Truncated
+        (BlockSeqDoneRel state.store)
+        (Raw.SourceSemantics.execSeq fuel
+          (context.withFunctionScope scope) rawPre state)
+        (Yul.InteractionSemantics.execSeq (fuel + (slack + 1))
+          orderedPre (some contract) state))
+    (hLoop :
+      ∀ loopState,
+        LoopRunForward (fuel - rawPre.length - 1)
+          (fuel + slack - rawPre.length - 1)
+          (context.withFunctionScope scope)
+          rawCondition rawPost rawBody orderedCondition
+          orderedPost orderedBody contract loopState) :
+    StmtRunForward (fuel + 2) (fuel + 2 + slack)
+      context (.forLoop rawPre rawCondition rawPost rawBody)
+      (.Block
+        (orderedPre ++
+          [.For orderedCondition orderedPost orderedBody]))
+      contract state := by
+  have hRawNonempty : rawPre ≠ [] := by
+    intro hRaw
+    subst rawPre
+    have hOrderedLength : orderedPre.length = 0 := by
+      simpa using hLength
+    exact hNonempty (List.eq_nil_of_length_eq_zero hOrderedLength)
+  obtain ⟨rawHead, rawTail, rfl⟩ :=
+    List.exists_cons_of_ne_nil hRawNonempty
+  unfold StmtRunForward
+  rw [show fuel + 2 = (fuel + 1) + 1 by omega]
+  rw [Raw.SourceSemantics.Exec.forLoop_succ]
+  rw [Raw.SourceSemantics.ExecFor.succ]
+  simp only [hScope]
+  rw [show fuel + 2 + slack = (fuel + 1 + slack) + 1 by omega]
+  rw [Yul.InteractionSemantics.Exec.block_succ]
+  have hTargetFuel :
+      fuel + 1 + slack =
+        (fuel + slack - (rawHead :: rawTail).length - 1 + 2) +
+          orderedPre.length := by
+    omega
+  rw [hTargetFuel]
+  rw [orderedExecSeq_append_of_nonempty hNonempty]
+  simp only [Simulation.Interaction.bind_assoc]
+  have hPre' := hPre
+  rw [show fuel + (slack + 1) =
+    fuel + slack - (rawHead :: rawTail).length - 1 + 2 +
+      orderedPre.length by omega]
+    at hPre'
+  refine Simulation.Interaction.ForwardRel.bind_custom hPre' ?_
+  intro rawPreDone orderedPreDone hPreDone
+  cases hPreDone with
+  | error hError =>
+      subst_vars
+      exact Simulation.Interaction.ForwardRel.done rfl
+  | @ok rawState orderedState hState =>
+      cases rawState with
+      | Ok shared vars =>
+          subst orderedState
+          exact loopRestrictedRunForward (hLoop (.Ok shared vars))
+      | OutOfFuel =>
+          cases hState with
+          | inl hExact =>
+              subst orderedState
+              exact Simulation.Interaction.ForwardRel.done rfl
+          | inr hRestricted =>
+              subst orderedState
+              change
+                Simulation.Interaction.ForwardRel
+                  Yul.FunctionsInteractionPrimitive.Truncated SameDoneRel
+                  (pure
+                    ((EvmYul.Yul.State.OutOfFuel : State).restrictStoreTo
+                      state.store))
+                  (pure
+                    (((EvmYul.Yul.State.OutOfFuel : State).restrictStoreTo
+                      state.store).restrictStoreTo state.store))
+              rw [Yul.InteractionSemantics.State.restrictStoreTo_idem]
+              exact Simulation.Interaction.ForwardRel.done rfl
+      | Checkpoint jump =>
+          cases hState with
+          | inl hExact =>
+              subst orderedState
+              exact Simulation.Interaction.ForwardRel.done rfl
+          | inr hRestricted =>
+              subst orderedState
+              cases jump with
+              | Break shared vars =>
+                  change
+                    Simulation.Interaction.ForwardRel
+                      Yul.FunctionsInteractionPrimitive.Truncated SameDoneRel
+                      (pure
+                        ((EvmYul.Yul.State.Checkpoint
+                          (.Break shared vars)).restrictStoreTo state.store))
+                      (pure
+                        (((EvmYul.Yul.State.Checkpoint
+                          (.Break shared vars)).restrictStoreTo
+                            state.store).restrictStoreTo state.store))
+                  rw [Yul.InteractionSemantics.State.restrictStoreTo_idem]
+                  exact Simulation.Interaction.ForwardRel.done rfl
+              | Continue shared vars =>
+                  change
+                    Simulation.Interaction.ForwardRel
+                      Yul.FunctionsInteractionPrimitive.Truncated SameDoneRel
+                      (pure
+                        ((EvmYul.Yul.State.Checkpoint
+                          (.Continue shared vars)).restrictStoreTo state.store))
+                      (pure
+                        (((EvmYul.Yul.State.Checkpoint
+                          (.Continue shared vars)).restrictStoreTo
+                            state.store).restrictStoreTo state.store))
+                  rw [Yul.InteractionSemantics.State.restrictStoreTo_idem]
+                  exact Simulation.Interaction.ForwardRel.done rfl
+              | Leave shared vars =>
+                  change
+                    Simulation.Interaction.ForwardRel
+                      Yul.FunctionsInteractionPrimitive.Truncated SameDoneRel
+                      (pure
+                        ((EvmYul.Yul.State.Checkpoint
+                          (.Leave shared vars)).restrictStoreTo state.store))
+                      (pure
+                        (((EvmYul.Yul.State.Checkpoint
+                          (.Leave shared vars)).restrictStoreTo
+                            state.store).restrictStoreTo state.store))
+                  rw [Yul.InteractionSemantics.State.restrictStoreTo_idem]
+                  exact Simulation.Interaction.ForwardRel.done rfl
+
+theorem stmtRunForward_for_empty
+    {fuel slack : Nat}
+    {context : Raw.SourceSemantics.Context}
+    {rawPost rawBody : List Raw.Stmt} {rawCondition : Raw.Expr}
+    {orderedPost orderedBody : List Frontend.AstStmt}
+    {orderedCondition : Frontend.AstExpr}
+    {contract : Frontend.AstContract} {state : State}
+    (hLoop :
+      ∀ loopState,
+        LoopRunForward (fuel - 1) (fuel - 1 + (slack + 2))
+          (context.withFunctionScope [])
+          rawCondition rawPost rawBody orderedCondition
+          orderedPost orderedBody contract loopState) :
+    StmtRunForward (fuel + 2) (fuel + 2 + slack)
+      context (.forLoop [] rawCondition rawPost rawBody)
+      (.For orderedCondition orderedPost orderedBody) contract state := by
+  unfold StmtRunForward
+  rw [show fuel + 2 = (fuel + 1) + 1 by omega]
+  rw [Raw.SourceSemantics.Exec.forLoop_succ]
+  rw [Raw.SourceSemantics.ExecFor.succ]
+  simp only [Raw.SourceSemantics.functionScope?]
+  rw [show fuel + 2 + slack = (fuel + 1 + slack) + 1 by omega]
+  rw [Yul.InteractionSemantics.Exec.for_succ]
+  cases fuel with
+  | zero =>
+      rw [Raw.SourceSemantics.execSeq_zero]
+      unfold Raw.SourceSemantics.fail
+      change
+        Simulation.Interaction.ForwardRel
+          Yul.FunctionsInteractionPrimitive.Truncated SameDoneRel
+          (Simulation.Interaction.bind
+            (Yul.InteractionSemantics.Primitive.fail state .OutOfFuel)
+            _)
+          _
+      rw [Yul.InteractionSemantics.Primitive.bind_fail]
+      exact
+        Simulation.Interaction.ForwardRel.truncated
+          (by simp [Yul.FunctionsInteractionPrimitive.Truncated])
+  | succ residual =>
+      rw [Raw.SourceSemantics.ExecSeq.nil_succ]
+      rw [show residual + 1 - 1 = residual by omega]
+      rw [show residual + 1 + 1 + slack =
+        residual + (slack + 2) by omega]
+      change
+        Simulation.Interaction.ForwardRel
+          Yul.FunctionsInteractionPrimitive.Truncated SameDoneRel
+          (Simulation.Interaction.bind
+            (Simulation.Interaction.done (.ok state))
+            (fun stateAfterPre =>
+              Simulation.Interaction.bind
+                (Raw.SourceSemantics.loop residual
+                  (context.withFunctionScope [])
+                  rawCondition rawPost rawBody stateAfterPre)
+                Simulation.Interaction.pure))
+          (Yul.InteractionSemantics.loop (residual + (slack + 2))
+            orderedCondition orderedPost orderedBody (some contract) state)
+      rw [Simulation.Interaction.bind_done_ok]
+      rw [Simulation.Interaction.bind_pure]
+      simpa using hLoop state
 
 theorem stmtRunForward_break_succ
     {rawFuel orderedFuel : Nat}
