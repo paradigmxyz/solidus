@@ -389,7 +389,17 @@ def BlockSeqDoneRel (entryStore : EvmYul.Yul.VarStore) :
     Except Failure State → Except Failure State → Prop :=
   Simulation.Interaction.ExceptRel Eq
     (fun raw ordered =>
-      ordered = raw ∨ ordered = raw.restrictStoreTo entryStore)
+      match raw with
+      | .Ok _ _ => ordered = raw
+      | .OutOfFuel | .Checkpoint _ =>
+          ordered = raw ∨ ordered = raw.restrictStoreTo entryStore)
+
+/-- A recursive sequence may reuse its enclosing block entry store after a
+regular prefix. On an abrupt initial state, that store must be the state's own
+entry store so an administrative empty block is related correctly. -/
+def BlockEntryCompatible (entryStore : EvmYul.Yul.VarStore) : State → Prop
+  | .Ok _ _ => True
+  | state => state.store = entryStore
 
 theorem forward_refl {α : Type}
     (truncated : Failure → Prop)
@@ -5279,6 +5289,60 @@ def StmtRunForward (rawFuel orderedFuel : Nat)
     (Yul.InteractionSemantics.exec orderedFuel orderedStmt
       (some contract) state)
 
+/-- Statement preservation inside one lexical block. Regular outcomes remain
+exact; only abrupt outcomes may expose the administrative store restriction
+introduced by an erased nested function declaration. -/
+def ScopedStmtRunForward (entryStore : EvmYul.Yul.VarStore)
+    (rawFuel orderedFuel : Nat)
+    (context : Raw.SourceSemantics.Context)
+    (rawStmt : Raw.Stmt) (orderedStmt : Frontend.AstStmt)
+    (contract : Frontend.AstContract) (state : State) : Prop :=
+  Simulation.Interaction.ForwardRel
+    Yul.FunctionsInteractionPrimitive.Truncated
+    (BlockSeqDoneRel entryStore)
+    (Raw.SourceSemantics.exec rawFuel context rawStmt state)
+    (Yul.InteractionSemantics.exec orderedFuel orderedStmt
+      (some contract) state)
+
+theorem scopedStmtRunForward_of_exact
+    {entryStore : EvmYul.Yul.VarStore}
+    {rawFuel orderedFuel : Nat}
+    {context : Raw.SourceSemantics.Context}
+    {rawStmt : Raw.Stmt} {orderedStmt : Frontend.AstStmt}
+    {contract : Frontend.AstContract} {state : State}
+    (hExact :
+      StmtRunForward rawFuel orderedFuel
+        context rawStmt orderedStmt contract state) :
+    ScopedStmtRunForward entryStore rawFuel orderedFuel
+      context rawStmt orderedStmt contract state := by
+  unfold StmtRunForward ScopedStmtRunForward at *
+  apply Simulation.Interaction.ForwardRel.mono hExact
+  intro rawDone orderedDone hDone
+  unfold SameDoneRel at hDone
+  subst orderedDone
+  cases rawDone with
+  | error error => exact Simulation.Interaction.ExceptRel.error rfl
+  | ok rawState =>
+      cases rawState with
+      | Ok => exact Simulation.Interaction.ExceptRel.ok rfl
+      | OutOfFuel => exact Simulation.Interaction.ExceptRel.ok (.inl rfl)
+      | Checkpoint => exact Simulation.Interaction.ExceptRel.ok (.inl rfl)
+
+theorem stmtRunForward_zero
+    {orderedFuel : Nat}
+    {context : Raw.SourceSemantics.Context}
+    {rawStmt : Raw.Stmt} {orderedStmt : Frontend.AstStmt}
+    {contract : Frontend.AstContract} {state : State} :
+    StmtRunForward 0 orderedFuel
+      context rawStmt orderedStmt contract state := by
+  unfold StmtRunForward
+  rw [show Raw.SourceSemantics.exec 0 context rawStmt state =
+      Raw.SourceSemantics.fail state .OutOfFuel by
+    simp [Raw.SourceSemantics.exec]]
+  exact
+    Simulation.Interaction.ForwardRel.truncated
+      (by simp [Yul.FunctionsInteractionPrimitive.Truncated])
+
 theorem stmtRunForward_variableDeclaration_none_succ
     {rawFuel orderedFuel : Nat}
     {context : Raw.SourceSemantics.Context}
@@ -5826,6 +5890,49 @@ def ScopedSeqRunForward (entryStore : EvmYul.Yul.VarStore)
     (Yul.InteractionSemantics.execSeq orderedFuel orderedCode
       (some contract) state)
 
+/-- One checked statement occurrence under its exact frontend state path. This
+is the statement component consumed by the generic recursive list theorem. -/
+def ScopedStmtPathRunForwardAt
+    (rawFuel slack : Nat)
+    (builtinContext : Frontend.ObjectBuiltinContext)
+    (contract : Frontend.AstContract) : Prop :=
+  ∀ {rawContext : Raw.SourceSemantics.Context}
+    {rawStmt : Raw.Stmt} {front : Frontend.Stmt}
+    {ordered : Frontend.AstStmt}
+    {elabState finalElabState : Elab.State}
+    {entryStore : EvmYul.Yul.VarStore} {state : State},
+    BlockEntryCompatible entryStore state →
+      PathCompiledContext builtinContext contract
+        rawContext elabState.functionScopes →
+      ClzCompilationPath contract elabState finalElabState →
+      (Elab.Stmt.elaborate rawStmt).run elabState =
+          .ok (front, finalElabState) →
+      StmtNormalized builtinContext front ordered →
+      ScopedStmtRunForward entryStore rawFuel (rawFuel + slack)
+        rawContext rawStmt ordered contract state
+
+/-- Whole statement-list preservation under one enclosing lexical-block entry
+store. Recursive tails start in regular states, so the same entry store remains
+compatible without weakening regular outcome equality. -/
+def ScopedSeqPathRunForwardAt
+    (rawFuel slack : Nat)
+    (builtinContext : Frontend.ObjectBuiltinContext)
+    (contract : Frontend.AstContract) : Prop :=
+  ∀ {rawContext : Raw.SourceSemantics.Context}
+    {rawCode : List Raw.Stmt} {front : List Frontend.Stmt}
+    {ordered : List Frontend.AstStmt}
+    {elabState finalElabState : Elab.State}
+    {entryStore : EvmYul.Yul.VarStore} {state : State},
+    BlockEntryCompatible entryStore state →
+      PathCompiledContext builtinContext contract
+        rawContext elabState.functionScopes →
+      ClzCompilationPath contract elabState finalElabState →
+      (Elab.Stmt.List.elaborate rawCode).run elabState =
+          .ok (front, finalElabState) →
+      StmtListNormalized builtinContext front ordered →
+      ScopedSeqRunForward entryStore rawFuel (rawFuel + slack)
+        rawContext rawCode ordered contract state
+
 theorem scopedSeqRunForward_of_exact
     {entryStore : EvmYul.Yul.VarStore}
     {rawFuel orderedFuel : Nat}
@@ -5846,7 +5953,10 @@ theorem scopedSeqRunForward_of_exact
   | error error =>
       exact Simulation.Interaction.ExceptRel.error rfl
   | ok rawState =>
-      exact Simulation.Interaction.ExceptRel.ok (.inl rfl)
+      cases rawState with
+      | Ok => exact Simulation.Interaction.ExceptRel.ok rfl
+      | OutOfFuel => exact Simulation.Interaction.ExceptRel.ok (.inl rfl)
+      | Checkpoint => exact Simulation.Interaction.ExceptRel.ok (.inl rfl)
 
 theorem seqRunForward_zero
     {orderedFuel : Nat}
@@ -5905,6 +6015,158 @@ theorem seqRunForward_cons
       | Ok shared vars => exact hTail shared vars
       | OutOfFuel => exact Simulation.Interaction.ForwardRel.done rfl
       | Checkpoint jump => exact Simulation.Interaction.ForwardRel.done rfl
+
+/-- Generic block-scoped list constructor. The strengthened done relation
+forces exact agreement whenever the tail is entered. -/
+theorem scopedSeqRunForward_cons
+    {entryStore : EvmYul.Yul.VarStore}
+    {rawFuel orderedFuel : Nat}
+    {context : Raw.SourceSemantics.Context}
+    {rawStmt : Raw.Stmt} {rawRest : List Raw.Stmt}
+    {orderedStmt : Frontend.AstStmt}
+    {orderedRest : List Frontend.AstStmt}
+    {contract : Frontend.AstContract} {state : State}
+    (hHead :
+      ScopedStmtRunForward entryStore rawFuel orderedFuel
+        context rawStmt orderedStmt contract state)
+    (hTail :
+      ∀ shared vars,
+        ScopedSeqRunForward entryStore rawFuel orderedFuel
+          context rawRest orderedRest contract (.Ok shared vars)) :
+    ScopedSeqRunForward entryStore (rawFuel + 1) (orderedFuel + 1)
+      context (rawStmt :: rawRest) (orderedStmt :: orderedRest)
+      contract state := by
+  unfold ScopedSeqRunForward ScopedStmtRunForward at *
+  rw [Raw.SourceSemantics.ExecSeq.cons_succ]
+  rw [Yul.InteractionSemantics.ExecSeq.cons_succ]
+  refine Simulation.Interaction.ForwardRel.bind_custom hHead ?_
+  intro rawDone orderedDone hDone
+  cases hDone with
+  | error hError =>
+      subst_vars
+      exact
+        Simulation.Interaction.ForwardRel.done
+          (Simulation.Interaction.ExceptRel.error rfl)
+  | @ok rawState orderedState hState =>
+      cases rawState with
+      | Ok shared vars =>
+          subst orderedState
+          exact hTail shared vars
+      | OutOfFuel =>
+          cases hState with
+          | inl hExact =>
+              subst orderedState
+              exact
+                Simulation.Interaction.ForwardRel.done
+                  (Simulation.Interaction.ExceptRel.ok (Or.inl rfl))
+          | inr hRestricted =>
+              subst orderedState
+              exact
+                Simulation.Interaction.ForwardRel.done
+                  (Simulation.Interaction.ExceptRel.ok (Or.inr rfl))
+      | Checkpoint jump =>
+          cases hState with
+          | inl hExact =>
+              subst orderedState
+              exact
+                Simulation.Interaction.ForwardRel.done
+                  (Simulation.Interaction.ExceptRel.ok (Or.inl rfl))
+          | inr hRestricted =>
+              subst orderedState
+              cases jump <;>
+                exact
+                  Simulation.Interaction.ForwardRel.done
+                    (Simulation.Interaction.ExceptRel.ok (Or.inr rfl))
+
+theorem scopedSeqPathRunForwardAt_zero
+    {slack : Nat}
+    {builtinContext : Frontend.ObjectBuiltinContext}
+    {contract : Frontend.AstContract} :
+    ScopedSeqPathRunForwardAt 0 slack builtinContext contract := by
+  intro rawContext rawCode front ordered elabState finalElabState
+    entryStore state hCompatible hContext hPath hElab hNormalized
+  exact scopedSeqRunForward_of_exact seqRunForward_zero
+
+/-- Fuel-recursive statement-list theorem. It splits the actual checked
+elaboration path at the head occurrence, carries the same lexical context into
+the tail, and uses no generated-name or semantic replay premise. -/
+theorem scopedSeqPathRunForwardAt_succ
+    {fuel slack : Nat}
+    {builtinContext : Frontend.ObjectBuiltinContext}
+    {contract : Frontend.AstContract}
+    (hStmt :
+      ScopedStmtPathRunForwardAt fuel slack builtinContext contract)
+    (hSeq :
+      ScopedSeqPathRunForwardAt fuel slack builtinContext contract) :
+    ScopedSeqPathRunForwardAt (fuel + 1) slack builtinContext contract := by
+  intro rawContext rawCode front ordered elabState finalElabState
+    entryStore state hCompatible hContext hPath hElab hNormalized
+  cases rawCode with
+  | nil =>
+      simp [Elab.Stmt.List.elaborate] at hElab
+      rcases hElab with ⟨rfl, rfl⟩
+      have hOrdered := StmtListNormalized.nil_ordered hNormalized
+      subst ordered
+      apply scopedSeqRunForward_of_exact
+      simpa [Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using
+        (seqRunForward_nil_succ
+          (rawFuel := fuel) (orderedFuel := fuel + slack)
+          (context := rawContext) (contract := contract) (state := state))
+  | cons rawHead rawTail =>
+      unfold Elab.Stmt.List.elaborate at hElab
+      simp [StateT.run_bind] at hElab
+      cases hHead : (Elab.Stmt.elaborate rawHead).run elabState with
+      | error err => simp [hHead] at hElab
+      | ok headResult =>
+          rcases headResult with ⟨frontHead, headElabState⟩
+          simp [hHead] at hElab
+          cases hTail :
+              (Elab.Stmt.List.elaborate rawTail).run headElabState with
+          | error err => simp [hTail] at hElab
+          | ok tailResult =>
+              rcases tailResult with ⟨frontTail, tailElabState⟩
+              simp [hTail] at hElab
+              rcases hElab with ⟨rfl, rfl⟩
+              rcases StmtListNormalized.cons_parts hNormalized with
+                ⟨orderedHead, orderedTail, rfl,
+                  ⟨hHeadNormalized⟩, ⟨hTailNormalized⟩⟩
+              have hHeadExt :=
+                Elab.Stmt.elaborate_preserves_clzAllocation rawHead
+                  hHead hPath.entryValid
+              have hTailExt :=
+                Elab.Stmt.List.elaborate_preserves_clzAllocation rawTail
+                  hTail hHeadExt.after_valid
+              have hHeadPath :
+                  ClzCompilationPath contract elabState headElabState :=
+                hPath.prefixPath hTailExt
+              have hTailPath :
+                  ClzCompilationPath contract
+                    headElabState tailElabState :=
+                hPath.suffixPath hHeadExt
+              have hHeadScopes :
+                  headElabState.functionScopes =
+                    elabState.functionScopes :=
+                Elab.Stmt.elaborate_preserves_functionScopes rawHead hHead
+              have hTailContext :
+                  PathCompiledContext builtinContext contract
+                    rawContext headElabState.functionScopes := by
+                simpa [hHeadScopes] using hContext
+              have hHeadRun :=
+                hStmt hCompatible hContext hHeadPath hHead hHeadNormalized
+              have hCons :=
+                scopedSeqRunForward_cons
+                  (entryStore := entryStore)
+                  (rawFuel := fuel) (orderedFuel := fuel + slack)
+                  (context := rawContext) (rawStmt := rawHead)
+                  (rawRest := rawTail) (orderedStmt := orderedHead)
+                  (orderedRest := orderedTail) (contract := contract)
+                  (state := state) hHeadRun
+                  (fun shared vars =>
+                    hSeq (state := .Ok shared vars)
+                      (by trivial) hTailContext hTailPath
+                      hTail hTailNormalized)
+              simpa [Nat.add_assoc, Nat.add_comm,
+                Nat.add_left_comm] using hCons
 
 theorem seqRunForward_of_elaboration
     {rawContext : Raw.SourceSemantics.Context}
@@ -6048,18 +6310,33 @@ theorem blockCodeRunForward_of_scope_scopedSeq
       subst_vars
       exact Simulation.Interaction.ForwardRel.done rfl
   | @ok rawState orderedState hState =>
-      cases hState with
-      | inl hExact =>
+      cases rawState with
+      | Ok shared vars =>
           subst orderedState
           exact Simulation.Interaction.ForwardRel.done rfl
-      | inr hRestricted =>
-          subst orderedState
-          apply Simulation.Interaction.ForwardRel.done
-          unfold SameDoneRel
-          congr 1
-          exact
-            (Yul.InteractionSemantics.State.restrictStoreTo_idem
-              rawState state.store).symm
+      | OutOfFuel =>
+          cases hState with
+          | inl hExact =>
+              subst orderedState
+              exact Simulation.Interaction.ForwardRel.done rfl
+          | inr hRestricted =>
+              subst orderedState
+              apply Simulation.Interaction.ForwardRel.done
+              unfold SameDoneRel
+              congr 1
+      | Checkpoint jump =>
+          cases hState with
+          | inl hExact =>
+              subst orderedState
+              exact Simulation.Interaction.ForwardRel.done rfl
+          | inr hRestricted =>
+              subst orderedState
+              apply Simulation.Interaction.ForwardRel.done
+              unfold SameDoneRel
+              congr 1
+              exact
+                (Yul.InteractionSemantics.State.restrictStoreTo_idem
+                  (.Checkpoint jump) state.store).symm
 
 /-- Raw block-body sequence preservation against the ordered dispatcher
 sequence, before both sides apply their lexical block store restriction. -/
