@@ -5911,6 +5911,44 @@ def ScopedStmtPathRunForwardAt
       ScopedStmtRunForward entryStore rawFuel (rawFuel + slack)
         rawContext rawStmt ordered contract state
 
+/-- The four statement families with genuinely distinct control/call
+semantics. The generic statement classifier handles all remaining constructors
+directly and consumes one bundled provider for these cases. -/
+inductive StmtNeedsSpecialPreservation : Raw.Stmt → Prop where
+  | expressionStatement (expr : Raw.Expr) :
+      StmtNeedsSpecialPreservation (.expressionStatement expr)
+  | functionDefinition (name : Name) (params returns : List Name)
+      (body : List Raw.Stmt) :
+      StmtNeedsSpecialPreservation
+        (.functionDefinition name params returns body)
+  | switch (scrutinee : Raw.Expr)
+      (cases : List (Raw.SwitchCaseValue × List Raw.Stmt))
+      (default : List Raw.Stmt) :
+      StmtNeedsSpecialPreservation (.switch scrutinee cases default)
+  | forLoop (pre : List Raw.Stmt) (condition : Raw.Expr)
+      (post body : List Raw.Stmt) :
+      StmtNeedsSpecialPreservation (.forLoop pre condition post body)
+
+def ScopedStmtSpecialRunForwardAt
+    (rawFuel slack : Nat)
+    (builtinContext : Frontend.ObjectBuiltinContext)
+    (contract : Frontend.AstContract) : Prop :=
+  ∀ {rawContext : Raw.SourceSemantics.Context}
+    {rawStmt : Raw.Stmt} {front : Frontend.Stmt}
+    {ordered : Frontend.AstStmt}
+    {elabState finalElabState : Elab.State}
+    {entryStore : EvmYul.Yul.VarStore} {state : State},
+    StmtNeedsSpecialPreservation rawStmt →
+      BlockEntryCompatible entryStore state →
+      PathCompiledContext builtinContext contract
+        rawContext elabState.functionScopes →
+      ClzCompilationPath contract elabState finalElabState →
+      (Elab.Stmt.elaborate rawStmt).run elabState =
+          .ok (front, finalElabState) →
+      StmtNormalized builtinContext front ordered →
+      ScopedStmtRunForward entryStore rawFuel (rawFuel + slack)
+        rawContext rawStmt ordered contract state
+
 /-- Whole statement-list preservation under one enclosing lexical-block entry
 store. Recursive tails start in regular states, so the same entry store remains
 compatible without weakening regular outcome equality. -/
@@ -5932,6 +5970,239 @@ def ScopedSeqPathRunForwardAt
       StmtListNormalized builtinContext front ordered →
       ScopedSeqRunForward entryStore rawFuel (rawFuel + slack)
         rawContext rawCode ordered contract state
+
+theorem scopedStmtPathRunForwardAt_zero
+    {slack : Nat}
+    {builtinContext : Frontend.ObjectBuiltinContext}
+    {contract : Frontend.AstContract} :
+    ScopedStmtPathRunForwardAt 0 slack builtinContext contract := by
+  intro rawContext rawStmt front ordered elabState finalElabState
+    entryStore state hCompatible hContext hPath hElab hNormalized
+  exact scopedStmtRunForward_of_exact stmtRunForward_zero
+
+/-- Generic checked statement classifier. Ordinary structural statements are
+proved here from occurrence-local expression/block paths; only the four
+semantically distinct call/control families are delegated to one bundled
+provider. -/
+theorem scopedStmtPathRunForwardAt_succ_of_special
+    {fuel slack : Nat}
+    {builtinContext : Frontend.ObjectBuiltinContext}
+    {contract : Frontend.AstContract}
+    (hExpr :
+      ∀ extra,
+        ScopedExprPathRunForwardAt
+          fuel (slack + extra) builtinContext contract)
+    (hBlock :
+      ∀ extra,
+        ScopedBlockPathRunForwardAt
+          fuel (slack + extra) builtinContext contract)
+    (hSpecial :
+      ScopedStmtSpecialRunForwardAt
+        (fuel + 1) slack builtinContext contract) :
+    ScopedStmtPathRunForwardAt
+      (fuel + 1) slack builtinContext contract := by
+  intro rawContext rawStmt front ordered elabState finalElabState
+    entryStore state hCompatible hContext hPath hElab hNormalized
+  cases rawStmt with
+  | block rawBody =>
+      unfold Elab.Stmt.elaborate at hElab
+      simp at hElab
+      cases hBody :
+          (Elab.Stmt.List.elaborateBlock rawBody true).run elabState with
+      | error err => simp [hBody] at hElab
+      | ok bodyResult =>
+          rcases bodyResult with ⟨frontBody, bodyState⟩
+          simp [hBody] at hElab
+          rcases hElab with ⟨rfl, rfl⟩
+          rcases StmtNormalized.block_parts hNormalized with
+            ⟨orderedBody, rfl, ⟨hBodyNormalized⟩⟩
+          have hBodyRun :=
+            hBlock 1 (state := state)
+              hContext hPath hBody hBodyNormalized
+          apply scopedStmtRunForward_of_exact
+          simpa [Nat.add_assoc, Nat.add_comm,
+            Nat.add_left_comm] using
+              (stmtRunForward_block_succ hBodyRun)
+  | variableDeclaration names value? =>
+      cases value? with
+      | none =>
+          have hRun :=
+            stmtRunForward_of_elaborated_variableDeclaration_none
+              (rawFuel := fuel) (orderedFuel := fuel + slack)
+              (rawContext := rawContext) (contract := contract)
+              (state := state) hElab hNormalized
+          exact scopedStmtRunForward_of_exact
+            (by simpa [Nat.add_assoc, Nat.add_comm,
+              Nat.add_left_comm] using hRun)
+      | some rawValue =>
+          unfold Elab.Stmt.elaborate at hElab
+          simp at hElab
+          cases hValue :
+              (Elab.Expr.elaborate rawValue).run elabState with
+          | error err => simp [hValue] at hElab
+          | ok valueResult =>
+              rcases valueResult with ⟨frontValue, valueState⟩
+              simp [hValue] at hElab
+              cases hDeclare :
+                  (Elab.declareIdentifiers names "variable").run
+                    valueState with
+              | error err => simp [hDeclare] at hElab
+              | ok declareResult =>
+                  rcases declareResult with ⟨_, declaredState⟩
+                  simp [hDeclare] at hElab
+                  rcases hElab with ⟨rfl, rfl⟩
+                  rcases StmtNormalized.let_some_parts hNormalized with
+                    ⟨orderedValue, rfl, ⟨hValueNormalized⟩⟩
+                  have hValueExt :=
+                    Elab.Expr.elaborate_preserves_clzAllocation rawValue
+                      hValue hPath.entryValid
+                  have hDeclareExt :=
+                    Elab.declareIdentifiers_preserves_clzAllocation
+                      names "variable" hDeclare hValueExt.after_valid
+                  have hValuePath :
+                      ClzCompilationPath contract elabState valueState :=
+                    hPath.prefixPath hDeclareExt
+                  have hValueRun :=
+                    hExpr 0 (state := state)
+                      hContext hValuePath hValue hValueNormalized
+                  apply scopedStmtRunForward_of_exact
+                  simpa [Nat.add_assoc, Nat.add_comm,
+                    Nat.add_left_comm] using
+                      (stmtRunForward_variableDeclaration_some_succ
+                        hValueRun)
+  | assignment names rawValue =>
+      unfold Elab.Stmt.elaborate at hElab
+      simp [StateT.run_bind] at hElab
+      cases hVisible :
+          (Elab.requireIdentifiersVisible names "assignment").run
+            elabState with
+      | error err => simp [hVisible] at hElab
+      | ok visibleResult =>
+          rcases visibleResult with ⟨_, visibleState⟩
+          simp [hVisible] at hElab
+          cases hValue :
+              (Elab.Expr.elaborate rawValue).run visibleState with
+          | error err => simp [hValue] at hElab
+          | ok valueResult =>
+              rcases valueResult with ⟨frontValue, valueState⟩
+              simp [hValue] at hElab
+              rcases hElab with ⟨rfl, rfl⟩
+              rcases StmtNormalized.assign_parts hNormalized with
+                ⟨orderedValue, rfl, ⟨hValueNormalized⟩⟩
+              have hVisibleExt :=
+                Elab.requireIdentifiersVisible_preserves_clzAllocation
+                  names "assignment" hVisible hPath.entryValid
+              have hValuePath :
+                  ClzCompilationPath contract visibleState valueState :=
+                hPath.suffixPath hVisibleExt
+              have hVisibleScopes :
+                  visibleState.functionScopes =
+                    elabState.functionScopes :=
+                Elab.requireIdentifiersVisible_preserves_functionScopes
+                  names "assignment" hVisible
+              have hValueContext :
+                  PathCompiledContext builtinContext contract
+                    rawContext visibleState.functionScopes := by
+                simpa [hVisibleScopes] using hContext
+              have hValueRun :=
+                hExpr 0 (state := state)
+                  hValueContext hValuePath hValue hValueNormalized
+              apply scopedStmtRunForward_of_exact
+              simpa [Nat.add_assoc, Nat.add_comm,
+                Nat.add_left_comm] using
+                  (stmtRunForward_assignment_succ hValueRun)
+  | expressionStatement expr =>
+      exact hSpecial (.expressionStatement expr) hCompatible hContext
+        hPath hElab hNormalized
+  | functionDefinition name params returns body =>
+      exact hSpecial (.functionDefinition name params returns body)
+        hCompatible hContext hPath hElab hNormalized
+  | switch scrutinee cases default =>
+      exact hSpecial (.switch scrutinee cases default)
+        hCompatible hContext hPath hElab hNormalized
+  | forLoop pre condition post body =>
+      exact hSpecial (.forLoop pre condition post body)
+        hCompatible hContext hPath hElab hNormalized
+  | ifThen rawCondition rawBody =>
+      unfold Elab.Stmt.elaborate at hElab
+      simp [StateT.run_bind] at hElab
+      cases hCondition :
+          (Elab.Expr.elaborate rawCondition).run elabState with
+      | error err => simp [hCondition] at hElab
+      | ok conditionResult =>
+          rcases conditionResult with
+            ⟨frontCondition, conditionState⟩
+          simp [hCondition] at hElab
+          cases hBody :
+              (Elab.Stmt.List.elaborateBlock rawBody true).run
+                conditionState with
+          | error err => simp [hBody] at hElab
+          | ok bodyResult =>
+              rcases bodyResult with ⟨frontBody, bodyState⟩
+              simp [hBody] at hElab
+              rcases hElab with ⟨rfl, rfl⟩
+              rcases StmtNormalized.if_parts hNormalized with
+                ⟨orderedCondition, orderedBody, rfl,
+                  ⟨hConditionNormalized⟩, ⟨hBodyNormalized⟩⟩
+              have hConditionExt :=
+                Elab.Expr.elaborate_preserves_clzAllocation rawCondition
+                  hCondition hPath.entryValid
+              have hBodyExt :=
+                Elab.Stmt.List.elaborateBlock_preserves_clzAllocation
+                  rawBody true hBody hConditionExt.after_valid
+              have hConditionPath :
+                  ClzCompilationPath contract
+                    elabState conditionState :=
+                hPath.prefixPath hBodyExt
+              have hBodyPath :
+                  ClzCompilationPath contract
+                    conditionState bodyState :=
+                hPath.suffixPath hConditionExt
+              have hConditionScopes :
+                  conditionState.functionScopes =
+                    elabState.functionScopes :=
+                Elab.Expr.elaborate_preserves_functionScopes
+                  rawCondition hCondition
+              have hBodyContext :
+                  PathCompiledContext builtinContext contract
+                    rawContext conditionState.functionScopes := by
+                simpa [hConditionScopes] using hContext
+              have hConditionRun :=
+                hExpr 0 (state := state) hContext hConditionPath
+                  hCondition hConditionNormalized
+              apply scopedStmtRunForward_of_exact
+              have hIf :=
+                stmtRunForward_ifThen_succ
+                  (rawFuel := fuel) (orderedFuel := fuel + slack)
+                  (context := rawContext) (contract := contract)
+                  (state := state)
+                  (exprRunForward_of_values hConditionRun)
+                  (fun stateAfterCondition value _hTruthy =>
+                    hBlock 0 (state := stateAfterCondition)
+                      hBodyContext hBodyPath hBody hBodyNormalized)
+              simpa [Nat.add_assoc, Nat.add_comm,
+                Nat.add_left_comm] using hIf
+  | «break» =>
+      apply scopedStmtRunForward_of_exact
+      simpa [Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using
+        (stmtRunForward_of_elaborated_break
+          (rawFuel := fuel) (orderedFuel := fuel + slack)
+          (rawContext := rawContext) (contract := contract)
+          (state := state) hElab hNormalized)
+  | «continue» =>
+      apply scopedStmtRunForward_of_exact
+      simpa [Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using
+        (stmtRunForward_of_elaborated_continue
+          (rawFuel := fuel) (orderedFuel := fuel + slack)
+          (rawContext := rawContext) (contract := contract)
+          (state := state) hElab hNormalized)
+  | «leave» =>
+      apply scopedStmtRunForward_of_exact
+      simpa [Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using
+        (stmtRunForward_of_elaborated_leave
+          (rawFuel := fuel) (orderedFuel := fuel + slack)
+          (rawContext := rawContext) (contract := contract)
+          (state := state) hElab hNormalized)
 
 theorem scopedSeqRunForward_of_exact
     {entryStore : EvmYul.Yul.VarStore}
