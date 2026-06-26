@@ -122,8 +122,10 @@ Transformation inventory from `scripts/solidity_to_yul_lean.py`:
   interaction semantics and returns `ClzHelperModel.run`. The path-scoped
   `ClzBindingResolverAt` is now constructed from successful raw artifact
   compilation, and exact expression-final allocation drives the checked call
-  theorem. Recursive statement/block threading still needs to replace the
-  older private all-state callback before final composition.
+  theorem. The path-scoped recursive expression classifier now covers every
+  accepted expression family without the older all-state callback; recursive
+  statement/block threading and artifact construction of path-aware lexical
+  scopes remain before final composition.
 - [x] Object/data ordering preserved and fail-closed in Lean through explicit
   raw-derived `ObjectItemRef`s plus `itemRefsPreserveOrder?` validation.
 - [ ] Standalone Yul data-name recovery remains Python-only and is not part of
