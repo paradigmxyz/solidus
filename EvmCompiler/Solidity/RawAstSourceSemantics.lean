@@ -94,6 +94,230 @@ def functionScope? : List Stmt → Option FunctionScope
             some ((name, { params, returns, body }) :: tail)
       | _ => some tail
 
+theorem lookupFunctionInScope_some_any
+    {scope : FunctionScope} {name : FunctionName} {fn : FunctionDef}
+    (hLookup : lookupFunctionInScope name scope = some fn) :
+    (scope.any fun entry => entry.fst == name) = true := by
+  induction scope with
+  | nil =>
+      simp [lookupFunctionInScope] at hLookup
+  | cons entry rest ih =>
+      rcases entry with ⟨headName, headFn⟩
+      by_cases hName : headName = name
+      · subst name
+        simp
+      · simp [lookupFunctionInScope, hName] at hLookup
+        have hTail := ih hLookup
+        simp [hName, hTail]
+
+theorem functionScope?_functionDefinition_lookup
+    {stmts : List Stmt} {scope : FunctionScope}
+    {name : FunctionName} {params returns : List Name}
+    {body : List Stmt}
+    (hScope : functionScope? stmts = some scope)
+    (hMem : .functionDefinition name params returns body ∈ stmts) :
+    lookupFunctionInScope name scope =
+      some { params := params, returns := returns, body := body } := by
+  induction stmts generalizing scope with
+  | nil => simp at hMem
+  | cons stmt rest ih =>
+      cases hTail : functionScope? rest with
+      | none =>
+          simp [functionScope?, hTail] at hScope
+      | some tail =>
+          cases stmt with
+          | functionDefinition head headParams headReturns headBody =>
+              by_cases hDuplicate :
+                  (tail.any fun entry => entry.fst == head) = true
+              · simp [functionScope?, hTail, hDuplicate] at hScope
+              · simp [functionScope?, hTail, hDuplicate] at hScope
+                subst scope
+                simp at hMem
+                rcases hMem with hHead | hRest
+                · rcases hHead with
+                    ⟨hName, hParams, hReturns, hBody⟩
+                  subst head
+                  subst headParams
+                  subst headReturns
+                  subst headBody
+                  simp [lookupFunctionInScope]
+                · by_cases hName : head = name
+                  · subst head
+                    have hTailLookup := ih hTail hRest
+                    have hAny :=
+                      lookupFunctionInScope_some_any hTailLookup
+                    exact False.elim (hDuplicate hAny)
+                  · simp [lookupFunctionInScope, hName]
+                    exact ih hTail hRest
+          | block nested =>
+              simp [functionScope?, hTail] at hScope
+              subst scope
+              simp at hMem
+              exact ih hTail hMem
+          | variableDeclaration names value? =>
+              simp [functionScope?, hTail] at hScope
+              subst scope
+              simp at hMem
+              exact ih hTail hMem
+          | assignment names value =>
+              simp [functionScope?, hTail] at hScope
+              subst scope
+              simp at hMem
+              exact ih hTail hMem
+          | expressionStatement expr =>
+              simp [functionScope?, hTail] at hScope
+              subst scope
+              simp at hMem
+              exact ih hTail hMem
+          | switch scrutinee cases default =>
+              simp [functionScope?, hTail] at hScope
+              subst scope
+              simp at hMem
+              exact ih hTail hMem
+          | forLoop pre condition post loopBody =>
+              simp [functionScope?, hTail] at hScope
+              subst scope
+              simp at hMem
+              exact ih hTail hMem
+          | ifThen condition ifBody =>
+              simp [functionScope?, hTail] at hScope
+              subst scope
+              simp at hMem
+              exact ih hTail hMem
+          | «break» =>
+              simp [functionScope?, hTail] at hScope
+              subst scope
+              simp at hMem
+              exact ih hTail hMem
+          | «continue» =>
+              simp [functionScope?, hTail] at hScope
+              subst scope
+              simp at hMem
+              exact ih hTail hMem
+          | «leave» =>
+              simp [functionScope?, hTail] at hScope
+              subst scope
+              simp at hMem
+              exact ih hTail hMem
+
+theorem functionScope?_lookup_functionDefinition
+    {stmts : List Stmt} {scope : FunctionScope}
+    {name : FunctionName} {fn : FunctionDef}
+    (hScope : functionScope? stmts = some scope)
+    (hLookup : lookupFunctionInScope name scope = some fn) :
+    ∃ params returns body,
+      .functionDefinition name params returns body ∈ stmts ∧
+        fn = { params := params, returns := returns, body := body } := by
+  induction stmts generalizing scope with
+  | nil =>
+      simp [functionScope?] at hScope
+      subst scope
+      simp [lookupFunctionInScope] at hLookup
+  | cons stmt rest ih =>
+      cases hTail : functionScope? rest with
+      | none =>
+          simp [functionScope?, hTail] at hScope
+      | some tail =>
+          cases stmt with
+          | functionDefinition head headParams headReturns headBody =>
+              by_cases hDuplicate :
+                  (tail.any fun entry => entry.fst == head) = true
+              · simp [functionScope?, hTail, hDuplicate] at hScope
+              · simp [functionScope?, hTail, hDuplicate] at hScope
+                subst scope
+                by_cases hName : head = name
+                · subst head
+                  simp [lookupFunctionInScope] at hLookup
+                  subst fn
+                  exact
+                    ⟨headParams, headReturns, headBody, by simp, rfl⟩
+                · simp [lookupFunctionInScope, hName] at hLookup
+                  rcases ih hTail hLookup with
+                    ⟨params, returns, body, hMem, hFn⟩
+                  exact
+                    ⟨params, returns, body,
+                      List.mem_cons_of_mem _ hMem, hFn⟩
+          | block nested =>
+              simp [functionScope?, hTail] at hScope
+              subst scope
+              rcases ih hTail hLookup with
+                ⟨params, returns, body, hMem, hFn⟩
+              exact
+                ⟨params, returns, body,
+                  List.mem_cons_of_mem _ hMem, hFn⟩
+          | variableDeclaration names value? =>
+              simp [functionScope?, hTail] at hScope
+              subst scope
+              rcases ih hTail hLookup with
+                ⟨params, returns, body, hMem, hFn⟩
+              exact
+                ⟨params, returns, body,
+                  List.mem_cons_of_mem _ hMem, hFn⟩
+          | assignment names value =>
+              simp [functionScope?, hTail] at hScope
+              subst scope
+              rcases ih hTail hLookup with
+                ⟨params, returns, body, hMem, hFn⟩
+              exact
+                ⟨params, returns, body,
+                  List.mem_cons_of_mem _ hMem, hFn⟩
+          | expressionStatement expr =>
+              simp [functionScope?, hTail] at hScope
+              subst scope
+              rcases ih hTail hLookup with
+                ⟨params, returns, body, hMem, hFn⟩
+              exact
+                ⟨params, returns, body,
+                  List.mem_cons_of_mem _ hMem, hFn⟩
+          | switch scrutinee cases default =>
+              simp [functionScope?, hTail] at hScope
+              subst scope
+              rcases ih hTail hLookup with
+                ⟨params, returns, body, hMem, hFn⟩
+              exact
+                ⟨params, returns, body,
+                  List.mem_cons_of_mem _ hMem, hFn⟩
+          | forLoop pre condition post loopBody =>
+              simp [functionScope?, hTail] at hScope
+              subst scope
+              rcases ih hTail hLookup with
+                ⟨params, returns, body, hMem, hFn⟩
+              exact
+                ⟨params, returns, body,
+                  List.mem_cons_of_mem _ hMem, hFn⟩
+          | ifThen condition ifBody =>
+              simp [functionScope?, hTail] at hScope
+              subst scope
+              rcases ih hTail hLookup with
+                ⟨params, returns, body, hMem, hFn⟩
+              exact
+                ⟨params, returns, body,
+                  List.mem_cons_of_mem _ hMem, hFn⟩
+          | «break» =>
+              simp [functionScope?, hTail] at hScope
+              subst scope
+              rcases ih hTail hLookup with
+                ⟨params, returns, body, hMem, hFn⟩
+              exact
+                ⟨params, returns, body,
+                  List.mem_cons_of_mem _ hMem, hFn⟩
+          | «continue» =>
+              simp [functionScope?, hTail] at hScope
+              subst scope
+              rcases ih hTail hLookup with
+                ⟨params, returns, body, hMem, hFn⟩
+              exact
+                ⟨params, returns, body,
+                  List.mem_cons_of_mem _ hMem, hFn⟩
+          | «leave» =>
+              simp [functionScope?, hTail] at hScope
+              subst scope
+              rcases ih hTail hLookup with
+                ⟨params, returns, body, hMem, hFn⟩
+              exact
+                ⟨params, returns, body,
+                  List.mem_cons_of_mem _ hMem, hFn⟩
+
 def patchSetImmutableStmt? (reference : Frontend.ImmutableReference)
     (base value : Expr) : Option Stmt :=
   if reference.isPatchable then

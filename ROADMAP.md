@@ -846,8 +846,11 @@ Next raw frontend layer:
   proof corridor or depend on the parallel hFinished work. The independent raw
   semantics now charges canonical finite-fuel loop re-entry and for-initializer
   traversal exactly; generic loop, nonempty-for, and empty-for preservation are
-  checked. Remaining for-loop work is construction of the initializer lexical
-  scope and recursive component interface from successful elaboration.
+  checked. A final-state hoisted-function resolver, checked local-scope
+  constructor, and generic recursive lexical-block theorem now derive all
+  nested alpha-renamed bindings from successful elaboration. Remaining
+  for-loop work is the checked initializer/loop component constructor and its
+  integration into the mutual source-fuel statement theorem.
 
 ## Migration
 

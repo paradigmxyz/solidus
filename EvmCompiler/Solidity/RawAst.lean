@@ -6508,6 +6508,42 @@ mutual
     pure { params, returns, body }
 end
 
+theorem FunctionDef.elaborate_params_returns
+    {params returns : List Name} {body : List Raw.Stmt}
+    {state finalState : State} {fn : Frontend.FunctionDef}
+    (hRun :
+      (FunctionDef.elaborate params returns body).run state =
+        .ok (fn, finalState)) :
+    fn.params = params ∧ fn.returns = returns := by
+  unfold FunctionDef.elaborate at hRun
+  simp [StateT.run_bind] at hRun
+  cases hPush : pushIdentifierScope.run state with
+  | error err => simp [hPush] at hRun
+  | ok pushResult =>
+      rcases pushResult with ⟨_, pushedState⟩
+      simp [hPush] at hRun
+      cases hDeclare :
+          (declareIdentifiers (params ++ returns)
+            "function parameter/result").run pushedState with
+      | error err => simp [hDeclare] at hRun
+      | ok declareResult =>
+          rcases declareResult with ⟨_, declaredState⟩
+          simp [hDeclare] at hRun
+          cases hBody :
+              (Stmt.List.elaborateBlock body true).run declaredState with
+          | error err => simp [hBody] at hRun
+          | ok bodyResult =>
+              rcases bodyResult with ⟨frontBody, bodyState⟩
+              simp [hBody] at hRun
+              cases hPop : popIdentifierScope.run bodyState with
+              | error err => simp [hPop] at hRun
+              | ok popResult =>
+                  rcases popResult with ⟨_, poppedState⟩
+                  simp [hPop] at hRun
+                  rcases hRun with ⟨hFn, _hFinal⟩
+                  subst fn
+                  exact ⟨rfl, rfl⟩
+
 theorem Stmt.elaborate_expressionStatement_literal_rejected
     (state : State) (literal : Raw.Literal) :
     (Stmt.elaborate (.expressionStatement (.literal literal))).run state =
