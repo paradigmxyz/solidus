@@ -327,6 +327,42 @@ theorem functionCall_elaboration_kind_parts
               rcases hElab with ⟨rfl, rfl⟩
               exact ⟨generated, frontArgs, rfl⟩
 
+theorem switchCaseValue_elaboration_word
+    {rawValue : Raw.SwitchCaseValue}
+    {frontValue : Frontend.SwitchCaseValue}
+    {word : Frontend.Word}
+    (hElab :
+      Elab.SwitchCaseValue.elaborate rawValue = .ok frontValue)
+    (hWord : frontValue.toWord? = some word) :
+    Raw.SourceSemantics.switchCaseValueWord? rawValue = some word := by
+  cases rawValue with
+  | literal literal =>
+      cases literal with
+      | number value =>
+          simp [Elab.SwitchCaseValue.elaborate] at hElab
+          subst frontValue
+          simpa [Raw.SourceSemantics.switchCaseValueWord?,
+            Raw.SourceSemantics.literalWord?,
+            Frontend.SwitchCaseValue.toWord?] using hWord
+      | bool value =>
+          simp [Elab.SwitchCaseValue.elaborate] at hElab
+          subst frontValue
+          simpa [Raw.SourceSemantics.switchCaseValueWord?,
+            Raw.SourceSemantics.literalWord?,
+            Frontend.SwitchCaseValue.toWord?] using hWord
+      | stringLit value =>
+          simp [Elab.SwitchCaseValue.elaborate] at hElab
+          subst frontValue
+          simpa [Raw.SourceSemantics.switchCaseValueWord?,
+            Raw.SourceSemantics.literalWord?,
+            Frontend.SwitchCaseValue.toWord?] using hWord
+      | bytesLit bytes =>
+          simp [Elab.SwitchCaseValue.elaborate] at hElab
+          subst frontValue
+          simpa [Raw.SourceSemantics.switchCaseValueWord?,
+            Raw.SourceSemantics.literalWord?,
+            Frontend.SwitchCaseValue.toWord?] using hWord
+
 theorem memoryguard_elaboration_parts
     {rawArgs : List Raw.Expr}
     {elabState finalElabState : Elab.State}
@@ -648,6 +684,99 @@ def SwitchCasesRunForward (rawFuel orderedFuel : Nat)
         BlockCodeRunForward rawFuel orderedFuel
           context rawBody orderedBody contract stateAfterCondition
 
+/-- Pointwise semantic correspondence for switch cases. Literal conversion and
+body preservation are stored once per case; selection is proved generically
+from this relation rather than replayed by each switch statement. -/
+inductive SwitchCaseListRunForward (rawFuel orderedFuel : Nat)
+    (context : Raw.SourceSemantics.Context)
+    (contract : Frontend.AstContract) :
+    List (Raw.SwitchCaseValue × List Raw.Stmt) →
+      List (Frontend.Word × List Frontend.AstStmt) → Prop where
+  | nil : SwitchCaseListRunForward rawFuel orderedFuel context contract [] []
+  | cons
+      {rawValue : Raw.SwitchCaseValue} {rawBody : List Raw.Stmt}
+      {rawRest : List (Raw.SwitchCaseValue × List Raw.Stmt)}
+      {word : Frontend.Word} {orderedBody : List Frontend.AstStmt}
+      {orderedRest : List (Frontend.Word × List Frontend.AstStmt)}
+      (value :
+        Raw.SourceSemantics.switchCaseValueWord? rawValue = some word)
+      (body :
+        ∀ state,
+          BlockCodeRunForward rawFuel orderedFuel
+            context rawBody orderedBody contract state)
+      (rest :
+        SwitchCaseListRunForward rawFuel orderedFuel context contract
+          rawRest orderedRest) :
+      SwitchCaseListRunForward rawFuel orderedFuel context contract
+        ((rawValue, rawBody) :: rawRest)
+        ((word, orderedBody) :: orderedRest)
+
+theorem word_beq_eq_true_iff_eq (left right : Frontend.Word) :
+    (left == right) = true ↔ left = right := by
+  cases left with
+  | mk leftValue =>
+      cases right with
+      | mk rightValue =>
+          constructor
+          · intro hEq
+            have hValue : leftValue = rightValue := eq_of_beq hEq
+            cases hValue
+            rfl
+          · intro hEq
+            cases hEq
+            change (leftValue == leftValue) = true
+            exact BEq.rfl
+
+theorem SwitchCaseListRunForward.select
+    {rawFuel orderedFuel : Nat}
+    {context : Raw.SourceSemantics.Context}
+    {rawCases : List (Raw.SwitchCaseValue × List Raw.Stmt)}
+    {orderedCases : List (Frontend.Word × List Frontend.AstStmt)}
+    {rawDefault : List Raw.Stmt}
+    {orderedDefault : List Frontend.AstStmt}
+    {contract : Frontend.AstContract}
+    (hCases :
+      SwitchCaseListRunForward rawFuel orderedFuel context contract
+        rawCases orderedCases)
+    (hDefault :
+      ∀ state,
+        BlockCodeRunForward rawFuel orderedFuel
+          context rawDefault orderedDefault contract state) :
+    SwitchCasesRunForward rawFuel orderedFuel context
+      rawCases rawDefault orderedCases orderedDefault contract := by
+  intro stateAfterCondition selectedValue
+  induction hCases with
+  | nil =>
+      exact
+        ⟨rawDefault, orderedDefault,
+          by simp [Raw.SourceSemantics.selectSwitchCase],
+          by simp [EvmYul.Yul.selectSwitchCase],
+          hDefault stateAfterCondition⟩
+  | @cons rawValue rawBody rawRest word orderedBody orderedRest
+      hValue hBody hRest ih =>
+      by_cases hSelected : selectedValue = word
+      · have hBeq : (selectedValue == word) = true :=
+          (word_beq_eq_true_iff_eq selectedValue word).mpr hSelected
+        exact
+          ⟨rawBody, orderedBody,
+            by simp only [Raw.SourceSemantics.selectSwitchCase, hValue,
+              hBeq, ↓reduceIte],
+            by simp [EvmYul.Yul.selectSwitchCase, hSelected],
+            hBody stateAfterCondition⟩
+      · have hBeq : (selectedValue == word) = false :=
+          Bool.eq_false_iff.mpr (fun h =>
+            hSelected
+              ((word_beq_eq_true_iff_eq selectedValue word).mp h))
+        have hWordNe : word ≠ selectedValue := Ne.symm hSelected
+        rcases ih with
+          ⟨rawSelected, orderedSelected, hRaw, hOrdered, hRun⟩
+        exact
+          ⟨rawSelected, orderedSelected,
+            by simpa [Raw.SourceSemantics.selectSwitchCase, hValue,
+              hBeq] using hRaw,
+            by simpa [EvmYul.Yul.selectSwitchCase, hWordNe] using hOrdered,
+            hRun⟩
+
 /-- Compiler-owned evidence that one elaborated expression survives object
 builtin resolution and converts to the exact canonical ordered expression. -/
 structure ExprNormalized (context : Frontend.ObjectBuiltinContext)
@@ -675,6 +804,18 @@ structure StmtListNormalized (context : Frontend.ObjectBuiltinContext)
   resolve : Frontend.Stmt.List.resolveObjectBuiltinsIn? front context =
     some resolved
   toYul : Frontend.Stmt.List.toYul? resolved = some ordered
+
+/-- Checked object-builtin resolution and canonical conversion for a switch
+case list. Keeping this relation separate lets switch selection consume the
+same recursively preserved block interface as ordinary lexical blocks. -/
+structure CaseListNormalized (context : Frontend.ObjectBuiltinContext)
+    (front : List (Frontend.SwitchCaseValue × List Frontend.Stmt))
+    (ordered : List (Frontend.Word × List Frontend.AstStmt)) where
+  resolved : List (Frontend.SwitchCaseValue × List Frontend.Stmt)
+  resolve :
+    Frontend.Stmt.CaseList.resolveObjectBuiltinsIn? front context =
+      some resolved
+  toYul : Frontend.Stmt.CaseList.toYul? resolved = some ordered
 
 namespace ExprListNormalized
 
@@ -801,6 +942,71 @@ theorem cons_parts
                         toYul := hTailToYul }⟩⟩
 
 end StmtListNormalized
+
+namespace CaseListNormalized
+
+theorem nil_ordered
+    {context : Frontend.ObjectBuiltinContext}
+    {ordered : List (Frontend.Word × List Frontend.AstStmt)}
+    (hNormalized : CaseListNormalized context [] ordered) :
+    ordered = [] := by
+  rcases hNormalized with ⟨resolved, hResolve, hToYul⟩
+  simp [Frontend.Stmt.CaseList.resolveObjectBuiltinsIn?] at hResolve
+  subst resolved
+  simpa [Frontend.Stmt.CaseList.toYul?] using hToYul.symm
+
+theorem cons_parts
+    {context : Frontend.ObjectBuiltinContext}
+    {frontValue : Frontend.SwitchCaseValue}
+    {frontBody : List Frontend.Stmt}
+    {frontRest : List (Frontend.SwitchCaseValue × List Frontend.Stmt)}
+    {ordered : List (Frontend.Word × List Frontend.AstStmt)}
+    (hNormalized :
+      CaseListNormalized context
+        ((frontValue, frontBody) :: frontRest) ordered) :
+    ∃ orderedValue orderedBody orderedRest,
+      ordered = (orderedValue, orderedBody) :: orderedRest ∧
+        frontValue.toWord? = some orderedValue ∧
+        Nonempty (StmtListNormalized context frontBody orderedBody) ∧
+        Nonempty (CaseListNormalized context frontRest orderedRest) := by
+  rcases hNormalized with ⟨resolved, hResolve, hToYul⟩
+  unfold Frontend.Stmt.CaseList.resolveObjectBuiltinsIn? at hResolve
+  cases hBodyResolve :
+      Frontend.Stmt.List.resolveObjectBuiltinsIn? frontBody context with
+  | none => simp [hBodyResolve] at hResolve
+  | some resolvedBody =>
+      cases hRestResolve :
+          Frontend.Stmt.CaseList.resolveObjectBuiltinsIn? frontRest context with
+      | none => simp [hBodyResolve, hRestResolve] at hResolve
+      | some resolvedRest =>
+          simp [hBodyResolve, hRestResolve] at hResolve
+          subst resolved
+          unfold Frontend.Stmt.CaseList.toYul? at hToYul
+          cases hValue : frontValue.toWord? with
+          | none => simp [hValue] at hToYul
+          | some orderedValue =>
+              cases hBodyToYul : Frontend.Stmt.List.toYul? resolvedBody with
+              | none => simp [hValue, hBodyToYul] at hToYul
+              | some orderedBody =>
+                  cases hRestToYul :
+                      Frontend.Stmt.CaseList.toYul? resolvedRest with
+                  | none =>
+                      simp [hValue, hBodyToYul, hRestToYul] at hToYul
+                  | some orderedRest =>
+                      simp [hValue, hBodyToYul, hRestToYul] at hToYul
+                      exact
+                        ⟨orderedValue, orderedBody, orderedRest,
+                          hToYul.symm, by simpa using hValue,
+                          ⟨{
+                            resolved := resolvedBody
+                            resolve := hBodyResolve
+                            toYul := hBodyToYul }⟩,
+                          ⟨{
+                            resolved := resolvedRest
+                            resolve := hRestResolve
+                            toYul := hRestToYul }⟩⟩
+
+end CaseListNormalized
 
 namespace ExprNormalized
 
@@ -1134,6 +1340,68 @@ theorem block_parts
                 resolved := resolvedBody
                 resolve := hBodyResolve
                 toYul := hBodyToYul }⟩⟩
+
+theorem switch_parts
+    {context : Frontend.ObjectBuiltinContext}
+    {condition : Frontend.Expr}
+    {cases : List (Frontend.SwitchCaseValue × List Frontend.Stmt)}
+    {default : List Frontend.Stmt} {ordered : Frontend.AstStmt}
+    (hNormalized :
+      StmtNormalized context (.switch condition cases default) ordered) :
+    ∃ orderedCondition orderedCases orderedDefault,
+      ordered = .Switch orderedCondition orderedCases orderedDefault ∧
+        Nonempty (ExprNormalized context condition orderedCondition) ∧
+        Nonempty (CaseListNormalized context cases orderedCases) ∧
+        Nonempty (StmtListNormalized context default orderedDefault) := by
+  rcases hNormalized with ⟨resolved, hResolve, hToYul⟩
+  unfold Frontend.Stmt.resolveObjectBuiltinsIn? at hResolve
+  cases hConditionResolve : condition.resolveObjectBuiltinsIn? context with
+  | none => simp [hConditionResolve] at hResolve
+  | some resolvedCondition =>
+      cases hCasesResolve :
+          Frontend.Stmt.CaseList.resolveObjectBuiltinsIn? cases context with
+      | none => simp [hConditionResolve, hCasesResolve] at hResolve
+      | some resolvedCases =>
+          cases hDefaultResolve :
+              Frontend.Stmt.List.resolveObjectBuiltinsIn? default context with
+          | none =>
+              simp [hConditionResolve, hCasesResolve, hDefaultResolve]
+                at hResolve
+          | some resolvedDefault =>
+              simp [hConditionResolve, hCasesResolve, hDefaultResolve]
+                at hResolve
+              subst resolved
+              unfold Frontend.Stmt.toYul? at hToYul
+              cases hConditionToYul : resolvedCondition.toYul? with
+              | none => simp [hConditionToYul] at hToYul
+              | some orderedCondition =>
+                  cases hCasesToYul :
+                      Frontend.Stmt.CaseList.toYul? resolvedCases with
+                  | none => simp [hConditionToYul, hCasesToYul] at hToYul
+                  | some orderedCases =>
+                      cases hDefaultToYul :
+                          Frontend.Stmt.List.toYul? resolvedDefault with
+                      | none =>
+                          simp [hConditionToYul, hCasesToYul,
+                            hDefaultToYul] at hToYul
+                      | some orderedDefault =>
+                          simp [hConditionToYul, hCasesToYul,
+                            hDefaultToYul] at hToYul
+                          exact
+                            ⟨orderedCondition, orderedCases, orderedDefault,
+                              hToYul.symm,
+                              ⟨{
+                                resolved := resolvedCondition
+                                resolve := hConditionResolve
+                                toYul := hConditionToYul }⟩,
+                              ⟨{
+                                resolved := resolvedCases
+                                resolve := hCasesResolve
+                                toYul := hCasesToYul }⟩,
+                              ⟨{
+                                resolved := resolvedDefault
+                                resolve := hDefaultResolve
+                                toYul := hDefaultToYul }⟩⟩
 
 theorem if_parts
     {context : Frontend.ObjectBuiltinContext}
@@ -6665,6 +6933,226 @@ def ScopedSeqPathRunForwardAt
       StmtListNormalized builtinContext front ordered →
       ScopedSeqRunForward entryStore rawFuel (rawFuel + slack)
         rawContext rawCode ordered contract state
+
+/-- Build the pointwise switch-case interface from the actual checked case-list
+elaboration path. Each case body is discharged by the generic recursive block
+theorem at the same source fuel. -/
+theorem switchCaseListRunForward_of_path_elaboration_below
+    {bound fuel slack : Nat}
+    {builtinContext : Frontend.ObjectBuiltinContext}
+    {contract : Frontend.AstContract}
+    (hFuel : fuel < bound)
+    (hBlock :
+      ScopedBlockPathRunForwardBelow
+        bound slack builtinContext contract) :
+    ∀ {rawContext : Raw.SourceSemantics.Context}
+      {rawCases : List (Raw.SwitchCaseValue × List Raw.Stmt)}
+      {frontCases :
+        List (Frontend.SwitchCaseValue × List Frontend.Stmt)}
+      {orderedCases : List (Frontend.Word × List Frontend.AstStmt)}
+      {elabState finalElabState : Elab.State},
+      PathCompiledContext builtinContext contract
+          rawContext elabState.functionScopes →
+        ClzCompilationPath contract elabState finalElabState →
+        (Elab.Stmt.CaseList.elaborate rawCases).run elabState =
+          .ok (frontCases, finalElabState) →
+        CaseListNormalized builtinContext frontCases orderedCases →
+        SwitchCaseListRunForward fuel (fuel + slack)
+          rawContext contract rawCases orderedCases := by
+  intro rawContext rawCases
+  induction rawCases with
+  | nil =>
+      intro frontCases orderedCases elabState finalElabState
+        hContext hPath hElab hNormalized
+      simp [Elab.Stmt.CaseList.elaborate] at hElab
+      rcases hElab with ⟨rfl, rfl⟩
+      have hOrdered := CaseListNormalized.nil_ordered hNormalized
+      subst orderedCases
+      exact .nil
+  | cons rawCase rawRest ih =>
+      rcases rawCase with ⟨rawValue, rawBody⟩
+      intro frontCases orderedCases elabState finalElabState
+        hContext hPath hElab hNormalized
+      unfold Elab.Stmt.CaseList.elaborate at hElab
+      simp [StateT.run_bind] at hElab
+      cases hValue : Elab.SwitchCaseValue.elaborate rawValue with
+      | error err =>
+          simp [hValue] at hElab
+          unfold Elab.throw at hElab
+          cases hElab
+      | ok frontValue =>
+          simp [hValue] at hElab
+          cases hBody :
+              (Elab.Stmt.List.elaborateBlock rawBody true).run elabState with
+          | error err => simp [hBody] at hElab
+          | ok bodyResult =>
+              rcases bodyResult with ⟨frontBody, bodyState⟩
+              simp [hBody] at hElab
+              cases hRest :
+                  (Elab.Stmt.CaseList.elaborate rawRest).run bodyState with
+              | error err => simp [hRest] at hElab
+              | ok restResult =>
+                  rcases restResult with ⟨frontRest, restState⟩
+                  simp [hRest] at hElab
+                  rcases hElab with ⟨rfl, rfl⟩
+                  rcases CaseListNormalized.cons_parts hNormalized with
+                    ⟨orderedValue, orderedBody, orderedRest, rfl,
+                      hOrderedValue, ⟨hBodyNormalized⟩,
+                      ⟨hRestNormalized⟩⟩
+                  have hBodyExt :=
+                    Elab.Stmt.List.elaborateBlock_preserves_clzAllocation
+                      rawBody true hBody hPath.entryValid
+                  have hRestExt :=
+                    Elab.Stmt.CaseList.elaborate_preserves_clzAllocation
+                      rawRest hRest hBodyExt.after_valid
+                  have hBodyPath :
+                      ClzCompilationPath contract elabState bodyState :=
+                    hPath.prefixPath hRestExt
+                  have hRestPath :
+                      ClzCompilationPath contract bodyState restState :=
+                    hPath.suffixPath hBodyExt
+                  have hBodyScopes :
+                      bodyState.functionScopes =
+                        elabState.functionScopes :=
+                    Elab.Stmt.List.elaborateBlock_preserves_functionScopes
+                      rawBody true hBody
+                  have hRestContext :
+                      PathCompiledContext builtinContext contract
+                        rawContext bodyState.functionScopes := by
+                    simpa [hBodyScopes] using hContext
+                  have hBodyRun :
+                      ∀ state,
+                        BlockCodeRunForward fuel (fuel + slack)
+                          rawContext rawBody orderedBody contract state := by
+                    intro state
+                    exact
+                      hBlock fuel hFuel (state := state)
+                        hContext hBodyPath hBody hBodyNormalized
+                  exact
+                    .cons
+                      (switchCaseValue_elaboration_word hValue hOrderedValue)
+                      hBodyRun
+                      (ih hRestContext hRestPath hRest hRestNormalized)
+
+theorem scopedStmtRunForward_switch_of_path_below
+    {fuel slack : Nat}
+    {builtinContext : Frontend.ObjectBuiltinContext}
+    {contract : Frontend.AstContract}
+    (hExpr :
+      ScopedExprPathRunForwardBelow
+        (fuel + 1) slack builtinContext contract)
+    (hBlock :
+      ScopedBlockPathRunForwardBelow
+        (fuel + 1) slack builtinContext contract)
+    {rawContext : Raw.SourceSemantics.Context}
+    {rawCondition : Raw.Expr}
+    {rawCases : List (Raw.SwitchCaseValue × List Raw.Stmt)}
+    {rawDefault : List Raw.Stmt}
+    {front : Frontend.Stmt} {ordered : Frontend.AstStmt}
+    {elabState finalElabState : Elab.State}
+    {entryStore : EvmYul.Yul.VarStore} {state : State}
+    (hContext :
+      PathCompiledContext builtinContext contract
+        rawContext elabState.functionScopes)
+    (hPath : ClzCompilationPath contract elabState finalElabState)
+    (hElab :
+      (Elab.Stmt.elaborate
+        (.switch rawCondition rawCases rawDefault)).run elabState =
+          .ok (front, finalElabState))
+    (hNormalized : StmtNormalized builtinContext front ordered) :
+    ScopedStmtRunForward entryStore (fuel + 1) (fuel + 1 + slack)
+      rawContext (.switch rawCondition rawCases rawDefault)
+      ordered contract state := by
+  unfold Elab.Stmt.elaborate at hElab
+  simp [StateT.run_bind] at hElab
+  cases hCondition :
+      (Elab.Expr.elaborate rawCondition).run elabState with
+  | error err => simp [hCondition] at hElab
+  | ok conditionResult =>
+      rcases conditionResult with ⟨frontCondition, conditionState⟩
+      simp [hCondition] at hElab
+      cases hCases :
+          (Elab.Stmt.CaseList.elaborate rawCases).run conditionState with
+      | error err => simp [hCases] at hElab
+      | ok casesResult =>
+          rcases casesResult with ⟨frontCases, casesState⟩
+          simp [hCases] at hElab
+          cases hDefault :
+              (Elab.Stmt.List.elaborateBlock rawDefault true).run
+                casesState with
+          | error err => simp [hDefault] at hElab
+          | ok defaultResult =>
+              rcases defaultResult with ⟨frontDefault, defaultState⟩
+              simp [hDefault] at hElab
+              rcases hElab with ⟨rfl, rfl⟩
+              rcases StmtNormalized.switch_parts hNormalized with
+                ⟨orderedCondition, orderedCases, orderedDefault, rfl,
+                  ⟨hConditionNormalized⟩, ⟨hCasesNormalized⟩,
+                  ⟨hDefaultNormalized⟩⟩
+              have hConditionExt :=
+                Elab.Expr.elaborate_preserves_clzAllocation rawCondition
+                  hCondition hPath.entryValid
+              have hCasesExt :=
+                Elab.Stmt.CaseList.elaborate_preserves_clzAllocation
+                  rawCases hCases hConditionExt.after_valid
+              have hDefaultExt :=
+                Elab.Stmt.List.elaborateBlock_preserves_clzAllocation
+                  rawDefault true hDefault hCasesExt.after_valid
+              have hConditionPath :
+                  ClzCompilationPath contract elabState conditionState :=
+                hPath.prefixPath
+                  (Elab.ClzAllocationExtends.trans hCasesExt hDefaultExt)
+              have hCasesPath :
+                  ClzCompilationPath contract conditionState casesState :=
+                (hPath.suffixPath hConditionExt).prefixPath hDefaultExt
+              have hDefaultPath :
+                  ClzCompilationPath contract casesState defaultState :=
+                hPath.suffixPath
+                  (Elab.ClzAllocationExtends.trans hConditionExt hCasesExt)
+              have hConditionScopes :
+                  conditionState.functionScopes =
+                    elabState.functionScopes :=
+                Elab.Expr.elaborate_preserves_functionScopes
+                  rawCondition hCondition
+              have hCasesScopes :
+                  casesState.functionScopes =
+                    conditionState.functionScopes :=
+                Elab.Stmt.CaseList.elaborate_preserves_functionScopes
+                  rawCases hCases
+              have hCasesContext :
+                  PathCompiledContext builtinContext contract
+                    rawContext conditionState.functionScopes := by
+                simpa [hConditionScopes] using hContext
+              have hDefaultContext :
+                  PathCompiledContext builtinContext contract
+                    rawContext casesState.functionScopes := by
+                simpa [hCasesScopes] using hCasesContext
+              have hConditionRun :=
+                hExpr fuel (by omega) (state := state)
+                  hContext hConditionPath hCondition hConditionNormalized
+              have hCasesRun :=
+                switchCaseListRunForward_of_path_elaboration_below
+                  (fuel := fuel) (slack := slack) (by omega) hBlock
+                  hCasesContext hCasesPath hCases hCasesNormalized
+              have hDefaultRun :
+                  ∀ stateAfterCondition,
+                    BlockCodeRunForward fuel (fuel + slack)
+                      rawContext rawDefault orderedDefault contract
+                      stateAfterCondition := by
+                intro stateAfterCondition
+                exact
+                  hBlock fuel (by omega) (state := stateAfterCondition)
+                    hDefaultContext hDefaultPath hDefault hDefaultNormalized
+              apply scopedStmtRunForward_of_exact
+              have hSwitch :=
+                stmtRunForward_switch_succ
+                  (rawFuel := fuel) (orderedFuel := fuel + slack)
+                  (context := rawContext) (contract := contract)
+                  (state := state)
+                  (exprRunForward_of_values hConditionRun)
+                  (SwitchCaseListRunForward.select hCasesRun hDefaultRun)
+              simpa [Nat.add_assoc, Nat.add_comm,
+                Nat.add_left_comm] using hSwitch
 
 theorem scopedStmtPathRunForwardAt_zero
     {slack : Nat}
