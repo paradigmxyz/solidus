@@ -117,7 +117,12 @@ Transformation inventory from `scripts/solidity_to_yul_lean.py`:
   in Lean; nested `Stmt.functionDef` nodes are preserved, not erased.
 - [x] `clz` lowering moved into the Lean raw elaborator as a generated helper;
   the generated helper/call now has a local source-reference preservation
-  theorem, with broader frontend theorem composition still tracked below.
+  theorem. `RawAstClzPreservation` now proves that checked frontend-to-Yul
+  conversion of the generated helper body executes in the actual canonical
+  interaction semantics and returns `ClzHelperModel.run`. Final call-level
+  composition remains tracked below; it must carry the regular call-entry
+  invariant because the older private interface quantified over unreachable
+  checkpoint states where direct raw `clz` and canonical call setup differ.
 - [x] Object/data ordering preserved and fail-closed in Lean through explicit
   raw-derived `ObjectItemRef`s plus `itemRefsPreserveOrder?` validation.
 - [ ] Standalone Yul data-name recovery remains Python-only and is not part of

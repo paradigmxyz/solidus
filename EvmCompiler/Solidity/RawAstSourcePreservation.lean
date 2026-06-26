@@ -1,4 +1,5 @@
 import EvmCompiler.Solidity.RawAstPublic
+import EvmCompiler.Solidity.RawAstClzPreservation
 import EvmCompiler.Solidity.RawAstSourceSemantics
 import EvmCompiler.Yul.EndToEnd
 import EvmCompiler.Yul.FunctionsInteractionPrimitive
