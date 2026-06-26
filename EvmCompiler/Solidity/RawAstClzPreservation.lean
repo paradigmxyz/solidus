@@ -54,6 +54,32 @@ mutual
     | (_, body) :: rest => stmtListFuel body + caseListFuel rest + 1
 end
 
+def helperBodyFuel : Nat :=
+  stmtListFuel (Elab.clzHelperBody "" "")
+
+theorem helperBodyFuel_eq (argName returnName : Name) :
+    stmtListFuel (Elab.clzHelperBody argName returnName) = helperBodyFuel := by
+  rfl
+
+theorem helperBodyFuel_value : helperBodyFuel = 330 := by
+  rfl
+
+theorem clzHelperFunctionDef_resolveObjectBuiltinsIn?
+    (argName returnName : Name)
+    (context : Frontend.ObjectBuiltinContext) :
+    Frontend.FunctionDef.resolveObjectBuiltinsIn?
+        (Elab.clzHelperFunctionDef argName returnName) context =
+      some (Elab.clzHelperFunctionDef argName returnName) := by
+  unfold Elab.clzHelperFunctionDef Elab.clzHelperBody
+    Elab.clzHelperNonzeroBody Elab.clzHelperAppendStep
+    Elab.clzHelperStepBody Elab.clzHelperStepSchedule Elab.clzPrim
+    Elab.clzValue Elab.clzWord
+    Frontend.FunctionDef.resolveObjectBuiltinsIn?
+  simp [Frontend.Stmt.List.resolveObjectBuiltinsIn?,
+    Frontend.Stmt.resolveObjectBuiltinsIn?,
+    Frontend.Expr.resolveObjectBuiltinsIn?,
+    Frontend.Expr.List.resolveObjectBuiltinsIn?]
+
 /-- The generated helper owns exactly two semantically relevant names. Other
 Yul locals may remain in the store, but helper expressions never inspect them.
 -/
@@ -215,6 +241,43 @@ theorem initcall
       EvmYul.Yul.State.insert, EvmYul.Yul.State.lookup?,
       Ne.symm hNames]
     rfl
+
+theorem multifill_sharedState
+    {argName returnName : Name} {model : ModelState} {actual : State}
+    (hRel : StateRel argName returnName model actual)
+    (names : List Name) (values : List Frontend.Word) :
+    (actual.multifill names values).sharedState = actual.sharedState := by
+  rcases hRel.regular with ⟨shared, store, rfl⟩
+  unfold EvmYul.Yul.State.multifill
+  have fold_ok (pairs : List (Name × Frontend.Word)) :
+      ∃ finalStore,
+        List.foldr (fun pair state => state.insert pair.1 pair.2)
+            (.Ok shared store : State) pairs =
+          .Ok shared finalStore := by
+    induction pairs with
+    | nil => exact ⟨store, rfl⟩
+    | cons pair rest ih =>
+        rcases pair with ⟨name, value⟩
+        rcases ih with ⟨restStore, hRest⟩
+        refine ⟨restStore.insert name value, ?_⟩
+        simp only [List.foldr]
+        rw [hRest]
+        rfl
+  rcases fold_ok (List.zip names values) with ⟨finalStore, hFinal⟩
+  change
+    (List.foldr (fun pair state => state.insert pair.1 pair.2)
+      (.Ok shared store : State) (List.zip names values)).sharedState =
+        (.Ok shared store : State).sharedState
+  rw [hFinal]
+  rfl
+
+theorem restrictStoreTo_sharedState
+    {argName returnName : Name} {model : ModelState} {actual : State}
+    (hRel : StateRel argName returnName model actual)
+    (scope : EvmYul.Yul.VarStore) :
+    (actual.restrictStoreTo scope).sharedState = actual.sharedState := by
+  rcases hRel.regular with ⟨shared, store, rfl⟩
+  rfl
 
 end StateRel
 
@@ -680,7 +743,8 @@ mutual
       ∃ finalActual,
         Yul.InteractionSemantics.exec fuel yulStmt code actual =
           .done (.ok finalActual) ∧
-        StateRel argName returnName finalModel finalActual := by
+        StateRel argName returnName finalModel finalActual ∧
+        finalActual.sharedState = actual.sharedState := by
     cases stmt with
     | block body =>
         simp only [stmtFuel] at hFuel
@@ -693,12 +757,17 @@ mutual
             subst yulStmt
             have hBodyRun := execStmts_of_model hRel hNames hExec hBodyYul
               code (fuel - 1) (by omega)
-            rcases hBodyRun with ⟨afterBody, hRun, hAfterRel⟩
-            refine ⟨afterBody.restrictStoreTo actual.store, ?_, ?_⟩
+            rcases hBodyRun with
+              ⟨afterBody, hRun, hAfterRel, hAfterShared⟩
+            refine
+              ⟨afterBody.restrictStoreTo actual.store, ?_, ?_, ?_⟩
             · have hFuelEq : fuel = (fuel - 1) + 1 := by omega
               rw [hFuelEq, Yul.InteractionSemantics.Exec.block_succ, hRun]
               rfl
             · exact hRel.restrict_to_entry hAfterRel
+            · exact
+                (hAfterRel.restrictStoreTo_sharedState actual.store).trans
+                  hAfterShared
     | assign names valueExpr =>
         cases names with
         | nil => simp [Elab.ClzHelperExecution.execStmt?] at hExec
@@ -733,7 +802,8 @@ mutual
                                 omega)
                             refine
                               ⟨actual.multifill [name] [value], ?_,
-                                hWrittenRel⟩
+                                hWrittenRel,
+                                hRel.multifill_sharedState [name] [value]⟩
                             have hFuelEq : fuel = (fuel - 1) + 1 := by
                               simp only [stmtFuel] at hFuel
                               omega
@@ -780,14 +850,16 @@ mutual
                           have hBodyRun := execStmts_of_model hRel hNames
                             hBodyExec hBodyYul code (fuel - 2) (by omega)
                           rcases hBodyRun with
-                            ⟨afterBody, hAfterBody, hAfterRel⟩
+                            ⟨afterBody, hAfterBody, hAfterRel, hAfterShared⟩
                           have hConditionNe :
                               conditionValue ≠ EvmYul.UInt256.ofNat 0 := by
                             exact (truthy_eq_true_iff conditionValue).mp
                               hTruthy
                           refine
                             ⟨afterBody.restrictStoreTo actual.store, ?_,
-                              hRel.restrict_to_entry hAfterRel⟩
+                              hRel.restrict_to_entry hAfterRel,
+                              (hAfterRel.restrictStoreTo_sharedState
+                                actual.store).trans hAfterShared⟩
                           rw [hFuelEq,
                             Yul.InteractionSemantics.Exec.if_succ,
                             hConditionEvalRun]
@@ -805,7 +877,7 @@ mutual
                         by_contra hNe
                         exact hTruthy
                           ((truthy_eq_true_iff conditionValue).mpr hNe)
-                      refine ⟨actual, ?_, hRel⟩
+                      refine ⟨actual, ?_, hRel, rfl⟩
                       rw [hFuelEq, Yul.InteractionSemantics.Exec.if_succ,
                         hConditionEvalRun]
                       simp [Simulation.Interaction.instMonad,
@@ -845,7 +917,8 @@ mutual
       ∃ finalActual,
         Yul.InteractionSemantics.execSeq fuel yulStmts code actual =
           .done (.ok finalActual) ∧
-        StateRel argName returnName finalModel finalActual := by
+        StateRel argName returnName finalModel finalActual ∧
+        finalActual.sharedState = actual.sharedState := by
     cases stmts with
     | nil =>
         simp [Elab.ClzHelperExecution.execStmts?] at hExec
@@ -858,7 +931,7 @@ mutual
             exact
               ⟨actual,
                 Yul.InteractionSemantics.ExecSeq.nil_succ previous code actual,
-                hRel⟩
+                hRel, rfl⟩
     | cons head rest =>
         simp only [stmtListFuel] at hFuel
         simp only [Elab.ClzHelperExecution.execStmts?] at hExec
@@ -884,12 +957,14 @@ mutual
                         have hHeadRun := execStmt_of_model hRel hNames
                           hHeadExec hHeadYul code (fuel - 1) (by omega)
                         rcases hHeadRun with
-                          ⟨midActual, hMidRun, hMidRel⟩
+                          ⟨midActual, hMidRun, hMidRel, hMidShared⟩
                         have hRestRun := execStmts_of_model hMidRel hNames
                           hRestExec hRestYul code (fuel - 1) (by omega)
                         rcases hRestRun with
-                          ⟨finalActual, hFinalRun, hFinalRel⟩
-                        refine ⟨finalActual, ?_, hFinalRel⟩
+                          ⟨finalActual, hFinalRun, hFinalRel, hFinalShared⟩
+                        refine
+                          ⟨finalActual, ?_, hFinalRel,
+                            hFinalShared.trans hMidShared⟩
                         have hFuelEq : fuel = (fuel - 1) + 1 := by omega
                         rw [hFuelEq,
                           Yul.InteractionSemantics.ExecSeq.cons_succ,
@@ -907,19 +982,22 @@ theorem clzHelperBody_exec
     (argName returnName : Name) (hNames : argName ≠ returnName)
     (shared : EvmYul.SharedState .Yul) (callerStore : EvmYul.Yul.VarStore)
     (value : Frontend.Word)
-    (code : Option EvmYul.Yul.Ast.YulContract) :
+    (code : Option EvmYul.Yul.Ast.YulContract)
+    (fuel : Nat)
+    (hFuel :
+      stmtListFuel (Elab.clzHelperBody argName returnName) ≤ fuel) :
     ∃ yulBody finalActual,
       Frontend.Stmt.List.toYul?
           (Elab.clzHelperBody argName returnName) = some yulBody ∧
         Yul.InteractionSemantics.execSeq
-            (stmtListFuel (Elab.clzHelperBody argName returnName))
-            yulBody code
+            fuel yulBody code
             (EvmYul.Yul.State.mkOk
               ((.Ok shared callerStore : State).initcall
                 [argName] [returnName] [value])) =
           .done (.ok finalActual) ∧
         finalActual.lookup? returnName =
-          some (Elab.ClzHelperModel.run value) := by
+            some (Elab.ClzHelperModel.run value) ∧
+          ∃ finalStore, finalActual = .Ok shared finalStore := by
   rcases Elab.clzHelperFunctionDef_toYul?_some argName returnName with
     ⟨yulBody, hFunctionYul⟩
   unfold Elab.clzHelperFunctionDef Frontend.FunctionDef.toYul? at hFunctionYul
@@ -946,12 +1024,92 @@ theorem clzHelperBody_exec
         exact StateRel.initcall argName returnName hNames shared callerStore
           value
       rcases execStmts_of_model hInitialRel hNames hModelRun hBodyYul code
-          (stmtListFuel (Elab.clzHelperBody argName returnName)) (by omega) with
-        ⟨finalActual, hActualRun, hFinalRel⟩
-      refine ⟨convertedBody, finalActual, rfl, hActualRun, ?_⟩
-      rw [hFinalRel.ret]
-      exact congrArg some
-        (Elab.ClzHelperExecution.expectedFinalState_ret_eq_run value)
+          fuel hFuel with
+        ⟨finalActual, hActualRun, hFinalRel, hFinalShared⟩
+      refine ⟨convertedBody, finalActual, rfl, hActualRun, ?_, ?_⟩
+      · rw [hFinalRel.ret]
+        exact congrArg some
+          (Elab.ClzHelperExecution.expectedFinalState_ret_eq_run value)
+      · rcases hFinalRel.regular with
+          ⟨finalShared, finalStore, hFinalActual⟩
+        refine ⟨finalStore, ?_⟩
+        rw [hFinalActual] at hFinalShared ⊢
+        simp only [EvmYul.Yul.State.sharedState] at hFinalShared
+        subst finalShared
+        rfl
+
+theorem clzHelperCall
+    {contract : EvmYul.Yul.Ast.YulContract}
+    {helper argName returnName : Name}
+    {yulBody : List EvmYul.Yul.Ast.Stmt}
+    (hNames : argName ≠ returnName)
+    (hLookup :
+      contract.functions.lookup helper =
+        some (.Def [argName] [returnName] yulBody))
+    (hBodyYul :
+      Frontend.Stmt.List.toYul?
+          (Elab.clzHelperBody argName returnName) = some yulBody)
+    (shared : EvmYul.SharedState .Yul) (callerStore : EvmYul.Yul.VarStore)
+    (value : Frontend.Word) (fuel : Nat)
+    (hFuel :
+      stmtListFuel (Elab.clzHelperBody argName returnName) + 2 ≤ fuel) :
+    Yul.InteractionSemantics.call
+        fuel
+        [value] (some helper) (some contract) (.Ok shared callerStore) =
+      .done
+        (.ok
+          ((.Ok shared callerStore : State),
+            [Elab.ClzHelperModel.run value])) := by
+  rcases clzHelperBody_exec argName returnName hNames shared callerStore
+      value (some contract) (fuel - 2) (by omega) with
+    ⟨convertedBody, finalActual, hConverted, hExec, hRet,
+      ⟨finalStore, hFinal⟩⟩
+  rw [hBodyYul] at hConverted
+  injection hConverted with hBodies
+  subst convertedBody
+  subst finalActual
+  have hCallFuel : fuel = (fuel - 1) + 1 := by omega
+  rw [hCallFuel,
+    Yul.InteractionSemantics.Call.explicit_succ
+      (fuel - 1)
+      [value] helper contract [argName] [returnName] yulBody
+      (.Ok shared callerStore) hLookup]
+  have hBlockFuel : fuel - 1 = (fuel - 2) + 1 := by omega
+  rw [hBlockFuel, Yul.InteractionSemantics.Exec.block_succ, hExec]
+  let entryStore : EvmYul.Yul.VarStore :=
+    ((default : EvmYul.Yul.VarStore).insert
+      returnName Elab.ClzHelperModel.zero).insert argName value
+  have hEntry :
+      EvmYul.Yul.State.mkOk
+          ((.Ok shared callerStore : State).initcall
+            [argName] [returnName] [value]) =
+        .Ok shared entryStore := by
+    rfl
+  have hEntryRet :
+      Finmap.lookup returnName entryStore =
+        some Elab.ClzHelperModel.zero := by
+    simp [entryStore, Ne.symm hNames]
+  have hRestrictedRet :
+      Finmap.lookup returnName
+          (EvmYul.Yul.State.restrictVarStore finalStore entryStore) =
+        some (Elab.ClzHelperModel.run value) := by
+    rw [Yul.VarStoreRestriction.lookup_restrict_of_some
+      finalStore entryStore returnName hEntryRet]
+    exact hRet
+  rw [hEntry]
+  simp only [Simulation.Interaction.instMonad]
+  rw [Simulation.Interaction.bind_done_ok]
+  unfold Simulation.Interaction.pure
+  rw [Simulation.Interaction.bind_done_ok]
+  simp [EvmYul.Yul.State.restrictStoreTo, EvmYul.Yul.State.reviveJump,
+    EvmYul.Yul.State.overwrite?, EvmYul.Yul.State.setStore,
+    EvmYul.Yul.State.lookup!, EvmYul.Yul.State.lookup?]
+  change
+    (Finmap.lookup returnName
+      (EvmYul.Yul.State.restrictVarStore finalStore entryStore)).getD
+        (EvmYul.UInt256.ofNat 0) = Elab.ClzHelperModel.run value
+  rw [hRestrictedRet]
+  rfl
 
 end ClzPreservation
 end Raw

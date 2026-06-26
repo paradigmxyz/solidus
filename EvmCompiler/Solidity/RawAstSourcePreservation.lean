@@ -1,5 +1,6 @@
 import EvmCompiler.Solidity.RawAstPublic
 import EvmCompiler.Solidity.RawAstClzPreservation
+import EvmCompiler.Solidity.RawAstClzAllocation
 import EvmCompiler.Solidity.RawAstSourceSemantics
 import EvmCompiler.Yul.EndToEnd
 import EvmCompiler.Yul.FunctionsInteractionPrimitive
@@ -1384,6 +1385,72 @@ structure GeneratedUserCallRun (rawFuel orderedFuel : Nat)
           (EvmYul.Yul.State.mkOk
             (stateAfterArgs.initcall fn.params fn.returns values.reverse)))
 
+/-- Compiler-owned ordered binding for the one generated `clz` helper. -/
+structure CompiledClzBinding
+    (contract : Frontend.AstContract) (generated : Name) where
+  argName : Name
+  returnName : Name
+  yulBody : List Frontend.AstStmt
+  namesDistinct : argName ≠ returnName
+  orderedLookup :
+    contract.functions.lookup generated =
+      some (.Def [argName] [returnName] yulBody)
+  bodyToYul :
+    Frontend.Stmt.List.toYul?
+        (Elab.clzHelperBody argName returnName) = some yulBody
+
+/-- State-scoped resolver from exact generated names retained by one successful
+elaboration path to the checked ordered helper binding in the active contract.
+The enclosing code proof constructs this from its final elaborator state; it
+does not quantify over unrelated states or arbitrary helper allocations. -/
+def ClzBindingResolverAt (contract : Frontend.AstContract)
+    (elabState : Elab.State) : Prop :=
+  ∀ {generated arg ret : Name},
+    Elab.ClzAllocatedAs elabState generated arg ret →
+      Nonempty (CompiledClzBinding contract generated)
+
+namespace ClzBindingResolverAt
+
+/-- Pull a final-state resolver backward along one checked monotone elaborator
+transition. This is the recursive continuation rule used by expression,
+statement, and block preservation. -/
+theorem of_extends
+    {contract : Frontend.AstContract}
+    {before after : Elab.State}
+    (hExtends : Elab.ClzAllocationExtends before after)
+    (hAfter : ClzBindingResolverAt contract after) :
+    ClzBindingResolverAt contract before := by
+  intro generated arg ret hAllocated
+  exact hAfter (hExtends.allocated hAllocated)
+
+end ClzBindingResolverAt
+
+/-- Temporary recursive callback used by the generic expression classifier.
+It remains private scaffolding until statement continuation preservation
+constructs `ClzBindingResolverAt` for each reachable final state. -/
+def ClzBindingResolver (contract : Frontend.AstContract) : Prop :=
+  ∀ {argState : Elab.State} {generated : Name}
+    {helperState : Elab.State},
+    Elab.ensureClzHelper.run argState = .ok (generated, helperState) →
+      Nonempty (CompiledClzBinding contract generated)
+
+/-- Bundled semantic evidence for one generated `clz` call. The argument is
+preserved recursively; helper lookup, conversion, execution fuel, and the
+result equation are owned by the frontend-generated binding. -/
+structure GeneratedClzCallRun (rawArgFuel orderedBase : Nat)
+    (context : Raw.SourceSemantics.Context)
+    (rawArg : Raw.Expr) (generated : Name)
+    (orderedArg : Frontend.AstExpr)
+    (contract : Frontend.AstContract) (state : State) where
+  binding : CompiledClzBinding contract generated
+  bodyFuel :
+    Raw.ClzPreservation.stmtListFuel
+        (Elab.clzHelperBody binding.argName binding.returnName) + 2 ≤
+      orderedBase + 3
+  argForward :
+    ExprRunForward rawArgFuel (orderedBase + 2)
+      context rawArg orderedArg contract state
+
 theorem exprValuesRunForward_zero
     {orderedFuel : Nat} {context : Raw.SourceSemantics.Context}
     {rawExpr : Raw.Expr} {orderedExpr : Frontend.AstExpr}
@@ -1972,6 +2039,29 @@ theorem argsRunForward_cons
           exact Simulation.Interaction.ForwardRel.done rfl
       | ok tailResult =>
           exact Simulation.Interaction.ForwardRel.done rfl
+
+theorem orderedEvalArgs_single
+    (fuel : Nat) (arg : Frontend.AstExpr)
+    (contract : Frontend.AstContract) (state : State) :
+    Yul.InteractionSemantics.evalArgs (fuel + 3) [arg]
+        (some contract) state =
+      Simulation.Interaction.bind
+        (Yul.InteractionSemantics.eval (fuel + 2) arg
+          (some contract) state)
+        (fun result => Simulation.Interaction.pure (result.1, [result.2])) := by
+  rw [show fuel + 3 = (fuel + 1) + 2 by omega,
+    Yul.InteractionSemantics.EvalArgs.succ_succ_cons]
+  simp only [Yul.InteractionSemantics.evalArgs,
+    Yul.Source.Canonical.evalArgs, Yul.Source.Effectful.evalArgs]
+  rw [Yul.InteractionSemantics.eval_eq_bind]
+  rw [show fuel + 1 + 1 = fuel + 2 by omega]
+  rw [Simulation.Interaction.bind_assoc]
+  apply congrArg (fun next =>
+    Simulation.Interaction.bind
+      (Yul.InteractionSemantics.evalValues
+        (fuel + 2) arg (some contract) state) next)
+  funext result
+  rfl
 
 theorem argsRunForward_of_scoped_compiled
     {slack : Nat}
@@ -2622,6 +2712,254 @@ theorem exprValuesRunForward_clz_one
   exact
     Simulation.Interaction.ForwardRel.truncated
       (by simp [Yul.FunctionsInteractionPrimitive.Truncated])
+
+theorem exprValuesRunForward_generatedClz
+    {rawArgFuel orderedBase : Nat}
+    {context : Raw.SourceSemantics.Context}
+    {rawArg : Raw.Expr} {generated : Name}
+    {orderedArg : Frontend.AstExpr}
+    {contract : Frontend.AstContract} {state : State}
+    (hRun : GeneratedClzCallRun rawArgFuel orderedBase
+      context rawArg generated orderedArg contract state) :
+    ExprValuesRunForward (rawArgFuel + 1) (orderedBase + 4)
+      context (.functionCall "clz" [rawArg])
+      (.Call (.inr generated) [orderedArg]) contract state := by
+  unfold ExprValuesRunForward
+  rw [Raw.SourceSemantics.EvalValues.clz_succ]
+  rw [show orderedBase + 4 = (orderedBase + 3) + 1 by omega,
+    Yul.InteractionSemantics.EvalValues.internal_succ]
+  simp only [List.reverse_singleton]
+  rw [orderedEvalArgs_single]
+  rw [Simulation.Interaction.bind_assoc]
+  have hArg := hRun.argForward
+  unfold ExprRunForward at hArg
+  refine Simulation.Interaction.ForwardRel.bind_custom hArg ?_
+  intro rawDone orderedDone hDone
+  unfold SameDoneRel at hDone
+  subst orderedDone
+  cases rawDone with
+  | error error =>
+      exact Simulation.Interaction.ForwardRel.done rfl
+  | ok result =>
+      rcases result with ⟨stateAfterArg, value⟩
+      cases stateAfterArg with
+      | OutOfFuel =>
+          exact
+            Simulation.Interaction.ForwardRel.truncated
+              (by simp [
+                Yul.FunctionsInteractionPrimitive.Truncated])
+      | Checkpoint jump =>
+          exact
+            Simulation.Interaction.ForwardRel.truncated
+              (by simp [
+                Yul.FunctionsInteractionPrimitive.Truncated])
+      | Ok shared store =>
+          simp only [Simulation.Interaction.instMonad,
+            Simulation.Interaction.pure, Simulation.Interaction.bind,
+            List.reverse_singleton]
+          rw [Raw.ClzPreservation.clzHelperCall
+            hRun.binding.namesDistinct hRun.binding.orderedLookup
+            hRun.binding.bodyToYul
+            shared store value (orderedBase + 3) hRun.bodyFuel]
+          apply Simulation.Interaction.ForwardRel.done
+          unfold SameDoneRel
+          rw [Elab.ClzHelperModel.run_eq_reference]
+
+theorem exprValuesRunForward_of_scoped_clz_parts
+    {rawArgFuel slack : Nat}
+    {builtinContext : Frontend.ObjectBuiltinContext}
+    {context : Raw.SourceSemantics.Context}
+    {rawArg : Raw.Expr} {frontArg : Frontend.Expr}
+    {orderedArg : Frontend.AstExpr} {generated : Name}
+    {elabState finalElabState : Elab.State}
+    {contract : Frontend.AstContract} {state : State}
+    (hExpr :
+      ScopedExprElaborationRunForwardAt
+        rawArgFuel slack builtinContext contract)
+    (hContext :
+      CompiledContext builtinContext contract
+        context elabState.functionScopes)
+    (hArgElab :
+      (Elab.Expr.elaborate rawArg).run elabState =
+        .ok (frontArg, finalElabState))
+    (hArgNormalized :
+      ExprNormalized builtinContext frontArg orderedArg)
+    (binding : CompiledClzBinding contract generated)
+    (hArgTarget : 2 ≤ rawArgFuel + slack)
+    (hHelperFuel :
+      Raw.ClzPreservation.helperBodyFuel + 2 ≤
+        rawArgFuel + slack + 1) :
+    ExprValuesRunForward (rawArgFuel + 1) ((rawArgFuel + slack) + 2)
+      context (.functionCall "clz" [rawArg])
+      (.Call (.inr generated) [orderedArg]) contract state := by
+  have hArgValues :=
+    hExpr (state := state) hContext hArgElab hArgNormalized
+  have hArgRun := exprRunForward_of_values hArgValues
+  let orderedBase := rawArgFuel + slack - 2
+  have hBase : orderedBase + 2 = rawArgFuel + slack := by
+    dsimp [orderedBase]
+    omega
+  have hBodyFuel :
+      Raw.ClzPreservation.stmtListFuel
+          (Elab.clzHelperBody binding.argName binding.returnName) + 2 ≤
+        orderedBase + 3 := by
+    rw [Raw.ClzPreservation.helperBodyFuel_eq]
+    dsimp [orderedBase]
+    omega
+  have hRun :
+      GeneratedClzCallRun rawArgFuel orderedBase context rawArg generated
+        orderedArg contract state :=
+    { binding := binding
+      bodyFuel := hBodyFuel
+      argForward := by simpa [hBase] using hArgRun }
+  have hCall := exprValuesRunForward_generatedClz hRun
+  have hTargetEq : orderedBase + 4 = rawArgFuel + slack + 2 := by
+    dsimp [orderedBase]
+    omega
+  rw [hTargetEq] at hCall
+  exact hCall
+
+theorem exprValuesRunForward_of_scoped_elaborated_clz_at
+    {rawArgFuel slack : Nat}
+    {builtinContext : Frontend.ObjectBuiltinContext}
+    {context : Raw.SourceSemantics.Context}
+    {rawArgs : List Raw.Expr} {front : Frontend.Expr}
+    {ordered : Frontend.AstExpr}
+    {elabState finalElabState : Elab.State}
+    {contract : Frontend.AstContract} {state : State}
+    (hExpr :
+      ScopedExprElaborationRunForwardAt
+        rawArgFuel slack builtinContext contract)
+    (hContext :
+      CompiledContext builtinContext contract
+        context elabState.functionScopes)
+    (hValid : Elab.ClzAllocationValid elabState)
+    (hBindings : ClzBindingResolverAt contract finalElabState)
+    (hElab :
+      (Elab.Expr.elaborate (.functionCall "clz" rawArgs)).run elabState =
+        .ok (front, finalElabState))
+    (hNormalized : ExprNormalized builtinContext front ordered)
+    (hArgTarget : 2 ≤ rawArgFuel + slack)
+    (hHelperFuel :
+      Raw.ClzPreservation.helperBodyFuel + 2 ≤
+        rawArgFuel + slack + 1) :
+    ExprValuesRunForward (rawArgFuel + 1) ((rawArgFuel + slack) + 2)
+      context (.functionCall "clz" rawArgs) ordered contract state := by
+  rcases clz_elaboration_parts hElab with
+    ⟨rawArg, frontArg, argState, generated, helperState,
+      rfl, hArgElab, hEnsure, rfl, rfl⟩
+  rcases ExprNormalized.user_call_parts hNormalized with
+    ⟨orderedArgs, rfl, ⟨hArgsNormalized⟩⟩
+  rcases ExprListNormalized.cons_parts hArgsNormalized with
+    ⟨orderedArg, orderedTail, hOrderedArgs,
+      ⟨hArgNormalized⟩, ⟨hTailNormalized⟩⟩
+  have hTail : orderedTail = [] :=
+    ExprListNormalized.nil_ordered hTailNormalized
+  subst orderedTail
+  subst orderedArgs
+  have hArgExt :=
+    Elab.Expr.elaborate_preserves_clzAllocation rawArg hArgElab hValid
+  rcases Elab.ensureClzHelper_allocated hEnsure hArgExt.after_valid with
+    ⟨argName, returnName, hAllocated⟩
+  rcases hBindings hAllocated with ⟨binding⟩
+  exact
+    exprValuesRunForward_of_scoped_clz_parts
+      hExpr hContext hArgElab hArgNormalized binding
+      hArgTarget hHelperFuel
+
+theorem exprValuesRunForward_of_scoped_elaborated_clz
+    {rawArgFuel slack : Nat}
+    {builtinContext : Frontend.ObjectBuiltinContext}
+    {context : Raw.SourceSemantics.Context}
+    {rawArgs : List Raw.Expr} {front : Frontend.Expr}
+    {ordered : Frontend.AstExpr}
+    {elabState finalElabState : Elab.State}
+    {contract : Frontend.AstContract} {state : State}
+    (hExpr :
+      ScopedExprElaborationRunForwardAt
+        rawArgFuel slack builtinContext contract)
+    (hContext :
+      CompiledContext builtinContext contract
+        context elabState.functionScopes)
+    (hBindings : ClzBindingResolver contract)
+    (hElab :
+      (Elab.Expr.elaborate (.functionCall "clz" rawArgs)).run elabState =
+        .ok (front, finalElabState))
+    (hNormalized : ExprNormalized builtinContext front ordered)
+    (hArgTarget : 2 ≤ rawArgFuel + slack)
+    (hHelperFuel :
+      Raw.ClzPreservation.helperBodyFuel + 2 ≤
+        rawArgFuel + slack + 1) :
+    ExprValuesRunForward (rawArgFuel + 1) ((rawArgFuel + slack) + 2)
+      context (.functionCall "clz" rawArgs) ordered contract state := by
+  rcases clz_elaboration_parts hElab with
+    ⟨rawArg, frontArg, argState, generated, helperState,
+      rfl, hArgElab, hEnsure, rfl, rfl⟩
+  rcases ExprNormalized.user_call_parts hNormalized with
+    ⟨orderedArgs, rfl, ⟨hArgsNormalized⟩⟩
+  rcases ExprListNormalized.cons_parts hArgsNormalized with
+    ⟨orderedArg, orderedTail, hOrderedArgs,
+      ⟨hArgNormalized⟩, ⟨hTailNormalized⟩⟩
+  have hTail : orderedTail = [] :=
+    ExprListNormalized.nil_ordered hTailNormalized
+  subst orderedTail
+  subst orderedArgs
+  rcases hBindings hEnsure with ⟨binding⟩
+  exact
+    exprValuesRunForward_of_scoped_clz_parts
+      hExpr hContext hArgElab hArgNormalized binding
+      hArgTarget hHelperFuel
+
+def clzFrontendSlack : Nat :=
+  Raw.ClzPreservation.helperBodyFuel + 1
+
+theorem clzElaborationRunForwardAt_zero
+    {builtinContext : Frontend.ObjectBuiltinContext}
+    {contract : Frontend.AstContract} :
+    ClzElaborationRunForwardAt
+      0 clzFrontendSlack builtinContext contract := by
+  intro rawContext rawArgs front ordered elabState finalElabState state
+    hContext hElab hNormalized
+  exact exprValuesRunForward_zero
+
+theorem clzElaborationRunForwardAt_one
+    {builtinContext : Frontend.ObjectBuiltinContext}
+    {contract : Frontend.AstContract} :
+    ClzElaborationRunForwardAt
+      1 clzFrontendSlack builtinContext contract := by
+  intro rawContext rawArgs front ordered elabState finalElabState state
+    hContext hElab hNormalized
+  rcases clz_elaboration_parts hElab with
+    ⟨rawArg, frontArg, argState, generated, helperState,
+      rfl, hArgElab, hEnsure, rfl, rfl⟩
+  exact exprValuesRunForward_clz_one
+
+theorem clzElaborationRunForwardAt_succ_succ
+    {argFuel : Nat}
+    {builtinContext : Frontend.ObjectBuiltinContext}
+    {contract : Frontend.AstContract}
+    (hExpr :
+      ScopedExprElaborationRunForwardAt
+        (argFuel + 1) Raw.ClzPreservation.helperBodyFuel
+        builtinContext contract)
+    (hBindings : ClzBindingResolver contract) :
+    ClzElaborationRunForwardAt
+      (argFuel + 2) clzFrontendSlack builtinContext contract := by
+  intro rawContext rawArgs front ordered elabState finalElabState state
+    hContext hElab hNormalized
+  have hArgTarget :
+      2 ≤ (argFuel + 1) + Raw.ClzPreservation.helperBodyFuel := by
+    rw [Raw.ClzPreservation.helperBodyFuel_value]
+    omega
+  have hHelperFuel :
+      Raw.ClzPreservation.helperBodyFuel + 2 ≤
+        (argFuel + 1) + Raw.ClzPreservation.helperBodyFuel + 1 := by
+    omega
+  have hCall := exprValuesRunForward_of_scoped_elaborated_clz
+    (state := state) hExpr hContext hBindings hElab hNormalized
+      hArgTarget hHelperFuel
+  simpa [clzFrontendSlack, Nat.add_assoc, Nat.add_comm,
+    Nat.add_left_comm] using hCall
 
 theorem exprValuesRunForward_userCall_succ
     {rawFuel orderedFuel : Nat}
@@ -5200,6 +5538,99 @@ theorem code_elaborates
     rw [hFrontend]
   rw [hDispatcher, hFunctions]
   exact hElab
+
+/-- Successful raw compilation constructs the exact generated-`clz` resolver
+for the final code-elaboration state. Name allocation, frontend validation,
+object-builtin resolution, Yul conversion, and canonical lookup are all
+discharged from the compiler artifact; callers supply no helper certificate. -/
+theorem clzBindingResolverAt
+    {rawJson : String} {selection : Selection}
+    {artifact : Frontend.Program.Artifact}
+    (ctx : ArtifactRawSourceContext rawJson selection artifact)
+    {code : List Raw.Stmt}
+    (hCode : ctx.selected.root.code? = some code) :
+    ∃ coreDispatcher finalState,
+      Elab.elaborateCodeCore code = .ok (coreDispatcher, finalState) ∧
+        ClzBindingResolverAt
+          artifact.codeArtifact.ordered.program.contract finalState := by
+  rcases ctx.code_elaborates hCode with
+    ⟨helper?, arg?, ret?, hElab⟩
+  rcases Elab.elaborateCode_parts hElab with
+    ⟨finalState, hCore, hFunctions, hHelper, hArg, hRet⟩
+  refine ⟨ctx.program.object.dispatcher, finalState, hCore, ?_⟩
+  intro generated allocatedArg allocatedRet hAllocated
+  have hHelperOption : helper? = some generated := by
+    rw [hHelper]
+    exact hAllocated.helper_eq
+  have hArgOption : arg? = some allocatedArg := by
+    rw [hArg]
+    exact hAllocated.arg_eq
+  have hRetOption : ret? = some allocatedRet := by
+    rw [hRet]
+    exact hAllocated.ret_eq
+  have hExactElab :
+      Elab.elaborateCode code =
+        .ok (ctx.program.object.dispatcher, ctx.program.object.functions,
+          some generated, some allocatedArg, some allocatedRet) := by
+    simpa [hHelperOption, hArgOption, hRetOption] using hElab
+  rcases decodeAndElaborateSolcIr?_frontendValidated ctx.decode with
+    ⟨json, selected, object, hParse, hSelected, hObject,
+      hValidated, hProgram⟩
+  rw [ctx.parse] at hParse
+  cases hParse
+  rw [ctx.selected_ok] at hSelected
+  cases hSelected
+  have hValidatedProgram :
+      Raw.Object.FrontendValidated
+        ctx.selected.root ctx.program.object := by
+    simpa [hProgram] using hValidated
+  have hNamesBool :
+      Raw.Object.clzHelperNamesDistinct? ctx.selected.root = true :=
+    hValidatedProgram.2.1
+  have hNames : allocatedArg ≠ allocatedRet :=
+    Raw.Object.clzHelperNamesDistinct?_arg_ne
+      hCode hExactElab hNamesBool
+  have hHelperMem :
+      (generated,
+        Elab.clzHelperFunctionDef allocatedArg allocatedRet) ∈
+          ctx.program.object.functions :=
+    Elab.elaborateCode_clzHelper_mem hExactElab
+  rcases Frontend.Object.compileVerifiedStackCodeArtifactIn?_function_entry
+      ctx.codeArtifact hHelperMem with
+    ⟨memoryContract, resolvedFn, yulBody, _hMemory, hResolve,
+      _hResolvedMem, hParams, hReturns, hBodyYul, hEntry⟩
+  have hResolveIdentity :=
+    EvmCompiler.Solidity.RawAst.Raw.ClzPreservation.clzHelperFunctionDef_resolveObjectBuiltinsIn?
+      allocatedArg allocatedRet
+      { ctx.context with memoryContract := memoryContract }
+  rw [hResolveIdentity] at hResolve
+  have hResolvedFn :
+      resolvedFn = Elab.clzHelperFunctionDef allocatedArg allocatedRet :=
+    Option.some.inj hResolve.symm
+  subst resolvedFn
+  have hOrderedSource :=
+    Frontend.Object.toSolcYulOrderedProgram?_source ctx.ordered
+  have hLookup :
+      artifact.codeArtifact.ordered.program.contract.functions.lookup
+          generated =
+        some
+          (.Def
+            (Elab.clzHelperFunctionDef allocatedArg allocatedRet).params
+            (Elab.clzHelperFunctionDef allocatedArg allocatedRet).returns
+            yulBody) := by
+    rw [hOrderedSource.1]
+    exact
+      EvmCompiler.Yul.FunctionList.lookup_functionMap_of_mem
+        hOrderedSource.2.1 hEntry
+  refine ⟨{
+    argName := allocatedArg
+    returnName := allocatedRet
+    yulBody := yulBody
+    namesDistinct := hNames
+    orderedLookup := ?_
+    bodyToYul := ?_ }⟩
+  · simpa [Elab.clzHelperFunctionDef] using hLookup
+  · simpa [Elab.clzHelperFunctionDef] using hBodyYul
 
 /-- Recover the exact frontend and canonical dispatcher lists executed by the
 artifact from successful raw-code elaboration, object-builtin resolution, and

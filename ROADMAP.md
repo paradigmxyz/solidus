@@ -119,10 +119,11 @@ Transformation inventory from `scripts/solidity_to_yul_lean.py`:
   the generated helper/call now has a local source-reference preservation
   theorem. `RawAstClzPreservation` now proves that checked frontend-to-Yul
   conversion of the generated helper body executes in the actual canonical
-  interaction semantics and returns `ClzHelperModel.run`. Final call-level
-  composition remains tracked below; it must carry the regular call-entry
-  invariant because the older private interface quantified over unreachable
-  checkpoint states where direct raw `clz` and canonical call setup differ.
+  interaction semantics and returns `ClzHelperModel.run`. The path-scoped
+  `ClzBindingResolverAt` is now constructed from successful raw artifact
+  compilation, and exact expression-final allocation drives the checked call
+  theorem. Recursive statement/block threading still needs to replace the
+  older private all-state callback before final composition.
 - [x] Object/data ordering preserved and fail-closed in Lean through explicit
   raw-derived `ObjectItemRef`s plus `itemRefsPreserveOrder?` validation.
 - [ ] Standalone Yul data-name recovery remains Python-only and is not part of

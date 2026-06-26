@@ -165,7 +165,11 @@ mutual
             | none => fail state (.UnknownIdentifier name)
         | .functionCall "clz" [arg] => do
             let (stateAfterArg, value) ← eval fuel' ctx arg state
-            pure (stateAfterArg, [Elab.ClzHelperModel.reference value])
+            match stateAfterArg with
+            | .Ok _ _ =>
+                pure (stateAfterArg, [Elab.ClzHelperModel.reference value])
+            | .OutOfFuel | .Checkpoint _ =>
+                fail stateAfterArg .OutOfFuel
         | .functionCall "clz" _ =>
             fail state .InvalidArguments
         | .functionCall name args =>
@@ -569,7 +573,12 @@ theorem clz_succ
     evalValues (fuel + 1) ctx (.functionCall "clz" [arg]) state =
       (do
         let result ← eval fuel ctx arg state
-        pure (result.1, [Elab.ClzHelperModel.reference result.2])) := by
+        match result.1 with
+        | .Ok _ _ =>
+            pure
+              (result.1, [Elab.ClzHelperModel.reference result.2])
+        | .OutOfFuel | .Checkpoint _ =>
+            fail result.1 .OutOfFuel) := by
   simp [evalValues]
 
 theorem functionCall_succ_of_ne_clz
