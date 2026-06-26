@@ -661,6 +661,7 @@ structure CallResponse where
   success : Bool
   returnData : ByteArray
   postWorld : OpenWorld
+  returnedGas : InteractionWord
 
 namespace CallResponse
 
@@ -676,6 +677,7 @@ structure CreateResponse where
   address : InteractionWord
   returnData : ByteArray
   postWorld : OpenWorld
+  returnedGas : InteractionWord
 
 namespace CallLocal
 
@@ -707,10 +709,11 @@ tree. Compiler theorems still quantify over every answer through `AllDone`. -/
 def Query.defaultAnswer : (query : Query) → Answer query
   | .resource _ => EvmYul.UInt256.ofNat 0
   | .external world (.call _) =>
-      { success := false, returnData := default, postWorld := world }
+      { success := false, returnData := default, postWorld := world,
+        returnedGas := EvmYul.UInt256.ofNat 0 }
   | .external world (.create _) =>
       { address := EvmYul.UInt256.ofNat 0, returnData := default,
-        postWorld := world }
+        postWorld := world, returnedGas := EvmYul.UInt256.ofNat 0 }
 
 universe u1 v1 u2 v2 u3 v3 w1 w2
 

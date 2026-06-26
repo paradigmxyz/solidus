@@ -39,6 +39,213 @@ optimized solc Yul
   -> raw bytecode
 ```
 
+Gasful EVM bridge checkpoint:
+
+- [x] Add `Assembly.GasfulBridge` as the explicit `EVM.X`-to-open-raw-bytecode
+  boundary, including charged `GAS`/`MSIZE` raw-bytecode lemmas, checked
+  `EVM.X` OOG lemmas for memory and dynamic gas charges, OOG-inclusive outcome
+  relation, and CALL/CREATE gas-accounting records.
+- [x] Compose charged `GAS`/`MSIZE` into `RunRefinesOpen`: the actual
+  post-charge resource value is emitted as the next ordered exchange, and the
+  concrete/open successor states agree after gas/control erasure and at PC.
+- [x] Prove the ordered `EVM.X` exceptional-precheck slice after gas checks:
+  invalid opcode, stack underflow, bad `JUMP`/`JUMPI`, invalid
+  `RETURNDATACOPY`, stack overflow, static-mode violation, SSTORE stipend OOG,
+  and CREATE/CREATE2 init-code-size OOG.
+- [x] Prove the first successful-step slice for `JUMPDEST`: actual `EVM.X`
+  precheck-to-`EVM.step` recursion, open raw-bytecode execution with an empty
+  transcript after gas charges, and the gas/control-erased charged-step
+  relation. Add the matching gasful `STOP` successful-halt slice at the same
+  checked precheck/`EVM.step` boundary.
+- [x] Factor the successful gasful side through
+  `GasfulBridge.x_after_prechecks_of_step`, a generic post-precheck theorem
+  that delegates to the actual `EVM.step` parent-frame result and then applies
+  the `EVM.X` continuation/halt rule without closing CALL/CREATE children.
+  Extend it with `x_after_prechecks_of_step_result` and
+  `x_after_prechecks_of_step_error`, so actual post-precheck `EVM.step` errors
+  are not silently assumed away.
+- [x] Compose post-precheck gasful step results into `RunRefinesOpen` via
+  checked lemmas, reducing the remaining full bridge premise to open refinement
+  of the actual parent-frame `EVM.step` result. Add
+  `GasfulBridge.runRefinesOpen_jumpdest_step` as the first one-step continuation
+  composition from actual charged `JUMPDEST` execution to the open raw-bytecode
+  run, and `GasfulBridge.runRefinesOpen_stop_success` as the first successful
+  halt composition for charged `STOP`.
+- [x] Add a generic ordinary-step relation for non-resource
+  `PrimOp.continuingStep?` primitives: a successful primitive step on the
+  actual post-charge gasful state yields an open raw-bytecode one-step success
+  on the charged open state with `SameData` output after gas/control erasure.
+- [x] Add exact actual `EVM.step` delegation for the transparent continuing
+  primitive families, including `SSTORE`/`TSTORE` with permission derived from
+  the existing `EVM.X` static precheck.
+- [x] Compose successful transparent continuing primitive steps into
+  `RunRefinesOpen` with `GasfulBridge.runRefinesOpen_continuing_prim_success`,
+  binding the one-step open raw-bytecode execution to an arbitrary related
+  gasful continuation after erasing gas/control.
+- [x] Compose the first exceptional/OOG outcomes into `RunRefinesOpen`: charged
+  `.invalid` raw-bytecode execution for the gasful invalid-instruction precheck,
+  plus explicit empty-transcript OOG wrappers for memory charge, dynamic charge,
+  `SSTORE` stipend, and CREATE/CREATE2 initcode-size failures.
+- [x] Represent finite target proof-fuel exhaustion honestly as an open
+  transcript-prefix interruption in `RunRefinesOpen`; `EVM.X 0` no longer has
+  to pretend that the open fuel-zero runner raises the same `OutOfFuel` error.
+- [x] Compose invalid `RETURNDATACOPY` into `RunRefinesOpen`: after the ordered
+  gasful prechecks and dynamic charge, the actual return-data bounds failure
+  resolves to the open raw-bytecode `InvalidMemoryAccess` error.
+- [x] Compose static-permitted continuing-primitive stack underflow into
+  `RunRefinesOpen`: short-stack open raw-bytecode execution returns the same
+  `StackUnderflow` error as the gasful `EVM.X` stack precheck, with the
+  static-permission ordering caveat explicit in the theorem boundary.
+- [x] Compose static-mode violations for continuing static-sensitive primitives
+  (`SSTORE`, `TSTORE`, `LOG0..4`) into `RunRefinesOpen`: both gasful `EVM.X`
+  and open raw-bytecode execution report `StaticModeViolation` before the
+  primitive mutates state.
+- [x] Compose CREATE/CREATE2 static-mode violations into `RunRefinesOpen`:
+  after the gasful stack-limit prefix, the open raw-bytecode `createStep`
+  rejects with `StaticModeViolation` before emitting an external request.
+- [x] Compose static `CALL` with nonzero value into `RunRefinesOpen`: the open
+  raw-bytecode `callStep` rejects with `StaticModeViolation` before emitting an
+  external request, using the same parsed stack value checked by `EVM.X`.
+- [x] Compose static `SELFDESTRUCT` into `RunRefinesOpen` after the stack-limit
+  prefix: both gasful `EVM.X` and open raw-bytecode execution report
+  `StaticModeViolation` before terminal halt handling.
+- [x] Compose terminal `RETURN`/`REVERT` stack underflow into `RunRefinesOpen`:
+  short-stack open raw-bytecode execution returns the same `StackUnderflow`
+  error as the gasful `EVM.X` stack precheck before terminal halt handling.
+- [x] Compose `JUMP`/`JUMPI` stack underflow into `RunRefinesOpen`: short-stack
+  open raw-bytecode execution returns the same `StackUnderflow` error as the
+  gasful `EVM.X` stack precheck before bad-jump validation.
+- [x] Compose CALL/CREATE-family stack underflow into `RunRefinesOpen`:
+  short-stack CREATE/CREATE2/CALL/CALLCODE/DELEGATECALL/STATICCALL open
+  raw-bytecode execution returns `StackUnderflow` before static checks or any
+  external strategy request.
+- [x] Compose permitted `SELFDESTRUCT` stack underflow into `RunRefinesOpen`:
+  with static permission true, open raw-bytecode execution delegates to
+  EVMYulLean's `SELFDESTRUCT` stack pop and returns the same `StackUnderflow`
+  as the gasful `EVM.X` stack precheck.
+- [x] Close `LOG0..4` successful continuing-primitive delegation: checked
+  public helper equalities relate imported gasful `EvmYul.step` log helpers to
+  `PrimStep.run`, so successful logs are covered by the generic
+  `RunRefinesOpen` continuing-primitive theorem.
+- [x] Account for target-only bad-jump and stack-overflow prechecks in
+  `RunRefinesOpen`: the open raw-bytecode model intentionally does not validate
+  jump destinations or the 1024-stack postcondition, so gasful
+  `BadJumpDestination` and `StackOverflow` now refine an open transcript prefix
+  rather than a nonexistent matching open error.
+- [x] Tighten CALL/CREATE gas-accounting records: checked canonical-stack
+  lemmas show CALL-family `dynamicGasCostAt` is exactly EVMYulLean `Ccall`
+  parent gas, and CREATE/CREATE2 parent gas is recorded explicitly beside the
+  existing EIP-150 forwarded/returned-gas formulas.
+- [x] Expose returned child gas on open CALL/CREATE responses and add checked
+  response-gas bridge helpers: the open parent frame remains cost-model-free,
+  while `GasfulBridge` relates `response.returnedGas` to the concrete
+  post-CALL/CREATE parent gas and records the one-exchange open transcript.
+- [x] Compose successful CALL/CREATE external-response steps into
+  `RunRefinesOpen`: checked raw one-exchange bytecode lemmas plus
+  `GasfulBridge.runRefinesOpen_call_external_success` and
+  `GasfulBridge.runRefinesOpen_create_external_success` bind the actual gasful
+  parent-frame step to the open strategy response relation; the child response
+  relation, EIP-150 accounting, and returned gas remain explicit bridge data.
+- [x] Derive the CALL-family response relation from actual `EVM.call` and
+  `EVM.step` results: `OpenSameData` compares the code-erased open-world
+  projection plus frame-local data, and
+  `runRefinesOpen_call_external_success_actual` existentially supplies the
+  concrete response, parent gas credit, return data, and post-call world
+  without a caller-provided response-relation premise; the response relation
+  also preserves the exact caller continuation PC.
+- [x] Derive the CREATE/CREATE2 response relation from actual `EVM.step` and
+  child-`Lambda` results: `runRefinesOpen_create_external_success_actual`
+  existentially supplies the concrete address/status, return data, post-create
+  world, EIP-150 withholding, and returned child gas without a
+  caller-provided response-relation premise, while preserving the exact caller
+  continuation PC.
+- [x] Rebase actual CALL/CREATE responses over arbitrary `OpenStateRel` parent
+  frames: open queries now originate from the related open frame, response
+  finishing preserves the recursive invariant, and concrete parent gas,
+  EIP-150 forwarding, and returned child gas remain in the response relation.
+- [x] Add the matching terminal `RETURN`/`REVERT` compositions:
+  stack-pop-aware actual `EVM.step` lemmas, gas/control-erased output-state
+  relations, open raw-bytecode halt execution with concrete return bytes, and
+  `GasfulBridge.runRefinesOpen_return_success` /
+  `GasfulBridge.runRefinesOpen_revert_success`.
+- [x] Compose successful charged `JUMP`/`JUMPI` execution into
+  `RunRefinesOpen`: exact imported-step equations, closed open raw-bytecode
+  steps, related successor PCs/stacks, and recursive continuation wrappers now
+  complement the existing underflow and bad-destination branches.
+- [x] Compose successful charged `PC` and compact `PUSH1..PUSH32` execution
+  into `RunRefinesOpen`: both use exact concrete values and related successor
+  PCs/stacks without introducing open observations or replay data.
+- [x] Complete charged `SELFDESTRUCT` outcome coverage: permitted execution
+  now refines the same account/substate mutation and empty terminal output,
+  alongside the existing stack-underflow and static-mode branches.
+- [x] Begin relational recursive lifting: `OpenStateRel` is preserved by
+  interpreter charging and stack/PC replacement, and GAS/MSIZE now execute
+  from an arbitrary related open state while consuming the actual gasful
+  observation before the related continuation.
+- [x] Lift closed control/sequential successes over `OpenStateRel`: one generic
+  running-step composition now drives related `PC`, `PUSH1..PUSH32`, `JUMP`,
+  `JUMPI`, and `JUMPDEST` continuations from arbitrary related open states.
+- [x] Lift the pure-stack primitive family over `OpenStateRel`: binary, unary,
+  ternary, `POP`, `DUP`, and `SWAP` charged successes now supply related open
+  successors to the recursive continuation without requiring identical states.
+- [x] Lift gas-insensitive frame-local primitives over `OpenStateRel`:
+  execution-environment and protected block reads, calldata/code copies,
+  memory load/store/copy/hash, return-data size and copy, and their checked
+  opcode classifier now compose charged recursive continuations without a
+  caller-provided compatibility witness.
+- [x] Complete relational successful continuing primitives: normalized account
+  reads/code copy/hash, `SLOAD`/`SSTORE`, `TLOAD`/`TSTORE`, and `LOG0..4` now
+  preserve `OpenStateRel`; every `continuingStep?` success except resource
+  `MSIZE` and error-only `INVALID` is derived by the checked family classifier.
+- [x] Lift successful terminal instructions over `OpenStateRel`: `STOP`,
+  `RETURN`, `REVERT`, and world-mutating `SELFDESTRUCT` now halt from an
+  arbitrary related open state with normalized final world/frame data.
+- [x] Isolate the recursive decode obligation: every successful EVMYul decode
+  other than unsupported `PUSH0` yields a valid Compact instruction (including
+  a proved width bound for decoded PUSH payloads), so reachability only has to
+  exclude decode misses and `PUSH0` at concrete frame PCs.
+- [x] Add the responder-agnostic recursive frame skeleton: reachable code
+  yields the exact current Compact instruction, fuel induction composes local
+  refinements, and the first dispatcher layer discharges fuel exhaustion,
+  memory/dynamic OOG, and `INVALID` before an opcode-valid local obligation.
+- [x] Assemble recursive exceptional checks through `XStackLimitChecksPass`:
+  stack underflow (including explicit static/stack check-order collapse at the
+  frame-failure boundary), bad jumps, invalid return-data copy, and stack
+  overflow now refine arbitrary related open states without external queries.
+- [x] Extend the recursive dispatcher through all remaining prechecks and
+  deterministic positive steps: exact static failures, SSTORE/CREATE OOG,
+  zero-step proof-fuel exhaustion, concrete ordered GAS/MSIZE observations,
+  PUSH/control execution, and STOP/RETURN/REVERT/SELFDESTRUCT are discharged.
+  The residual premise is restricted to ordinary continuing and CALL/CREATE
+  primitives after all checks pass.
+- [x] Compose the existing Yul-to-open-raw-bytecode theorem with the named
+  gasful target bridge premise in
+  `Yul.EndToEnd.optimizedSolcYulToGasfulRawBytecodeOfOpenRunBridge`.
+- [x] Assemble the complete recursive `EVM.X` simulation from the checked
+  ordinary, exceptional, OOG, terminal, and actual CALL/CREATE step theorems,
+  using `OpenStateRel` and a reachable-PC `FrameCodeInvariant`. The concrete
+  CALL/CREATE step determines the open response, including EIP-150 and returned
+  gas; CALL proof-fuel exhaustion and CREATE parent OOG remain explicit prefix
+  outcomes.
+- [x] Compose that recursive theorem with the public optimized-Yul theorem in
+  `optimizedSolcYulToGasfulRawBytecodeOfRecursiveFrameBridge`; this removes the
+  caller-supplied whole-run bridge and external-response oracle. Its sole
+  target/source-state boundary premise is the initial `OpenStateRel`.
+- [x] Derive `FrameCodeInvariant` from artifact `DecodingCorrect`, compact
+  program validity, the verified trailing `INVALID` sentinel, and
+  `FrameLayoutInvariant`; compact instruction decoding also proves that
+  reachable instructions cannot be unsupported `PUSH0`.
+- [x] Define compiler-generated `ArtifactFramePoint`s (block entry, generated
+  branch midpoint, or trailing sentinel), prove initial construction and exact
+  charged PUSH/JUMP/JUMPI preservation for fixed-label branches, and lift any
+  complete one-step proof to `ArtifactFrameInvariant`.
+- [x] Complete `ArtifactFramePoint` preservation for every source block:
+  labels, compact PUSHes, charged frame-local primitives, actual GAS/MSIZE and
+  PC successors, terminal/INVALID non-continuation, and CALL/CREATE parent
+  restoration through the EIP-150/returned-gas response relation. The compiler
+  now constructs `ArtifactOrdinaryBoundaryStepInvariant`; initial control,
+  generated branches, the checked sentinel, and reachability are internal.
+
 `Compiler.StackArtifact` is the sole code-body artifact and
 `Solidity.Frontend.VerifiedStackObjectArtifact` is the sole recursive object
 artifact. Compilation fails closed when stack-only scheduling fails. The
