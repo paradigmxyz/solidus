@@ -194,6 +194,10 @@ Gasful EVM bridge checkpoint:
 - [x] Lift successful terminal instructions over `OpenStateRel`: `STOP`,
   `RETURN`, `REVERT`, and world-mutating `SELFDESTRUCT` now halt from an
   arbitrary related open state with normalized final world/frame data.
+- [x] Isolate the recursive decode obligation: every successful EVMYul decode
+  other than unsupported `PUSH0` yields a valid Compact instruction (including
+  a proved width bound for decoded PUSH payloads), so reachability only has to
+  exclude decode misses and `PUSH0` at concrete frame PCs.
 - [x] Compose the existing Yul-to-open-raw-bytecode theorem with the named
   gasful target bridge premise in
   `Yul.EndToEnd.optimizedSolcYulToGasfulRawBytecodeOfOpenRunBridge`.

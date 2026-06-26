@@ -1367,5 +1367,7 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Assembly.GasfulBridge.runRefinesOpen_return_success_rel
 #print axioms EvmCompiler.Assembly.GasfulBridge.runRefinesOpen_revert_success_rel
 #print axioms EvmCompiler.Assembly.GasfulBridge.runRefinesOpen_selfdestruct_success_rel
+#print axioms EvmCompiler.Assembly.GasfulBridge.exists_compact_instr_of_evm_decode
+#print axioms EvmCompiler.Assembly.GasfulBridge.compact_decodeAt_of_supported
 #print axioms EvmCompiler.Yul.EndToEnd.optimizedSolcYulToRawBytecodeFinished
 #print axioms EvmCompiler.Yul.EndToEnd.optimizedSolcYulToRawBytecodeFinishedLegacy
