@@ -8286,6 +8286,17 @@ inductive RunRefinesOpen
       Interaction.Executes openRun transcript openDone →
       DoneRel gasful openDone →
       RunRefinesOpen gasful openRun transcript
+  /-- EVM frame execution collapses every runtime execution exception to the
+  same exceptional-frame failure (world rollback and zero returned gas at a
+  CALL/CREATE boundary). Exact labels are retained by `DoneRel.sameError`
+  whenever they agree; this branch accounts only for internal check-order
+  differences. Proof-fuel exhaustion is excluded on both sides. -/
+  | exceptionalFrame {transcript gasErr openErr} :
+      gasErr ≠ EvmYul.EVM.ExecutionException.OutOfFuel →
+      openErr ≠ EvmYul.EVM.ExecutionException.OutOfFuel →
+      gasful = .error gasErr →
+      Interaction.Executes openRun transcript (.error openErr) →
+      RunRefinesOpen gasful openRun transcript
   | outOfGas {transcript} :
       gasful = .error EvmYul.EVM.ExecutionException.OutOfGass →
       Interaction.Follows openRun transcript →
@@ -8341,6 +8352,9 @@ theorem runRefinesOpen_bind_running_prefix
       apply RunRefinesOpen.completed
       · exact Interaction.Executes.bind_ok hFirst hExec
       · exact hDone
+  | exceptionalFrame hGasRuntime hOpenRuntime hGas hExec =>
+      apply RunRefinesOpen.exceptionalFrame hGasRuntime hOpenRuntime hGas
+      exact Interaction.Executes.bind_ok hFirst hExec
   | outOfGas hGas hFollow =>
       apply RunRefinesOpen.outOfGas hGas
       exact Interaction.Follows.bind_ok hFirst hFollow
@@ -9568,6 +9582,19 @@ theorem runRefinesOpen_jumpdest_step
               | .halted halt => Interaction.pure (.halted halt))
             hFirst hExec)
       · exact hDone
+  | exceptionalFrame hGasRuntime hOpenRuntime hGas hExec =>
+      apply RunRefinesOpen.exceptionalFrame hGasRuntime hOpenRuntime hGas
+      rw [Compact.InteractionSemantics.openRunNResult_succ]
+      simpa using
+        (Interaction.Executes.bind_ok
+          (first := Compact.InteractionSemantics.openStepResult
+            bytes (afterDynamicChargeAt state))
+          (next := fun result =>
+            match result with
+            | .running mid =>
+                Compact.InteractionSemantics.openRunNResult bytes fuel mid
+            | .halted halt => Interaction.pure (.halted halt))
+          hFirst hExec)
   | outOfGas hGas hFollow =>
       apply RunRefinesOpen.outOfGas hGas
       rw [Compact.InteractionSemantics.openRunNResult_succ]
@@ -10512,6 +10539,21 @@ theorem runRefinesOpen_continuing_prim_success
                 | .halted halt => Interaction.pure (.halted halt))
               hFirst hExec)
         · exact hDone
+    | exceptionalFrame hGasRuntime hOpenRuntime hGas hExec =>
+        apply RunRefinesOpen.exceptionalFrame hGasRuntime hOpenRuntime hGas
+        rw [show fuel + 1 + 1 = 1 + (fuel + 1) by omega]
+        rw [Compact.InteractionSemantics.openRunNResult_add]
+        simpa using
+          (Interaction.Executes.bind_ok
+            (first := Compact.InteractionSemantics.openRunNResult
+              bytes 1 (afterDynamicChargeAt state))
+            (next := fun result =>
+              match result with
+              | .running mid =>
+                  Compact.InteractionSemantics.openRunNResult
+                    bytes (fuel + 1) mid
+              | .halted halt => Interaction.pure (.halted halt))
+            hFirst hExec)
     | outOfGas hGas hFollow =>
         apply RunRefinesOpen.outOfGas hGas
         rw [show fuel + 1 + 1 = 1 + (fuel + 1) by omega]

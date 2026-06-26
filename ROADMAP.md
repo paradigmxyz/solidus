@@ -202,6 +202,10 @@ Gasful EVM bridge checkpoint:
   yields the exact current Compact instruction, fuel induction composes local
   refinements, and the first dispatcher layer discharges fuel exhaustion,
   memory/dynamic OOG, and `INVALID` before an opcode-valid local obligation.
+- [x] Assemble recursive exceptional checks through `XStackLimitChecksPass`:
+  stack underflow (including explicit static/stack check-order collapse at the
+  frame-failure boundary), bad jumps, invalid return-data copy, and stack
+  overflow now refine arbitrary related open states without external queries.
 - [x] Compose the existing Yul-to-open-raw-bytecode theorem with the named
   gasful target bridge premise in
   `Yul.EndToEnd.optimizedSolcYulToGasfulRawBytecodeOfOpenRunBridge`.
