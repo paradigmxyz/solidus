@@ -36,6 +36,7 @@ inductive EvmVersion where
   | paris
   | shanghai
   | cancun
+  | prague
   | osaka
   deriving DecidableEq, Inhabited, Repr
 
@@ -51,7 +52,8 @@ def rank : EvmVersion → Nat
   | .paris => 6
   | .shanghai => 7
   | .cancun => 8
-  | .osaka => 9
+  | .prague => 9
+  | .osaka => 10
 
 def atLeast? (version minimum : EvmVersion) : Bool :=
   decide (minimum.rank ≤ version.rank)
@@ -184,6 +186,9 @@ def primitiveAvailable? (profile : DialectProfile)
   | .StackMemFlow .TSTORE
   | .StackMemFlow .MCOPY =>
       profile.evmVersion.atLeast? .cancun
+  -- Post-Cancun native opcode/precompile semantics are owned by EVMYulLean.
+  -- This validator can only gate operations present in the pinned core AST;
+  -- raw solc `clz` calls are lowered to generated Yul before this layer.
   | _ => true
 
 theorem primitiveAvailable_msize (profile : DialectProfile) :

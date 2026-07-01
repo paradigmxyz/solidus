@@ -70,8 +70,9 @@ Successful artifact construction internally derives all of the following:
 
 - optimized-Yul validation, source well-formedness, scoping, and supported
   primitive checks;
-- primitive availability for the bridge-declared London, Paris, Shanghai, or
-  Cancun target, propagated through every recursive frontend object;
+- primitive availability for the bridge-declared London, Paris, Shanghai,
+  Cancun, Prague/Pectra, or Osaka/Fusaka target, propagated through every
+  recursive frontend object;
 - Functions normalization and its preservation theorem;
 - liveness, symbolic layouts, schedules, joins, dormant frames, symbolic stack
   depth, and top-16 accessibility; this is not yet a global proof of the real
@@ -141,6 +142,38 @@ The raw frontend additionally checks solc's `difficulty()`/`prevrandao()` split
 before both spellings lower to opcode `0x44`; successful conversion derives
 that check internally.
 
+## Fork Surface
+
+The solc-facing CLI accepts canonical `evmVersion` spellings London, Paris,
+Shanghai, Cancun, Prague, and Osaka. The Lean raw and bridge decoders also
+accept Pectra as an alias for Prague and Fusaka as an alias for Osaka, so
+metadata transported from fork-family terminology still reaches the same
+checked dialect profile. Unknown future names fail closed.
+
+Closed native frame execution is governed by the EVMYulLean commit selected in
+`lakefile.lean`. This compiler repo currently pins `3918e920...`, so native
+`CLZ`, EIP-7702 delegated-code lookup, and Fusaka MODEXP gas/size rules are not
+part of this repo's closed-frame claim until the dependency is repointed to the
+post-Cancun EVMYulLean work. That is a dependency-pin boundary, not an upstream
+blocker for the compiler theorem. The raw solc `clz` builtin is still supported
+through the verified generated-helper lowering, which does not require the
+native opcode.
+
+Solc-emitted precompile use is different: it reaches the compiler as ordinary
+`CALL`/`STATICCALL` to an address. That includes existing `ecrecover` lowering,
+BN254/MODEXP calls, Prague BLS12-381 addresses `0x0b` through `0x11`, and Osaka
+P256VERIFY at `0x100`. The compiler theorem preserves those calls through the
+open external-boundary response model; it does not require a verified
+cryptographic implementation of the precompile body. Concrete closed execution
+of new precompiles remains an EVMYulLean/model-backend concern, not a compiler
+preservation gap.
+
+EIP-2935 history storage does not change this compiler theorem boundary: it is
+pre-block/prestate system-contract setup plus ordinary external account state.
+Likewise transaction admission, authorization-list processing, system calls,
+receipts, and finalization stay outside the frame-level compiler theorem unless
+a future EVMYulLean frame rule exposes them as parent-frame execution.
+
 ## Open World
 
 `GAS` and `MSIZE` are ordered resource queries. CALL- and CREATE-family
@@ -180,7 +213,7 @@ coverage, or trusted-specification claim, but they are not prerequisites for a
 formally verified lowering from the declared Yul AST semantics to the declared
 EVM frame semantics:
 
-- implementing or verifying external contracts and Ethereum precompiles;
+- implementing or verifying external contracts and Ethereum precompile bodies;
 - top-level intrinsic gas, fees, sender-nonce processing, transaction receipts,
   refund settlement, transaction-final transient-storage clearing, and final
   `SELFDESTRUCT` processing;
@@ -219,4 +252,6 @@ theorems.
 The supported-version matrix also compiles honest London and Cancun fixtures
 and rejects Cancun-only `MCOPY`/transient-storage syntax relabeled as London.
 It separately compiles London `difficulty()` and Paris `prevrandao()`, then
-rejects both cross-fork relabelings.
+rejects both cross-fork relabelings. Focused metadata tests cover Prague/Osaka
+canonical acceptance, Pectra/Fusaka bridge aliases, unknown-fork rejection, and
+the existing generated-helper lowering path for raw `clz`.

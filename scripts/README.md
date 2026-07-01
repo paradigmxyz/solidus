@@ -1151,6 +1151,12 @@ the library's ordered `gas()`/`STATICCALL` pattern:
 scripts/test_eigenlayer_bn254_bridge_smoke.sh
 ```
 
+The frontend summary smoke includes a post-Cancun precompile-boundary fixture
+that issues ordinary `staticcall` instructions to Prague BLS12-381 precompile
+addresses `0x0b` through `0x11` and Osaka P256VERIFY at `0x100`. This is a
+compiler-boundary check, not a cryptographic backend test: the summary must mark
+the runtime as `ready` with the open external-boundary note.
+
 A networked smoke targets a pinned Compound v3 Comet checkout.  It builds an
 ABI-shaped wrapper around the real `CometMath` internal functions and compares
 safe-cast, signed/unsigned conversion, boolean conversion, and custom-error

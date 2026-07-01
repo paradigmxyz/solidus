@@ -16,7 +16,14 @@ from pathlib import Path
 from typing import Any, Sequence
 
 
-SUPPORTED_EVM_VERSIONS = ("london", "paris", "shanghai", "cancun")
+SUPPORTED_EVM_VERSIONS = (
+    "london",
+    "paris",
+    "shanghai",
+    "cancun",
+    "prague",
+    "osaka",
+)
 DEFAULT_EVM_VERSION = "cancun"
 
 

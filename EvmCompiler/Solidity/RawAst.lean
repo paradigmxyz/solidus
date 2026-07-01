@@ -170,7 +170,14 @@ def decodeEvmVersion (value : String) :
   | "paris" => .ok .paris
   | "shanghai" => .ok .shanghai
   | "cancun" => .ok .cancun
+  | "prague" | "pectra" => .ok .prague
+  | "osaka" | "fusaka" => .ok .osaka
   | other => .error s!"unsupported frontend evmVersion: {other}"
+
+example : decodeEvmVersion "prague" = .ok .prague := by rfl
+example : decodeEvmVersion "pectra" = .ok .prague := by rfl
+example : decodeEvmVersion "osaka" = .ok .osaka := by rfl
+example : decodeEvmVersion "fusaka" = .ok .osaka := by rfl
 
 def metadataEvmVersion? (contractOutput : Lean.Json) :
     DecodeM (Option Yul.SolcValidation.EvmVersion) := do

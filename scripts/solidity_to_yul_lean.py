@@ -76,9 +76,10 @@ def lean_list(items: Sequence[str], level: int = 0) -> str:
 
 
 def lean_evm_version(evm_version: str) -> str:
-    if evm_version not in SUPPORTED_EVM_VERSIONS:
+    if evm_version not in SUPPORTED_FRONTEND_EVM_VERSIONS:
         fail(f"Unsupported Lean frontend evmVersion: {evm_version!r}")
-    return f"EvmCompiler.Yul.SolcValidation.EvmVersion.{evm_version}"
+    canonical = FRONTEND_EVM_VERSION_CANONICAL_NAMES.get(evm_version, evm_version)
+    return f"EvmCompiler.Yul.SolcValidation.EvmVersion.{canonical}"
 
 
 def parse_uint256(value: str) -> int:
@@ -572,7 +573,21 @@ BRIDGE_JSON_SCHEMA = "evm-compiler.solc-yul-bridge.v3"
 BRIDGE_JSON_PROVENANCE_SCHEMA = "evm-compiler.bridge-json-provenance.v1"
 BRIDGE_JSON_FRONTEND_PRODUCER = "solc"
 SUPPORTED_EVM_VERSION = "cancun"
-SUPPORTED_EVM_VERSIONS = ("london", "paris", "shanghai", "cancun")
+SUPPORTED_EVM_VERSIONS = (
+    "london",
+    "paris",
+    "shanghai",
+    "cancun",
+    "prague",
+    "osaka",
+)
+FRONTEND_EVM_VERSION_CANONICAL_NAMES = {
+    "pectra": "prague",
+    "fusaka": "osaka",
+}
+SUPPORTED_FRONTEND_EVM_VERSIONS = SUPPORTED_EVM_VERSIONS + tuple(
+    FRONTEND_EVM_VERSION_CANONICAL_NAMES
+)
 RECOVERED_YUL_AST_OUTPUTS: Dict[Tuple[str, str], str] = {}
 
 
@@ -607,7 +622,7 @@ def bridge_json_frontend_metadata(
         return None
     if ast_output not in {"irAst", "irOptimizedAst", "yulAst"}:
         fail(f"Unsupported solc Yul AST output kind: {ast_output!r}")
-    if evm_version not in SUPPORTED_EVM_VERSIONS:
+    if evm_version not in SUPPORTED_FRONTEND_EVM_VERSIONS:
         fail(f"Unsupported bridge JSON evmVersion: {evm_version!r}")
     return {
         "producer": BRIDGE_JSON_FRONTEND_PRODUCER,

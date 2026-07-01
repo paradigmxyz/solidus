@@ -15,14 +15,30 @@ nested-function hoisting and alpha-renaming, generated `clz`, object builtins,
 ordered function construction, and the verified backend are composed internally.
 The canonical ordered-Yul theorem remains as the adjacent backend boundary.
 
-The executable raw-frontend adapter matrix currently pins solc 0.8.26 and
-0.8.35 to Cancun because those pins emit structured `irOptimizedAst` for the
-production corpus. Older exact-version suites, including Permit2 on solc
-0.8.17/London, may remain legacy bridge regression coverage, but they do not
-join the raw production theorem unless that solc output contains structured
-`irOptimizedAst`.
-Accepted frontend requests must name London, Paris, Shanghai, or Cancun;
-newer fork targets fail closed until their instruction semantics are modeled.
+The executable raw-frontend adapter matrix still defaults to Cancun because
+the production corpus was pinned there. Older exact-version suites, including
+Permit2 on solc 0.8.17/London, may remain legacy bridge regression coverage,
+but they do not join the raw production theorem unless that solc output
+contains structured `irOptimizedAst`. Accepted solc-facing frontend requests
+must name London, Paris, Shanghai, Cancun, Prague, or Osaka. Lean raw/bridge
+metadata also accepts the family aliases Pectra for Prague and Fusaka for
+Osaka.
+
+Post-Cancun native EVM semantics are bounded by the EVMYulLean commit selected
+in `lakefile.lean`. The raw Yul `clz` builtin is supported by the existing
+generated-helper lowering and proof path, but this repo's current dependency pin
+predates the post-Cancun EVMYulLean work. Until the dependency is repointed, this
+repo does not claim concrete native-frame behavior for Fusaka opcode `CLZ`,
+EIP-7702 delegated EOA code-image resolution, or Fusaka MODEXP gas/size changes.
+
+Pectra/Fusaka precompile use follows the existing `ecrecover` style boundary:
+solc emits ordinary `CALL`/`STATICCALL`, and the compiler theorem preserves that
+open external request/response shape without verifying the precompile's
+cryptographic body. Concrete closed execution of BLS12-381 or P256VERIFY is
+handled by the selected EVMYulLean/backend model, not by the compiler
+preservation theorem. EIP-2935 history storage remains
+block/prestate/system-contract setup plus ordinary external state, not a new
+compiler theorem premise.
 
 ## Public Spine
 
@@ -281,8 +297,8 @@ finalization, verified external programs, and compiler totality remain separate
 scope or product concerns rather than missing compiler-preservation steps.
 
 The open-world design is already the intended compiler semantics. It does not
-require verified external contracts, precompile implementations, transaction
-fee/receipt processing, or transaction-final state processing. Compiler
+require verified external contracts, precompile bodies, transaction fee/receipt
+processing, or transaction-final state processing. Compiler
 totality, broader fork/dialect coverage, source maps, deployability limits,
 optimization quality, and general EVM-model/FFI/Lean trust are separate scope or
 product concerns, not missing preservation steps.
@@ -299,7 +315,8 @@ Current split:
 
 - Raw decoding: `Solidity.RawAst` owns Standard JSON contract selection,
   `irOptimizedAst` object selection, pinned fork metadata decoding, raw Yul
-  object/code/data syntax, and fail-closed malformed-node rejection.
+  object/code/data syntax, post-Cancun canonical/alias fork names, and
+  fail-closed malformed-node rejection.
 - Checked elaboration: `Solidity.RawAst.Elab` owns literal decoding, canonical
   call classification, lexical binding checks, nested-function hoisting with
   alpha-renamed generated functions, and `clz` helper insertion.
@@ -890,7 +907,11 @@ Next raw frontend layer:
   theorem above rather than hidden in compiler acceptance.
 - [x] Carry the requested EVM version through recursive frontend objects and
   validate primitive availability against that exact profile in Lean; bridge
-  inputs without metadata and Cancun operations relabeled as London fail closed.
+  inputs without metadata, Cancun operations relabeled as London, and unknown
+  future fork names fail closed. Prague/Pectra and Osaka/Fusaka metadata names
+  are accepted, while native post-Cancun EVM features not present in the
+  selected EVMYulLean dependency remain explicitly out of the closed
+  frame-semantics claim.
 
 ## Adversarial Coverage
 
@@ -960,9 +981,11 @@ composition are checked public theorems.
   dispatch under both supported solc pins.
   A separate fork-adversarial gate checks honest London and Cancun compilation
   and rejects a schema-valid Cancun object whose metadata is changed to London.
-  Raw frontend validation also preserves solc's opcode `0x44` spelling split:
-  London accepts `difficulty()`, Paris and later accept `prevrandao()`, and the
-  opposite cross-fork relabelings fail before those names reach the shared core
+  Focused metadata tests also pin Prague/Osaka canonical acceptance, Pectra/
+  Fusaka bridge aliases, and rejection of unknown future names. Raw frontend
+  validation also preserves solc's opcode `0x44` spelling split: London accepts
+  `difficulty()`, Paris and later accept `prevrandao()`, and the opposite
+  cross-fork relabelings fail before those names reach the shared core
   operation.
 - [x] Separate genuine source completion/fuel sufficiency from malformed-source
   exclusion in the all-finished theorem. `truncated_iff_outOfFuel` proves the

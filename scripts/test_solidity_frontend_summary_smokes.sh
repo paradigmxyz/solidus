@@ -271,5 +271,15 @@ run_summary_case \
   "" \
   ""
 
+run_summary_case \
+  post_cancun_precompile_boundary \
+  PostCancunPrecompileBoundary.sol \
+  PostCancunPrecompileBoundary \
+  2 \
+  ready \
+  staticcall,gas \
+  "" \
+  "open external-boundary"
+
 printf 'frontend_summary_smokes=pass\n'
-printf 'frontend_summary_smokes_count=11\n'
+printf 'frontend_summary_smokes_count=12\n'

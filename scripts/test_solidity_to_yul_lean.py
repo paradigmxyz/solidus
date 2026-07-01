@@ -1745,6 +1745,32 @@ class SolidityToYulLeanTests(unittest.TestCase):
             {"producer": "solc", "ast": "irOptimizedAst", "evmVersion": "cancun"},
         )
 
+    def test_bridge_frontend_metadata_accepts_post_cancun_fork_spellings(self):
+        expected = {
+            "prague": "prague",
+            "pectra": "prague",
+            "osaka": "osaka",
+            "fusaka": "osaka",
+        }
+        for evm_version, lean_constructor in expected.items():
+            with self.subTest(evm_version=evm_version):
+                frontend = bridge.bridge_json_frontend_metadata("irAst", evm_version)
+                self.assertEqual(frontend["evmVersion"], evm_version)
+                self.assertEqual(
+                    bridge.normalize_bridge_json_frontend_metadata(
+                        frontend,
+                        "frontend",
+                    ),
+                    frontend,
+                )
+                self.assertEqual(
+                    bridge.lean_evm_version(evm_version),
+                    (
+                        "EvmCompiler.Yul.SolcValidation.EvmVersion."
+                        f"{lean_constructor}"
+                    ),
+                )
+
     def test_ordered_subobjects_preserve_solc_payload_order(self):
         root = bridge.parse_yul_object(
             {
@@ -3012,7 +3038,7 @@ class SolidityToYulLeanTests(unittest.TestCase):
             "language": "Solidity",
             "sources": {"A.sol": {"content": "contract A {}"}},
             "settings": {
-                "evmVersion": "prague",
+                "evmVersion": "@future",
                 "outputSelection": {"*": {"*": []}},
             },
         }
@@ -3023,6 +3049,44 @@ class SolidityToYulLeanTests(unittest.TestCase):
                 default_via_ir=True,
                 default_experimental=True,
             )
+
+    def test_standard_json_preserves_supported_post_cancun_evm_versions(self):
+        for evm_version in ("prague", "osaka"):
+            with self.subTest(evm_version=evm_version):
+                request = {
+                    "language": "Solidity",
+                    "sources": {"A.sol": {"content": "contract A {}"}},
+                    "settings": {
+                        "evmVersion": evm_version,
+                        "outputSelection": {"*": {"*": []}},
+                    },
+                }
+                augmented = bridge.ensure_standard_json_frontend_outputs(
+                    request,
+                    optimized=True,
+                    default_via_ir=True,
+                    default_experimental=True,
+                )
+                self.assertEqual(augmented["settings"]["evmVersion"], evm_version)
+
+    def test_standard_json_rejects_post_cancun_family_aliases_for_solc(self):
+        for evm_version in ("pectra", "fusaka"):
+            with self.subTest(evm_version=evm_version):
+                request = {
+                    "language": "Solidity",
+                    "sources": {"A.sol": {"content": "contract A {}"}},
+                    "settings": {
+                        "evmVersion": evm_version,
+                        "outputSelection": {"*": {"*": []}},
+                    },
+                }
+                with self.assertRaisesRegex(bridge.ConversionError, "evmVersion"):
+                    bridge.ensure_standard_json_frontend_outputs(
+                        request,
+                        optimized=True,
+                        default_via_ir=True,
+                        default_experimental=True,
+                    )
 
     def test_standard_json_preserves_a_supported_older_evm_version(self):
         request = {
@@ -3880,6 +3944,17 @@ class SolidityToYulLeanTests(unittest.TestCase):
         jsonschema.Draft202012Validator.check_schema(schema)
         jsonschema.validate(rendered, schema)
         self.assertEqual(rendered["frontend"], {"producer": "solc", "ast": "yulAst", "evmVersion": "cancun"})
+        rendered_alias = json.loads(
+            bridge.render_bridge_json(
+                obj,
+                "Schema.yul",
+                "Schema",
+                "yulAst",
+                evm_version="pectra",
+            )
+        )
+        jsonschema.validate(rendered_alias, schema)
+        self.assertEqual(rendered_alias["frontend"]["evmVersion"], "pectra")
 
     @unittest.skipIf(jsonschema is None, "jsonschema package is unavailable")
     def test_bridge_json_schema_rejects_unknown_statement_property(self):
@@ -10555,7 +10630,7 @@ class SolidityToYulLeanTests(unittest.TestCase):
         self.assertIn("test_solidity_frontend_summary_all.sh", local_runner)
         self.assertIn("test_solidity_frontend_summary_smokes.sh", summary_all_runner)
         self.assertIn("frontend_summary_all_count=", summary_all_runner)
-        self.assertIn("frontend_summary_smokes_count=11", runner)
+        self.assertIn("frontend_summary_smokes_count=12", runner)
         self.assertIn("--format bridge-json", runner)
         self.assertIn("--format bridge-json-summary", runner)
         self.assertIn("validate_bridge_json.py", runner)
@@ -10573,12 +10648,14 @@ class SolidityToYulLeanTests(unittest.TestCase):
             "StorageArrayBox.sol",
             "AbiBox.sol",
             "EnvBox.sol",
+            "PostCancunPrecompileBoundary.sol",
         ]:
             self.assertIn(source, runner)
         for primitive in [
             "create,create2",
             "call,delegatecall,staticcall",
             "returndatacopy,returndatasize,gas",
+            "staticcall,gas",
             "log0,log1,log2,log3,log4",
             "caller,origin,chainid,timestamp,callvalue",
             "calldatacopy,keccak256,revert",
@@ -10589,6 +10666,9 @@ class SolidityToYulLeanTests(unittest.TestCase):
             ("StorageArrayBox.sol", "values.push(items[i])"),
             ("AbiBox.sol", "abi.decode(payload, (uint256, bytes))"),
             ("EnvBox.sol", "block.prevrandao"),
+            ("PostCancunPrecompileBoundary.sol", "callPrecompile(0x0b, input, 128)"),
+            ("PostCancunPrecompileBoundary.sol", "callPrecompile(0x11, input, 256)"),
+            ("PostCancunPrecompileBoundary.sol", "callPrecompile(0x100, input, 32)"),
         ]:
             self.assertIn(behavior, (examples_dir / fixture_name).read_text())
 
