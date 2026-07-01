@@ -219,7 +219,8 @@ theorem exists_compact_instr_of_evm_decode
     {op : EvmYul.Operation .EVM} {arg : Option (Word × Nat)}
     (hDecode :
       EvmYul.EVM.decode bytes (EvmYul.UInt256.ofNat pc) = some (op, arg))
-    (hNotPush0 : op ≠ EvmYul.Operation.PUSH0) :
+    (hNotPush0 : op ≠ EvmYul.Operation.PUSH0)
+    (hNotCLZ : op ≠ EvmYul.Operation.CLZ) :
     ∃ instr : Compact.Instr,
       instr.Valid ∧ Compact.decodeAt bytes pc instr := by
   have hArg := decode_arg_eq hDecode
@@ -236,6 +237,9 @@ theorem exists_compact_instr_of_evm_decode
         simpa [EvmYul.EVM.argOnNBytesOfInstr] using hArg
       subst arg
       cases op <;>
+        first
+        | exact False.elim (hNotCLZ rfl)
+        |
         exact ⟨.prim _, trivial,
           compact_prim_decodeAt_of_evm_decode (hOp := rfl) hDecode⟩
   | Keccak op =>
@@ -371,23 +375,24 @@ theorem exists_compact_instr_of_evm_decode
           compact_prim_decodeAt_of_evm_decode (hOp := rfl) hDecode⟩
 
 /-- Exact local code condition required by the recursive frame bridge.
-Compiler-side reachability only has to rule out decode misses and `PUSH0` at
-states that the concrete frame can actually reach. -/
+Compiler-side reachability only has to rule out decode misses plus opcodes that
+EVMYul decodes but this compact assembly layer does not model natively. -/
 def SupportedDecodeAt (bytes : ByteArray) (pc : Word) : Prop :=
   ∃ op arg,
     EvmYul.EVM.decode bytes pc = some (op, arg) ∧
-      op ≠ EvmYul.Operation.PUSH0
+      op ≠ EvmYul.Operation.PUSH0 ∧
+      op ≠ EvmYul.Operation.CLZ
 
 theorem compact_decodeAt_of_supported
     {bytes : ByteArray} {pc : Word}
     (hSupported : SupportedDecodeAt bytes pc) :
     ∃ instr : Compact.Instr,
       instr.Valid ∧ Compact.decodeAt bytes pc.toNat instr := by
-  rcases hSupported with ⟨op, arg, hDecode, hNotPush0⟩
+  rcases hSupported with ⟨op, arg, hDecode, hNotPush0, hNotCLZ⟩
   have hDecodeNat :
       EvmYul.EVM.decode bytes (EvmYul.UInt256.ofNat pc.toNat) =
         some (op, arg) := by
     simpa using hDecode
-  exact exists_compact_instr_of_evm_decode hDecodeNat hNotPush0
+  exact exists_compact_instr_of_evm_decode hDecodeNat hNotPush0 hNotCLZ
 
 end EvmCompiler.Assembly.GasfulBridge

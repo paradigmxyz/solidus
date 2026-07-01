@@ -6682,8 +6682,10 @@ theorem call_result_status_bool
             state.genesisBlockHeader state.blocks state.accountMap state.σ₀
             { totalGasUsedInBlock := state.totalGasUsedInBlock
               transactionReceipts := state.transactionReceipts }
-            (state.addAccessedAccount
-              (EvmYul.AccountAddress.ofUInt256 target)).substate
+            (EvmYul.EVM.addDelegatedCodeAccess
+              (EvmYul.AccountAddress.ofUInt256 target) state.accountMap
+              (state.addAccessedAccount
+                (EvmYul.AccountAddress.ofUInt256 target)).substate)
             (EvmYul.AccountAddress.ofUInt256 source)
             state.executionEnv.sender
             (EvmYul.AccountAddress.ofUInt256 recipient)
@@ -6732,8 +6734,10 @@ theorem call_result_pc
             state.genesisBlockHeader state.blocks state.accountMap state.σ₀
             { totalGasUsedInBlock := state.totalGasUsedInBlock
               transactionReceipts := state.transactionReceipts }
-            (state.addAccessedAccount
-              (EvmYul.AccountAddress.ofUInt256 target)).substate
+            (EvmYul.EVM.addDelegatedCodeAccess
+              (EvmYul.AccountAddress.ofUInt256 target) state.accountMap
+              (state.addAccessedAccount
+                (EvmYul.AccountAddress.ofUInt256 target)).substate)
             (EvmYul.AccountAddress.ofUInt256 source)
             state.executionEnv.sender
             (EvmYul.AccountAddress.ofUInt256 recipient)
@@ -6830,8 +6834,10 @@ theorem call_result_openSameData
             state.genesisBlockHeader state.blocks state.accountMap state.σ₀
             { totalGasUsedInBlock := state.totalGasUsedInBlock
               transactionReceipts := state.transactionReceipts }
-            (state.addAccessedAccount
-              (EvmYul.AccountAddress.ofUInt256 target)).substate
+            (EvmYul.EVM.addDelegatedCodeAccess
+              (EvmYul.AccountAddress.ofUInt256 target) state.accountMap
+              (state.addAccessedAccount
+                (EvmYul.AccountAddress.ofUInt256 target)).substate)
             (EvmYul.AccountAddress.ofUInt256 source)
             state.executionEnv.sender
             (EvmYul.AccountAddress.ofUInt256 recipient)

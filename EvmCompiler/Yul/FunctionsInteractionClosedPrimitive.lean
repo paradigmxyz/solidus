@@ -3791,6 +3791,8 @@ theorem closedSelected : ClosedSelected := by
           simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
           subst op
           exact PureBinary.forward .sar hLength hRel
+      | CLZ =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
   | Keccak primitive =>
       cases primitive with
       | KECCAK256 =>

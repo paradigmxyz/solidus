@@ -31,6 +31,7 @@ def toBasicOp? : EvmYul.Operation .Yul → Option Structured.BasicOp
   | .CompBit .SHL => some .shl
   | .CompBit .SHR => some .shr
   | .CompBit .SAR => some .sar
+  | .CompBit .CLZ => none
   | .Keccak .KECCAK256 => some .keccak256
   | .Env .ADDRESS => some .address
   | .Env .BALANCE => some .balance
@@ -91,6 +92,9 @@ def toBasicOp? : EvmYul.Operation .Yul → Option Structured.BasicOp
 
 @[simp] theorem toBasicOp?_msize :
     toBasicOp? ((.StackMemFlow .MSIZE : EvmYul.Operation .Yul)) = none := rfl
+
+@[simp] theorem toBasicOp?_clz :
+    toBasicOp? ((.CompBit .CLZ : EvmYul.Operation .Yul)) = none := rfl
 
 def toUncheckedBasicOp? (prim : EvmYul.Operation .Yul) :
     Option Structured.BasicOp :=

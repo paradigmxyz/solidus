@@ -98,6 +98,7 @@ def primitiveSignature : EvmYul.Operation .Yul → Signature
   | .CompBit .SHL => sig 2 1
   | .CompBit .SHR => sig 2 1
   | .CompBit .SAR => sig 2 1
+  | .CompBit .CLZ => sig 1 1
   | .Keccak .KECCAK256 => sig 2 1
   | .Env .ADDRESS => sig 0 1
   | .Env .BALANCE => sig 1 1
@@ -186,9 +187,10 @@ def primitiveAvailable? (profile : DialectProfile)
   | .StackMemFlow .TSTORE
   | .StackMemFlow .MCOPY =>
       profile.evmVersion.atLeast? .cancun
-  -- Post-Cancun native opcode/precompile semantics are owned by EVMYulLean.
-  -- This validator can only gate operations present in the pinned core AST;
-  -- raw solc `clz` calls are lowered to generated Yul before this layer.
+  -- Raw solc `clz` calls are lowered to generated Yul before this layer; the
+  -- normalized core compiler does not accept native `CLZ` directly.
+  | .CompBit .CLZ =>
+      false
   | _ => true
 
 theorem primitiveAvailable_msize (profile : DialectProfile) :

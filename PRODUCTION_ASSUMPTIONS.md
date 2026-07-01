@@ -151,13 +151,13 @@ metadata transported from fork-family terminology still reaches the same
 checked dialect profile. Unknown future names fail closed.
 
 Closed native frame execution is governed by the EVMYulLean commit selected in
-`lakefile.lean`. This compiler repo currently pins `3918e920...`, so native
-`CLZ`, EIP-7702 delegated-code lookup, and Fusaka MODEXP gas/size rules are not
-part of this repo's closed-frame claim until the dependency is repointed to the
-post-Cancun EVMYulLean work. That is a dependency-pin boundary, not an upstream
-blocker for the compiler theorem. The raw solc `clz` builtin is still supported
-through the verified generated-helper lowering, which does not require the
-native opcode.
+`lakefile.lean`. This compiler repo currently pins
+`8b610d524898f9bc7d451b017e0df6057cc88cd9`, which includes native `CLZ`,
+execution-side EIP-7702 delegated-code lookup, and Fusaka MODEXP gas/size
+rules. The raw solc `clz` builtin is still supported through the verified
+generated-helper lowering, so the compiler does not need to emit the native
+opcode. EIP-7702 transaction authorization-list processing remains outside this
+frame-level compiler theorem.
 
 Solc-emitted precompile use is different: it reaches the compiler as ordinary
 `CALL`/`STATICCALL` to an address. That includes existing `ecrecover` lowering,

@@ -25,11 +25,13 @@ metadata also accepts the family aliases Pectra for Prague and Fusaka for
 Osaka.
 
 Post-Cancun native EVM semantics are bounded by the EVMYulLean commit selected
-in `lakefile.lean`. The raw Yul `clz` builtin is supported by the existing
-generated-helper lowering and proof path, but this repo's current dependency pin
-predates the post-Cancun EVMYulLean work. Until the dependency is repointed, this
-repo does not claim concrete native-frame behavior for Fusaka opcode `CLZ`,
-EIP-7702 delegated EOA code-image resolution, or Fusaka MODEXP gas/size changes.
+in `lakefile.lean`. The selected pin `8b610d524898f9bc7d451b017e0df6057cc88cd9`
+covers Fusaka opcode `CLZ`, Fusaka MODEXP gas/size changes, and execution-side
+EIP-7702 delegated EOA code-image lookup. The raw Yul `clz` builtin remains
+supported by the existing generated-helper lowering and proof path; this
+compiler does not need to emit native `CLZ` for that coverage. EIP-7702
+transaction authorization-list processing remains outside this frame-level
+compiler theorem.
 
 Pectra/Fusaka precompile use follows the existing `ecrecover` style boundary:
 solc emits ordinary `CALL`/`STATICCALL`, and the compiler theorem preserves that
@@ -909,9 +911,9 @@ Next raw frontend layer:
   validate primitive availability against that exact profile in Lean; bridge
   inputs without metadata, Cancun operations relabeled as London, and unknown
   future fork names fail closed. Prague/Pectra and Osaka/Fusaka metadata names
-  are accepted, while native post-Cancun EVM features not present in the
-  selected EVMYulLean dependency remain explicitly out of the closed
-  frame-semantics claim.
+  are accepted. Native frame behavior follows the selected EVMYulLean
+  dependency; features not present in that dependency remain explicitly out of
+  the closed frame-semantics claim.
 
 ## Adversarial Coverage
 
