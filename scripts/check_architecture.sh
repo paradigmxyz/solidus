@@ -162,4 +162,19 @@ if rg -n '\b(sorry|admit|sorryAx)\b' EvmCompiler --glob '*.lean'; then
   fail 'production Lean tree contains a proof hole'
 fi
 
+# Orphaned oleans (build artifacts whose source module was deleted) silently
+# resolve deleted API for generated code on this machine while fresh clones
+# fail; refuse to let them accumulate after refactors.
+if [ -d .lake/build/lib/lean/EvmCompiler ]; then
+  orphaned_oleans="$(find .lake/build/lib/lean/EvmCompiler -name '*.olean' | \
+    while read -r olean; do
+      rel="${olean#.lake/build/lib/lean/}"
+      [ -f "${rel%.olean}.lean" ] || printf '%s\n' "$rel"
+    done)"
+  if [ -n "$orphaned_oleans" ]; then
+    printf '%s\n' "$orphaned_oleans" >&2
+    fail 'orphaned oleans without source modules; delete them (see PROGRESS_LOG tooling/orphan-olean-purge)'
+  fi
+fi
+
 printf 'architecture dependency check passed\n'
