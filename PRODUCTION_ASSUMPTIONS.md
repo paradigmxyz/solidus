@@ -89,7 +89,9 @@ Successful artifact construction internally derives all of the following:
 
 None of these appears as a premise of the canonical public theorem. The
 architecture gate rejects regressions that reintroduce initial-state, scratch
-safety, generated-context, certificate, or oracle premises.
+safety, generated-context, certificate, or oracle premises. It also fails when
+any built `.lake` object lacks a matching source module, so deleted Lean API
+cannot silently keep resolving from orphaned build artifacts after a refactor.
 
 ## State Relation
 
@@ -242,13 +244,18 @@ pressure and semantic surfaces, executable local/external code inspection,
 constructor success/revert/rollback and CREATE2 collision, delegated proxy
 state/reentrancy/rollback/upgrade execution, exact Permit2, linked Aave Pool,
 linked PoolManager creation/runtime, full pinned Safe and ERC-4337 EntryPoint
-creation/runtime, and fourteen pinned real-repository suites. Permit2 remains an
+creation/runtime, and fourteen pinned real-repository suites. Differential
+execution gates additionally deploy full-solc and Lean-backend bytecode for the
+example-contract corpus and pinned Aave v3 math fixtures in one Foundry VM and
+replay identical calls against both, requiring the same success flags, return
+data hashes, and logs, including revert paths. Permit2 remains an
 exact solc-0.8.17 legacy/version-boundary gate because that compiler emits no
 structured `irOptimizedAst`; the raw compiler rejects its missing AST. Safe and
 EntryPoint are compile gates; only cases for which solc emits a reference image
-are counted as differential execution tests. The kernel proof gate reports
-only `propext`, `Classical.choice`, and `Quot.sound` for both primary public
-theorems.
+are counted as differential execution tests. The kernel proof gate replays
+`#print axioms` for the primary raw and gasful theorems and the canonical
+`Yul.EndToEnd` theorems, and fails unless every report is exactly `propext`,
+`Classical.choice`, and `Quot.sound`.
 The supported-version matrix also compiles honest London and Cancun fixtures
 and rejects Cancun-only `MCOPY`/transient-storage syntax relabeled as London.
 It separately compiles London `difficulty()` and Paris `prevrandao()`, then

@@ -86,5 +86,20 @@ if [[ "$layer" == "typedcfg" || "$layer" == "all" ]]; then
 fi
 
 if [[ "$layer" == "proofs" || "$layer" == "all" ]]; then
-  lake env lean proof_artifacts/stack_backend_production_smoke.lean
+  smoke_output="$(lake env lean proof_artifacts/stack_backend_production_smoke.lean)"
+  printf '%s\n' "$smoke_output"
+  # Lean wraps long axiom reports; rejoin continuation lines before checking.
+  axiom_reports="$(printf '%s\n' "$smoke_output" | awk '
+    /^ / { sub(/^ +/, ""); buf = buf " " $0; next }
+    { if (buf != "") print buf; buf = $0 }
+    END { if (buf != "") print buf }' | grep "depends on axioms" || true)"
+  if [ -z "$axiom_reports" ]; then
+    printf 'error: proof smoke produced no axiom reports\n' >&2
+    exit 1
+  fi
+  if printf '%s\n' "$axiom_reports" | \
+      grep -Ev "depends on axioms: \[propext, Classical\.choice, Quot\.sound\]$"; then
+    printf 'error: unexpected axiom footprint in proof smoke output above\n' >&2
+    exit 1
+  fi
 fi

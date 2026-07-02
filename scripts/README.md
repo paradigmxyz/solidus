@@ -17,7 +17,7 @@ The gate checks dependency-direction rules before invoking `lake build`.
 Focused builds may be supplied as arguments:
 
 ```sh
-scripts/verify.sh EvmCompiler.Locals.SourceLowering
+scripts/verify.sh EvmCompiler.Locals.Compiler
 ```
 
 Record reproducible architecture metrics with:
@@ -36,11 +36,15 @@ The default output is
 Focused architecture layers are available through:
 
 ```sh
+scripts/verify_layer.sh core
 scripts/verify_layer.sh effects
 scripts/verify_layer.sh allocator
 scripts/verify_layer.sh typedcfg
 scripts/verify_layer.sh public
+scripts/verify_layer.sh verification
+scripts/verify_layer.sh frontend
 scripts/verify_layer.sh proofs
+scripts/verify_layer.sh all
 ```
 
 The `allocator` layer checks Functions liveness, symbolic stack layouts,
@@ -1052,9 +1056,7 @@ libraries.  The fixtures cover wad/ray multiplication and division, ray/wad
 conversion, percentage multiply/divide, zero-denominator revert paths from
 Aave's inline assembly guards, and pure plus timestamp-based compounded-interest
 arithmetic.  The smoke reports each runtime backend-check status and first
-failing stage so these shapes can move from preflight into Forge comparison once
-the current function compiler accepts the broader checked-arithmetic/runtime-data
-pattern:
+failing stage:
 
 ```sh
 SOLC=solc LAKE=lake \
@@ -1066,6 +1068,29 @@ The script defaults to Aave v3 Core commit
 `b74526a7bc67a3a117a1963fc871b3eb8cea8435` and solc `0.8.26`.  Pass
 `AAVE_V3_DIR=/path/to/aave-v3-core` to reuse a local checkout or `KEEP_TMP=1`
 to keep the generated bridge JSON files.
+
+The Aave v3 math corpus also has a differential execution gate.  It wraps the
+real `WadRayMath`, `PercentageMath`, and `MathUtils` libraries at the same
+pinned ref, compiles every fixture twice (full solc, and solc IR through the
+Lean backend), deploys both bytecodes in one Foundry VM, and replays each call
+against both instances, requiring identical success flags, `keccak(returndata)`,
+and logs — including overflow and zero-division revert paths:
+
+```sh
+SOLC=solc LAKE=lake FORGE=forge \
+  scripts/test_aave_v3_execution_compare.sh
+```
+
+A companion gate runs the same two-instance differential execution over the
+example contracts that previously had compile-only or no backend coverage,
+including the fork-surface fixtures (Cancun opcode surface, London
+`difficulty()`, Paris `prevrandao()`), external-call, try/catch, and
+adversarial stack-pressure cases:
+
+```sh
+SOLC=solc LAKE=lake FORGE=forge \
+  scripts/test_solidity_execution_coverage_compare.sh
+```
 
 The full-contract backend gate compiles the actual Permit2 runtime and linked
 Aave v3 Pool runtime through the checked recursive stack-object artifact.

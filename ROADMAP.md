@@ -936,7 +936,12 @@ Next raw frontend layer:
   a fail-closed solc-0.8.17 version-boundary/legacy-bridge regression because
   that compiler emits no structured `irOptimizedAst`.
 - [x] Focused and full `EvmCompiler.Verification` builds pass.
-- [x] Architecture and proof-smoke checks pass.
+- [x] Differential execution gates replay identical calls against full-solc and
+  Lean-backend bytecode in one Foundry VM for the example-contract corpus and
+  pinned Aave v3 math fixtures, comparing success flags, return data, and logs.
+- [x] Architecture and proof-smoke checks pass, including the orphaned-olean
+  guard and the enforced kernel-axiom check on the primary raw, gasful, and
+  canonical public theorems.
 - [x] Repository hole, trust, `unsafe`, and axiom audits pass.
 - [x] Frontend regressions and adversarial tests pass.
 - [x] `git diff --check` passes.

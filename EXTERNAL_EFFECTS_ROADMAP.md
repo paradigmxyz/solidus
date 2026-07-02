@@ -1,8 +1,9 @@
 # Open Effects Architecture
 
-Status: compiler-side migration complete; retained as an architectural summary.
-Current remaining work is tracked in [`ROADMAP.md`](ROADMAP.md), and the exact
-claim boundary is maintained in
+Status: complete; retained as an architectural summary. Both the compiler-side
+migration and the gasful target refinement described below are finished and
+composed into the published theorems. Current status is tracked in
+[`ROADMAP.md`](ROADMAP.md), and the exact claim boundary is maintained in
 [`PRODUCTION_ASSUMPTIONS.md`](PRODUCTION_ASSUMPTIONS.md).
 
 ## Completed Compiler Boundary
@@ -37,7 +38,9 @@ for every resource transcript t,
 
 EVMYulLean already contains a gasful EVM runner that charges instructions,
 computes memory expansion and EIP-150 forwarding, returns unused call gas, and
-detects out-of-gas. The remaining target theorem must:
+detects out-of-gas. The gasful target theorem — completed and published as
+`optimizedRawSolcIrToGasfulRawBytecode` via `Assembly.GasfulBridge` — does all
+of the following:
 
 1. relate that gasful run to the open bytecode run after erasing target-only
    gas/control data;
@@ -55,8 +58,8 @@ detects out-of-gas. The remaining target theorem must:
    interface while retaining target-internal effective/returned gas and
    caller-local memory/returndata effects.
 
-The final composition should name the actual gasful EVM runner and should not
-add a target trace, response oracle, replay certificate, or compiler-generated
+The final composition names the actual gasful EVM runner and does not add a
+target trace, response oracle, replay certificate, or compiler-generated
 resource certificate as a public premise.
 
 ## Deliberately Outside Compiler Preservation
