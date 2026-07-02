@@ -3718,7 +3718,8 @@ class SolidityToYulLeanTests(unittest.TestCase):
 
         self.assertIn("IO.FS.readFile evmCompilerRunnerBridgeJsonPath", rendered)
         self.assertIn("BridgeJson.parseProgram? input", rendered)
-        self.assertIn("bytecodeImageUncheckedWithLinkerSymbols?", rendered)
+        self.assertIn("compileVerifiedStackObjectArtifactWithLinkerSymbols?", rendered)
+        self.assertNotIn("bytecodeImageUnchecked", rendered)
         self.assertIn('"functions_compile"', rendered)
         self.assertIn('"payload_items"', rendered)
         self.assertIn('"data_sizes"', rendered)

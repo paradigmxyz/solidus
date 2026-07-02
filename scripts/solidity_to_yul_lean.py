@@ -5486,8 +5486,9 @@ def render_json_file_backend_check_runner(
         1,
     )
     return f"""import EvmCompiler.Solidity.BridgeJson
+import EvmCompiler.Solidity.VerifiedStackObjectArtifact
 import EvmCompiler.Assembly.Bytecode
-import EvmCompiler.Objects.Compiler
+import EvmCompiler.Compiler
 
 def evmCompilerRunnerBridgeJsonPath : String :=
   {lean_string(str(json_path))}
@@ -5751,15 +5752,14 @@ def main : IO Unit := do
     let expressions ← localsToExpressions?
     expressions.compile?)
   let childImages? ←
-    evmCompilerRunnerTimedPure "child_images" (fun _ =>
-    EvmCompiler.Solidity.Frontend.Object.List.bytecodeImagesUncheckedWithLinkerSymbols?
-      object.objects evmCompilerRunnerLinkerSymbols)
+    evmCompilerRunnerTimedPure "child_images" (fun _ => do
+    let childArtifacts ←
+      EvmCompiler.Solidity.Frontend.Object.List.compileVerifiedStackObjectArtifactsWithLinkerSymbols?
+        object.objects evmCompilerRunnerLinkerSymbols
+    some (childArtifacts.map (·.image)))
   let immutableNames := object.loadImmutableNames
   let zeroImmutableValues :=
     EvmCompiler.Solidity.Frontend.ImmutableReference.zeroEntries immutableNames
-  let markerImmutableValues :=
-    EvmCompiler.Solidity.Frontend.ImmutableReference.markerEntriesFromNat
-      0 immutableNames
   let items? ←
     evmCompilerRunnerTimedPure "payload_items" (fun _ => do
     let childImages ← childImages?
@@ -5841,7 +5841,8 @@ def main : IO Unit := do
   let placeholderCode? ←
     evmCompilerRunnerTimedPure "placeholder_code" (fun _ => do
     let context ← placeholderContext?
-    object.codeBytesUncheckedIn? context)
+    let artifact ← object.compileVerifiedStackCodeArtifactIn? context
+    some artifact.bytes)
   let codeBase? := do
     let placeholderCode ← placeholderCode?
     some placeholderCode.length
@@ -5905,44 +5906,37 @@ def main : IO Unit := do
     evmCompilerRunnerTimedPure "code_expressions_compile" (fun _ => do
     let expressions ← codeLocalsToExpressions?
     expressions.compile?)
-  let code? ←
+  let codeArtifact? ←
     evmCompilerRunnerTimedPure "code" (fun _ => do
     let context ← codeContext?
-    object.codeBytesUncheckedIn? context)
-  let markerCode? ←
-    evmCompilerRunnerTimedPure "marker_code" (fun _ => do
-    let codeBase ← codeBase?
-    let payload ← payload?
-    let dataSizes ← dataSizes?
-    let layout ← layout?
-    let dataOffsets ← dataOffsets?
-    let childImmutableReferences ← childImmutableReferences?
-    let selfSize := EvmYul.UInt256.ofNat (codeBase + payload.length)
-    let context : EvmCompiler.Solidity.Frontend.ObjectBuiltinContext :=
-      {{ layout := {{ entries := layout }}
-        dataSizes := dataSizes
-        dataOffsets := dataOffsets
-        linkerSymbols := evmCompilerRunnerLinkerSymbols
-        immutableValues := markerImmutableValues
-        immutableReferences := childImmutableReferences
-        selfSize? := some (object.name, selfSize) }}
-    object.codeBytesUncheckedIn? context)
-  let objectImage? ←
+    object.compileVerifiedStackCodeArtifactIn? context)
+  let code? := codeArtifact?.map (·.bytes)
+  let markerCode? := codeArtifact?.map (·.immutableMarkerBytes)
+  let verifiedObjectArtifact? ←
     evmCompilerRunnerTimedPure "object_image" (fun _ =>
-    object.bytecodeImageUncheckedWithLinkerSymbols?
+    object.compileVerifiedStackObjectArtifactWithLinkerSymbols?
       evmCompilerRunnerLinkerSymbols)
-  let computedObjectData? ←
-    evmCompilerRunnerTimedPure "computed_object_data" (fun _ =>
-    object.computedObjectDataWithLinkerSymbols?
-      evmCompilerRunnerLinkerSymbols)
+  let objectImage? := verifiedObjectArtifact?.map (·.image)
+  let computedObjectData? := verifiedObjectArtifact?.map (·.computed)
   let resolvedObjectData? ←
-    evmCompilerRunnerTimedPure "resolved_object_data" (fun _ =>
-    program.resolveObjectBuiltinsWithComputedObjectDataAndLinkerSymbols?
-      evmCompilerRunnerLinkerSymbols)
+    evmCompilerRunnerTimedPure "resolved_object_data" (fun _ => do
+    let computed ← computedObjectData?
+    let memoryContract ←
+      EvmCompiler.Solidity.Frontend.MemoryGuard.Object.inferredContract?
+        object
+    let context :=
+      {{ computed.context with memoryContract := memoryContract }}
+    let dispatcher ←
+      EvmCompiler.Solidity.Frontend.Stmt.List.resolveObjectBuiltinsIn?
+        object.dispatcher context
+    let functions ←
+      EvmCompiler.Solidity.Frontend.FunctionDef.List.resolveObjectBuiltinsIn?
+        object.functions context
+    some {{ object with dispatcher, functions, memoryContract }})
   let solcValidatedObjectData? ←
     evmCompilerRunnerTimedPure "solc_validation" (fun _ => do
     let resolved ← resolvedObjectData?
-    resolved.object.toSolcYulProgram?)
+    resolved.toSolcYulProgram?)
   let stages :=
     [ ("to_yul_contract", evmCompilerRunnerStageSome toYulContract?)
     , ("lower_code_unchecked", evmCompilerRunnerStageSome lowerCodeUnchecked?)
