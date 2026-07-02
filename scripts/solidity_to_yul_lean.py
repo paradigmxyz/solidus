@@ -2527,6 +2527,13 @@ def render_frontend_module(
         compile_artifact_with_computed_object_data_definition,
         "compile-artifact-with-computed-object-data definition name",
     )
+    verified_code_artifact_at_definition = (
+        definition + "VerifiedCodeArtifactAt"
+    )
+    validate_lean_name(
+        verified_code_artifact_at_definition,
+        "verified code artifact definition name",
+    )
     namespace_parts = []
     if namespace:
         namespace_parts = namespace.split(".")
@@ -2538,6 +2545,7 @@ def render_frontend_module(
         f"{lean_string(contract_name)} ({obj.lean_ir(evm_version)})"
     )
     header = f"""import EvmCompiler.Solidity.Frontend
+import EvmCompiler.Solidity.Public
 import EvmCompiler.Assembly.Bytecode
 
 /-!
@@ -2560,11 +2568,23 @@ def {to_yul_definition} : Option EvmCompiler.Yul.Program :=
 noncomputable def {to_objects_definition} : Option EvmCompiler.Objects.Program :=
   {definition}.toObjects?
 """
+    verified_artifact_definition = definition + "VerifiedArtifact"
+    validate_lean_name(
+        verified_artifact_definition, "verified artifact definition name"
+    )
+    body += f"""
+def {verified_artifact_definition} : Option {LEAN_FRONTEND}.Program.Artifact :=
+  {definition}.compileArtifact?
+"""
     body += render_frontend_unchecked_backend_defs(
         definition + "UncheckedTarget",
         definition + "UncheckedBytecode",
-        f"{definition}.compileUnchecked?",
-        f"{definition}.bytecodeUnchecked?",
+        "Option.map (fun artifact => artifact.codeArtifact.compiled.target)\n"
+        f"    {verified_artifact_definition}",
+        "Option.map\n"
+        "    (fun artifact =>\n"
+        "      EvmCompiler.Assembly.Bytecode.ofList artifact.codeArtifact.bytes)\n"
+        f"    {verified_artifact_definition}",
     )
     bytecode_image_definition = definition + "UncheckedBytecodeImage"
     object_image_definition = definition + "UncheckedObjectImage"
@@ -2582,7 +2602,7 @@ noncomputable def {to_objects_definition} : Option EvmCompiler.Objects.Program :
     )
     body += f"""
 def {object_image_definition} : Option {LEAN_FRONTEND}.ObjectImage :=
-  {definition}.object.bytecodeImageUnchecked?
+  {definition}.compileImage?
 
 def {bytecode_image_definition} : Option ByteArray :=
   Option.map
@@ -2591,7 +2611,7 @@ def {bytecode_image_definition} : Option ByteArray :=
 
 noncomputable def {checked_object_image_definition} :
     Option {LEAN_FRONTEND}.ObjectImage :=
-  {definition}.object.bytecodeImageChecked?
+  {definition}.compileImage?
 
 noncomputable def {checked_bytecode_image_definition} : Option ByteArray :=
   Option.map
@@ -2600,6 +2620,13 @@ noncomputable def {checked_bytecode_image_definition} : Option ByteArray :=
 """
     linker_entries = list(linker_symbols or [])
     linker_symbols_definition = definition + "LinkerSymbols"
+    verified_artifact_with_linkers_definition = (
+        definition + "VerifiedArtifactWithLinkerSymbols"
+    )
+    validate_lean_name(
+        verified_artifact_with_linkers_definition,
+        "verified artifact with linker symbols definition name",
+    )
     object_image_with_linkers_definition = (
         definition + "UncheckedObjectImageWithLinkerSymbols"
     )
@@ -2638,10 +2665,13 @@ def {linker_symbols_definition} :
     List ({LEAN_FRONTEND}.Name × {LEAN_FRONTEND}.Word) :=
   {linker_symbols_rendered}
 
+def {verified_artifact_with_linkers_definition} :
+    Option {LEAN_FRONTEND}.Program.Artifact :=
+  {definition}.compileArtifactWithLinkerSymbols? {linker_symbols_definition}
+
 def {object_image_with_linkers_definition} :
     Option {LEAN_FRONTEND}.ObjectImage :=
-  {definition}.object.bytecodeImageUncheckedWithLinkerSymbols?
-    {linker_symbols_definition}
+  {definition}.compileImageWithLinkerSymbols? {linker_symbols_definition}
 
 def {bytecode_image_with_linkers_definition} : Option ByteArray :=
   Option.map
@@ -2650,8 +2680,7 @@ def {bytecode_image_with_linkers_definition} : Option ByteArray :=
 
 noncomputable def {checked_object_image_with_linkers_definition} :
     Option {LEAN_FRONTEND}.ObjectImage :=
-  {definition}.object.bytecodeImageCheckedWithLinkerSymbols?
-    {linker_symbols_definition}
+  {definition}.compileImageWithLinkerSymbols? {linker_symbols_definition}
 
 noncomputable def {checked_bytecode_image_with_linkers_definition} :
     Option ByteArray :=
@@ -2660,24 +2689,29 @@ noncomputable def {checked_bytecode_image_with_linkers_definition} :
     {checked_object_image_with_linkers_definition}
 
 def {resolved_object_data_definition} :
-    Option {LEAN_FRONTEND}.Program :=
-  {definition}.resolveObjectBuiltinsWithComputedObjectDataAndLinkerSymbols?
-    {linker_symbols_definition}
+    Option {LEAN_FRONTEND}.Program := do
+  let artifact ← {verified_artifact_with_linkers_definition}
+  let object ←
+    {LEAN_FRONTEND}.Object.resolveObjectBuiltinsIn?
+      {definition}.object artifact.computed.context
+  some
+    {{ source := {definition}.source
+      contract := {definition}.contract
+      object := object }}
 
 def {to_yul_with_computed_object_data_definition} :
-    Option EvmCompiler.Yul.Program :=
-  {definition}.toYulProgramWithComputedObjectDataAndLinkerSymbols?
-    {linker_symbols_definition}
+    Option EvmCompiler.Yul.Program := do
+  let resolved ← {resolved_object_data_definition}
+  resolved.toYulProgram?
 
 noncomputable def {to_objects_with_computed_object_data_definition} :
-    Option EvmCompiler.Objects.Program :=
-  {definition}.toObjectsWithComputedObjectDataAndLinkerSymbols?
-    {linker_symbols_definition}
+    Option EvmCompiler.Objects.Program := do
+  let resolved ← {resolved_object_data_definition}
+  resolved.toObjects?
 
 noncomputable def {compile_artifact_with_computed_object_data_definition} :
-    Option EvmCompiler.Objects.Program.CompileArtifact :=
-  {definition}.compileArtifactWithComputedObjectDataAndLinkerSymbols?
-    {linker_symbols_definition}
+    Option {LEAN_FRONTEND}.Program.Artifact :=
+  {verified_artifact_with_linkers_definition}
 """
     body += render_optional_yul_backend_defs(
         to_yul_with_computed_object_data_definition
@@ -2698,12 +2732,29 @@ def {to_yul_with_layout_definition} : Option EvmCompiler.Yul.Program :=
 noncomputable def {to_objects_with_layout_definition} :
     Option EvmCompiler.Objects.Program :=
   {definition}.toObjectsWithLayout? objectLayout
+
+def {verified_code_artifact_at_definition} (base : Nat) :
+    Option {LEAN_FRONTEND}.Object.VerifiedStackCodeArtifact :=
+  let object := {definition}.object
+  let context :=
+    object.builtinContextWithLocalDataBaseAndLinkerSymbols
+      objectLayout base {linker_symbols_definition}
+  let context :=
+    {{ context with
+      immutableValues :=
+        {LEAN_FRONTEND}.ImmutableReference.zeroEntries
+          object.loadImmutableNames }}
+  object.compileVerifiedStackCodeArtifactIn? context
 """
     body += render_frontend_unchecked_backend_defs(
         definition + "UncheckedTargetWithLayout",
         definition + "UncheckedBytecodeWithLayout",
-        f"{definition}.compileUncheckedWithLayout? objectLayout",
-        f"{definition}.bytecodeUncheckedWithLayout? objectLayout",
+        "Option.map (fun artifact => artifact.compiled.target)\n"
+        f"    ({verified_code_artifact_at_definition} 0)",
+        "Option.map\n"
+        "    (fun artifact =>\n"
+        "      EvmCompiler.Assembly.Bytecode.ofList artifact.bytes)\n"
+        f"    ({verified_code_artifact_at_definition} 0)",
     )
     body += render_optional_yul_backend_defs(to_yul_with_layout_definition)
     if local_data_base is not None:
@@ -2721,10 +2772,12 @@ noncomputable def {to_objects_with_local_data_base_definition} :
         body += render_frontend_unchecked_backend_defs(
             definition + "UncheckedTargetWithLocalDataBase",
             definition + "UncheckedBytecodeWithLocalDataBase",
-            f"{definition}.compileUncheckedWithLocalDataBase? "
-            "objectLayout localDataBase",
-            f"{definition}.bytecodeUncheckedWithLocalDataBase? "
-            "objectLayout localDataBase",
+            "Option.map (fun artifact => artifact.compiled.target)\n"
+            f"    ({verified_code_artifact_at_definition} localDataBase)",
+            "Option.map\n"
+            "    (fun artifact =>\n"
+            "      EvmCompiler.Assembly.Bytecode.ofList artifact.bytes)\n"
+            f"    ({verified_code_artifact_at_definition} localDataBase)",
         )
         body += render_optional_yul_backend_defs(
             to_yul_with_local_data_base_definition
@@ -2809,6 +2862,7 @@ def render_frontend_json_module(
 
     bridge_json = render_bridge_json(obj, source_name, contract_name)
     header = f"""import EvmCompiler.Solidity.BridgeJson
+import EvmCompiler.Solidity.Public
 import EvmCompiler.Assembly.Bytecode
 
 /-!
@@ -2842,18 +2896,23 @@ noncomputable def {to_objects_definition} : Option EvmCompiler.Objects.Program :
   let program ← {definition}
   program.toObjects?
 
-def {definition}UncheckedTarget : Option EvmCompiler.Assembly.TargetProgram := do
+def {definition}VerifiedArtifact :
+    Option EvmCompiler.Solidity.Frontend.Program.Artifact := do
   let program ← {definition}
-  program.compileUnchecked?
+  program.compileArtifact?
+
+def {definition}UncheckedTarget : Option EvmCompiler.Assembly.TargetProgram := do
+  let artifact ← {definition}VerifiedArtifact
+  some artifact.codeArtifact.compiled.target
 
 def {definition}UncheckedBytecode : Option ByteArray := do
-  let program ← {definition}
-  program.bytecodeUnchecked?
+  let artifact ← {definition}VerifiedArtifact
+  some (EvmCompiler.Assembly.Bytecode.ofList artifact.codeArtifact.bytes)
 
 def {definition}UncheckedObjectImage :
     Option EvmCompiler.Solidity.Frontend.ObjectImage := do
-  let program ← {definition}
-  program.object.bytecodeImageUnchecked?
+  let artifact ← {definition}VerifiedArtifact
+  some artifact.image
 
 def {definition}UncheckedBytecodeImage : Option ByteArray := do
   let image ← {definition}UncheckedObjectImage
@@ -2862,7 +2921,7 @@ def {definition}UncheckedBytecodeImage : Option ByteArray := do
 noncomputable def {checked_object_image_definition} :
     Option EvmCompiler.Solidity.Frontend.ObjectImage := do
   let program ← {definition}
-  program.object.bytecodeImageChecked?
+  program.compileImage?
 
 noncomputable def {checked_bytecode_image_definition} : Option ByteArray := do
   let image ← {checked_object_image_definition}
@@ -2870,6 +2929,13 @@ noncomputable def {checked_bytecode_image_definition} : Option ByteArray := do
 """
     linker_entries = list(linker_symbols or [])
     linker_symbols_definition = definition + "LinkerSymbols"
+    verified_artifact_with_linkers_definition = (
+        definition + "VerifiedArtifactWithLinkerSymbols"
+    )
+    validate_lean_name(
+        verified_artifact_with_linkers_definition,
+        "verified artifact with linker symbols definition name",
+    )
     object_image_with_linkers_definition = (
         definition + "UncheckedObjectImageWithLinkerSymbols"
     )
@@ -2908,11 +2974,15 @@ def {linker_symbols_definition} :
     List (EvmCompiler.Solidity.Frontend.Name × EvmCompiler.Solidity.Frontend.Word) :=
   {linker_symbols_rendered}
 
+def {verified_artifact_with_linkers_definition} :
+    Option EvmCompiler.Solidity.Frontend.Program.Artifact := do
+  let program ← {definition}
+  program.compileArtifactWithLinkerSymbols? {linker_symbols_definition}
+
 def {object_image_with_linkers_definition} :
     Option EvmCompiler.Solidity.Frontend.ObjectImage := do
-  let program ← {definition}
-  program.object.bytecodeImageUncheckedWithLinkerSymbols?
-    {linker_symbols_definition}
+  let artifact ← {verified_artifact_with_linkers_definition}
+  some artifact.image
 
 def {bytecode_image_with_linkers_definition} : Option ByteArray := do
   let image ← {object_image_with_linkers_definition}
@@ -2921,8 +2991,7 @@ def {bytecode_image_with_linkers_definition} : Option ByteArray := do
 noncomputable def {checked_object_image_with_linkers_definition} :
     Option EvmCompiler.Solidity.Frontend.ObjectImage := do
   let program ← {definition}
-  program.object.bytecodeImageCheckedWithLinkerSymbols?
-    {linker_symbols_definition}
+  program.compileImageWithLinkerSymbols? {linker_symbols_definition}
 
 noncomputable def {checked_bytecode_image_with_linkers_definition} :
     Option ByteArray := do
@@ -2932,26 +3001,28 @@ noncomputable def {checked_bytecode_image_with_linkers_definition} :
 def {resolved_object_data_definition} :
     Option EvmCompiler.Solidity.Frontend.Program := do
   let program ← {definition}
-  program.resolveObjectBuiltinsWithComputedObjectDataAndLinkerSymbols?
-    {linker_symbols_definition}
+  let artifact ← {verified_artifact_with_linkers_definition}
+  let object ←
+    EvmCompiler.Solidity.Frontend.Object.resolveObjectBuiltinsIn?
+      program.object artifact.computed.context
+  some
+    {{ source := program.source
+      contract := program.contract
+      object := object }}
 
 def {to_yul_with_computed_object_data_definition} :
     Option EvmCompiler.Yul.Program := do
-  let program ← {definition}
-  program.toYulProgramWithComputedObjectDataAndLinkerSymbols?
-    {linker_symbols_definition}
+  let resolved ← {resolved_object_data_definition}
+  resolved.toYulProgram?
 
 noncomputable def {to_objects_with_computed_object_data_definition} :
     Option EvmCompiler.Objects.Program := do
-  let program ← {definition}
-  program.toObjectsWithComputedObjectDataAndLinkerSymbols?
-    {linker_symbols_definition}
+  let resolved ← {resolved_object_data_definition}
+  resolved.toObjects?
 
 noncomputable def {compile_artifact_with_computed_object_data_definition} :
-    Option EvmCompiler.Objects.Program.CompileArtifact := do
-  let program ← {definition}
-  program.compileArtifactWithComputedObjectDataAndLinkerSymbols?
-    {linker_symbols_definition}
+    Option EvmCompiler.Solidity.Frontend.Program.Artifact :=
+  {verified_artifact_with_linkers_definition}
 """
     body += render_optional_yul_backend_defs(
         to_yul_with_computed_object_data_definition
@@ -2975,14 +3046,28 @@ noncomputable def {to_objects_with_layout_definition} :
   let program ← {definition}
   program.toObjectsWithLayout? objectLayout
 
+def {definition}VerifiedCodeArtifactAt (base : Nat) :
+    Option EvmCompiler.Solidity.Frontend.Object.VerifiedStackCodeArtifact := do
+  let program ← {definition}
+  let object := program.object
+  let context :=
+    object.builtinContextWithLocalDataBaseAndLinkerSymbols
+      objectLayout base {linker_symbols_definition}
+  let context :=
+    {{ context with
+      immutableValues :=
+        EvmCompiler.Solidity.Frontend.ImmutableReference.zeroEntries
+          object.loadImmutableNames }}
+  object.compileVerifiedStackCodeArtifactIn? context
+
 def {definition}UncheckedTargetWithLayout :
     Option EvmCompiler.Assembly.TargetProgram := do
-  let program ← {definition}
-  program.compileUncheckedWithLayout? objectLayout
+  let artifact ← {definition}VerifiedCodeArtifactAt 0
+  some artifact.compiled.target
 
 def {definition}UncheckedBytecodeWithLayout : Option ByteArray := do
-  let program ← {definition}
-  program.bytecodeUncheckedWithLayout? objectLayout
+  let artifact ← {definition}VerifiedCodeArtifactAt 0
+  some (EvmCompiler.Assembly.Bytecode.ofList artifact.bytes)
 """
     body += render_optional_yul_backend_defs(to_yul_with_layout_definition)
     if local_data_base is not None:
@@ -3001,12 +3086,12 @@ noncomputable def {to_objects_with_local_data_base_definition} :
 
 def {definition}UncheckedTargetWithLocalDataBase :
     Option EvmCompiler.Assembly.TargetProgram := do
-  let program ← {definition}
-  program.compileUncheckedWithLocalDataBase? objectLayout localDataBase
+  let artifact ← {definition}VerifiedCodeArtifactAt localDataBase
+  some artifact.compiled.target
 
 def {definition}UncheckedBytecodeWithLocalDataBase : Option ByteArray := do
-  let program ← {definition}
-  program.bytecodeUncheckedWithLocalDataBase? objectLayout localDataBase
+  let artifact ← {definition}VerifiedCodeArtifactAt localDataBase
+  some (EvmCompiler.Assembly.Bytecode.ofList artifact.bytes)
 """
         body += render_optional_yul_backend_defs(
             to_yul_with_local_data_base_definition
@@ -5384,99 +5469,6 @@ def main : IO Unit := do
 """
 
 
-def render_json_file_object_image_runner(
-    json_path: Path,
-    linker_symbols: Sequence[LinkerSymbolEntry],
-) -> str:
-    linker_symbols_rendered = lean_list(
-        [entry.lean_ir() for entry in linker_symbols],
-        1,
-    )
-    return f"""import EvmCompiler.Solidity.BridgeJson
-import EvmCompiler.Assembly.Bytecode
-
-def evmCompilerRunnerBridgeJsonPath : String :=
-  {lean_string(str(json_path))}
-
-def evmCompilerRunnerLinkerSymbols :
-    List (EvmCompiler.Solidity.Frontend.Name × EvmCompiler.Solidity.Frontend.Word) :=
-  {linker_symbols_rendered}
-
-def evmCompilerRunnerHexDigit (n : Nat) : Char :=
-  match n with
-  | 0 => '0'
-  | 1 => '1'
-  | 2 => '2'
-  | 3 => '3'
-  | 4 => '4'
-  | 5 => '5'
-  | 6 => '6'
-  | 7 => '7'
-  | 8 => '8'
-  | 9 => '9'
-  | 10 => 'a'
-  | 11 => 'b'
-  | 12 => 'c'
-  | 13 => 'd'
-  | 14 => 'e'
-  | _ => 'f'
-
-def evmCompilerRunnerByteHex (byte : UInt8) : String :=
-  String.singleton (evmCompilerRunnerHexDigit (byte.toNat / 16)) ++
-    String.singleton (evmCompilerRunnerHexDigit (byte.toNat % 16))
-
-def evmCompilerRunnerBytesHex (bytes : ByteArray) : String :=
-  String.join (bytes.toList.map evmCompilerRunnerByteHex)
-
-def evmCompilerRunnerTimedIO {{α : Type}} (name : String) (action : IO α) :
-    IO α := do
-  let start ← IO.monoMsNow
-  let value ← action
-  let finish ← IO.monoMsNow
-  IO.println ("timing\t" ++ name ++ "\t" ++ toString (finish - start))
-  pure value
-
-def evmCompilerRunnerTimedPure {{α : Type}} (name : String)
-    (thunk : Unit → Option α) : IO (Option α) := do
-  let start ← IO.monoMsNow
-  let value := thunk ()
-  let ok := value.isSome
-  let finish ← IO.monoMsNow
-  IO.println
-    ("timing\t" ++ name ++ "\t" ++ toString (finish - start) ++ "\t" ++
-      if ok then "some" else "none")
-  pure value
-
-def evmCompilerRunnerDecodeProgram :
-    IO EvmCompiler.Solidity.Frontend.Program := do
-  let input ← IO.FS.readFile evmCompilerRunnerBridgeJsonPath
-  match EvmCompiler.Solidity.Frontend.BridgeJson.parseProgram? input with
-  | .ok program => pure program
-  | .error err => throw (IO.userError ("bridge JSON decode failed: " ++ err))
-
-def main : IO Unit := do
-  let program ←
-    evmCompilerRunnerTimedIO "decode" evmCompilerRunnerDecodeProgram
-  let image? ←
-    evmCompilerRunnerTimedPure "object_image" (fun _ =>
-      program.object.bytecodeImageUncheckedWithLinkerSymbols?
-        evmCompilerRunnerLinkerSymbols)
-  match image? with
-  | some image =>
-      IO.println
-        ("bytecode=0x" ++
-          evmCompilerRunnerBytesHex
-            (EvmCompiler.Assembly.Bytecode.ofList image.bytes))
-      for entry in image.immutableReferences do
-        for reference in entry.snd do
-          IO.println
-            ("immutable\\t" ++ entry.fst ++ "\\t" ++
-              toString reference.start ++ "\\t" ++
-              toString reference.length)
-  | none => IO.println "none"
-"""
-
-
 def render_json_file_backend_check_runner(
     json_path: Path,
     linker_symbols: Sequence[LinkerSymbolEntry],
@@ -6445,46 +6437,6 @@ def parse_object_image_output(output: str) -> CompiledObjectImage:
         bytecode=bytecode,
         immutable_references=immutable_references,
     )
-
-
-def run_lake_object_image(lake: str, lean_source: str, cwd: Path) -> CompiledObjectImage:
-    with tempfile.NamedTemporaryFile(
-        "w", suffix=".lean", prefix="evm_compiler_object_image_", delete=False
-    ) as handle:
-        handle.write(lean_source)
-        temp_path = Path(handle.name)
-    try:
-        try:
-            completed = subprocess.run(
-                [lake, "env", "lean", "--run", str(temp_path)],
-                cwd=str(cwd),
-                text=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                check=False,
-            )
-        except FileNotFoundError:
-            fail(
-                f"Could not find lake executable {lake!r}. "
-                "Install Lean with elan and put ~/.elan/bin on PATH."
-            )
-        if completed.returncode != 0:
-            output = "\n".join(
-                part
-                for part in [
-                    f"returncode={completed.returncode}",
-                    completed.stdout.strip(),
-                    completed.stderr.strip(),
-                ]
-                if part
-            )
-            fail(f"`{lake} env lean --run {temp_path}` failed:\n{output}")
-        return parse_object_image_output(completed.stdout)
-    finally:
-        try:
-            temp_path.unlink()
-        except OSError:
-            pass
 
 
 def run_lake_native_object_image(

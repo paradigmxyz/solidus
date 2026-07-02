@@ -2483,9 +2483,10 @@ class SolidityToYulLeanTests(unittest.TestCase):
             "Option EvmCompiler.Assembly.TargetProgram",
             rendered,
         )
-        self.assertIn("program.compileUnchecked?", rendered)
+        self.assertIn("program.compileArtifact?", rendered)
         self.assertIn("def programUncheckedBytecode : Option ByteArray", rendered)
-        self.assertIn("program.bytecodeUnchecked?", rendered)
+        self.assertIn("artifact.codeArtifact.compiled.target", rendered)
+        self.assertIn("artifact.codeArtifact.bytes", rendered)
         self.assertIn(
             "def programUncheckedBytecodeImage : Option ByteArray",
             rendered,
@@ -2495,7 +2496,8 @@ class SolidityToYulLeanTests(unittest.TestCase):
             "Option EvmCompiler.Solidity.Frontend.ObjectImage",
             rendered,
         )
-        self.assertIn("program.object.bytecodeImageUnchecked?", rendered)
+        self.assertIn("program.compileImage?", rendered)
+        self.assertIn("def programVerifiedArtifact", rendered)
         self.assertIn(
             "noncomputable def programCheckedBytecodeImage : Option ByteArray",
             rendered,
@@ -2505,7 +2507,6 @@ class SolidityToYulLeanTests(unittest.TestCase):
             rendered,
         )
         self.assertIn("Option EvmCompiler.Solidity.Frontend.ObjectImage", rendered)
-        self.assertIn("program.object.bytecodeImageChecked?", rendered)
         self.assertIn(
             "def programLinkerSymbols :",
             rendered,
@@ -2519,7 +2520,11 @@ class SolidityToYulLeanTests(unittest.TestCase):
             rendered,
         )
         self.assertIn(
-            "program.object.bytecodeImageUncheckedWithLinkerSymbols?",
+            "program.compileImageWithLinkerSymbols? programLinkerSymbols",
+            rendered,
+        )
+        self.assertIn(
+            "def programVerifiedArtifactWithLinkerSymbols",
             rendered,
         )
         self.assertIn(
@@ -2531,16 +2536,12 @@ class SolidityToYulLeanTests(unittest.TestCase):
             rendered,
         )
         self.assertIn(
-            "program.object.bytecodeImageCheckedWithLinkerSymbols?",
-            rendered,
-        )
-        self.assertIn(
             "def programResolvedObjectData :",
             rendered,
         )
         self.assertIn("Option EvmCompiler.Solidity.Frontend.Program", rendered)
         self.assertIn(
-            "program.resolveObjectBuiltinsWithComputedObjectDataAndLinkerSymbols?",
+            "EvmCompiler.Solidity.Frontend.Object.resolveObjectBuiltinsIn?",
             rendered,
         )
         self.assertIn(
@@ -2549,7 +2550,7 @@ class SolidityToYulLeanTests(unittest.TestCase):
         )
         self.assertIn("Option EvmCompiler.Yul.Program", rendered)
         self.assertIn(
-            "program.toYulProgramWithComputedObjectDataAndLinkerSymbols?",
+            "resolved.toYulProgram?",
             rendered,
         )
         self.assertIn(
@@ -2558,7 +2559,7 @@ class SolidityToYulLeanTests(unittest.TestCase):
         )
         self.assertIn("Option EvmCompiler.Objects.Program", rendered)
         self.assertIn(
-            "program.toObjectsWithComputedObjectDataAndLinkerSymbols?",
+            "resolved.toObjects?",
             rendered,
         )
         self.assertIn(
@@ -2566,10 +2567,10 @@ class SolidityToYulLeanTests(unittest.TestCase):
             rendered,
         )
         self.assertIn(
-            "Option EvmCompiler.Objects.Program.CompileArtifact", rendered
+            "Option EvmCompiler.Solidity.Frontend.Program.Artifact", rendered
         )
         self.assertIn(
-            "program.compileArtifactWithComputedObjectDataAndLinkerSymbols?",
+            "programVerifiedArtifactWithLinkerSymbols",
             rendered,
         )
         self.assertIn(
@@ -2581,12 +2582,12 @@ class SolidityToYulLeanTests(unittest.TestCase):
             "Option EvmCompiler.Assembly.TargetProgram",
             rendered,
         )
-        self.assertIn("program.compileUncheckedWithLayout? objectLayout", rendered)
+        self.assertIn("programVerifiedCodeArtifactAt 0", rendered)
         self.assertIn(
             "def programUncheckedBytecodeWithLayout : Option ByteArray",
             rendered,
         )
-        self.assertIn("program.bytecodeUncheckedWithLayout? objectLayout", rendered)
+        self.assertIn("def programVerifiedCodeArtifactAt (base : Nat)", rendered)
         self.assertIn("program.toObjectsWithLayout? objectLayout", rendered)
 
     def test_backend_yul_module_emits_checked_backend_artifacts(self):
@@ -2756,7 +2757,7 @@ class SolidityToYulLeanTests(unittest.TestCase):
             rendered,
         )
         self.assertIn(
-            "program.compileUncheckedWithLocalDataBase? objectLayout localDataBase",
+            "programVerifiedCodeArtifactAt localDataBase",
             rendered,
         )
         self.assertIn(
@@ -2764,7 +2765,7 @@ class SolidityToYulLeanTests(unittest.TestCase):
             rendered,
         )
         self.assertIn(
-            "program.bytecodeUncheckedWithLocalDataBase? objectLayout localDataBase",
+            "EvmCompiler.Assembly.Bytecode.ofList artifact.bytes",
             rendered,
         )
         self.assertIn(
@@ -2840,7 +2841,7 @@ class SolidityToYulLeanTests(unittest.TestCase):
             rendered,
         )
         self.assertIn(
-            "program.object.bytecodeImageUncheckedWithLinkerSymbols?",
+            "program.compileArtifactWithLinkerSymbols? programLinkerSymbols",
             rendered,
         )
 
@@ -2913,15 +2914,15 @@ class SolidityToYulLeanTests(unittest.TestCase):
             rendered,
         )
         self.assertIn("let program ← program", rendered)
-        self.assertIn("program.object.bytecodeImageUnchecked?", rendered)
-        self.assertIn("program.object.bytecodeImageChecked?", rendered)
+        self.assertIn("def programVerifiedArtifact", rendered)
+        self.assertIn("program.compileImage?", rendered)
         self.assertIn(
             "def programResolvedObjectData :",
             rendered,
         )
         self.assertIn("Option EvmCompiler.Solidity.Frontend.Program", rendered)
         self.assertIn(
-            "program.resolveObjectBuiltinsWithComputedObjectDataAndLinkerSymbols?",
+            "EvmCompiler.Solidity.Frontend.Object.resolveObjectBuiltinsIn?",
             rendered,
         )
         self.assertIn(
@@ -2930,7 +2931,7 @@ class SolidityToYulLeanTests(unittest.TestCase):
         )
         self.assertIn("Option EvmCompiler.Yul.Program", rendered)
         self.assertIn(
-            "program.toYulProgramWithComputedObjectDataAndLinkerSymbols?",
+            "resolved.toYulProgram?",
             rendered,
         )
         self.assertIn(
@@ -2939,7 +2940,7 @@ class SolidityToYulLeanTests(unittest.TestCase):
         )
         self.assertIn("Option EvmCompiler.Objects.Program", rendered)
         self.assertIn(
-            "program.toObjectsWithComputedObjectDataAndLinkerSymbols?",
+            "resolved.toObjects?",
             rendered,
         )
         self.assertIn(
@@ -2947,10 +2948,10 @@ class SolidityToYulLeanTests(unittest.TestCase):
             rendered,
         )
         self.assertIn(
-            "Option EvmCompiler.Objects.Program.CompileArtifact", rendered
+            "Option EvmCompiler.Solidity.Frontend.Program.Artifact", rendered
         )
         self.assertIn(
-            "program.compileArtifactWithComputedObjectDataAndLinkerSymbols?",
+            "programVerifiedArtifactWithLinkerSymbols",
             rendered,
         )
 
