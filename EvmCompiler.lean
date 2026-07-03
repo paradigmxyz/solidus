@@ -1,7 +1,7 @@
 import EvmCompiler.Compiler
 import EvmCompiler.Simulation.Outcome
 import EvmCompiler.TypedCfg
-import EvmCompiler.Public
+import EvmCompiler.Solidity.RawAstPublic
 
 /-!
 Stable compiler API.

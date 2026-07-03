@@ -44,9 +44,9 @@ case "$layer" in
     ;;
   public)
     modules=(
-      EvmCompiler.Public
       EvmCompiler.Compiler.OpenInteractionComposition
       EvmCompiler.Solidity.Public
+      EvmCompiler.Solidity.RawAstPublic
       EvmCompiler.Yul.EndToEnd
       EvmCompiler
     )

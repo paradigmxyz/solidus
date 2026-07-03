@@ -1,4 +1,3 @@
-import EvmCompiler.Public
 import EvmCompiler.Solidity
 import EvmCompiler.BackendCli
 import EvmCompiler.Compiler.StackArtifact

@@ -60,7 +60,7 @@ Important constraints:
 DEFAULT_ARCHITECTURE_FILES = [
     "ROADMAP.md",
     "PROGRESS_LOG.md",
-    "EvmCompiler/Public.lean",
+    "EvmCompiler/Solidity/RawAstPublic.lean",
     "EvmCompiler/Verification.lean",
     "EvmCompiler/Simulation/Outcome.lean",
     "EvmCompiler/Locals/Allocation.lean",

@@ -25,7 +25,7 @@ Record reproducible architecture metrics with:
 ```sh
 scripts/architecture_metrics.sh \
   --cache-label warm \
-  --build EvmCompiler.Public \
+  --build EvmCompiler.Solidity.RawAstPublic \
   --build EvmCompiler.Compiler.StackArtifact \
   --build EvmCompiler.Structured.TypedCfgCompiler
 ```

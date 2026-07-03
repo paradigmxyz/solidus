@@ -28,7 +28,10 @@ for removed in \
   EvmCompiler/Locals/Allocation.lean \
   EvmCompiler/Public/Observer.lean \
   EvmCompiler/Public/ObserverComposition.lean \
+  EvmCompiler/Public.lean \
   EvmCompiler/Simulation/MemorySafety.lean \
+  EvmCompiler/Yul/ObjectModel.lean \
+  EvmCompiler/Yul/ObjectSemantics.lean \
   EvmCompiler/Yul/ObserverSafety.lean; do
   [[ ! -e "$removed" ]] || fail "obsolete production module returned: $removed"
 done
@@ -42,7 +45,7 @@ if find EvmCompiler/Yul -maxdepth 1 \
 fi
 
 production_roots=(
-  EvmCompiler/Public.lean
+  EvmCompiler/Solidity/RawAstPublic.lean
   EvmCompiler/BackendCli.lean
   EvmCompiler/Compiler/StackArtifact.lean
   EvmCompiler/Compiler/OpenInteractionComposition.lean
