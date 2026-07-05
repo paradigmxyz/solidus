@@ -211,6 +211,20 @@ certificate premise. The result is intentionally frame-level and finite-prefix:
 source semantic fuel may truncate an unobserved suffix, while transaction and
 chain finalization remain outside the declared theorem boundary.
 
+The bridge's out-of-gas branch is committal, not merely a transcript-prefix
+fact. `Assembly.GasfulBridge.RunRefinesOpenCommittal` and the derived
+endpoints
+(`Yul.EndToEnd.optimizedSolcYulToGasfulRawBytecodeOfRecursiveFrameBridgeCommittal`,
+`...FinishedCommittal`, `...TerminalCommittal`) carry
+`Assembly.GasfulBridge.OutOfGasFrameSemantics` on that branch: the charged
+`EVM.X` run is exactly `.error .OutOfGass`, a code-execution boundary `Ξ`
+entered at that run reports the same exceptional halt, and a message-call
+boundary `Θ` built on it commits to the canonical exceptional-halt collapse —
+caller world and substate restored to the checkpoint, zero returned gas,
+failure flag set, empty output. The residual bad-jump and stack-overflow
+branches still record only the exceptional label with a transcript-prefix
+fact; strengthening them is tracked by their own campaigns.
+
 ## Creation Frames And Constructor Arguments
 
 Creation frames execute the checked image with the caller's ABI-encoded

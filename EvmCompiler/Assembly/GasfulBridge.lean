@@ -11631,6 +11631,231 @@ theorem runRefinesOpenHalting_of_not_outOfFuel
   | badJumpDestination hEq hFollow => exact .badJumpDestination hEq hFollow
   | stackOverflow hEq hFollow => exact .stackOverflow hEq hFollow
 
+
+/-- The charged state a code-execution boundary `EvmYul.EVM.Ξ` installs for its
+inner `EVM.X` run, written out so bridge statements can name the exact entry
+point of the frame it commits about. -/
+def xiEntryState
+    (createdAccounts : Batteries.RBSet EvmYul.AccountAddress compare)
+    (genesisBlockHeader : EvmYul.BlockHeader)
+    (blocks : EvmYul.ProcessedBlocks)
+    (σ σ₀ : EvmYul.AccountMap .EVM)
+    (chainContext : EvmYul.EVM.ChildFrameChainContext)
+    (g : EvmYul.UInt256)
+    (A : EvmYul.Substate)
+    (I : EvmYul.ExecutionEnv .EVM) : EVMState :=
+  let defState : EvmYul.EVM.State := default
+  { defState with
+      accountMap := σ
+      σ₀ := σ₀
+      totalGasUsedInBlock := chainContext.totalGasUsedInBlock
+      transactionReceipts := chainContext.transactionReceipts
+      executionEnv := I
+      substate := A
+      createdAccounts := createdAccounts
+      gasAvailable := g
+      blocks := blocks
+      genesisBlockHeader := genesisBlockHeader
+  }
+
+theorem xi_error_of_x_entry_error
+    {f : Nat}
+    {createdAccounts : Batteries.RBSet EvmYul.AccountAddress compare}
+    {genesisBlockHeader : EvmYul.BlockHeader}
+    {blocks : EvmYul.ProcessedBlocks}
+    {σ σ₀ : EvmYul.AccountMap .EVM}
+    {chainContext : EvmYul.EVM.ChildFrameChainContext}
+    {g : EvmYul.UInt256}
+    {A : EvmYul.Substate}
+    {I : EvmYul.ExecutionEnv .EVM}
+    {err : EVMException}
+    (hX :
+      EvmYul.EVM.X f (EvmYul.EVM.D_J I.code ⟨0⟩)
+        (xiEntryState createdAccounts genesisBlockHeader blocks σ σ₀
+          chainContext g A I) = .error err) :
+    EvmYul.EVM.Ξ (f + 1) createdAccounts genesisBlockHeader blocks σ σ₀
+      chainContext g A I = .error err := by
+  simp only [EvmYul.EVM.Ξ, xiEntryState] at hX ⊢
+  rw [hX]
+  rfl
+
+theorem theta_rollback_of_xi_error
+    {fuel : Nat}
+    {blobVersionedHashes : List ByteArray}
+    {createdAccounts : Batteries.RBSet EvmYul.AccountAddress compare}
+    {genesisBlockHeader : EvmYul.BlockHeader}
+    {blocks : EvmYul.ProcessedBlocks}
+    {σ σ₀ : EvmYul.AccountMap .EVM}
+    {chainContext : EvmYul.EVM.ChildFrameChainContext}
+    {A : EvmYul.Substate}
+    {s o r : EvmYul.AccountAddress}
+    {code : ByteArray}
+    {g p v v' : EvmYul.UInt256}
+    {d : ByteArray}
+    {e : Nat}
+    {H : EvmYul.BlockHeader}
+    {w : Bool}
+    {err : EVMException}
+    (hErr : err ≠ EvmYul.EVM.ExecutionException.OutOfFuel)
+    (hΞ :
+      EvmYul.EVM.Ξ fuel createdAccounts genesisBlockHeader blocks
+        (EvmYul.EVM.thetaCallTransfer σ s r v) σ₀ chainContext g A
+        (EvmYul.EVM.thetaCallExecutionEnv blobVersionedHashes s o r
+          (EvmYul.ToExecute.Code code) p v' d e H w) = .error err) :
+    EvmYul.EVM.Θ (fuel + 1) blobVersionedHashes createdAccounts
+      genesisBlockHeader blocks σ σ₀ chainContext A s o r
+      (EvmYul.ToExecute.Code code) g p v v' d e H w =
+      .ok (createdAccounts, σ, ⟨0⟩, A, false, ByteArray.empty) := by
+  have hBeq : (err == EvmYul.EVM.ExecutionException.OutOfFuel) = false := by
+    cases err with
+    | OutOfFuel => exact absurd rfl hErr
+    | _ => rfl
+  simp [EvmYul.EVM.Θ, hΞ, hBeq]
+
+/-- Committal out-of-gas outcome. Beyond naming the exceptional label of the
+charged run, this pins what the EVM's frame semantics does with it: the run is
+exactly `.error .OutOfGass`, a code-execution boundary `Ξ` entered at this run
+reports the same exceptional halt, and a message-call boundary `Θ` built on it
+commits to the canonical exceptional-halt collapse — the caller's world and
+substate are restored to the checkpoint, zero gas is returned, the failure
+flag is set, and the output data is empty. -/
+structure OutOfGasFrameSemantics
+    (gasful :
+      Except EVMException (EvmYul.EVM.ExecutionResult EVMState)) : Prop where
+  halted : gasful = .error EvmYul.EVM.ExecutionException.OutOfGass
+  xiExceptional :
+    ∀ {f : Nat}
+      {createdAccounts : Batteries.RBSet EvmYul.AccountAddress compare}
+      {genesisBlockHeader : EvmYul.BlockHeader}
+      {blocks : EvmYul.ProcessedBlocks}
+      {σ σ₀ : EvmYul.AccountMap .EVM}
+      {chainContext : EvmYul.EVM.ChildFrameChainContext}
+      {g : EvmYul.UInt256}
+      {A : EvmYul.Substate}
+      {I : EvmYul.ExecutionEnv .EVM},
+      EvmYul.EVM.X f (EvmYul.EVM.D_J I.code ⟨0⟩)
+        (xiEntryState createdAccounts genesisBlockHeader blocks σ σ₀
+          chainContext g A I) = gasful →
+      EvmYul.EVM.Ξ (f + 1) createdAccounts genesisBlockHeader blocks σ σ₀
+        chainContext g A I =
+        .error EvmYul.EVM.ExecutionException.OutOfGass
+  thetaRollback :
+    ∀ {f : Nat}
+      {blobVersionedHashes : List ByteArray}
+      {createdAccounts : Batteries.RBSet EvmYul.AccountAddress compare}
+      {genesisBlockHeader : EvmYul.BlockHeader}
+      {blocks : EvmYul.ProcessedBlocks}
+      {σ σ₀ : EvmYul.AccountMap .EVM}
+      {chainContext : EvmYul.EVM.ChildFrameChainContext}
+      {A : EvmYul.Substate}
+      {s o r : EvmYul.AccountAddress}
+      {code : ByteArray}
+      {g p v v' : EvmYul.UInt256}
+      {d : ByteArray}
+      {e : Nat}
+      {H : EvmYul.BlockHeader}
+      {w : Bool},
+      EvmYul.EVM.X f
+        (EvmYul.EVM.D_J
+          (EvmYul.EVM.thetaCallExecutionEnv blobVersionedHashes s o r
+            (EvmYul.ToExecute.Code code) p v' d e H w).code ⟨0⟩)
+        (xiEntryState createdAccounts genesisBlockHeader blocks
+          (EvmYul.EVM.thetaCallTransfer σ s r v) σ₀ chainContext g A
+          (EvmYul.EVM.thetaCallExecutionEnv blobVersionedHashes s o r
+            (EvmYul.ToExecute.Code code) p v' d e H w)) = gasful →
+      EvmYul.EVM.Θ (f + 2) blobVersionedHashes createdAccounts
+        genesisBlockHeader blocks σ σ₀ chainContext A s o r
+        (EvmYul.ToExecute.Code code) g p v v' d e H w =
+        .ok (createdAccounts, σ, ⟨0⟩, A, false, ByteArray.empty)
+
+theorem outOfGasFrameSemantics_of_error
+    {gasful : Except EVMException (EvmYul.EVM.ExecutionResult EVMState)}
+    (h : gasful = .error EvmYul.EVM.ExecutionException.OutOfGass) :
+    OutOfGasFrameSemantics gasful where
+  halted := h
+  xiExceptional hX := xi_error_of_x_entry_error (hX.trans h)
+  thetaRollback hX :=
+    theta_rollback_of_xi_error
+      (fun hEq => EvmYul.EVM.ExecutionException.noConfusion hEq)
+      (xi_error_of_x_entry_error (hX.trans h))
+
+/-- Escape-free bridge outcomes whose out-of-gas branch is committal: it pins
+the charged run's exceptional label together with the EVM's frame-boundary
+out-of-gas semantics (`Ξ` exceptional halt, `Θ` checkpoint rollback with zero
+returned gas and empty output). The remaining branches are unchanged from
+`RunRefinesOpenHalting`. -/
+inductive RunRefinesOpenCommittal
+    (gasful : Except EVMException (EvmYul.EVM.ExecutionResult EVMState))
+    (openRun : Interaction EVMException StepResult) :
+    Interaction.Transcript → Prop where
+  | completed {transcript openDone} :
+      Interaction.Executes openRun transcript openDone →
+      DoneRel gasful openDone →
+      RunRefinesOpenCommittal gasful openRun transcript
+  | exceptionalFrame {transcript gasErr openErr} :
+      gasErr ≠ EvmYul.EVM.ExecutionException.OutOfFuel →
+      openErr ≠ EvmYul.EVM.ExecutionException.OutOfFuel →
+      gasful = .error gasErr →
+      Interaction.Executes openRun transcript (.error openErr) →
+      RunRefinesOpenCommittal gasful openRun transcript
+  | outOfGas {transcript} :
+      OutOfGasFrameSemantics gasful →
+      Interaction.Follows openRun transcript →
+      RunRefinesOpenCommittal gasful openRun transcript
+  | badJumpDestination {transcript} :
+      gasful = .error EvmYul.EVM.ExecutionException.BadJumpDestination →
+      Interaction.Follows openRun transcript →
+      RunRefinesOpenCommittal gasful openRun transcript
+  | stackOverflow {transcript} :
+      gasful = .error EvmYul.EVM.ExecutionException.StackOverflow →
+      Interaction.Follows openRun transcript →
+      RunRefinesOpenCommittal gasful openRun transcript
+
+/-- Every committal bridge outcome is in particular an escape-free outcome. -/
+theorem RunRefinesOpenCommittal.toRunRefinesOpenHalting
+    {gasful : Except EVMException (EvmYul.EVM.ExecutionResult EVMState)}
+    {openRun : Interaction EVMException StepResult}
+    {transcript : Interaction.Transcript}
+    (hBridge : RunRefinesOpenCommittal gasful openRun transcript) :
+    RunRefinesOpenHalting gasful openRun transcript := by
+  cases hBridge with
+  | completed hExec hDone => exact .completed hExec hDone
+  | exceptionalFrame hGas hOpen hEq hExec =>
+      exact .exceptionalFrame hGas hOpen hEq hExec
+  | outOfGas hSem hFollow => exact .outOfGas hSem.halted hFollow
+  | badJumpDestination hEq hFollow => exact .badJumpDestination hEq hFollow
+  | stackOverflow hEq hFollow => exact .stackOverflow hEq hFollow
+
+/-- Upgrade an escape-free bridge outcome to the committal one. The out-of-gas
+branch's frame semantics is derived from the exceptional label the branch
+already pins; no bridge re-proof is involved. -/
+theorem runRefinesOpenCommittal_of_halting
+    {gasful : Except EVMException (EvmYul.EVM.ExecutionResult EVMState)}
+    {openRun : Interaction EVMException StepResult}
+    {transcript : Interaction.Transcript}
+    (hBridge : RunRefinesOpenHalting gasful openRun transcript) :
+    RunRefinesOpenCommittal gasful openRun transcript := by
+  cases hBridge with
+  | completed hExec hDone => exact .completed hExec hDone
+  | exceptionalFrame hGas hOpen hEq hExec =>
+      exact .exceptionalFrame hGas hOpen hEq hExec
+  | outOfGas hEq hFollow =>
+      exact .outOfGas (outOfGasFrameSemantics_of_error hEq) hFollow
+  | badJumpDestination hEq hFollow => exact .badJumpDestination hEq hFollow
+  | stackOverflow hEq hFollow => exact .stackOverflow hEq hFollow
+
+/-- Escape pruning straight to the committal outcome. -/
+theorem runRefinesOpenCommittal_of_not_outOfFuel
+    {gasful : Except EVMException (EvmYul.EVM.ExecutionResult EVMState)}
+    {openRun : Interaction EVMException StepResult}
+    {transcript : Interaction.Transcript}
+    (hBridge : RunRefinesOpen gasful openRun transcript)
+    (hNoFuelStop :
+      gasful ≠ .error EvmYul.EVM.ExecutionException.OutOfFuel) :
+    RunRefinesOpenCommittal gasful openRun transcript :=
+  runRefinesOpenCommittal_of_halting
+    (runRefinesOpenHalting_of_not_outOfFuel hBridge hNoFuelStop)
+
 end GasfulBridge
 end Assembly
 end EvmCompiler
