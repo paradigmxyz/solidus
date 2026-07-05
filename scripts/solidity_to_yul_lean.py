@@ -7725,6 +7725,19 @@ def build_arg_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="After emitting Lean, run `lake env lean` on it",
     )
+    parser.add_argument(
+        "--unverified-diagnostic",
+        action="store_true",
+        help=(
+            "Acknowledge that bytecode-producing formats on this Python "
+            "bridge route rely on an unverified Python Yul translation and "
+            "are for differential/diagnostic use only. Without this flag, "
+            "formats bytecode, bytecode-artifact, forge-artifact, and "
+            "standard-json-output refuse to run; use the verified raw path "
+            "(scripts/solc_lean_standard_json.py or `lake exe "
+            "evm-compiler-backend raw-image`) to produce artifacts."
+        ),
+    )
     parser.add_argument("--no-via-ir", dest="via_ir", action="store_false")
     parser.add_argument("--no-experimental", dest="experimental", action="store_false")
     parser.add_argument("--namespace", help="Optional Lean namespace, e.g. Generated.C")
@@ -8510,10 +8523,41 @@ def render_bridge_json_manifest_input_output(
     return rendered, source_name, contract_name, selected_name
 
 
+UNVERIFIED_ARTIFACT_FORMATS = {
+    "bytecode",
+    "bytecode-artifact",
+    "forge-artifact",
+    "standard-json-output",
+}
+
+
+def unverified_diagnostic_enabled(args: argparse.Namespace) -> bool:
+    if getattr(args, "unverified_diagnostic", False):
+        return True
+    value = os.environ.get("EVM_COMPILER_UNVERIFIED_DIAGNOSTIC")
+    if value is None:
+        return False
+    return value.strip().lower() not in {"", "0", "false", "no", "off"}
+
+
 def main(argv: Optional[Sequence[str]] = None) -> int:
     parser = build_arg_parser()
     args = parser.parse_args(argv)
     try:
+        if (
+            args.format in UNVERIFIED_ARTIFACT_FORMATS
+            and not unverified_diagnostic_enabled(args)
+        ):
+            fail(
+                f"--format {args.format} produces bytecode through the "
+                "unverified Python Yul translation and is restricted to "
+                "differential/diagnostic use. Pass --unverified-diagnostic "
+                "(or set EVM_COMPILER_UNVERIFIED_DIAGNOSTIC=1) to run it as "
+                "a diagnostic, or produce artifacts through the verified raw "
+                "path instead: scripts/solc_lean_standard_json.py or `lake "
+                "exe evm-compiler-backend raw-image` on solc Standard JSON "
+                "output"
+            )
         if args.optimizer_runs is not None:
             if not args.optimized:
                 fail("--optimizer-runs requires --optimized")

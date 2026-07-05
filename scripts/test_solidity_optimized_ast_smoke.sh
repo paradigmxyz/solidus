@@ -30,7 +30,6 @@ MANIFEST="$BRIDGE_DIR/manifest.json"
 MANIFEST_CHECK="$OUTDIR/modifier-optimized.manifest.lean-json-check.json"
 WRAPPER_INPUT="$OUTDIR/simple.wrapper.standard.json"
 WRAPPER_OUTPUT="$OUTDIR/simple.wrapper.optimized-output.json"
-WRAPPER_BRIDGE_DIR="$OUTDIR/simple-wrapper-optimized-bridge-json"
 
 python3 "$ROOT/scripts/compare_contract_call_bytecode.py" "$ROOT/examples/Simple.sol" \
   --solc "$SOLC_BIN" \
@@ -83,15 +82,10 @@ PY
 SOLC_LEAN_REAL_SOLC="$SOLC_BIN" \
 SOLC_LEAN_LAKE="$LAKE_BIN" \
 SOLC_LEAN_LAKE_CWD="$ROOT" \
-SOLC_LEAN_OPTIMIZED=1 \
-SOLC_LEAN_BRIDGE_JSON_DIR="$WRAPPER_BRIDGE_DIR" \
   "$ROOT/scripts/solc_lean_standard_json.py" --standard-json \
   < "$WRAPPER_INPUT" > "$WRAPPER_OUTPUT"
 
-python3 "$ROOT/scripts/validate_bridge_json.py" --quiet \
-  "$WRAPPER_BRIDGE_DIR/manifest.json"
-
-python3 - "$COMPARE_OUT" "$MANIFEST" "$MANIFEST_CHECK" "$WRAPPER_OUTPUT" "$WRAPPER_BRIDGE_DIR/manifest.json" <<'PY'
+python3 - "$COMPARE_OUT" "$MANIFEST" "$MANIFEST_CHECK" "$WRAPPER_OUTPUT" <<'PY'
 import json
 import sys
 from pathlib import Path
@@ -100,7 +94,6 @@ compare_text = Path(sys.argv[1]).read_text()
 manifest = json.loads(Path(sys.argv[2]).read_text())
 check = json.loads(Path(sys.argv[3]).read_text())
 wrapper_output = json.loads(Path(sys.argv[4]).read_text())
-wrapper_manifest = json.loads(Path(sys.argv[5]).read_text())
 
 if "contract_call_compare=pass" not in compare_text:
     raise SystemExit("optimized Simple bytecode comparison did not pass")
@@ -141,16 +134,10 @@ creation = selected["evm"]["bytecode"]["object"]
 runtime = selected["evm"]["deployedBytecode"]["object"]
 if not creation or not runtime or not creation.endswith(runtime):
     raise SystemExit("optimized wrapper bytecode shape is invalid")
-wrapper_counts = wrapper_manifest.get("counts", {})
-if wrapper_counts.get("entries") != 2 or wrapper_counts.get("skippedContracts") != 0:
-    raise SystemExit(
-        f"unexpected optimized wrapper manifest counts: {wrapper_counts!r}"
-    )
 
 print("optimized_simple_compare=pass")
 print(f"optimized_bridge_entries={counts['entries']}")
 print(f"optimized_lean_decode_objects={check_counts['checkedObjects']}")
 print(f"optimized_lean_decode_contracts={check_counts['checkedContracts']}")
 print("optimized_wrapper_standard_json_output=yes")
-print(f"optimized_wrapper_bridge_entries={wrapper_counts['entries']}")
 PY

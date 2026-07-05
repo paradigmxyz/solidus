@@ -27,6 +27,7 @@ python3 "$ROOT/scripts/solidity_to_yul_lean.py" "$ROOT/examples/Simple.sol" \
   --lake-cwd "$ROOT" \
   --contract Simple \
   --format bytecode-artifact \
+  --unverified-diagnostic \
   --auto-object-layout \
   --data-base 461 \
   --bridge-json-dir "$BRIDGE_DIR" \
@@ -68,6 +69,7 @@ python3 "$ROOT/scripts/solidity_to_yul_lean.py" "$MANIFEST" \
   --lake "$LAKE_BIN" \
   --lake-cwd "$ROOT" \
   --format bytecode-artifact \
+  --unverified-diagnostic \
   --contract Simple \
   --namespace Generated.SimpleManifestReplaySmoke \
   --output "$REPLAYED_ARTIFACT"

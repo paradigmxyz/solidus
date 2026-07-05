@@ -166,6 +166,7 @@ SOLC_VERSION="$UNISWAP_V4_SOLC_VERSION" python3 "$ROOT/scripts/solidity_to_yul_l
   --lake "$LAKE_BIN" \
   --lake-cwd "$ROOT" \
   --format bytecode \
+  --unverified-diagnostic \
   --object creation \
   --output "$SWAPMATH_HEX"
 

@@ -33,6 +33,7 @@ python3 "$ROOT/scripts/solidity_to_yul_lean.py" "$ROOT/examples/Simple.sol" \
   --lake-cwd "$ROOT" \
   --contract Simple \
   --format bytecode \
+  --unverified-diagnostic \
   --object creation \
   --namespace Generated.SimpleForgeCreationSmoke \
   --output "$creation"
@@ -43,6 +44,7 @@ python3 "$ROOT/scripts/solidity_to_yul_lean.py" "$ROOT/examples/Simple.sol" \
   --lake-cwd "$ROOT" \
   --contract Simple \
   --format bytecode \
+  --unverified-diagnostic \
   --object runtime \
   --namespace Generated.SimpleForgeRuntimeSmoke \
   --output "$runtime"
@@ -53,6 +55,7 @@ python3 "$ROOT/scripts/solidity_to_yul_lean.py" "$ROOT/examples/Counter.sol" \
   --lake-cwd "$ROOT" \
   --contract Counter \
   --format bytecode \
+  --unverified-diagnostic \
   --object creation \
   --namespace Generated.CounterForgeCreationSmoke \
   --output "$counter_creation"
@@ -63,6 +66,7 @@ python3 "$ROOT/scripts/solidity_to_yul_lean.py" "$ROOT/examples/Counter.sol" \
   --lake-cwd "$ROOT" \
   --contract Counter \
   --format bytecode \
+  --unverified-diagnostic \
   --object runtime \
   --namespace Generated.CounterForgeRuntimeSmoke \
   --output "$counter_runtime"
@@ -74,6 +78,7 @@ python3 "$ROOT/scripts/solidity_to_yul_lean.py" "$ROOT/examples/UsesLibrary.sol"
   --lake-cwd "$ROOT" \
   --contract UsesLibrary \
   --format bytecode-artifact \
+  --unverified-diagnostic \
   --namespace Generated.UsesLibraryForgeArtifactSmoke \
   --output "$uses_library_artifact"
 

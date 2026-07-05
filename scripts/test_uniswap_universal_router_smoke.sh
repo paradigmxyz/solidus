@@ -103,6 +103,7 @@ SOLC_VERSION="$UNISWAP_UNIVERSAL_ROUTER_SOLC_VERSION" \
   --lake-cwd "$ROOT" \
   --contract UnsupportedProtocol \
   --format bytecode-artifact \
+  --unverified-diagnostic \
   --output "$ARTIFACT"
 
 SOLC_VERSION="$UNISWAP_UNIVERSAL_ROUTER_SOLC_VERSION" \

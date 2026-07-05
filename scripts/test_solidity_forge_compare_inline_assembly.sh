@@ -150,14 +150,4 @@ grep -Eq '^forge_compare_result_[0-9]+=PASS testInlineAssemblyStorageAndHash\(\)
 grep -q '^forge_compare_tests_passed=2$' "$OUTDIR/compare.log"
 grep -q '^forge_compare_tests_failed=0$' "$OUTDIR/compare.log"
 grep -q '^forge_compare_tests_skipped=0$' "$OUTDIR/compare.log"
-grep -q '^bridge_json_manifest_validated=yes$' "$OUTDIR/compare.log"
-grep -q '^bridge_json_summary_validated=yes$' "$OUTDIR/compare.log"
-grep -q '^bridge_json_summary_skipped_contracts=0$' "$OUTDIR/compare.log"
-grep -q '^bridge_json_summary_objects=' "$OUTDIR/compare.log"
-objects="$(sed -n 's/^bridge_json_summary_objects=//p' "$OUTDIR/compare.log")"
-if [[ "$objects" -lt 2 ]]; then
-  echo "expected at least two bridge JSON objects, got $objects" >&2
-  exit 1
-fi
-
 cat "$OUTDIR/compare.log"

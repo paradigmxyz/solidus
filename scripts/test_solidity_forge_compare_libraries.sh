@@ -106,14 +106,7 @@ grep -Eq '^forge_compare_result_[0-9]+=PASS testLibraryScore\(\)$' \
 grep -q '^forge_compare_tests_passed=2$' "$OUTDIR/compare.log"
 grep -q '^forge_compare_tests_failed=0$' "$OUTDIR/compare.log"
 grep -q '^forge_compare_tests_skipped=0$' "$OUTDIR/compare.log"
-grep -q '^bridge_json_manifest_validated=yes$' "$OUTDIR/compare.log"
-grep -q '^bridge_json_summary_validated=yes$' "$OUTDIR/compare.log"
-grep -q '^bridge_json_summary_skipped_contracts=0$' "$OUTDIR/compare.log"
-grep -q '^bridge_json_summary_objects=6$' "$OUTDIR/compare.log"
-grep -Eq '^bridge_json_summary_object_builtins=.*(^|,)linkersymbol(,|$)' \
   "$OUTDIR/compare.log"
-grep -q '^bridge_json_linker_symbol_count=1$' "$OUTDIR/compare.log"
-grep -q '^bridge_json_linker_symbols=src/lib/ScaleLib.sol:ScaleLib$' \
   "$OUTDIR/compare.log"
 
 cat "$OUTDIR/compare.log"

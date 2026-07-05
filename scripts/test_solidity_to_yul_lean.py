@@ -22,6 +22,10 @@ try:
 except ImportError:
     jsonschema = None
 
+# The bridge's bytecode-producing formats are gated as unverified
+# diagnostics; the unit tests exercise them as such.
+os.environ.setdefault("EVM_COMPILER_UNVERIFIED_DIAGNOSTIC", "1")
+
 
 def literal(value):
     return {
@@ -9091,60 +9095,237 @@ class SolidityToYulLeanTests(unittest.TestCase):
         )
         self.assertEqual(lean_json_check_args.format, "lean-json-check")
 
-    def test_solc_lean_wrapper_forwards_bridge_json_dir(self):
+    @staticmethod
+    def _wrapper_solc_output(creation="aaaa", runtime="bbbb"):
+        return {
+            "contracts": {
+                "A.sol": {
+                    "A": {
+                        "abi": [],
+                        "irOptimizedAst": {
+                            "nodeType": "YulObject",
+                            "name": "A_1",
+                            "code": {
+                                "block": {
+                                    "nodeType": "YulBlock",
+                                    "statements": [],
+                                }
+                            },
+                            "subObjects": [
+                                {
+                                    "nodeType": "YulObject",
+                                    "name": "A_1_deployed",
+                                    "code": {
+                                        "block": {
+                                            "nodeType": "YulBlock",
+                                            "statements": [],
+                                        }
+                                    },
+                                    "subObjects": [],
+                                }
+                            ],
+                        },
+                        "evm": {
+                            "bytecode": {"object": creation},
+                            "deployedBytecode": {"object": runtime},
+                        },
+                    }
+                }
+            }
+        }
+
+    def run_wrapper_standard_json(
+        self,
+        solc_output,
+        argv=None,
+        backend_stdout="bytecode=0x6000\nbytecode_bytes=2\n",
+        backend_returncode=0,
+        env=None,
+        input_text='{"language":"Solidity","sources":{}}',
+    ):
         old_run = solc_lean_wrapper.subprocess.run
         old_stdin = sys.stdin
         old_stdout = sys.stdout
+        old_stderr = sys.stderr
         old_env = dict(os.environ)
         calls = []
         try:
-            class Completed:
-                returncode = 0
-                stdout = '{"contracts":{}}'
-                stderr = ""
+            def fake_run(command, **kwargs):
+                calls.append((list(command), kwargs))
 
-            def fake_run(command, input=None, text=None, capture_output=None):
-                calls.append((command, input, text, capture_output))
-                return Completed()
+                class Completed:
+                    pass
+
+                completed = Completed()
+                if "--standard-json" in command:
+                    completed.returncode = 0
+                    completed.stdout = (
+                        solc_output
+                        if isinstance(solc_output, str)
+                        else json.dumps(solc_output)
+                    )
+                    completed.stderr = ""
+                else:
+                    completed.returncode = backend_returncode
+                    completed.stdout = backend_stdout
+                    completed.stderr = (
+                        "" if backend_returncode == 0 else "backend diagnostic"
+                    )
+                return completed
 
             solc_lean_wrapper.subprocess.run = fake_run
-            sys.stdin = io.StringIO('{"language":"Solidity","sources":{}}')
+            sys.stdin = io.StringIO(input_text)
             sys.stdout = io.StringIO()
+            sys.stderr = io.StringIO()
             os.environ.clear()
             os.environ.update(
-                {
+                env
+                if env is not None
+                else {
                     "SOLC_LEAN_REAL_SOLC": "/tmp/real-solc",
-                    "SOLC_LEAN_BRIDGE_JSON_DIR": "/tmp/bridge-json",
                     "SOLC_LEAN_VALIDATE_OUTPUT": "0",
                 }
             )
-            result = solc_lean_wrapper.main(
-                ["--standard-json", "--base-path", "."]
-            )
+            result = solc_lean_wrapper.main(argv or ["--standard-json"])
+            output = sys.stdout.getvalue()
+            error = sys.stderr.getvalue()
         finally:
             solc_lean_wrapper.subprocess.run = old_run
             sys.stdin = old_stdin
             sys.stdout = old_stdout
+            sys.stderr = old_stderr
             os.environ.clear()
             os.environ.update(old_env)
+        return result, output, error, calls
 
+    def test_solc_lean_wrapper_compiles_via_raw_backend(self):
+        result, output, _, calls = self.run_wrapper_standard_json(
+            self._wrapper_solc_output(),
+            argv=["--standard-json", "--base-path", "."],
+        )
         self.assertEqual(result, 0)
-        command, input_text, text, capture_output = calls[0]
-        self.assertEqual(input_text, '{"language":"Solidity","sources":{}}')
-        self.assertTrue(text)
-        self.assertTrue(capture_output)
-        self.assertIn("--bridge-json-dir", command)
+        solc_command = calls[0][0]
+        self.assertEqual(solc_command[0], "/tmp/real-solc")
+        self.assertIn("--standard-json", solc_command)
+        self.assertIn("--base-path", solc_command)
+        self.assertIn(".", solc_command)
+        solc_input = json.loads(calls[0][1]["input"])
+        self.assertTrue(solc_input["settings"]["viaIR"])
+        star_selection = solc_input["settings"]["outputSelection"]["*"]["*"]
+        self.assertIn("irOptimizedAst", star_selection)
+        self.assertIn("evm.bytecode.object", star_selection)
+        self.assertIn("evm.deployedBytecode.object", star_selection)
+        backend_calls = [command for command, _ in calls[1:]]
+        self.assertEqual(len(backend_calls), 2)
+        for command, selector in zip(backend_calls, ["creation", "runtime"]):
+            self.assertEqual(
+                command[:4],
+                [
+                    solc_lean_wrapper.default_lake(),
+                    "exe",
+                    "evm-compiler-backend",
+                    "raw-image",
+                ],
+            )
+            self.assertEqual(command[5:], ["A.sol", "A", selector])
+        rendered = json.loads(output)
+        selected = rendered["contracts"]["A.sol"]["A"]
+        self.assertEqual(selected["evm"]["bytecode"]["object"], "6000")
+        self.assertEqual(selected["evm"]["deployedBytecode"]["object"], "6000")
         self.assertEqual(
-            command[command.index("--bridge-json-dir") + 1],
-            str(Path("/tmp/bridge-json").resolve()),
+            selected["evmCompiler"]["schema"],
+            "evm-compiler.solc-standard-json-output.v1",
         )
-        self.assertIn("--lake", command)
         self.assertEqual(
-            command[command.index("--lake") + 1],
-            solc_lean_wrapper.default_lake(),
+            selected["evmCompiler"]["yul"],
+            {"creationObject": "A_1", "runtimeObject": "A_1_deployed"},
         )
-        self.assertIn("--solc-arg=--base-path", command)
-        self.assertIn("--solc-arg=.", command)
+        self.assertNotIn("irOptimizedAst", selected)
+
+    def test_solc_lean_wrapper_parses_immutable_references(self):
+        result, output, _, calls = self.run_wrapper_standard_json(
+            self._wrapper_solc_output(),
+            backend_stdout=(
+                "bytecode=0x6000\nimmutable\t7\t2\t32\nbytecode_bytes=2\n"
+            ),
+        )
+        self.assertEqual(result, 0)
+        rendered = json.loads(output)
+        selected = rendered["contracts"]["A.sol"]["A"]
+        self.assertEqual(
+            selected["evm"]["deployedBytecode"]["immutableReferences"],
+            {"7": [{"start": 2, "length": 32}]},
+        )
+
+    def test_solc_lean_wrapper_preserves_requested_ir_output(self):
+        result, output, _, _ = self.run_wrapper_standard_json(
+            self._wrapper_solc_output(),
+            input_text=json.dumps(
+                {
+                    "language": "Solidity",
+                    "sources": {},
+                    "settings": {
+                        "outputSelection": {
+                            "*": {"*": ["abi", "irOptimizedAst"]}
+                        }
+                    },
+                }
+            ),
+        )
+        self.assertEqual(result, 0)
+        rendered = json.loads(output)
+        self.assertIn("irOptimizedAst", rendered["contracts"]["A.sol"]["A"])
+
+    def test_solc_lean_wrapper_fails_when_raw_backend_fails(self):
+        result, output, error, _ = self.run_wrapper_standard_json(
+            self._wrapper_solc_output(),
+            backend_returncode=1,
+        )
+        self.assertEqual(result, 1)
+        self.assertEqual(output, "")
+        self.assertIn("verified raw backend failed", error)
+        self.assertIn("backend diagnostic", error)
+
+    def test_solc_lean_wrapper_skips_non_deployable_contracts(self):
+        solc_output = {
+            "contracts": {
+                "I.sol": {
+                    "I": {"abi": [{"type": "function", "name": "f"}]},
+                    "Base": {"abi": []},
+                }
+            },
+            "sources": {"I.sol": {"id": 0}},
+        }
+        result, output, _, calls = self.run_wrapper_standard_json(solc_output)
+        self.assertEqual(result, 0)
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(json.loads(output), solc_output)
+
+    def test_solc_lean_wrapper_passes_through_solc_errors(self):
+        solc_output = {
+            "errors": [
+                {
+                    "severity": "error",
+                    "message": "ParserError: expected ';'",
+                }
+            ]
+        }
+        result, output, _, calls = self.run_wrapper_standard_json(solc_output)
+        self.assertEqual(result, 0)
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(json.loads(output), solc_output)
+
+    def test_solc_lean_wrapper_notes_retired_bridge_json_dir(self):
+        result, _, error, _ = self.run_wrapper_standard_json(
+            self._wrapper_solc_output(),
+            env={
+                "SOLC_LEAN_REAL_SOLC": "/tmp/real-solc",
+                "SOLC_LEAN_VALIDATE_OUTPUT": "0",
+                "SOLC_LEAN_BRIDGE_JSON_DIR": "/tmp/bridge-json",
+            },
+        )
+        self.assertEqual(result, 0)
+        self.assertIn("SOLC_LEAN_BRIDGE_JSON_DIR is ignored", error)
 
     def test_solc_lean_wrapper_delegates_non_standard_json_probe(self):
         old_run = solc_lean_wrapper.subprocess.run
@@ -9195,216 +9376,61 @@ class SolidityToYulLeanTests(unittest.TestCase):
         self.assertIn("SOLC_LEAN_REAL_SOLC", error)
 
     def test_solc_lean_wrapper_validates_standard_json_output(self):
-        old_run = solc_lean_wrapper.subprocess.run
-        old_stdin = sys.stdin
-        old_stdout = sys.stdout
-        old_env = dict(os.environ)
         try:
-            class Completed:
-                returncode = 0
-                stdout = json.dumps(
-                    {
-                        "contracts": {
-                            "A.sol": {
-                                "A": {
-                                    "evm": {
-                                        "bytecode": {"object": "6000"},
-                                        "deployedBytecode": {"object": "00"},
-                                    },
-                                    "evmCompiler": {
-                                        "schema": (
-                                            "evm-compiler."
-                                            "solc-standard-json-output.v1"
-                                        ),
-                                        "source": "A.sol",
-                                        "contract": "A",
-                                        "yul": {
-                                            "creationObject": "A_1",
-                                            "runtimeObject": "A_1_deployed",
-                                        },
-                                        "sizes": {
-                                            "creationBytes": 2,
-                                            "runtimeBytes": 1,
-                                        },
-                                        "bytecodeSource": (
-                                            "lean-unchecked-bytecode-image"
-                                        ),
-                                    },
-                                }
-                            }
-                        }
-                    }
-                )
-                stderr = ""
-
-            def fake_run(command, **kwargs):
-                return Completed()
-
-            solc_lean_wrapper.subprocess.run = fake_run
-            sys.stdin = io.StringIO('{"language":"Solidity","sources":{}}')
-            sys.stdout = io.StringIO()
-            os.environ.clear()
-            os.environ.update({"SOLC_LEAN_REAL_SOLC": "/tmp/real-solc"})
-            result = solc_lean_wrapper.main(["--standard-json"])
-            output = sys.stdout.getvalue()
-        finally:
-            solc_lean_wrapper.subprocess.run = old_run
-            sys.stdin = old_stdin
-            sys.stdout = old_stdout
-            os.environ.clear()
-            os.environ.update(old_env)
-
+            import jsonschema  # noqa: F401
+        except ImportError:
+            self.skipTest("jsonschema is not installed")
+        result, output, _, _ = self.run_wrapper_standard_json(
+            self._wrapper_solc_output(),
+            env={"SOLC_LEAN_REAL_SOLC": "/tmp/real-solc"},
+        )
         self.assertEqual(result, 0)
-        self.assertEqual(json.loads(output), json.loads(Completed.stdout))
-
-    def test_solc_lean_wrapper_accepts_no_replacement_standard_json_output(self):
-        old_run = solc_lean_wrapper.subprocess.run
-        old_stdin = sys.stdin
-        old_stdout = sys.stdout
-        old_env = dict(os.environ)
-        try:
-            class Completed:
-                returncode = 0
-                stdout = json.dumps(
-                    {
-                        "contracts": {
-                            "I.sol": {
-                                "I": {
-                                    "abi": [{"type": "function", "name": "f"}]
-                                },
-                                "Base": {"abi": []},
-                            }
-                        },
-                        "sources": {"I.sol": {"id": 0}},
-                    }
-                )
-                stderr = ""
-
-            def fake_run(command, **kwargs):
-                return Completed()
-
-            solc_lean_wrapper.subprocess.run = fake_run
-            sys.stdin = io.StringIO('{"language":"Solidity","sources":{}}')
-            sys.stdout = io.StringIO()
-            os.environ.clear()
-            os.environ.update({"SOLC_LEAN_REAL_SOLC": "/tmp/real-solc"})
-            result = solc_lean_wrapper.main(["--standard-json"])
-            output = sys.stdout.getvalue()
-        finally:
-            solc_lean_wrapper.subprocess.run = old_run
-            sys.stdin = old_stdin
-            sys.stdout = old_stdout
-            os.environ.clear()
-            os.environ.update(old_env)
-
-        self.assertEqual(result, 0)
-        self.assertEqual(json.loads(output), json.loads(Completed.stdout))
+        selected = json.loads(output)["contracts"]["A.sol"]["A"]
+        self.assertEqual(selected["evm"]["bytecode"]["object"], "6000")
 
     def test_solc_lean_wrapper_rejects_invalid_standard_json_output(self):
-        old_run = solc_lean_wrapper.subprocess.run
-        old_stdin = sys.stdin
-        old_stdout = sys.stdout
-        old_stderr = sys.stderr
-        old_env = dict(os.environ)
+        old_validate = solc_lean_wrapper.validate_standard_json_output
         try:
-            class Completed:
-                returncode = 0
-                stdout = json.dumps(
-                    {
-                        "contracts": {
-                            "A.sol": {
-                                "A": {
-                                    "evm": {
-                                        "bytecode": {"object": "6000"},
-                                        "deployedBytecode": {"object": "00"},
-                                    },
-                                    "evmCompiler": {
-                                        "schema": (
-                                            "evm-compiler."
-                                            "solc-standard-json-output.v1"
-                                        ),
-                                        "source": "A.sol",
-                                        "contract": "A",
-                                        "yul": {
-                                            "creationObject": "A_1",
-                                            "runtimeObject": "A_1_deployed",
-                                        },
-                                        "sizes": {
-                                            "creationBytes": 2,
-                                            "runtimeBytes": 2,
-                                        },
-                                        "bytecodeSource": (
-                                            "lean-unchecked-bytecode-image"
-                                        ),
-                                    },
-                                }
-                            }
-                        }
-                    }
-                )
-                stderr = "bridge diagnostic\n"
-
-            def fake_run(command, **kwargs):
-                return Completed()
-
-            solc_lean_wrapper.subprocess.run = fake_run
-            sys.stdin = io.StringIO('{"language":"Solidity","sources":{}}')
-            sys.stdout = io.StringIO()
-            sys.stderr = io.StringIO()
-            os.environ.clear()
-            os.environ.update({"SOLC_LEAN_REAL_SOLC": "/tmp/real-solc"})
-            result = solc_lean_wrapper.main(["--standard-json"])
-            output = sys.stdout.getvalue()
-            error = sys.stderr.getvalue()
+            solc_lean_wrapper.validate_standard_json_output = lambda output: 3
+            result, output, error, _ = self.run_wrapper_standard_json(
+                self._wrapper_solc_output(),
+                env={"SOLC_LEAN_REAL_SOLC": "/tmp/real-solc"},
+            )
         finally:
-            solc_lean_wrapper.subprocess.run = old_run
-            sys.stdin = old_stdin
-            sys.stdout = old_stdout
-            sys.stderr = old_stderr
-            os.environ.clear()
-            os.environ.update(old_env)
-
-        self.assertEqual(result, 1)
+            solc_lean_wrapper.validate_standard_json_output = old_validate
+        self.assertEqual(result, 3)
         self.assertEqual(output, "")
-        self.assertIn("inconsistent sizes.runtimeBytes", error)
-        self.assertIn("bridge diagnostic", error)
         self.assertIn("invalid Standard JSON output", error)
 
     def test_solc_lean_wrapper_can_skip_output_validation(self):
-        old_run = solc_lean_wrapper.subprocess.run
-        old_stdin = sys.stdin
-        old_stdout = sys.stdout
-        old_env = dict(os.environ)
-        try:
-            class Completed:
-                returncode = 0
-                stdout = '{"contracts":{}}'
-                stderr = ""
-
-            def fake_run(command, **kwargs):
-                return Completed()
-
-            solc_lean_wrapper.subprocess.run = fake_run
-            sys.stdin = io.StringIO('{"language":"Solidity","sources":{}}')
-            sys.stdout = io.StringIO()
-            os.environ.clear()
-            os.environ.update(
-                {
-                    "SOLC_LEAN_REAL_SOLC": "/tmp/real-solc",
-                    "SOLC_LEAN_VALIDATE_OUTPUT": "0",
-                }
-            )
-            result = solc_lean_wrapper.main(["--standard-json"])
-            output = sys.stdout.getvalue()
-        finally:
-            solc_lean_wrapper.subprocess.run = old_run
-            sys.stdin = old_stdin
-            sys.stdout = old_stdout
-            os.environ.clear()
-            os.environ.update(old_env)
-
+        result, output, _, _ = self.run_wrapper_standard_json('{"contracts":{}}')
         self.assertEqual(result, 0)
-        self.assertEqual(output, '{"contracts":{}}')
+        self.assertEqual(json.loads(output), {"contracts": {}})
+
+    def test_artifact_formats_refuse_without_unverified_diagnostic(self):
+        old_env = os.environ.get("EVM_COMPILER_UNVERIFIED_DIAGNOSTIC")
+        old_stderr = sys.stderr
+        try:
+            if old_env is not None:
+                del os.environ["EVM_COMPILER_UNVERIFIED_DIAGNOSTIC"]
+            for artifact_format in sorted(bridge.UNVERIFIED_ARTIFACT_FORMATS):
+                sys.stderr = io.StringIO()
+                result = bridge.main(
+                    [
+                        "ignored.sol",
+                        "--format",
+                        artifact_format,
+                    ]
+                )
+                error = sys.stderr.getvalue()
+                self.assertEqual(result, 1)
+                self.assertIn("unverified Python Yul translation", error)
+                self.assertIn("--unverified-diagnostic", error)
+                self.assertIn("raw", error)
+        finally:
+            sys.stderr = old_stderr
+            if old_env is not None:
+                os.environ["EVM_COMPILER_UNVERIFIED_DIAGNOSTIC"] = old_env
 
     def test_famous_repo_smoke_runner_keeps_pinned_uniswap_coverage(self):
         scripts_dir = Path(__file__).resolve().parent
@@ -9988,7 +10014,7 @@ class SolidityToYulLeanTests(unittest.TestCase):
         self.assertIn("compare_forge_solc_lean.sh", import_smoke)
         self.assertIn("compare_forge_solc_lean.sh", library_smoke)
         self.assertIn("compare_forge_solc_lean.sh", inline_assembly_smoke)
-        self.assertIn("SOLC_LEAN_OPTIMIZED=1", optimized_smoke)
+        self.assertIn("compare_forge_solc_lean.sh", optimized_smoke)
         self.assertIn("--match-test testAddOne", default_smoke)
         self.assertIn("--match-test testImported", import_smoke)
         self.assertIn("--match-test testLibrary", library_smoke)
@@ -10021,18 +10047,12 @@ class SolidityToYulLeanTests(unittest.TestCase):
             'import {ScaleBase} from "./lib/ScaleBase.sol"',
             'import {ImportedHarness} from "../src/ImportedHarness.sol"',
             "contract ImportCompareTest is ImportedHarness",
-            "bridge_json_summary_objects=",
-            "bridge_json_summary_skipped_contracts=0",
         ]:
             self.assertIn(behavior, import_smoke)
         for behavior in [
             'libraries = ["src/lib/ScaleLib.sol:ScaleLib:',
             'import {ScaleLib} from "./lib/ScaleLib.sol"',
             "contract LibraryCompareTest is LibraryHarness",
-            "bridge_json_summary_objects=6",
-            "bridge_json_linker_symbol_count=1",
-            "bridge_json_linker_symbols=src/lib/ScaleLib.sol:ScaleLib",
-            "linkersymbol",
         ]:
             self.assertIn(behavior, library_smoke)
         for behavior in [
@@ -10043,7 +10063,6 @@ class SolidityToYulLeanTests(unittest.TestCase):
             "sstore(stored.slot, next)",
             "keccak256(add(input, 0x20), length)",
             "checkedDiv(4) != 25",
-            "bridge_json_summary_skipped_contracts=0",
         ]:
             self.assertIn(behavior, inline_assembly_smoke)
         self.assertIn("--match-test testFold", optimized_smoke)
@@ -11319,90 +11338,6 @@ class SolidityToYulLeanTests(unittest.TestCase):
         self.assertIn("testRuntimeBytecodeCallResultsMatch", harness)
         self.assertIn("vm.etch", harness)
 
-    def test_solc_lean_wrapper_can_request_optimized_ast(self):
-        old_run = solc_lean_wrapper.subprocess.run
-        old_stdin = sys.stdin
-        old_stdout = sys.stdout
-        old_env = dict(os.environ)
-        calls = []
-        try:
-            class Completed:
-                returncode = 0
-                stdout = '{"contracts":{}}'
-                stderr = ""
-
-            def fake_run(command, input=None, text=None, capture_output=None):
-                calls.append((command, input, text, capture_output))
-                return Completed()
-
-            solc_lean_wrapper.subprocess.run = fake_run
-            sys.stdin = io.StringIO('{"language":"Solidity","sources":{}}')
-            sys.stdout = io.StringIO()
-            os.environ.clear()
-            os.environ.update(
-                {
-                    "SOLC_LEAN_REAL_SOLC": "/tmp/real-solc",
-                    "SOLC_LEAN_OPTIMIZED": "1",
-                    "SOLC_LEAN_VALIDATE_OUTPUT": "0",
-                }
-            )
-            result = solc_lean_wrapper.main(["--standard-json"])
-        finally:
-            solc_lean_wrapper.subprocess.run = old_run
-            sys.stdin = old_stdin
-            sys.stdout = old_stdout
-            os.environ.clear()
-            os.environ.update(old_env)
-
-        self.assertEqual(result, 0)
-        command, input_text, text, capture_output = calls[0]
-        self.assertEqual(input_text, '{"language":"Solidity","sources":{}}')
-        self.assertTrue(text)
-        self.assertTrue(capture_output)
-        self.assertIn("--optimized", command)
-
-    def test_solc_lean_wrapper_optimized_env_false_values(self):
-        old_run = solc_lean_wrapper.subprocess.run
-        old_stdin = sys.stdin
-        old_stdout = sys.stdout
-        old_env = dict(os.environ)
-        calls = []
-        try:
-            class Completed:
-                returncode = 0
-                stdout = '{"contracts":{}}'
-                stderr = ""
-
-            def fake_run(command, input=None, text=None, capture_output=None):
-                calls.append((command, input, text, capture_output))
-                return Completed()
-
-            solc_lean_wrapper.subprocess.run = fake_run
-            sys.stdin = io.StringIO('{"language":"Solidity","sources":{}}')
-            sys.stdout = io.StringIO()
-            for value in ["", "0", "false", "no", "off"]:
-                calls.clear()
-                os.environ.clear()
-                os.environ.update(
-                    {
-                        "SOLC_LEAN_REAL_SOLC": "/tmp/real-solc",
-                        "SOLC_LEAN_OPTIMIZED": value,
-                        "SOLC_LEAN_VALIDATE_OUTPUT": "0",
-                    }
-                )
-                result = solc_lean_wrapper.main(["--standard-json"])
-                self.assertEqual(result, 0)
-                command = calls[0][0]
-                self.assertNotIn("--optimized", command)
-                sys.stdin = io.StringIO('{"language":"Solidity","sources":{}}')
-                sys.stdout = io.StringIO()
-        finally:
-            solc_lean_wrapper.subprocess.run = old_run
-            sys.stdin = old_stdin
-            sys.stdout = old_stdout
-            os.environ.clear()
-            os.environ.update(old_env)
-
     def run_fake_forge_compare(
         self,
         full_status: int,
@@ -11476,57 +11411,7 @@ fi"""
             fake_forge.write_text(
                 f"""#!/usr/bin/env bash
 set -euo pipefail
-if [[ -n "${{SOLC_LEAN_BRIDGE_JSON_DIR:-}}" ]]; then
-  python3 - "$SOLC_LEAN_BRIDGE_JSON_DIR" <<'PY'
-import importlib.util
-import sys
-from pathlib import Path
-
-root = Path({str(root)!r})
-bridge_path = root / "scripts" / "solidity_to_yul_lean.py"
-spec = importlib.util.spec_from_file_location("solidity_to_yul_lean", bridge_path)
-module = importlib.util.module_from_spec(spec)
-sys.modules[spec.name] = module
-spec.loader.exec_module(module)
-obj = module.YulObject(
-    name="runtime",
-    dispatcher=[
-        module.ExprStmt(
-            module.Call(
-                "call",
-                [
-                    module.Lit(0),
-                    module.Lit(1),
-                    module.Lit(2),
-                    module.Lit(3),
-                    module.Lit(4),
-                    module.Lit(5),
-                    module.Lit(6),
-                ],
-                module.CALL_PRIMITIVE,
-            )
-        ),
-        module.ExprStmt(
-            module.Call(
-                "datasize",
-                [module.StringLit("runtime")],
-                module.CALL_OBJECT_BUILTIN,
-            )
-        ),
-    ],
-    functions=[],
-    data=[],
-    subobjects=[],
-)
-module.write_bridge_json_output(
-    Path(sys.argv[1]),
-    obj,
-    "Input.sol",
-    "Input",
-    "runtime",
-)
-PY
-{lean_result_block}
+if [[ -n "${{SOLC_LEAN_REAL_SOLC:-}}" ]]; then{lean_result_block}
   exit {lean_status}
 fi
 {full_result_block}
@@ -11560,35 +11445,21 @@ exit {full_status}
             )
         return completed
 
-    def test_forge_compare_reports_bridge_summary_on_solc_lean_failure(self):
+    def test_forge_compare_fails_on_status_mismatch(self):
         completed = self.run_fake_forge_compare(full_status=0, lean_status=1)
         self.assertEqual(completed.returncode, 1, completed.stderr)
         self.assertIn("forge_compare=fail", completed.stdout)
         self.assertIn("full_solc_status=0", completed.stdout)
         self.assertIn("solc_lean_status=1", completed.stdout)
-        self.assertIn("bridge_json_manifest_validated=yes", completed.stdout)
-        self.assertIn("bridge_json_summary_validated=yes", completed.stdout)
-        self.assertIn("bridge_json_backend_compatibility=ready", completed.stdout)
-        self.assertIn("bridge_json_summary_unsupported_primitives=none", completed.stdout)
-        self.assertIn("bridge_json_summary_object_builtins=datasize", completed.stdout)
-        self.assertIn("bridge_json_summary_dialect_builtins=none", completed.stdout)
-        self.assertIn("bridge_json_summary_objects=1", completed.stdout)
         self.assertIn("--- solc-lean tail ---", completed.stdout)
 
-    def test_forge_compare_reports_bridge_summary_on_same_failure(self):
+    def test_forge_compare_reports_same_failure(self):
         completed = self.run_fake_forge_compare(full_status=1, lean_status=1)
         self.assertEqual(completed.returncode, 1, completed.stderr)
         self.assertIn("forge_compare=same_failure", completed.stdout)
         self.assertIn("status=1", completed.stdout)
-        self.assertIn("bridge_json_manifest_validated=yes", completed.stdout)
-        self.assertIn("bridge_json_summary_validated=yes", completed.stdout)
-        self.assertIn("bridge_json_backend_compatibility=ready", completed.stdout)
-        self.assertIn("bridge_json_summary_unsupported_primitives=none", completed.stdout)
-        self.assertIn("bridge_json_summary_object_builtins=datasize", completed.stdout)
-        self.assertIn("bridge_json_summary_dialect_builtins=none", completed.stdout)
-        self.assertIn("bridge_json_summary_objects=1", completed.stdout)
 
-    def test_forge_compare_reports_bridge_summary_on_pass(self):
+    def test_forge_compare_passes_on_matching_results(self):
         completed = self.run_fake_forge_compare(full_status=0, lean_status=0)
         self.assertEqual(completed.returncode, 0, completed.stderr)
 
@@ -11600,12 +11471,6 @@ exit {full_status}
         self.assertIn("forge_compare_tests_passed=1", output_lines)
         self.assertIn("forge_compare_tests_failed=0", output_lines)
         self.assertIn("forge_compare_tests_skipped=0", output_lines)
-        self.assertIn("bridge_json_manifest_validated=yes", output_lines)
-        self.assertIn("bridge_json_summary_validated=yes", output_lines)
-        self.assertIn("bridge_json_backend_compatibility=ready", output_lines)
-        self.assertIn("bridge_json_summary_unsupported_primitives=none", output_lines)
-        self.assertIn("bridge_json_summary_object_builtins=datasize", output_lines)
-        self.assertIn("bridge_json_summary_dialect_builtins=none", output_lines)
 
     def test_forge_compare_treats_result_order_as_set(self):
         completed = self.run_fake_forge_compare(
@@ -11641,9 +11506,6 @@ exit {full_status}
         self.assertIn("forge_compare=fail", output_lines)
         self.assertIn("reason=no_forge_test_results", output_lines)
         self.assertIn("status=0", output_lines)
-        self.assertIn("bridge_json_manifest_validated=yes", output_lines)
-        self.assertIn("bridge_json_summary_validated=yes", output_lines)
-        self.assertIn("bridge_json_backend_compatibility=ready", output_lines)
         self.assertIn("--- full solc tail ---", completed.stdout)
         self.assertIn("--- solc-lean tail ---", completed.stdout)
 
@@ -11659,8 +11521,6 @@ exit {full_status}
         self.assertIn("forge_compare=fail", output_lines)
         self.assertIn("reason=forge_summary_missing", output_lines)
         self.assertIn("forge_compare_result_count=1", output_lines)
-        self.assertIn("bridge_json_manifest_validated=yes", output_lines)
-        self.assertIn("bridge_json_summary_validated=yes", output_lines)
 
     def test_forge_compare_fails_when_result_count_disagrees_with_summary(self):
         completed = self.run_fake_forge_compare(
@@ -11680,17 +11540,6 @@ exit {full_status}
         self.assertIn("forge_compare_tests_passed=2", output_lines)
         self.assertIn("forge_compare_tests_failed=0", output_lines)
         self.assertIn("forge_compare_tests_skipped=0", output_lines)
-        self.assertIn("bridge_json_manifest_validated=yes", output_lines)
-        self.assertIn("bridge_json_summary_validated=yes", output_lines)
-
-    def test_forge_compare_reports_backend_blocker_names(self):
-        completed = self.run_fake_forge_compare(full_status=0, lean_status=1)
-        self.assertEqual(completed.returncode, 1, completed.stderr)
-
-        output_lines = set(completed.stdout.splitlines())
-        self.assertIn("bridge_json_summary_unsupported_primitives=none", output_lines)
-        self.assertIn("bridge_json_summary_object_builtins=datasize", output_lines)
-        self.assertIn("bridge_json_summary_dialect_builtins=none", output_lines)
 
     def test_forge_project_compare_runs_local_project_and_writes_report(self):
         with tempfile.TemporaryDirectory() as directory:

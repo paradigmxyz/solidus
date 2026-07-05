@@ -9,7 +9,6 @@ PYTHON_BIN="${PYTHON:-python3}"
 TMPDIR="${TMPDIR:-/tmp}"
 OUTDIR="$(mktemp -d "$TMPDIR/evm-compiler-forge-compare.XXXXXX")"
 KEEP_TMP="${KEEP_TMP:-0}"
-BRIDGE_JSON_DIR="${SOLC_LEAN_BRIDGE_JSON_DIR:-$OUTDIR/bridge-json}"
 
 cleanup() {
   status=$?
@@ -29,19 +28,16 @@ Runs the same Forge test selection twice:
   1. full solc via --use \$SOLC
   2. solc-lean via scripts/solc_lean_standard_json.py
 
-On successful solc-lean compilation, validates the generated
-bridge-json/manifest.json handoff package before reporting pass.
+The solc-lean run produces bytecode through the verified in-Lean raw path
+(solc Standard JSON output decoded by \`evm-compiler-backend raw-image\`).
 
 Environment:
   SOLC      Real solc executable. Default: solc
   LAKE      Lake executable. Default: lake
   FORGE     Forge executable. Default: forge
-  PYTHON    Python executable used for bridge JSON validation and reports.
+  PYTHON    Python executable used for result normalization.
             Default: python3
   KEEP_TMP  Set to 1 to keep logs/artifacts under the temp directory.
-  SOLC_LEAN_BRIDGE_JSON_DIR
-            Directory for normalized bridge JSON files from the solc-lean run.
-            Default: <temp>/bridge-json
 
 Example:
   $(basename "$0") --match-test testAddOne -vv
@@ -94,119 +90,6 @@ full_log="$OUTDIR/full-solc.log"
 lean_log="$OUTDIR/solc-lean.log"
 full_results="$OUTDIR/full-solc.results"
 lean_results="$OUTDIR/solc-lean.results"
-bridge_json_validate_log="$OUTDIR/bridge-json-validate.log"
-bridge_json_manifest="$BRIDGE_JSON_DIR/manifest.json"
-bridge_json_summary="$OUTDIR/bridge-json-summary.json"
-bridge_json_summary_log="$OUTDIR/bridge-json-summary.log"
-bridge_json_summary_validate_log="$OUTDIR/bridge-json-summary-validate.log"
-bridge_json_summary_report="$OUTDIR/bridge-json-summary.report"
-mkdir -p "$BRIDGE_JSON_DIR"
-
-build_bridge_summary_report() {
-  if [[ ! -f "$bridge_json_manifest" ]]; then
-    return 20
-  fi
-  "$PYTHON_BIN" "$ROOT/scripts/validate_bridge_json.py" \
-    --quiet "$bridge_json_manifest" >"$bridge_json_validate_log" 2>&1 || return 21
-  "$PYTHON_BIN" "$ROOT/scripts/solidity_to_yul_lean.py" \
-    "$bridge_json_manifest" \
-    --input-format bridge-json-manifest \
-    --format bridge-json-summary \
-    --output "$bridge_json_summary" \
-    >"$bridge_json_summary_log" 2>&1 || return 22
-  "$PYTHON_BIN" "$ROOT/scripts/validate_bridge_json.py" \
-    --quiet "$bridge_json_summary" \
-    >"$bridge_json_summary_validate_log" 2>&1 || return 23
-  "$PYTHON_BIN" - "$bridge_json_summary" "$bridge_json_manifest" >"$bridge_json_summary_report" <<'PY' || return 24
-import json
-import sys
-
-summary = json.load(open(sys.argv[1]))
-manifest = json.load(open(sys.argv[2]))
-counts = summary.get("counts", {})
-compatibility = summary.get("backendCompatibility", {})
-
-def csv(names):
-    if not isinstance(names, list):
-        return "none"
-    strings = [name for name in names if isinstance(name, str)]
-    return ",".join(strings) if strings else "none"
-
-print(f"bridge_json_backend_compatibility={compatibility.get('status', 'unknown')}")
-print(
-    "bridge_json_summary_unsupported_primitives="
-    f"{csv(compatibility.get('unsupportedPrimitiveNames'))}"
-)
-print(
-    "bridge_json_summary_object_builtins="
-    f"{csv(compatibility.get('objectBuiltinNames'))}"
-)
-print(
-    "bridge_json_summary_dialect_builtins="
-    f"{csv(compatibility.get('dialectBuiltinNames'))}"
-)
-print(f"bridge_json_summary_objects={counts.get('objects', 'unknown')}")
-print(
-    "bridge_json_summary_skipped_contracts="
-    f"{counts.get('skippedContracts', 'unknown')}"
-)
-linker_symbols = manifest.get("linkerSymbols", [])
-linker_names = [
-    item.get("name")
-    for item in linker_symbols
-    if isinstance(item, dict) and isinstance(item.get("name"), str)
-]
-print(f"bridge_json_linker_symbol_count={len(linker_names)}")
-print(f"bridge_json_linker_symbols={csv(linker_names)}")
-PY
-}
-
-emit_bridge_summary_diagnostic() {
-  local summary_status=0
-  if build_bridge_summary_report; then
-    summary_status=0
-  else
-    summary_status=$?
-  fi
-  case "$summary_status" in
-    0)
-      echo "bridge_json_manifest=$bridge_json_manifest"
-      echo "bridge_json_manifest_validated=yes"
-      echo "bridge_json_summary=$bridge_json_summary"
-      echo "bridge_json_summary_validated=yes"
-      cat "$bridge_json_summary_report"
-      ;;
-    20)
-      echo "bridge_json_manifest=missing"
-      ;;
-    21)
-      echo "bridge_json_manifest=$bridge_json_manifest"
-      echo "bridge_json_manifest_validated=no"
-      echo "bridge_json_validate_log=$bridge_json_validate_log"
-      cat "$bridge_json_validate_log"
-      ;;
-    22)
-      echo "bridge_json_manifest=$bridge_json_manifest"
-      echo "bridge_json_manifest_validated=yes"
-      echo "bridge_json_summary_status=failed"
-      echo "bridge_json_summary_log=$bridge_json_summary_log"
-      cat "$bridge_json_summary_log"
-      ;;
-    23)
-      echo "bridge_json_manifest=$bridge_json_manifest"
-      echo "bridge_json_manifest_validated=yes"
-      echo "bridge_json_summary=$bridge_json_summary"
-      echo "bridge_json_summary_validated=no"
-      echo "bridge_json_summary_validate_log=$bridge_json_summary_validate_log"
-      cat "$bridge_json_summary_validate_log"
-      ;;
-    *)
-      echo "bridge_json_manifest=$bridge_json_manifest"
-      echo "bridge_json_summary=$bridge_json_summary"
-      echo "bridge_json_summary_report_status=failed"
-      ;;
-  esac
-}
 
 full_args=(
   test
@@ -235,7 +118,6 @@ full_status=$?
 SOLC_LEAN_REAL_SOLC="$REAL_SOLC" \
 SOLC_LEAN_LAKE="$LAKE_BIN" \
 SOLC_LEAN_LAKE_CWD="$ROOT" \
-SOLC_LEAN_BRIDGE_JSON_DIR="$BRIDGE_JSON_DIR" \
   "$FORGE_BIN" "${lean_args[@]}" >"$lean_log" 2>&1
 lean_status=$?
 set -e
@@ -292,8 +174,6 @@ if [[ "$full_status" -ne "$lean_status" ]]; then
   echo "solc_lean_status=$lean_status"
   echo "full_solc_log=$full_log"
   echo "solc_lean_log=$lean_log"
-  echo "bridge_json_dir=$BRIDGE_JSON_DIR"
-  emit_bridge_summary_diagnostic
   echo "--- full solc tail ---"
   tail -n 40 "$full_log"
   echo "--- solc-lean tail ---"
@@ -310,76 +190,11 @@ if grep -qx 'NO_FORGE_TEST_RESULTS_FOUND' "$full_results" \
   echo "solc_lean_log=$lean_log"
   echo "full_solc_results=$full_results"
   echo "solc_lean_results=$lean_results"
-  echo "bridge_json_dir=$BRIDGE_JSON_DIR"
-  emit_bridge_summary_diagnostic
   echo "--- full solc tail ---"
   tail -n 40 "$full_log"
   echo "--- solc-lean tail ---"
   tail -n 80 "$lean_log"
   exit 1
-fi
-
-if [[ "$lean_status" -eq 0 ]]; then
-  summary_status=0
-  if build_bridge_summary_report; then
-    summary_status=0
-  else
-    summary_status=$?
-  fi
-  if [[ "$summary_status" -eq 20 ]]; then
-    echo "forge_compare=fail"
-    echo "reason=bridge_json_manifest_missing"
-    echo "status=$lean_status"
-    echo "full_solc_log=$full_log"
-    echo "solc_lean_log=$lean_log"
-    echo "bridge_json_dir=$BRIDGE_JSON_DIR"
-    echo "bridge_json_manifest=$bridge_json_manifest"
-    exit 1
-  elif [[ "$summary_status" -eq 21 ]]; then
-    echo "forge_compare=fail"
-    echo "reason=bridge_json_manifest_invalid"
-    echo "status=$lean_status"
-    echo "full_solc_log=$full_log"
-    echo "solc_lean_log=$lean_log"
-    echo "bridge_json_dir=$BRIDGE_JSON_DIR"
-    echo "bridge_json_manifest=$bridge_json_manifest"
-    echo "bridge_json_validate_log=$bridge_json_validate_log"
-    cat "$bridge_json_validate_log"
-    exit 1
-  elif [[ "$summary_status" -eq 22 ]]; then
-    echo "forge_compare=fail"
-    echo "reason=bridge_json_summary_failed"
-    echo "status=$lean_status"
-    echo "full_solc_log=$full_log"
-    echo "solc_lean_log=$lean_log"
-    echo "bridge_json_dir=$BRIDGE_JSON_DIR"
-    echo "bridge_json_manifest=$bridge_json_manifest"
-    echo "bridge_json_summary_log=$bridge_json_summary_log"
-    cat "$bridge_json_summary_log"
-    exit 1
-  elif [[ "$summary_status" -eq 23 ]]; then
-    echo "forge_compare=fail"
-    echo "reason=bridge_json_summary_invalid"
-    echo "status=$lean_status"
-    echo "full_solc_log=$full_log"
-    echo "solc_lean_log=$lean_log"
-    echo "bridge_json_dir=$BRIDGE_JSON_DIR"
-    echo "bridge_json_manifest=$bridge_json_manifest"
-    echo "bridge_json_summary=$bridge_json_summary"
-    echo "bridge_json_summary_validate_log=$bridge_json_summary_validate_log"
-    cat "$bridge_json_summary_validate_log"
-    exit 1
-  elif [[ "$summary_status" -ne 0 ]]; then
-    echo "forge_compare=fail"
-    echo "reason=bridge_json_summary_report_failed"
-    echo "status=$lean_status"
-    echo "full_solc_log=$full_log"
-    echo "solc_lean_log=$lean_log"
-    echo "bridge_json_dir=$BRIDGE_JSON_DIR"
-    echo "bridge_json_manifest=$bridge_json_manifest"
-    echo "bridge_json_summary=$bridge_json_summary"
-    exit 1
-  fi
 fi
 
 if ! diff -u "$full_results" "$lean_results" >"$OUTDIR/result-diff.txt"; then
@@ -388,8 +203,6 @@ if ! diff -u "$full_results" "$lean_results" >"$OUTDIR/result-diff.txt"; then
   echo "status=$full_status"
   echo "full_solc_log=$full_log"
   echo "solc_lean_log=$lean_log"
-  echo "bridge_json_dir=$BRIDGE_JSON_DIR"
-  emit_bridge_summary_diagnostic
   echo "result_diff=$OUTDIR/result-diff.txt"
   cat "$OUTDIR/result-diff.txt"
   exit 1
@@ -400,8 +213,6 @@ if [[ "$full_status" -ne 0 ]]; then
   echo "status=$full_status"
   echo "full_solc_log=$full_log"
   echo "solc_lean_log=$lean_log"
-  echo "bridge_json_dir=$BRIDGE_JSON_DIR"
-  emit_bridge_summary_diagnostic
   exit "$full_status"
 fi
 
@@ -416,8 +227,6 @@ if [[ ! "$summary_line" =~ ^SUMMARY\ passed=([0-9]+)\ failed=([0-9]+)\ skipped=(
   echo "solc_lean_log=$lean_log"
   echo "full_solc_results=$full_results"
   echo "solc_lean_results=$lean_results"
-  echo "bridge_json_dir=$BRIDGE_JSON_DIR"
-  emit_bridge_summary_diagnostic
   echo "--- full solc tail ---"
   tail -n 40 "$full_log"
   echo "--- solc-lean tail ---"
@@ -441,8 +250,6 @@ if [[ "$result_count" -ne "$summary_total" ]]; then
   echo "solc_lean_log=$lean_log"
   echo "full_solc_results=$full_results"
   echo "solc_lean_results=$lean_results"
-  echo "bridge_json_dir=$BRIDGE_JSON_DIR"
-  emit_bridge_summary_diagnostic
   echo "--- full solc tail ---"
   tail -n 40 "$full_log"
   echo "--- solc-lean tail ---"
@@ -466,18 +273,11 @@ done <"$full_results"
 echo "forge_compare_tests_passed=$summary_passed"
 echo "forge_compare_tests_failed=$summary_failed"
 echo "forge_compare_tests_skipped=$summary_skipped"
-echo "bridge_json_manifest_validated=yes"
-echo "bridge_json_summary_validated=yes"
-if [[ -f "$bridge_json_summary_report" ]]; then
-  cat "$bridge_json_summary_report"
-fi
 if [[ "$KEEP_TMP" == "1" ]]; then
   echo "full_solc_log=$full_log"
   echo "solc_lean_log=$lean_log"
   echo "full_solc_results=$full_results"
   echo "solc_lean_results=$lean_results"
-  echo "bridge_json_dir=$BRIDGE_JSON_DIR"
-  echo "bridge_json_summary=$bridge_json_summary"
 else
   echo "logs_kept=no"
 fi

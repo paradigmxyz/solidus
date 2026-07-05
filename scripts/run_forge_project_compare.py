@@ -274,8 +274,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     if args.solc_version:
         env["SOLC_VERSION"] = args.solc_version
-    if args.optimized:
-        env["SOLC_LEAN_OPTIMIZED"] = "1"
+    # --optimized no longer needs SOLC_LEAN_OPTIMIZED: the raw-path wrapper
+    # always consumes irOptimizedAst, and optimizer settings come from the
+    # project's own Foundry configuration.
 
     for index, submodule in enumerate(args.submodule, start=1):
         stdout = out_dir / f"submodule-{index}.stdout"

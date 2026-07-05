@@ -53,7 +53,6 @@ SOL
   SOLC="$SOLC_BIN" \
   LAKE="$LAKE_BIN" \
   FORGE="$FORGE_BIN" \
-  SOLC_LEAN_OPTIMIZED=1 \
     "$ROOT/scripts/compare_forge_solc_lean.sh" --match-test testFold \
     > "$OUTDIR/compare.log"
 )
@@ -65,10 +64,5 @@ grep -q '^forge_compare_result_1=PASS testFold()$' "$OUTDIR/compare.log"
 grep -q '^forge_compare_tests_passed=1$' "$OUTDIR/compare.log"
 grep -q '^forge_compare_tests_failed=0$' "$OUTDIR/compare.log"
 grep -q '^forge_compare_tests_skipped=0$' "$OUTDIR/compare.log"
-grep -q '^bridge_json_manifest_validated=yes$' "$OUTDIR/compare.log"
-grep -q '^bridge_json_summary_validated=yes$' "$OUTDIR/compare.log"
-grep -q '^bridge_json_backend_compatibility=ready$' "$OUTDIR/compare.log"
-grep -q '^bridge_json_summary_objects=2$' "$OUTDIR/compare.log"
-grep -q '^bridge_json_summary_skipped_contracts=0$' "$OUTDIR/compare.log"
 
 cat "$OUTDIR/compare.log"

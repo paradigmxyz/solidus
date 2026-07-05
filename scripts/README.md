@@ -120,7 +120,20 @@ printf '%s\n' 'contract C { function f() public pure returns (uint) { return 1; 
     --source-name C.sol \
     --contract C \
     --format bytecode-artifact \
+    --unverified-diagnostic \
     --output /tmp/C.artifact.json
+```
+
+Bytecode-producing bridge formats (`bytecode`, `bytecode-artifact`,
+`forge-artifact`, `standard-json-output`) are differential/diagnostic
+harnesses: they normalize solc's textual Yul AST in unverified Python before
+handing it to the verified Lean backend, so they refuse to run without the
+explicit `--unverified-diagnostic` flag (or
+`EVM_COMPILER_UNVERIFIED_DIAGNOSTIC=1`).  Supported artifact production goes
+through the verified raw path instead: `scripts/solc_lean_standard_json.py`
+or `lake exe evm-compiler-backend raw-image` on solc Standard JSON output.
+
+```sh
 ```
 
 You can also hand the bridge solc's native Standard JSON input directly.  The
@@ -573,31 +586,37 @@ preserved unchanged; the bridge only replaces artifacts that solc exposes with
 a Yul AST plus nonempty creation and runtime bytecode.
 
 For Forge experiments, `scripts/solc_lean_standard_json.py` is a narrow
-solc-compatible wrapper.  It delegates probes such as `--version` to the real
-solc, and for `--standard-json` it returns `standard-json-output` for all
-contracts.  Extra solc arguments from Forge are forwarded to the real solc
-invocation used inside the bridge:
+solc-compatible wrapper backed by the verified raw path.  It delegates probes
+such as `--version` to the real solc.  For `--standard-json`, it augments the
+request with `irOptimizedAst` output selection, runs the real solc, and then
+compiles every deployable contract straight from solc's Standard JSON output
+with `lake exe evm-compiler-backend raw-image`
+(`Solidity.RawAst.compileArtifactFromRawSolcIr?`), replacing
+`evm.bytecode.object` and `evm.deployedBytecode.object` (plus
+`immutableReferences`) with Lean-produced bytecode.  No Python-side Yul
+translation is involved.  Extra solc arguments from Forge are forwarded to the
+real solc invocation:
 
 ```sh
 SOLC_LEAN_REAL_SOLC=solc \
 SOLC_LEAN_LAKE=lake \
-SOLC_LEAN_BRIDGE_JSON_DIR=/tmp/solc-lean-bridge-json \
-SOLC_LEAN_OPTIMIZED=1 \
 SOLC_LEAN_LAKE_CWD="$PWD" \
   forge test --use "$PWD/scripts/solc_lean_standard_json.py" \
     --no-auto-detect --force --match-test testName
 ```
 
 That wrapper compiles the whole Foundry Standard JSON batch through the Lean
-bytecode path, including test contracts.  `SOLC_LEAN_LAKE` is optional when
-`~/.elan/bin/lake` exists, and `SOLC_LEAN_BRIDGE_JSON_DIR` is optional but
-useful when you want the normalized Yul bridge input for a failed Forge run.
-Successful wrapper output is validated before it is returned to Forge, checking
-the solc-shaped `evmCompiler` metadata, byte sizes, and attached bridge JSON
-provenance when present.  Batches with no deployable contracts are valid
-pass-through outputs and are still checked for solc-shaped contract-map
-structure.  Set `SOLC_LEAN_VALIDATE_OUTPUT=0` only when you need to bypass that
-local validation while debugging the wrapper itself.
+raw path, including test contracts.  `SOLC_LEAN_LAKE` is optional when
+`~/.elan/bin/lake` exists.  If the verified raw backend cannot compile a
+deployable contract, the wrapper fails loudly instead of falling back to solc
+bytecode.  Successful wrapper output is validated before it is returned to
+Forge, checking the solc-shaped `evmCompiler` metadata and byte sizes.
+Batches with no deployable contracts are valid pass-through outputs and are
+still checked for solc-shaped contract-map structure.  Set
+`SOLC_LEAN_VALIDATE_OUTPUT=0` only when you need to bypass that local
+validation while debugging the wrapper itself.  (`SOLC_LEAN_OPTIMIZED` and
+`SOLC_LEAN_BRIDGE_JSON_DIR` belonged to the retired Python bridge route: the
+raw path always consumes `irOptimizedAst` and emits no bridge JSON.)
 Set `SOLC_LEAN_OPTIMIZED=1` when the wrapper should request solc's
 `irOptimizedAst` path instead of the default `irAst` path.
 To run the same selected Forge tests through both compilers and compare

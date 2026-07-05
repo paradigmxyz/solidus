@@ -22,7 +22,6 @@ multi_standard_json_output="$OUTDIR/Multi.standard-json-output.json"
 multi_standard_json_bridge_dir="$OUTDIR/Multi.standard-json-output.bridge-json"
 multi_lean_json_check="$OUTDIR/Multi.lean-json-check.json"
 wrapper_standard_json_output="$OUTDIR/Simple.wrapper-standard-json-output.json"
-wrapper_bridge_dir="$OUTDIR/Simple.wrapper.bridge-json"
 uses_library_artifact="$OUTDIR/UsesLibrary.artifact.json"
 uses_remapping_artifact="$OUTDIR/UsesRemapping.artifact.json"
 immutable_artifact="$OUTDIR/ImmutableBox.artifact.json"
@@ -46,6 +45,7 @@ python3 "$ROOT/scripts/solidity_to_yul_lean.py" "$ROOT/examples/Simple.sol" \
   --lake-cwd "$ROOT" \
   --contract Simple \
   --format bytecode-artifact \
+  --unverified-diagnostic \
   --namespace Generated.SimpleArtifactSmoke \
   --output "$simple_artifact"
 
@@ -84,14 +84,14 @@ sources = {
     "RevertReason.sol": {"content": Path(sys.argv[10]).read_text()},
     "BytesBox.sol": {"content": Path(sys.argv[11]).read_text()},
     "AbiBox.sol": {"content": Path(sys.argv[12]).read_text()},
-    "ArrayBox.sol": {"content": Path(sys.argv[13]).read_text()},
-    "EnvBox.sol": {"content": Path(sys.argv[14]).read_text()},
-    "StringBox.sol": {"content": Path(sys.argv[15]).read_text()},
-    "LoopBox.sol": {"content": Path(sys.argv[16]).read_text()},
-    "StructBox.sol": {"content": Path(sys.argv[17]).read_text()},
-    "BitwiseBox.sol": {"content": Path(sys.argv[18]).read_text()},
-    "ModifierBox.sol": {"content": Path(sys.argv[19]).read_text()},
-    "InlineAssemblyBox.sol": {"content": Path(sys.argv[20]).read_text()},
+    "ArrayBox.sol": {"content": Path(sys.argv[12]).read_text()},
+    "EnvBox.sol": {"content": Path(sys.argv[13]).read_text()},
+    "StringBox.sol": {"content": Path(sys.argv[14]).read_text()},
+    "LoopBox.sol": {"content": Path(sys.argv[15]).read_text()},
+    "StructBox.sol": {"content": Path(sys.argv[16]).read_text()},
+    "BitwiseBox.sol": {"content": Path(sys.argv[17]).read_text()},
+    "ModifierBox.sol": {"content": Path(sys.argv[18]).read_text()},
+    "InlineAssemblyBox.sol": {"content": Path(sys.argv[19]).read_text()},
 }
 with open(sys.argv[21], "w") as handle:
     json.dump(
@@ -112,6 +112,7 @@ python3 "$ROOT/scripts/solidity_to_yul_lean.py" "$simple_standard_json" \
   --lake-cwd "$ROOT" \
   --contract Simple \
   --format bytecode-artifact \
+  --unverified-diagnostic \
   --namespace Generated.SimpleStandardJsonArtifactSmoke \
   --output "$simple_standard_json_artifact"
 
@@ -121,6 +122,7 @@ python3 "$ROOT/scripts/solidity_to_yul_lean.py" "$ROOT/examples/Simple.sol" \
   --lake-cwd "$ROOT" \
   --contract Simple \
   --format forge-artifact \
+  --unverified-diagnostic \
   --namespace Generated.SimpleForgeArtifactSmoke \
   --output "$simple_forge_artifact"
 
@@ -132,6 +134,7 @@ python3 "$ROOT/scripts/solidity_to_yul_lean.py" "$simple_standard_json" \
   --lake-cwd "$ROOT" \
   --contract Simple \
   --format standard-json-output \
+  --unverified-diagnostic \
   --namespace Generated.SimpleStandardJsonOutputSmoke \
   --output "$simple_standard_json_output"
 
@@ -141,6 +144,7 @@ python3 "$ROOT/scripts/solidity_to_yul_lean.py" "$multi_standard_json" \
   --lake "$LAKE_BIN" \
   --lake-cwd "$ROOT" \
   --format standard-json-output \
+  --unverified-diagnostic \
   --all-contracts \
   --bridge-json-dir "$multi_standard_json_bridge_dir" \
   --namespace Generated.MultiStandardJsonOutputSmoke \
@@ -166,6 +170,7 @@ python3 "$ROOT/scripts/solidity_to_yul_lean.py" "$ROOT/examples/UsesLibrary.sol"
   --lake-cwd "$ROOT" \
   --contract UsesLibrary \
   --format bytecode-artifact \
+  --unverified-diagnostic \
   --namespace Generated.UsesLibraryArtifactSmoke \
   --output "$uses_library_artifact"
 
@@ -177,6 +182,7 @@ python3 "$ROOT/scripts/solidity_to_yul_lean.py" "$ROOT/examples/UsesRemapping.so
   --lake-cwd "$ROOT" \
   --contract UsesRemapping \
   --format bytecode-artifact \
+  --unverified-diagnostic \
   --namespace Generated.UsesRemappingArtifactSmoke \
   --output "$uses_remapping_artifact"
 
@@ -186,6 +192,7 @@ python3 "$ROOT/scripts/solidity_to_yul_lean.py" "$ROOT/examples/ImmutableBox.sol
   --lake-cwd "$ROOT" \
   --contract ImmutableBox \
   --format bytecode-artifact \
+  --unverified-diagnostic \
   --namespace Generated.ImmutableBoxArtifactSmoke \
   --output "$immutable_artifact"
 
@@ -195,6 +202,7 @@ python3 "$ROOT/scripts/solidity_to_yul_lean.py" "$ROOT/examples/ConstructorAbiBo
   --lake-cwd "$ROOT" \
   --contract ConstructorAbiBox \
   --format bytecode-artifact \
+  --unverified-diagnostic \
   --namespace Generated.ConstructorAbiBoxArtifactSmoke \
   --output "$constructor_abi_artifact"
 
@@ -204,6 +212,7 @@ python3 "$ROOT/scripts/solidity_to_yul_lean.py" "$ROOT/examples/MappingCounter.s
   --lake-cwd "$ROOT" \
   --contract MappingCounter \
   --format bytecode-artifact \
+  --unverified-diagnostic \
   --namespace Generated.MappingCounterArtifactSmoke \
   --output "$mapping_artifact"
 
@@ -213,6 +222,7 @@ python3 "$ROOT/scripts/solidity_to_yul_lean.py" "$ROOT/examples/RevertReason.sol
   --lake-cwd "$ROOT" \
   --contract RevertReason \
   --format bytecode-artifact \
+  --unverified-diagnostic \
   --namespace Generated.RevertReasonArtifactSmoke \
   --output "$revert_artifact"
 
@@ -222,6 +232,7 @@ python3 "$ROOT/scripts/solidity_to_yul_lean.py" "$ROOT/examples/BytesBox.sol" \
   --lake-cwd "$ROOT" \
   --contract BytesBox \
   --format bytecode-artifact \
+  --unverified-diagnostic \
   --namespace Generated.BytesBoxArtifactSmoke \
   --output "$bytes_artifact"
 
@@ -231,6 +242,7 @@ python3 "$ROOT/scripts/solidity_to_yul_lean.py" "$ROOT/examples/AbiBox.sol" \
   --lake-cwd "$ROOT" \
   --contract AbiBox \
   --format bytecode-artifact \
+  --unverified-diagnostic \
   --namespace Generated.AbiBoxArtifactSmoke \
   --output "$abi_artifact"
 
@@ -240,6 +252,7 @@ python3 "$ROOT/scripts/solidity_to_yul_lean.py" "$ROOT/examples/ArrayBox.sol" \
   --lake-cwd "$ROOT" \
   --contract ArrayBox \
   --format bytecode-artifact \
+  --unverified-diagnostic \
   --namespace Generated.ArrayBoxArtifactSmoke \
   --output "$array_artifact"
 
@@ -249,6 +262,7 @@ python3 "$ROOT/scripts/solidity_to_yul_lean.py" "$ROOT/examples/EnvBox.sol" \
   --lake-cwd "$ROOT" \
   --contract EnvBox \
   --format bytecode-artifact \
+  --unverified-diagnostic \
   --namespace Generated.EnvBoxArtifactSmoke \
   --output "$env_artifact"
 
@@ -258,6 +272,7 @@ python3 "$ROOT/scripts/solidity_to_yul_lean.py" "$ROOT/examples/StringBox.sol" \
   --lake-cwd "$ROOT" \
   --contract StringBox \
   --format bytecode-artifact \
+  --unverified-diagnostic \
   --namespace Generated.StringBoxArtifactSmoke \
   --output "$string_artifact"
 
@@ -267,6 +282,7 @@ python3 "$ROOT/scripts/solidity_to_yul_lean.py" "$ROOT/examples/LoopBox.sol" \
   --lake-cwd "$ROOT" \
   --contract LoopBox \
   --format bytecode-artifact \
+  --unverified-diagnostic \
   --namespace Generated.LoopBoxArtifactSmoke \
   --output "$loop_artifact"
 
@@ -276,6 +292,7 @@ python3 "$ROOT/scripts/solidity_to_yul_lean.py" "$ROOT/examples/StructBox.sol" \
   --lake-cwd "$ROOT" \
   --contract StructBox \
   --format bytecode-artifact \
+  --unverified-diagnostic \
   --namespace Generated.StructBoxArtifactSmoke \
   --output "$struct_artifact"
 
@@ -285,6 +302,7 @@ python3 "$ROOT/scripts/solidity_to_yul_lean.py" "$ROOT/examples/BitwiseBox.sol" 
   --lake-cwd "$ROOT" \
   --contract BitwiseBox \
   --format bytecode-artifact \
+  --unverified-diagnostic \
   --namespace Generated.BitwiseBoxArtifactSmoke \
   --output "$bitwise_artifact"
 
@@ -294,6 +312,7 @@ python3 "$ROOT/scripts/solidity_to_yul_lean.py" "$ROOT/examples/ModifierBox.sol"
   --lake-cwd "$ROOT" \
   --contract ModifierBox \
   --format bytecode-artifact \
+  --unverified-diagnostic \
   --namespace Generated.ModifierBoxArtifactSmoke \
   --output "$modifier_artifact"
 
@@ -303,6 +322,7 @@ python3 "$ROOT/scripts/solidity_to_yul_lean.py" "$ROOT/examples/InlineAssemblyBo
   --lake-cwd "$ROOT" \
   --contract InlineAssemblyBox \
   --format bytecode-artifact \
+  --unverified-diagnostic \
   --namespace Generated.InlineAssemblyBoxArtifactSmoke \
   --output "$inline_assembly_artifact"
 
@@ -314,14 +334,10 @@ SOLC_LEAN_LAKE_CWD="$ROOT" \
 SOLC_LEAN_REAL_SOLC="$SOLC_BIN" \
 SOLC_LEAN_LAKE="$LAKE_BIN" \
 SOLC_LEAN_LAKE_CWD="$ROOT" \
-SOLC_LEAN_BRIDGE_JSON_DIR="$wrapper_bridge_dir" \
   "$ROOT/scripts/solc_lean_standard_json.py" --standard-json \
   < "$simple_standard_json" > "$wrapper_standard_json_output"
 
-python3 "$ROOT/scripts/validate_bridge_json.py" \
-  --quiet "$wrapper_bridge_dir/manifest.json"
-
-python3 - "$simple_artifact" "$simple_standard_json_artifact" "$simple_forge_artifact" "$simple_standard_json_output" "$multi_standard_json_output" "$multi_standard_json_bridge_dir/manifest.json" "$multi_lean_json_check" "$wrapper_standard_json_output" "$wrapper_bridge_dir/manifest.json" "$uses_library_artifact" "$uses_remapping_artifact" "$immutable_artifact" "$constructor_abi_artifact" "$mapping_artifact" "$revert_artifact" "$bytes_artifact" "$abi_artifact" "$array_artifact" "$env_artifact" "$string_artifact" "$loop_artifact" "$struct_artifact" "$bitwise_artifact" "$modifier_artifact" "$inline_assembly_artifact" <<'PY'
+python3 - "$simple_artifact" "$simple_standard_json_artifact" "$simple_forge_artifact" "$simple_standard_json_output" "$multi_standard_json_output" "$multi_standard_json_bridge_dir/manifest.json" "$multi_lean_json_check" "$wrapper_standard_json_output" "$uses_library_artifact" "$uses_remapping_artifact" "$immutable_artifact" "$constructor_abi_artifact" "$mapping_artifact" "$revert_artifact" "$bytes_artifact" "$abi_artifact" "$array_artifact" "$env_artifact" "$string_artifact" "$loop_artifact" "$struct_artifact" "$bitwise_artifact" "$modifier_artifact" "$inline_assembly_artifact" <<'PY'
 import json
 import re
 import sys
@@ -583,23 +599,15 @@ if (
     != "evm-compiler.solc-standard-json-output.v1"
 ):
     raise SystemExit("wrapper standard JSON output missing compiler schema")
-with open(sys.argv[9]) as handle:
-    wrapper_bridge_manifest = json.load(handle)
-wrapper_counts = wrapper_bridge_manifest.get("counts", {})
-if wrapper_counts.get("entries") != 2 or wrapper_counts.get("skippedContracts") != 0:
-    raise SystemExit(f"unexpected wrapper bridge manifest counts: {wrapper_counts!r}")
-if wrapper_bridge_manifest.get("skippedContractEntries") != []:
-    raise SystemExit(
-        "unexpected wrapper bridge manifest structured skips: "
-        f"{wrapper_bridge_manifest.get('skippedContractEntries')!r}"
-    )
+wrapper_creation = wrapper_selected["evm"]["bytecode"]["object"]
+wrapper_runtime = wrapper_selected["evm"]["deployedBytecode"]["object"]
+if not wrapper_creation or not wrapper_creation.endswith(wrapper_runtime):
+    raise SystemExit("wrapper standard JSON bytecode shape is invalid")
 print("wrapper_standard_json_output=yes")
-print(f"wrapper_bridge_manifest_entries={wrapper_counts['entries']}")
-print("wrapper_bridge_manifest_structured_skips=0")
 
-validate_artifact("uses_library", sys.argv[10])
-validate_artifact("uses_remapping", sys.argv[11])
-immutable_artifact = validate_artifact("immutable_box", sys.argv[12])
+validate_artifact("uses_library", sys.argv[9])
+validate_artifact("uses_remapping", sys.argv[10])
+immutable_artifact = validate_artifact("immutable_box", sys.argv[11])
 immutable_refs = immutable_artifact.get("immutableReferences", {}).get("runtime", {})
 flattened_immutable_refs = immutable_reference_list(immutable_refs)
 if not flattened_immutable_refs:
@@ -608,7 +616,7 @@ for ref in flattened_immutable_refs:
     if ref.get("length") != 32:
         raise SystemExit("ImmutableBox bytecode artifact reference is not 32 bytes")
 print(f"immutable_box_runtime_immutable_references={len(flattened_immutable_refs)}")
-constructor_abi_artifact = validate_artifact("constructor_abi_box", sys.argv[13])
+constructor_abi_artifact = validate_artifact("constructor_abi_box", sys.argv[12])
 constructor_abi_refs = constructor_abi_artifact.get("immutableReferences", {}).get("runtime", {})
 flattened_constructor_abi_refs = immutable_reference_list(constructor_abi_refs)
 if not flattened_constructor_abi_refs:
@@ -624,16 +632,16 @@ print(
     "constructor_abi_box_runtime_immutable_references="
     f"{len(flattened_constructor_abi_refs)}"
 )
-validate_artifact("mapping_counter", sys.argv[14])
-validate_artifact("revert_reason", sys.argv[15])
-validate_artifact("bytes_box", sys.argv[16])
-validate_artifact("abi_box", sys.argv[17])
-validate_artifact("array_box", sys.argv[18])
-validate_artifact("env_box", sys.argv[19])
-validate_artifact("string_box", sys.argv[20])
-validate_artifact("loop_box", sys.argv[21])
-validate_artifact("struct_box", sys.argv[22])
-validate_artifact("bitwise_box", sys.argv[23])
-validate_artifact("modifier_box", sys.argv[24])
-validate_artifact("inline_assembly_box", sys.argv[25])
+validate_artifact("mapping_counter", sys.argv[13])
+validate_artifact("revert_reason", sys.argv[14])
+validate_artifact("bytes_box", sys.argv[15])
+validate_artifact("abi_box", sys.argv[16])
+validate_artifact("array_box", sys.argv[17])
+validate_artifact("env_box", sys.argv[18])
+validate_artifact("string_box", sys.argv[19])
+validate_artifact("loop_box", sys.argv[20])
+validate_artifact("struct_box", sys.argv[21])
+validate_artifact("bitwise_box", sys.argv[22])
+validate_artifact("modifier_box", sys.argv[23])
+validate_artifact("inline_assembly_box", sys.argv[24])
 PY
