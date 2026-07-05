@@ -9257,6 +9257,73 @@ class SolidityToYulLeanTests(unittest.TestCase):
             {"7": [{"start": 2, "length": 32}]},
         )
 
+    def test_solc_lean_wrapper_parses_link_references(self):
+        result, output, _, calls = self.run_wrapper_standard_json(
+            self._wrapper_solc_output(),
+            backend_stdout=(
+                "bytecode=0x6000\n"
+                "immutable\tA.sol:Lib\t2\t32\n"
+                "linkref\tA.sol:Lib\t14\t20\n"
+                "linkref\tA.sol:Lib\t50\t20\n"
+                "bytecode_bytes=2\n"
+            ),
+        )
+        self.assertEqual(result, 0)
+        rendered = json.loads(output)
+        selected = rendered["contracts"]["A.sol"]["A"]
+        expected = {
+            "A.sol": {
+                "Lib": [
+                    {"start": 14, "length": 20},
+                    {"start": 50, "length": 20},
+                ]
+            }
+        }
+        self.assertEqual(
+            selected["evm"]["bytecode"]["linkReferences"], expected
+        )
+        self.assertEqual(
+            selected["evm"]["deployedBytecode"]["linkReferences"], expected
+        )
+        # Unlinked library marker groups are not immutables in solc's shape.
+        self.assertEqual(
+            selected["evm"]["deployedBytecode"]["immutableReferences"], {}
+        )
+
+    def test_solc_lean_wrapper_link_references_empty_when_linked(self):
+        result, output, _, _ = self.run_wrapper_standard_json(
+            self._wrapper_solc_output(),
+            backend_stdout="bytecode=0x6000\nbytecode_bytes=2\n",
+        )
+        self.assertEqual(result, 0)
+        rendered = json.loads(output)
+        selected = rendered["contracts"]["A.sol"]["A"]
+        self.assertEqual(selected["evm"]["bytecode"]["linkReferences"], {})
+        self.assertEqual(
+            selected["evm"]["deployedBytecode"]["linkReferences"], {}
+        )
+
+    def test_solc_link_references_shape(self):
+        shaped = solc_lean_wrapper.solc_link_references(
+            {
+                "src/lib/ScaleLib.sol:ScaleLib": [
+                    {"start": 12, "length": 20}
+                ],
+                "src/lib/Other.sol:Other": [{"start": 90, "length": 20}],
+            }
+        )
+        self.assertEqual(
+            shaped,
+            {
+                "src/lib/ScaleLib.sol": {
+                    "ScaleLib": [{"start": 12, "length": 20}]
+                },
+                "src/lib/Other.sol": {
+                    "Other": [{"start": 90, "length": 20}]
+                },
+            },
+        )
+
     def test_solc_lean_wrapper_preserves_requested_ir_output(self):
         result, output, _, _ = self.run_wrapper_standard_json(
             self._wrapper_solc_output(),

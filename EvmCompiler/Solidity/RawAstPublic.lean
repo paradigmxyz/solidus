@@ -33,6 +33,56 @@ def compileArtifactFromRawSolcIr? (rawJson : String)
           | .ok linkerSymbols =>
               program.compileArtifactWithLinkerSymbols? linkerSymbols
 
+/-- Unlinked-library variant of the raw entry point: `linkersymbol` names
+absent from the Standard JSON `settings.libraries` metadata are compiled as
+unresolved link references instead of failing the compile.  When the
+metadata covers every library name this coincides with substituting nothing
+and gating the ordinary compile. -/
+def compileArtifactUnlinkedFromRawSolcIr? (rawJson : String)
+    (selection : Selection) : Option Frontend.Program.Artifact :=
+  match Lean.Json.parse rawJson with
+  | .error _ => none
+  | .ok json =>
+      match decodeAndElaborateSolcIrJson json selection with
+      | .error _ => none
+      | .ok program =>
+          match decodeLinkerSymbolsJson json selection with
+          | .error _ => none
+          | .ok linkerSymbols =>
+              program.compileArtifactUnlinked? linkerSymbols
+
+theorem compileArtifactUnlinkedFromRawSolcIr?_decoded
+    {rawJson : String} {selection : Selection}
+    {artifact : Frontend.Program.Artifact}
+    (hCompile :
+      compileArtifactUnlinkedFromRawSolcIr? rawJson selection =
+        some artifact) :
+    ∃ (program : Frontend.Program)
+        (linkerSymbols : List (Frontend.Name × Frontend.Word)),
+      decodeAndElaborateSolcIr? rawJson selection = some program ∧
+        decodeLinkerSymbols? rawJson selection = some linkerSymbols ∧
+          program.compileArtifactUnlinked? linkerSymbols = some artifact := by
+  unfold compileArtifactUnlinkedFromRawSolcIr? at hCompile
+  cases hParse : Lean.Json.parse rawJson with
+  | error err =>
+      simp [hParse] at hCompile
+  | ok json =>
+      cases hDecode : decodeAndElaborateSolcIrJson json selection with
+      | error err =>
+          simp [hParse, hDecode] at hCompile
+      | ok program =>
+          cases hLinker : decodeLinkerSymbolsJson json selection with
+          | error err =>
+              simp [hParse, hDecode, hLinker] at hCompile
+          | ok linkerSymbols =>
+              have hProgramCompile :
+                  program.compileArtifactUnlinked? linkerSymbols =
+                    some artifact := by
+                simpa [hParse, hDecode, hLinker] using hCompile
+              refine ⟨program, linkerSymbols, ?_, ?_, hProgramCompile⟩
+              · simp [decodeAndElaborateSolcIr?, hParse, hDecode]
+              · simp [decodeLinkerSymbols?, hParse, hLinker]
+
 theorem compileArtifactFromRawSolcIr?_decoded
     {rawJson : String} {selection : Selection}
     {artifact : Frontend.Program.Artifact}

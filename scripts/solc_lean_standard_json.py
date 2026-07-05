@@ -158,8 +158,13 @@ def run_raw_backend(
     source_name: str,
     contract_name: str,
     selector: str,
-) -> Tuple[str, Dict[str, List[Dict[str, int]]]]:
-    """Run `evm-compiler-backend raw-image` and parse bytecode + immutables."""
+) -> Tuple[
+    str,
+    Dict[str, List[Dict[str, int]]],
+    Dict[str, List[Dict[str, int]]],
+]:
+    """Run `evm-compiler-backend raw-image`; parse bytecode, immutable
+    references, and (for unlinked libraries) solc-shaped link references."""
     command = [
         lake,
         "exe",
@@ -187,6 +192,7 @@ def run_raw_backend(
         )
     bytecode: Optional[str] = None
     immutable_references: Dict[str, List[Dict[str, int]]] = {}
+    link_references: Dict[str, List[Dict[str, int]]] = {}
     for line in (completed.stdout or "").splitlines():
         if line.startswith("bytecode=0x"):
             bytecode = line[len("bytecode=0x"):]
@@ -200,12 +206,39 @@ def run_raw_backend(
             immutable_references.setdefault(parts[1], []).append(
                 {"start": int(parts[2]), "length": int(parts[3])}
             )
+            continue
+        if line.startswith("linkref\t"):
+            parts = line.split("\t")
+            if len(parts) != 4:
+                raise BackendError(
+                    f"malformed link reference line: {line!r}"
+                )
+            link_references.setdefault(parts[1], []).append(
+                {"start": int(parts[2]), "length": int(parts[3])}
+            )
     if bytecode is None:
         raise BackendError(
             f"verified raw backend printed no bytecode for "
             f"{source_name}:{contract_name} ({selector})"
         )
-    return bytecode, immutable_references
+    # Unlinked library names double as marker groups in the immutable
+    # export; keep the solc-shaped views disjoint.
+    for name in link_references:
+        immutable_references.pop(name, None)
+    return bytecode, immutable_references, link_references
+
+
+def solc_link_references(
+    link_references: Dict[str, List[Dict[str, int]]],
+) -> Dict[str, Dict[str, List[Dict[str, int]]]]:
+    """Convert `source:Library` keyed link references to solc shape."""
+    shaped: Dict[str, Dict[str, List[Dict[str, int]]]] = {}
+    for qualified, references in link_references.items():
+        source, _, library = qualified.rpartition(":")
+        shaped.setdefault(source, {}).setdefault(library, []).extend(
+            references
+        )
+    return shaped
 
 
 def replace_contract_bytecode(
@@ -215,17 +248,23 @@ def replace_contract_bytecode(
     creation_bytecode: str,
     runtime_bytecode: str,
     runtime_immutable_references: Dict[str, List[Dict[str, int]]],
+    creation_link_references: Optional[Dict[str, List[Dict[str, int]]]] = None,
+    runtime_link_references: Optional[Dict[str, List[Dict[str, int]]]] = None,
 ) -> None:
     evm = contract_output.setdefault("evm", {})
     bytecode = evm.setdefault("bytecode", {})
     deployed = evm.setdefault("deployedBytecode", {})
     bytecode["object"] = creation_bytecode
     bytecode["sourceMap"] = ""
-    bytecode["linkReferences"] = {}
+    bytecode["linkReferences"] = solc_link_references(
+        creation_link_references or {}
+    )
     bytecode["generatedSources"] = []
     deployed["object"] = runtime_bytecode
     deployed["sourceMap"] = ""
-    deployed["linkReferences"] = {}
+    deployed["linkReferences"] = solc_link_references(
+        runtime_link_references or {}
+    )
     deployed["generatedSources"] = []
     deployed["immutableReferences"] = runtime_immutable_references
     creation_object, runtime_object = yul_object_names(
@@ -349,7 +388,7 @@ def compile_standard_json(argv: List[str]) -> int:
                 if not deployable_contract(contract_output):
                     continue
                 try:
-                    creation, _ = run_raw_backend(
+                    creation, _, creation_linkrefs = run_raw_backend(
                         lake,
                         lake_cwd,
                         raw_output_path,
@@ -357,13 +396,15 @@ def compile_standard_json(argv: List[str]) -> int:
                         contract_name,
                         "creation",
                     )
-                    runtime, runtime_immutables = run_raw_backend(
-                        lake,
-                        lake_cwd,
-                        raw_output_path,
-                        source_name,
-                        contract_name,
-                        "runtime",
+                    runtime, runtime_immutables, runtime_linkrefs = (
+                        run_raw_backend(
+                            lake,
+                            lake_cwd,
+                            raw_output_path,
+                            source_name,
+                            contract_name,
+                            "runtime",
+                        )
                     )
                 except BackendError as exc:
                     print(f"error: {exc}", file=sys.stderr)
@@ -375,6 +416,8 @@ def compile_standard_json(argv: List[str]) -> int:
                     creation,
                     runtime,
                     runtime_immutables,
+                    creation_linkrefs,
+                    runtime_linkrefs,
                 )
     finally:
         if raw_output_path is not None:

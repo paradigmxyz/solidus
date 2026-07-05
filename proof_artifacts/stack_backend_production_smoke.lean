@@ -10,6 +10,8 @@ import EvmCompiler.Verification
 #check EvmCompiler.Solidity.Frontend.Object.patchImmutables_compileWithImmutableValues?
 #check EvmCompiler.Solidity.Frontend.Object.patchImmutables_compileWithImmutableValues?_ofCompile
 #check EvmCompiler.Solidity.Frontend.Object.patchImmutables_image_compileWithImmutableValues?_ofCompile
+#check EvmCompiler.Solidity.Frontend.Object.patchImmutablesAndLibraries_image_ofCompileUnlinked
+#check EvmCompiler.Solidity.Frontend.Object.compileVerifiedStackObjectArtifactUnlinked?_withValues_resolvesOriginal
 #check EvmCompiler.Compiler.OpenInteractionComposition.compiledVerifiedStackObjectToRawBytecode
 #check EvmCompiler.Yul.EndToEnd.optimizedSolcYulToRawBytecode
 #check EvmCompiler.Yul.EndToEnd.optimizedSolcYulToRawBytecodeFinished
@@ -30,6 +32,8 @@ import EvmCompiler.Verification
 #print axioms EvmCompiler.Solidity.Frontend.Object.patchImmutables_compileWithImmutableValues?
 #print axioms EvmCompiler.Solidity.Frontend.Object.patchImmutables_compileWithImmutableValues?_ofCompile
 #print axioms EvmCompiler.Solidity.Frontend.Object.patchImmutables_image_compileWithImmutableValues?_ofCompile
+#print axioms EvmCompiler.Solidity.Frontend.Object.patchImmutablesAndLibraries_image_ofCompileUnlinked
+#print axioms EvmCompiler.Solidity.Frontend.Object.compileVerifiedStackObjectArtifactUnlinked?_withValues_resolvesOriginal
 #print axioms EvmCompiler.Compiler.OpenInteractionComposition.compiledVerifiedStackObjectToRawBytecode
 #print axioms EvmCompiler.Yul.EndToEnd.optimizedSolcYulToRawBytecode
 #print axioms EvmCompiler.Yul.EndToEnd.optimizedSolcYulToRawBytecodeFinished

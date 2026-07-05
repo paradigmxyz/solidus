@@ -846,6 +846,54 @@ mutual
 end
 
 mutual
+  def Expr.linkerSymbolNames : Expr → List Name
+    | .lit _ => []
+    | .stringLit _ => []
+    | .bytesLit _ => []
+    | .var _ => []
+    | .call .objectBuiltin "linkersymbol" [nameArg] =>
+        match Expr.objectBuiltinNameArg? nameArg with
+        | some name => [name]
+        | none => []
+    | .call _ _ args => Expr.List.linkerSymbolNames args
+
+  def Expr.List.linkerSymbolNames : List Expr → List Name
+    | [] => []
+    | expr :: rest =>
+        Expr.linkerSymbolNames expr ++ Expr.List.linkerSymbolNames rest
+end
+
+mutual
+  /-- Rewrite every `linkersymbol` occurrence whose fully-qualified library
+  name is in `missing` into a `loadimmutable` occurrence of the same name,
+  leaving all other syntax untouched.  This is the unlinked-library pre-pass:
+  the existing immutable marker machinery then pins those push sites and
+  exports them as extra `immutableReferences` entries. -/
+  def Expr.substituteUnlinkedLibraries (missing : List Name) : Expr → Expr
+    | .lit value => .lit value
+    | .stringLit value => .stringLit value
+    | .bytesLit bytes => .bytesLit bytes
+    | .var name => .var name
+    | .call .objectBuiltin "linkersymbol" [nameArg] =>
+        match Expr.objectBuiltinNameArg? nameArg with
+        | some name =>
+            if missing.contains name then
+              .call .objectBuiltin "loadimmutable" [nameArg]
+            else
+              .call .objectBuiltin "linkersymbol" [nameArg]
+        | none => .call .objectBuiltin "linkersymbol" [nameArg]
+    | .call kind callee args =>
+        .call kind callee (Expr.List.substituteUnlinkedLibraries missing args)
+
+  def Expr.List.substituteUnlinkedLibraries (missing : List Name) :
+      List Expr → List Expr
+    | [] => []
+    | expr :: rest =>
+        Expr.substituteUnlinkedLibraries missing expr ::
+          Expr.List.substituteUnlinkedLibraries missing rest
+end
+
+mutual
   /-- Whether an expression contains a call to a Yul function. This is used
   when a `setimmutable` name has no patch sites: the object dialect treats
   that case as a no-op, but dropping it must not silently erase a user call. -/
@@ -897,6 +945,87 @@ mutual
     | (_value, body) :: rest =>
         Stmt.List.loadImmutableNames body ++
           Stmt.CaseList.loadImmutableNames rest
+end
+
+mutual
+  def Stmt.linkerSymbolNames : Stmt → List Name
+    | .block stmts => Stmt.List.linkerSymbolNames stmts
+    | .letDecl _ none => []
+    | .letDecl _ (some value) => value.linkerSymbolNames
+    | .assign _ value => value.linkerSymbolNames
+    | .exprStmt expr => expr.linkerSymbolNames
+    | .functionDef _ _ _ body => Stmt.List.linkerSymbolNames body
+    | .switch scrutinee cases default =>
+        scrutinee.linkerSymbolNames ++
+          Stmt.CaseList.linkerSymbolNames cases ++
+          Stmt.List.linkerSymbolNames default
+    | .forLoop pre condition post body =>
+        condition.linkerSymbolNames ++
+          Stmt.List.linkerSymbolNames pre ++
+          Stmt.List.linkerSymbolNames post ++
+          Stmt.List.linkerSymbolNames body
+    | .ifThen condition body =>
+        condition.linkerSymbolNames ++ Stmt.List.linkerSymbolNames body
+    | .break => []
+    | .continue => []
+    | .leave => []
+
+  def Stmt.List.linkerSymbolNames : List Stmt → List Name
+    | [] => []
+    | stmt :: rest =>
+        Stmt.linkerSymbolNames stmt ++ Stmt.List.linkerSymbolNames rest
+
+  def Stmt.CaseList.linkerSymbolNames :
+      List (SwitchCaseValue × List Stmt) → List Name
+    | [] => []
+    | (_value, body) :: rest =>
+        Stmt.List.linkerSymbolNames body ++
+          Stmt.CaseList.linkerSymbolNames rest
+end
+
+mutual
+  def Stmt.substituteUnlinkedLibraries (missing : List Name) : Stmt → Stmt
+    | .block stmts =>
+        .block (Stmt.List.substituteUnlinkedLibraries missing stmts)
+    | .letDecl names none => .letDecl names none
+    | .letDecl names (some value) =>
+        .letDecl names (some (value.substituteUnlinkedLibraries missing))
+    | .assign names value =>
+        .assign names (value.substituteUnlinkedLibraries missing)
+    | .exprStmt expr => .exprStmt (expr.substituteUnlinkedLibraries missing)
+    | .functionDef name params returns body =>
+        .functionDef name params returns
+          (Stmt.List.substituteUnlinkedLibraries missing body)
+    | .switch scrutinee cases default =>
+        .switch (scrutinee.substituteUnlinkedLibraries missing)
+          (Stmt.CaseList.substituteUnlinkedLibraries missing cases)
+          (Stmt.List.substituteUnlinkedLibraries missing default)
+    | .forLoop pre condition post body =>
+        .forLoop (Stmt.List.substituteUnlinkedLibraries missing pre)
+          (condition.substituteUnlinkedLibraries missing)
+          (Stmt.List.substituteUnlinkedLibraries missing post)
+          (Stmt.List.substituteUnlinkedLibraries missing body)
+    | .ifThen condition body =>
+        .ifThen (condition.substituteUnlinkedLibraries missing)
+          (Stmt.List.substituteUnlinkedLibraries missing body)
+    | .break => .break
+    | .continue => .continue
+    | .leave => .leave
+
+  def Stmt.List.substituteUnlinkedLibraries (missing : List Name) :
+      List Stmt → List Stmt
+    | [] => []
+    | stmt :: rest =>
+        Stmt.substituteUnlinkedLibraries missing stmt ::
+          Stmt.List.substituteUnlinkedLibraries missing rest
+
+  def Stmt.CaseList.substituteUnlinkedLibraries (missing : List Name) :
+      List (SwitchCaseValue × List Stmt) →
+        List (SwitchCaseValue × List Stmt)
+    | [] => []
+    | (value, body) :: rest =>
+        (value, Stmt.List.substituteUnlinkedLibraries missing body) ::
+          Stmt.CaseList.substituteUnlinkedLibraries missing rest
 end
 
 mutual
@@ -1255,6 +1384,15 @@ namespace FunctionDef
 def loadImmutableNames (fn : FunctionDef) : List Name :=
   Stmt.List.loadImmutableNames fn.body
 
+def linkerSymbolNames (fn : FunctionDef) : List Name :=
+  Stmt.List.linkerSymbolNames fn.body
+
+def substituteUnlinkedLibraries (missing : List Name)
+    (fn : FunctionDef) : FunctionDef :=
+  { params := fn.params
+    returns := fn.returns
+    body := Stmt.List.substituteUnlinkedLibraries missing fn.body }
+
 def forkSpellingOk? (version : Yul.SolcValidation.EvmVersion)
     (fn : FunctionDef) : Bool :=
   Stmt.List.forkSpellingOk? version fn.body
@@ -1272,6 +1410,18 @@ def loadImmutableNames : List (Name × FunctionDef) → List Name
   | [] => []
   | (_name, fn) :: rest =>
       fn.loadImmutableNames ++ loadImmutableNames rest
+
+def linkerSymbolNames : List (Name × FunctionDef) → List Name
+  | [] => []
+  | (_name, fn) :: rest =>
+      fn.linkerSymbolNames ++ linkerSymbolNames rest
+
+def substituteUnlinkedLibraries (missing : List Name) :
+    List (Name × FunctionDef) → List (Name × FunctionDef)
+  | [] => []
+  | (name, fn) :: rest =>
+      (name, fn.substituteUnlinkedLibraries missing) ::
+        substituteUnlinkedLibraries missing rest
 
 def forkSpellingOk? (version : Yul.SolcValidation.EvmVersion) :
     List (Name × FunctionDef) → Bool
@@ -1350,6 +1500,106 @@ def hasCallNamed? (wanted : Name) (object : Object) : Bool :=
 
 def noRawClzCall? (object : Object) : Bool :=
   !object.hasCallNamed? "clz"
+
+/-- `linkersymbol` names appearing in this object's own code (dispatcher and
+functions), without descending into sub-objects. -/
+def linkerSymbolNames (object : Object) : List Name :=
+  NameList.unique
+    (Stmt.List.linkerSymbolNames object.dispatcher ++
+      FunctionDef.List.linkerSymbolNames object.functions)
+
+mutual
+  /-- `linkersymbol` names appearing anywhere in the object tree. -/
+  def allLinkerSymbolNames (object : Object) : List Name :=
+    NameList.unique
+      (Stmt.List.linkerSymbolNames object.dispatcher ++
+        FunctionDef.List.linkerSymbolNames object.functions ++
+        Object.List.allLinkerSymbolNames object.objects)
+  termination_by sizeOf object
+  decreasing_by
+    simp_wf
+    cases object
+    simp_wf
+    omega
+
+  def List.allLinkerSymbolNames : List Object → List Name
+    | [] => []
+    | object :: rest =>
+        Object.allLinkerSymbolNames object ++
+          List.allLinkerSymbolNames rest
+  termination_by objects => sizeOf objects
+  decreasing_by
+    all_goals simp_wf
+    all_goals omega
+end
+
+mutual
+  /-- `loadimmutable` names appearing anywhere in the object tree. -/
+  def allLoadImmutableNames (object : Object) : List Name :=
+    NameList.unique
+      (Stmt.List.loadImmutableNames object.dispatcher ++
+        FunctionDef.List.loadImmutableNames object.functions ++
+        Object.List.allLoadImmutableNames object.objects)
+  termination_by sizeOf object
+  decreasing_by
+    simp_wf
+    cases object
+    simp_wf
+    omega
+
+  def List.allLoadImmutableNames : List Object → List Name
+    | [] => []
+    | object :: rest =>
+        Object.allLoadImmutableNames object ++
+          List.allLoadImmutableNames rest
+  termination_by objects => sizeOf objects
+  decreasing_by
+    all_goals simp_wf
+    all_goals omega
+end
+
+mutual
+  /-- Rewrite unresolved `linkersymbol` occurrences into `loadimmutable`
+  occurrences across the whole object tree. -/
+  def substituteUnlinkedLibraries (missing : List Name)
+      (object : Object) : Object :=
+    { name := object.name
+      dispatcher :=
+        Stmt.List.substituteUnlinkedLibraries missing object.dispatcher
+      functions :=
+        FunctionDef.List.substituteUnlinkedLibraries missing object.functions
+      data := object.data
+      objects := Object.List.substituteUnlinkedLibraries missing object.objects
+      items := object.items
+      memoryContract := object.memoryContract
+      evmVersion := object.evmVersion }
+  termination_by sizeOf object
+  decreasing_by
+    simp_wf
+    cases object
+    simp_wf
+    omega
+
+  def List.substituteUnlinkedLibraries (missing : List Name) :
+      List Object → List Object
+    | [] => []
+    | object :: rest =>
+        Object.substituteUnlinkedLibraries missing object ::
+          List.substituteUnlinkedLibraries missing rest
+  termination_by objects => sizeOf objects
+  decreasing_by
+    all_goals simp_wf
+    all_goals omega
+end
+
+/-- Linker-symbol names for which no address was provided: the names the
+unlinked pipeline rewrites into `loadimmutable` markers and exports as
+solc-compatible `linkReferences`. -/
+def missingLinkerSymbolNames (object : Object)
+    (provided : List (Name × Word)) : List Name :=
+  object.allLinkerSymbolNames.filter
+    (fun name =>
+      (provided.find? (fun entry => entry.fst == name)).isNone)
 
 mutual
   def Expr.userCallsResolved? (functionNames : List Name) : Expr → Bool
@@ -1553,6 +1803,15 @@ def shiftEntries (base : Nat) :
       List (Name × List ImmutableReference) :=
   List.map (shiftEntry base)
 
+/-- solc-shaped link-reference window: the low 20 address bytes of a
+32-byte immutable window (addresses are below `2 ^ 160`, so the high 12
+bytes of the push payload stay zero). -/
+def linkWindow (reference : ImmutableReference) : ImmutableReference :=
+  { start := reference.start + 12, length := 20 }
+
+def linkWindows : List ImmutableReference → List ImmutableReference :=
+  List.map linkWindow
+
 end ImmutableReference
 
 namespace Bytecode
@@ -1701,6 +1960,70 @@ def immutableReferenceEntriesFromCodes
   | (name, value) :: rest =>
       (name, immutableReferencesForMarkerFromCodes zeroBytes markerBytes value) ::
         immutableReferenceEntriesFromCodes zeroBytes markerBytes rest
+
+/-- 20-byte address image of a word: the low 20 bytes of its big-endian
+32-byte encoding. -/
+def encodeAddress20 (value : Word) : List UInt8 :=
+  (Assembly.Bytecode.encodeWord32 value).drop 12
+
+/-- Write one linked library address into every exported 20-byte link
+window (the `start` fields already carry the `+ 12` offset into the 32-byte
+immutable window). -/
+def patchLinkReferences (value : Word) :
+    List UInt8 → List ImmutableReference → List UInt8
+  | bytes, [] => bytes
+  | bytes, reference :: rest =>
+      patchLinkReferences value
+        (patchBytesAt reference.start (encodeAddress20 value) bytes) rest
+
+/-- The Lean model of external library linking: 20-byte address writes at
+solc-shaped `linkReferences` windows.  Groups whose name carries no assigned
+address are left untouched. -/
+def patchLibraries (bytes : List UInt8)
+    (refs : List (Name × List ImmutableReference))
+    (addresses : List (Name × Word)) : List UInt8 :=
+  match refs with
+  | [] => bytes
+  | (name, references) :: rest =>
+      match addresses.find? (fun entry => entry.fst == name) with
+      | some entry =>
+          patchLibraries (patchLinkReferences entry.snd bytes references)
+            rest addresses
+      | none => patchLibraries bytes rest addresses
+
+/-- Deploy-time patch of a possibly unlinked image: immutable names get the
+full 32-byte window write, unlinked library names get the solc-shaped
+20-byte address write at `start + 12`. -/
+def patchImmutablesAndLibraries (bytes : List UInt8)
+    (refs : List (Name × List ImmutableReference))
+    (libraryNames : List Name)
+    (values : List (Name × Word)) : List UInt8 :=
+  match refs with
+  | [] => bytes
+  | (name, references) :: rest =>
+      match values.find? (fun entry => entry.fst == name) with
+      | some entry =>
+          let patched :=
+            if libraryNames.contains name then
+              patchLinkReferences entry.snd bytes
+                (ImmutableReference.linkWindows references)
+            else
+              patchImmutableReferences entry.snd bytes references
+          patchImmutablesAndLibraries patched rest libraryNames values
+      | none => patchImmutablesAndLibraries bytes rest libraryNames values
+
+def windowDisjointFrom? (reference : ImmutableReference)
+    (rest : List ImmutableReference) : Bool :=
+  rest.all
+    (fun other =>
+      decide (reference.start + 32 ≤ other.start) ||
+        decide (other.start + 32 ≤ reference.start))
+
+/-- All 32-byte windows in the list are pairwise disjoint. -/
+def windowsPairwiseDisjoint? : List ImmutableReference → Bool
+  | [] => true
+  | reference :: rest =>
+      windowDisjointFrom? reference rest && windowsPairwiseDisjoint? rest
 
 end Bytecode
 
@@ -3037,6 +3360,16 @@ def immutableReferenceEntries : List ObjectImage →
   | [] => []
   | image :: rest =>
       image.immutableReferences ++ immutableReferenceEntries rest
+
+/-- solc-compatible `linkReferences` view of an image: the exported
+immutable-reference groups whose names are unlinked library names,
+re-windowed to the 20 address bytes (`start + 12`, length 20) of each
+32-byte push payload window. -/
+def linkReferences (image : ObjectImage) (libraryNames : List Name) :
+    List (Name × List ImmutableReference) :=
+  (image.immutableReferences.filter
+      (fun entry => libraryNames.contains entry.fst)).map
+    (fun entry => (entry.fst, ImmutableReference.linkWindows entry.snd))
 
 end ObjectImage
 

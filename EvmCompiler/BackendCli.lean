@@ -122,7 +122,8 @@ def parseCommand? (args : List String) : Option Command :=
       | none => none
 
 def printImage (mode : Mode)
-    (image : Solidity.Frontend.ObjectImage) : IO Unit := do
+    (image : Solidity.Frontend.ObjectImage)
+    (unlinkedLibraryNames : List Solidity.Frontend.Name := []) : IO Unit := do
   match mode with
   | .image | .rawImage => IO.println ("bytecode=0x" ++ bytesHex image.bytes)
   | .summary | .rawSummary | .check | .rawCheck | .stackAnalysis
@@ -131,6 +132,12 @@ def printImage (mode : Mode)
     for reference in entry.snd do
       IO.println
         ("immutable\t" ++ entry.fst ++ "\t" ++
+          toString reference.start ++ "\t" ++
+          toString reference.length)
+  for entry in image.linkReferences unlinkedLibraryNames do
+    for reference in entry.snd do
+      IO.println
+        ("linkref\t" ++ entry.fst ++ "\t" ++
           toString reference.start ++ "\t" ++
           toString reference.length)
   IO.println ("bytecode_bytes=" ++ toString image.bytes.length)
@@ -1151,7 +1158,19 @@ def runRaw (config : RawConfig) : IO Unit := do
           | some program => printCheck program none false
           | none => throw (IO.userError "raw Standard JSON decode failed")
       | .rawImage | .rawSummary =>
-          throw (IO.userError "raw object-image generation returned none")
+          -- Unlinked-library fallback: compile with the missing
+          -- `linkersymbol` names exported as link references.
+          let unlinked? :=
+            Solidity.RawAst.compileArtifactUnlinkedFromRawSolcIr?
+              input config.selection
+          match unlinked?, program?,
+              Solidity.RawAst.decodeLinkerSymbols? input config.selection with
+          | some artifact, some program, some linkerSymbols =>
+              printImage config.mode artifact.image
+                (program.object.missingLinkerSymbolNames linkerSymbols)
+          | _, _, _ =>
+              throw
+                (IO.userError "raw object-image generation returned none")
       | .image | .summary | .check | .stackAnalysis | .stackDiagnostics =>
           pure ()
   | some artifact =>

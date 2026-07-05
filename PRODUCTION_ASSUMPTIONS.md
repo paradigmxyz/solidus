@@ -233,6 +233,26 @@ bad-jump and out-of-gas outcome branches of the bridge relation are unchanged.
 The exact-image theorems are the `suffix := []` instances (up to
 `List.append_nil`), and remain the published runtime-code endpoints.
 
+## Unlinked Libraries
+
+The unlinked pipeline (`Program.compileArtifactUnlinked?`,
+`RawAst.compileArtifactUnlinkedFromRawSolcIr?`) compiles `linkersymbol` names
+without provided addresses by rewriting them into `loadimmutable` markers, so
+unlinked bytecode carries zero-filled PUSH32 windows rather than solc's
+`__$hash$__` placeholder text. The exported `linkReferences` offsets
+(`start := window + 12`, `length := 20`) and the linked result follow the solc
+linking contract — a linker that writes the 20 address bytes at each exported
+offset produces exactly the bytes of the pipeline's own compile with those
+addresses resolved
+(`Object.patchImmutablesAndLibraries_image_ofCompileUnlinked`,
+`Object.compileVerifiedStackObjectArtifactUnlinked?_withValues_resolvesOriginal`)
+— but byte identity of UNLINKED objects with solc's unlinked output is not
+claimed, and a fresh fully-linked compile may legitimately choose shorter
+pushes for the same addresses. The patch endpoint covers the selected object's
+own code windows; creation-side link references over the embedded runtime
+payload are exported for solc compatibility and covered by running the same
+endpoint with the runtime selector.
+
 ## Not Compiler-Preservation Gaps
 
 The following may matter for a larger product, chain-integration, language-

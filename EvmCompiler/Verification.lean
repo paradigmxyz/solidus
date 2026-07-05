@@ -20,6 +20,7 @@ import EvmCompiler.Assembly.Compact
 import EvmCompiler.Solidity.VerifiedStackObjectArtifact
 import EvmCompiler.Solidity.CreationRuntimeImage
 import EvmCompiler.Solidity.ImmutablePatch
+import EvmCompiler.Solidity.LibraryPatch
 import EvmCompiler.Solidity.RawAstPublic
 import EvmCompiler.Solidity.RawAstEndToEnd
 import EvmCompiler.Yul.FunctionsInteractionProgram
@@ -58,6 +59,16 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.Frontend.Object.patchImmutables_compileWithImmutableValues?
 #check EvmCompiler.Solidity.Frontend.Object.patchImmutables_compileWithImmutableValues?_ofCompile
 #check EvmCompiler.Solidity.Frontend.Object.patchImmutables_image_compileWithImmutableValues?_ofCompile
+#check EvmCompiler.Solidity.Frontend.Object.compileVerifiedStackObjectArtifactUnlinked?
+#check EvmCompiler.Solidity.Frontend.Program.compileArtifactUnlinked?
+#check EvmCompiler.Solidity.Frontend.ObjectImage.linkReferences
+#check EvmCompiler.Solidity.Frontend.Bytecode.patchLibraries
+#check EvmCompiler.Solidity.Frontend.Bytecode.patchImmutablesAndLibraries
+#check EvmCompiler.Solidity.Frontend.Object.resolveObjectBuiltinsIn?_substituteUnlinkedLibraries
+#check EvmCompiler.Solidity.Frontend.Bytecode.patchImmutablesAndLibraries_eq_patchImmutables
+#check EvmCompiler.Solidity.Frontend.Object.patchImmutablesAndLibraries_image_ofCompileUnlinked
+#check EvmCompiler.Solidity.Frontend.Object.compileVerifiedStackObjectArtifactUnlinked?_withValues_resolvesOriginal
+#check EvmCompiler.Solidity.RawAst.compileArtifactUnlinkedFromRawSolcIr?
 #check EvmCompiler.Solidity.Frontend.Object.Expr.userCallsResolved?_user_call
 #check EvmCompiler.Solidity.Frontend.Expr.List.resolveObjectBuiltinsIn?_mem
 #check EvmCompiler.Solidity.Frontend.Stmt.List.resolveObjectBuiltinsIn?_mem
@@ -1050,6 +1061,10 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.Frontend.Object.patchImmutables_compileWithImmutableValues?
 #print axioms EvmCompiler.Solidity.Frontend.Object.patchImmutables_compileWithImmutableValues?_ofCompile
 #print axioms EvmCompiler.Solidity.Frontend.Object.patchImmutables_image_compileWithImmutableValues?_ofCompile
+#print axioms EvmCompiler.Solidity.Frontend.Object.resolveObjectBuiltinsIn?_substituteUnlinkedLibraries
+#print axioms EvmCompiler.Solidity.Frontend.Bytecode.patchImmutablesAndLibraries_eq_patchImmutables
+#print axioms EvmCompiler.Solidity.Frontend.Object.patchImmutablesAndLibraries_image_ofCompileUnlinked
+#print axioms EvmCompiler.Solidity.Frontend.Object.compileVerifiedStackObjectArtifactUnlinked?_withValues_resolvesOriginal
 #print axioms EvmCompiler.Solidity.Frontend.Object.Expr.userCallsResolved?_user_call
 #print axioms EvmCompiler.Solidity.Frontend.Expr.List.resolveObjectBuiltinsIn?_mem
 #print axioms EvmCompiler.Solidity.Frontend.Stmt.List.resolveObjectBuiltinsIn?_mem

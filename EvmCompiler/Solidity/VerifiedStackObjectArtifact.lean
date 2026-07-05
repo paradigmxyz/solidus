@@ -390,6 +390,98 @@ end
 
 end Object
 
+/-- The exported own-code immutable-reference groups of a compiled artifact:
+exactly the reference entries the deploy-time patch theorems patch. -/
+def VerifiedStackObjectArtifact.ownImmutableReferences
+    (compiledFor : Object) (artifact : VerifiedStackObjectArtifact) :
+    List (Name × List ImmutableReference) :=
+  Bytecode.immutableReferenceEntriesFromCodes
+    artifact.codeArtifact.bytes
+    artifact.codeArtifact.immutableMarkerBytes
+    (ImmutableReference.markerEntriesFromNat 0 compiledFor.loadImmutableNames)
+
+/-- Fail-closed acceptance gate for unlinked-library artifacts.  Checks, on
+the compiled artifact itself, every fact the link-time patch theorem needs
+beyond compile success: the unlinked names collide with no `loadimmutable`
+name; all exported own-code windows are pairwise disjoint and in bounds of
+the image; and every unlinked-library window still carries zero bytes in its
+high 12 positions (where the 20-byte address write does not reach). -/
+def Object.unlinkedLibraryGate? (object : Object) (missing : List Name)
+    (artifact : VerifiedStackObjectArtifact) : Bool :=
+  let substituted := object.substituteUnlinkedLibraries missing
+  let refs := artifact.ownImmutableReferences substituted
+  missing.all (fun name => !(object.allLoadImmutableNames.contains name)) &&
+    Bytecode.windowsPairwiseDisjoint? (refs.flatMap (fun entry => entry.snd)) &&
+    refs.all (fun entry =>
+      entry.snd.all (fun reference =>
+        decide (reference.start + 32 ≤ artifact.image.bytes.length))) &&
+    refs.all (fun entry =>
+      !(missing.contains entry.fst) ||
+        entry.snd.all (fun reference =>
+          Bytecode.startsWithAt (List.replicate 12 0)
+            artifact.image.bytes reference.start))
+
+/-- Compile an object whose `linkersymbol` names are only partially
+provided: the missing names are rewritten into `loadimmutable` markers and
+flow through the one supported pipeline unchanged, then the link-time gate
+is checked.  The artifact's image exports the unlinked names as extra
+`immutableReferences` entries; `ObjectImage.linkReferences` re-windows them
+into solc-compatible `linkReferences`. -/
+def Object.compileVerifiedStackObjectArtifactUnlinked? (object : Object)
+    (provided : List (Name × Word)) :
+    Option VerifiedStackObjectArtifact := do
+  let missing := object.missingLinkerSymbolNames provided
+  let artifact ←
+    Object.compileVerifiedStackObjectArtifactWithLinkerSymbols?
+      (object.substituteUnlinkedLibraries missing) provided
+  if object.unlinkedLibraryGate? missing artifact then
+    some artifact
+  else
+    none
+
+theorem Object.compileVerifiedStackObjectArtifactUnlinked?_parts
+    {object : Object} {provided : List (Name × Word)}
+    {artifact : VerifiedStackObjectArtifact}
+    (hCompile :
+      object.compileVerifiedStackObjectArtifactUnlinked? provided =
+        some artifact) :
+    Object.compileVerifiedStackObjectArtifactWithLinkerSymbols?
+        (object.substituteUnlinkedLibraries
+          (object.missingLinkerSymbolNames provided)) provided =
+      some artifact ∧
+    object.unlinkedLibraryGate?
+      (object.missingLinkerSymbolNames provided) artifact = true := by
+  unfold compileVerifiedStackObjectArtifactUnlinked? at hCompile
+  cases hInner :
+      Object.compileVerifiedStackObjectArtifactWithLinkerSymbols?
+        (object.substituteUnlinkedLibraries
+          (object.missingLinkerSymbolNames provided)) provided with
+  | none => simp [hInner] at hCompile
+  | some compiled =>
+      by_cases hGate :
+          object.unlinkedLibraryGate?
+            (object.missingLinkerSymbolNames provided) compiled = true
+      · simp [hInner, hGate] at hCompile
+        subst artifact
+        exact ⟨rfl, hGate⟩
+      · simp [hInner, hGate] at hCompile
+
+namespace Program
+
+/-- Compile with possibly unresolved `linkersymbol` names, exporting the
+missing names as link references. -/
+def compileArtifactUnlinked? (program : Program)
+    (provided : List (Name × Word)) :
+    Option VerifiedStackObjectArtifact :=
+  program.object.compileVerifiedStackObjectArtifactUnlinked? provided
+
+/-- The unlinked names of a program under a partial address assignment. -/
+def missingLinkerSymbolNames (program : Program)
+    (provided : List (Name × Word)) : List Name :=
+  program.object.missingLinkerSymbolNames provided
+
+end Program
+
 end Frontend
 end Solidity
 end EvmCompiler
