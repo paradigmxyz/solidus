@@ -5,11 +5,15 @@ import EvmCompiler.Assembly.GasfulBridgeRecursive
 /-!
 # Soundness of the stack-headroom certificate against the gasful EVM
 
-The validated height table of `EvmCompiler.Assembly.StackHeadroom` is proved
-exact along every reachable gasful frame state (`HeightPoint`), by mirroring
-the compact control-point step lemmas of the gasful bridge layout module and
-adding height bookkeeping.  The headroom cap then makes the interpreter's
-`StackOverflow` precheck unreachable.
+The validated abstract-stack-set table of
+`EvmCompiler.Assembly.StackHeadroom` is proved sound along every reachable
+gasful frame state (`HeightPoint`): some admitted abstract stack agrees cell
+by cell with the concrete operand stack (`Agrees`), by mirroring the compact
+control-point step lemmas of the gasful bridge layout module and adding
+abstract-stack bookkeeping (exact for `PUSH`/`DUP`/`SWAP`/`EQ`, declared
+arity with unknown outputs otherwise).  The headroom cap on every admitted
+abstract stack then makes the interpreter's `StackOverflow` precheck
+unreachable.
 -/
 
 namespace EvmCompiler
@@ -18,10 +22,111 @@ namespace StackHeadroom
 
 open EvmCompiler.Assembly.GasfulBridge
 
-/-- The certified per-state fact: the height table pins the exact operand
-stack length at the current program counter. -/
-def HeightPoint (heights : HeightList) (state : EVMState) : Prop :=
-  lookupHeight heights state.pc = some state.stack.length
+/-! ## Abstract-stack agreement -/
+
+/-- Agreement of one abstract cell with a concrete word: known cells are
+exact, unknown cells accept anything. -/
+def AgreesVal : Option Word → Word → Prop
+  | none, _ => True
+  | some v, w => v = w
+
+theorem agreesVal_none {w : Word} : AgreesVal none w := by
+  simp [AgreesVal]
+
+theorem agreesVal_some {v w : Word} (h : AgreesVal (some v) w) : v = w := h
+
+theorem word_beq_eq_decide (a b : Word) :
+    (a == b) = decide (a = b) := by
+  cases a with | mk av =>
+  cases b with | mk bv =>
+  by_cases h : av = bv
+  · subst h
+    simp [BEq.beq, EvmYul.instBEqUInt256.beq]
+  · have hNe : EvmYul.UInt256.mk av ≠ EvmYul.UInt256.mk bv := by
+      intro hEq
+      exact h (congrArg EvmYul.UInt256.val hEq)
+    simp [BEq.beq, EvmYul.instBEqUInt256.beq, h, hNe]
+
+theorem word_bne_eq_true_iff {a b : Word} : (a != b) = true ↔ a ≠ b := by
+  simp [bne, word_beq_eq_decide]
+
+/-- Abstract-stack agreement: cellwise, hence in particular equal lengths. -/
+abbrev Agrees (astack : AbsStack) (stack : List Word) : Prop :=
+  List.Forall₂ AgreesVal astack stack
+
+theorem agrees_length {astack : AbsStack} {stack : List Word}
+    (h : Agrees astack stack) : astack.length = stack.length :=
+  h.length_eq
+
+theorem agrees_cons {av : Option Word} {w : Word} {astack : AbsStack}
+    {stack : List Word} (hv : AgreesVal av w) (h : Agrees astack stack) :
+    Agrees (av :: astack) (w :: stack) :=
+  List.Forall₂.cons hv h
+
+theorem agrees_cons_inv {av : Option Word} {astack : AbsStack}
+    {stack : List Word} (h : Agrees (av :: astack) stack) :
+    ∃ w rest, stack = w :: rest ∧ AgreesVal av w ∧ Agrees astack rest := by
+  cases h with
+  | cons hv hrest => exact ⟨_, _, rfl, hv, hrest⟩
+
+theorem agrees_append {a₁ a₂ : AbsStack} {s₁ s₂ : List Word}
+    (h₁ : Agrees a₁ s₁) (h₂ : Agrees a₂ s₂) :
+    Agrees (a₁ ++ a₂) (s₁ ++ s₂) := by
+  induction h₁ with
+  | nil => simpa using h₂
+  | cons hv _ ih => simpa using List.Forall₂.cons hv ih
+
+theorem agrees_take {astack : AbsStack} {stack : List Word}
+    (h : Agrees astack stack) :
+    ∀ n, Agrees (astack.take n) (stack.take n) := by
+  induction h with
+  | nil => intro n; simpa using List.Forall₂.nil
+  | cons hv _ ih =>
+      intro n
+      cases n with
+      | zero => simpa using List.Forall₂.nil
+      | succ n => simpa using List.Forall₂.cons hv (ih n)
+
+theorem agrees_drop {astack : AbsStack} {stack : List Word}
+    (h : Agrees astack stack) :
+    ∀ n, Agrees (astack.drop n) (stack.drop n) := by
+  induction h with
+  | nil => intro n; simpa using List.Forall₂.nil
+  | cons hv hrest ih =>
+      intro n
+      cases n with
+      | zero => simpa using List.Forall₂.cons hv hrest
+      | succ n => simpa using ih n
+
+theorem agrees_getElem? {astack : AbsStack} {stack : List Word}
+    {i : Nat} {v : Word}
+    (h : Agrees astack stack) (hGet : astack[i]? = some (some v)) :
+    stack[i]? = some v := by
+  induction h generalizing i with
+  | nil => simp at hGet
+  | cons hv _ ih =>
+      cases i with
+      | zero =>
+          simp only [List.getElem?_cons_zero, Option.some.injEq] at hGet
+          subst hGet
+          simp only [List.getElem?_cons_zero, Option.some.injEq]
+          exact (agreesVal_some hv).symm
+      | succ i =>
+          simpa using ih (by simpa using hGet)
+
+theorem agrees_replicate_none (ws : List Word) :
+    Agrees (List.replicate ws.length none) ws := by
+  induction ws with
+  | nil => exact List.Forall₂.nil
+  | cons w ws ih =>
+      simpa [List.replicate] using
+        List.Forall₂.cons (show AgreesVal none w from trivial) ih
+
+/-- The certified per-state fact: some admitted abstract stack at the current
+program counter agrees with the concrete operand stack. -/
+def HeightPoint (table : StackTable) (state : EVMState) : Prop :=
+  ∃ astack, memStack table state.pc astack = true ∧
+    Agrees astack state.stack
 
 theorem afterEVMInstructionChargeAt_stack (state : EVMState) :
     (afterEVMInstructionChargeAt state).stack = state.stack := by
@@ -31,11 +136,287 @@ theorem afterEVMInstructionChargeAt_pc (state : EVMState) :
     (afterEVMInstructionChargeAt state).pc = state.pc := by
   simp [afterEVMInstructionChargeAt, afterMemoryChargeAt, chargeGas]
 
-/-! ## Per-control-point height preservation
+/-! ## Concrete stack contents of primitive steps -/
+
+theorem primStep_run_bin_stack {f : EvmYul.Primop.Binary}
+    {state next : EvmYul.EVM.State} {x y : Word} {rest : List Word}
+    (hStack : state.stack = x :: y :: rest)
+    (hRun : (PrimStep.bin f).run state = .ok next) :
+    next.stack = f x y :: rest := by
+  simp only [PrimStep.run, EvmYul.EVM.execBinOp, hStack,
+    EvmYul.Stack.pop2, Id.run] at hRun
+  cases hRun
+  simp [EvmYul.EVM.State.replaceStackAndIncrPC, EvmYul.EVM.State.incrPC,
+    EvmYul.Stack.push]
+
+theorem primStep_run_dup_stack {n : Nat}
+    {state next : EvmYul.EVM.State}
+    (hPos : 1 ≤ n)
+    (hLen : n ≤ state.stack.length)
+    (hRun : (PrimStep.dup n).run state = .ok next) :
+    ∃ v, state.stack[n - 1]? = some v ∧ next.stack = v :: state.stack := by
+  have hIdx : n - 1 < state.stack.length := by omega
+  refine ⟨state.stack[n - 1], List.getElem?_eq_getElem hIdx, ?_⟩
+  have hTake : (state.stack.take n).length = n := by
+    simp [hLen]
+  have hGetL : (state.stack.take n).getLast? =
+      some state.stack[n - 1] := by
+    rw [List.getLast?_eq_getElem?, hTake,
+      List.getElem?_take_of_lt (show n - 1 < n by omega)]
+    exact List.getElem?_eq_getElem hIdx
+  have hLast := List.getLast!_of_getLast? hGetL
+  have hRun' : EvmYul.dup n state = .ok next := hRun
+  simp only [EvmYul.dup] at hRun'
+  rw [if_pos hTake] at hRun'
+  injection hRun' with hNext
+  subst hNext
+  simp only [EvmYul.EVM.State.replaceStackAndIncrPC,
+    EvmYul.EVM.State.incrPC]
+  rw [hLast]
+
+theorem primStep_run_swap_stack {n : Nat}
+    {state next : EvmYul.EVM.State} {top : Word} {rest : List Word}
+    (hPos : 1 ≤ n)
+    (hStack : state.stack = top :: rest)
+    (hLen : n ≤ rest.length)
+    (hRun : (PrimStep.swap n).run state = .ok next) :
+    ∃ z, rest[n - 1]? = some z ∧
+      next.stack = z :: (rest.take (n - 1) ++ top :: rest.drop n) := by
+  have hIdx : n - 1 < rest.length := by omega
+  refine ⟨rest[n - 1], List.getElem?_eq_getElem hIdx, ?_⟩
+  have hTakeRest : rest.take n = rest.take (n - 1) ++ [rest[n - 1]] := by
+    have h1 : rest.take (n - 1 + 1) =
+        rest.take (n - 1) ++ rest[n - 1]?.toList := List.take_succ
+    rw [List.getElem?_eq_getElem hIdx] at h1
+    simpa [show n - 1 + 1 = n from by omega] using h1
+  have hTop : state.stack.take (n + 1) =
+      top :: (rest.take (n - 1) ++ [rest[n - 1]]) := by
+    rw [hStack, List.take_succ_cons, hTakeRest]
+  have hTopLen : (state.stack.take (n + 1)).length = n + 1 := by
+    rw [hTop]
+    simp [List.length_take]
+    omega
+  have hBottom : state.stack.drop (n + 1) = rest.drop n := by
+    rw [hStack]
+    simp
+  have hGetL : (state.stack.take (n + 1)).getLast? =
+      some rest[n - 1] := by
+    rw [hTop]
+    show ((top :: rest.take (n - 1)) ++ [rest[n - 1]]).getLast? = _
+    exact List.getLast?_concat
+  have hLast := List.getLast!_of_getLast? hGetL
+  have hTail : (state.stack.take (n + 1)).tail!.dropLast =
+      rest.take (n - 1) := by
+    rw [hTop]
+    show (rest.take (n - 1) ++ [rest[n - 1]]).dropLast = rest.take (n - 1)
+    exact List.dropLast_concat
+  have hHead : (state.stack.take (n + 1)).head! = top := by
+    rw [hTop]
+    rfl
+  have hRun' : EvmYul.swap n state = .ok next := hRun
+  simp only [EvmYul.swap] at hRun'
+  rw [if_pos hTopLen] at hRun'
+  injection hRun' with hNext
+  subst hNext
+  simp only [EvmYul.EVM.State.replaceStackAndIncrPC,
+    EvmYul.EVM.State.incrPC]
+  rw [hLast, hTail, hHead, hBottom]
+  simp
+
+/-- Every successful nonterminal primitive leaves the stack below its
+declared operands untouched: the final stack is exactly `output` fresh words
+over the input stack with `input` words dropped. -/
+theorem step_stack_split_of_stackArity
+    {op : PrimOp} {input output : Nat}
+    {state final : EvmYul.EVM.State}
+    (hArity : op.stackArity? = some (input, output))
+    (hBound : input ≤ state.stack.length)
+    (hRun : op.step state = .ok final) :
+    ∃ outs : List Word, outs.length = output ∧
+      final.stack = outs ++ state.stack.drop input := by
+  have hSplit : state.stack = state.stack.take input ++
+      state.stack.drop input := (List.take_append_drop input state.stack).symm
+  have hTakeLen : (state.stack.take input).length = input := by
+    simp [hBound]
+  have hFramed :
+      op.step
+          { state with
+              stack := state.stack.take input ++ state.stack.drop input } =
+        .ok final := by
+    rw [← hSplit]
+    exact hRun
+  obtain ⟨final0, hRun0⟩ :=
+    PrimOp.exists_step_of_stackArity_le_of_append_step
+      (state := { state with stack := state.stack.take input })
+      (hidden := state.stack.drop input) hArity (by simp [hTakeLen]) hFramed
+  have hAppend :=
+    PrimOp.step_append_stack_of_stackArity_le
+      (state := { state with stack := state.stack.take input })
+      (state.stack.drop input) hArity (by simp [hTakeLen]) hRun0
+  have hBothOk : (Except.ok final :
+      Except EvmYul.EVM.ExecutionException EvmYul.EVM.State) =
+      .ok { final0 with
+        stack := final0.stack ++ state.stack.drop input } :=
+    hFramed.symm.trans hAppend
+  have hEq : final = { final0 with
+      stack := final0.stack ++ state.stack.drop input } :=
+    Except.ok.inj hBothOk
+  refine ⟨final0.stack, ?_, by rw [hEq]⟩
+  have hLen := PrimOp.step_stack_length_of_stackArity hArity hRun0
+  simpa [hTakeLen] using hLen
+
+/-- Agreement preservation for one nonterminal continuing primitive: the
+abstract effect `absPrim?` tracks the concrete step cell by cell. -/
+theorem agrees_absPrim_step
+    {op : PrimOp} {primStep : PrimStep} {input output : Nat}
+    {astack astack' : AbsStack}
+    {state next : EvmYul.EVM.State}
+    (hContinuing : op.continuingStep? = some primStep)
+    (hArity : op.stackArity? = some (input, output))
+    (hAbs : absPrim? op astack = some astack')
+    (hAgrees : Agrees astack state.stack)
+    (hPrim : op.step state = .ok next) :
+    Agrees astack' next.stack := by
+  by_cases hEqOp : op = .eq
+  · subst op
+    have hPrimStep : primStep = .bin EvmYul.UInt256.eq := by
+      simpa [PrimOp.continuingStep?] using hContinuing.symm
+    subst primStep
+    rw [PrimOp.step_eq_continuingStep_run hContinuing] at hPrim
+    simp [absPrim?] at hAbs
+    cases astack with
+    | nil => cases hAbs
+    | cons av arest =>
+        cases arest with
+        | nil => cases hAbs
+        | cons bv arest2 =>
+            injection hAbs with hAbs'
+            subst hAbs'
+            obtain ⟨x, stail, hS1, hav, hAg1⟩ := agrees_cons_inv hAgrees
+            obtain ⟨y, srest, hS2, hbv, hAgRest⟩ := agrees_cons_inv hAg1
+            subst hS2
+            have hStackC : state.stack = x :: y :: srest := hS1
+            have hNextStack := primStep_run_bin_stack hStackC hPrim
+            rw [hNextStack]
+            refine agrees_cons ?_ hAgRest
+            cases av with
+            | none => exact agreesVal_none
+            | some a' =>
+                cases bv with
+                | none => exact agreesVal_none
+                | some b' =>
+                    have hax : a' = x := agreesVal_some hav
+                    have hby : b' = y := agreesVal_some hbv
+                    show AgreesVal (some (EvmYul.UInt256.eq a' b'))
+                      (EvmYul.UInt256.eq x y)
+                    rw [hax, hby]
+                    exact rfl
+  · simp only [absPrim?, if_neg hEqOp, hContinuing] at hAbs
+    split at hAbs
+    · -- DUP: cell-precise duplication
+      rename_i n heq
+      injection heq with heq'
+      subst heq'
+      rw [PrimOp.step_eq_continuingStep_run hContinuing] at hPrim
+      split at hAbs
+      · rename_i hCond
+        obtain ⟨hPos, hLenA⟩ := hCond
+        injection hAbs with hAbs'
+        subst hAbs'
+        have hLenC : n ≤ state.stack.length := by
+          rw [← agrees_length hAgrees]
+          exact hLenA
+        obtain ⟨v, hGetC, hNextStack⟩ :=
+          primStep_run_dup_stack hPos hLenC hPrim
+        rw [hNextStack]
+        show Agrees ((astack[n - 1]?.getD none) :: astack)
+          (v :: state.stack)
+        refine agrees_cons ?_ hAgrees
+        cases hCell : astack[n - 1]? with
+        | none =>
+            simp only [hCell, Option.getD_none]
+            exact agreesVal_none
+        | some cell =>
+            cases cell with
+            | none =>
+                simp only [hCell, Option.getD_some]
+                exact agreesVal_none
+            | some u =>
+                have hU := agrees_getElem? hAgrees hCell
+                rw [hGetC] at hU
+                injection hU with hU
+                simp only [hCell, Option.getD_some]
+                show AgreesVal (some u) v
+                exact hU.symm
+      · cases hAbs
+    · -- SWAP: cell-precise exchange
+      rename_i n heq
+      injection heq with heq'
+      subst heq'
+      rw [PrimOp.step_eq_continuingStep_run hContinuing] at hPrim
+      split at hAbs
+      · rename_i hCond
+        obtain ⟨hPos, hLenA⟩ := hCond
+        injection hAbs with hAbs'
+        subst hAbs'
+        cases astack with
+        | nil => simp at hLenA
+        | cons av arest =>
+            obtain ⟨x, stail, hS1, hav, hAgRest⟩ :=
+              agrees_cons_inv hAgrees
+            have hLenRest : n ≤ stail.length := by
+              have hL := agrees_length hAgRest
+              simp only [List.length_cons] at hLenA
+              omega
+            obtain ⟨z, hGetZ, hNextStack⟩ :=
+              primStep_run_swap_stack hPos hS1 hLenRest hPrim
+            rw [hNextStack]
+            show Agrees
+              ((arest[n - 1]?.getD none) ::
+                (arest.take (n - 1) ++ av :: arest.drop n))
+              (z :: (stail.take (n - 1) ++ x :: stail.drop n))
+            refine agrees_cons ?_
+              (agrees_append (agrees_take hAgRest (n - 1))
+                (agrees_cons hav (agrees_drop hAgRest n)))
+            cases hCell : arest[n - 1]? with
+            | none =>
+                simp only [hCell, Option.getD_none]
+                exact agreesVal_none
+            | some cell =>
+                cases cell with
+                | none =>
+                    simp only [hCell, Option.getD_some]
+                    exact agreesVal_none
+                | some u =>
+                    have hU := agrees_getElem? hAgRest hCell
+                    rw [hGetZ] at hU
+                    injection hU with hU
+                    simp only [hCell, Option.getD_some]
+                    show AgreesVal (some u) z
+                    exact hU.symm
+      · cases hAbs
+    · -- generic: declared arity, unknown outputs, untouched suffix
+      simp only [hArity] at hAbs
+      split at hAbs
+      · rename_i hBound
+        injection hAbs with hAbs'
+        subst hAbs'
+        have hBoundC : input ≤ state.stack.length := by
+          rw [← agrees_length hAgrees]
+          exact hBound
+        obtain ⟨outs, hOutsLen, hFinal⟩ :=
+          step_stack_split_of_stackArity hArity hBoundC hPrim
+        rw [hFinal]
+        refine agrees_append ?_ (agrees_drop hAgrees input)
+        rw [← hOutsLen]
+        exact agrees_replicate_none outs
+      · cases hAbs
+
+/-! ## Per-control-point abstract-stack preservation
 
 Each lemma mirrors the corresponding `artifactFramePoint_*_step` lemma of
 `GasfulBridgeLayout`, replaying the exact successor-state identification and
-reading the successor height off the validated table. -/
+reading the successor abstract stack off the validated table. -/
 
 theorem heightPoint_label_step
     {source : Assembly.Program} {pinnedPushPcs : List Nat}
@@ -49,14 +430,14 @@ theorem heightPoint_label_step
     (hBlock : block ∈ artifact.blocks)
     (hInstr : block.sourceInstr = .label label)
     (hPc : state.pc = EvmYul.UInt256.ofNat block.compactPc)
-    (hHeight : HeightPoint cert.heights state)
+    (hHeight : HeightPoint cert.table state)
     (hStep :
       EvmYul.EVM.step stepFuel (dynamicGasCostAt state)
         (some
           ((EvmYul.EVM.decode state.executionEnv.code state.pc).getD
             (EvmYul.Operation.STOP, none)))
         (afterMemoryChargeAt state) = .ok next) :
-    HeightPoint cert.heights next := by
+    HeightPoint cert.table next := by
   obtain ⟨located, hMem, hLocatedPc, hLocatedInstr⟩ :=
     compact_label_entry_mem hCompile hBlock hInstr
   obtain ⟨decoded, hInstrDecoded, hBytesDecoded⟩ :=
@@ -80,17 +461,14 @@ theorem heightPoint_label_step
       have hNext : next = (afterEVMInstructionChargeAt state).incrPC := by
         simpa using hStep.symm
       subst next
+      obtain ⟨astack, hMemPc, hAgrees⟩ := hHeight
       have hEntry :
-          lookupHeight cert.heights (EvmYul.UInt256.ofNat block.compactPc) =
-            some state.stack.length := by
-        rw [← hPc]; exact hHeight
+          memStack cert.table (EvmYul.UInt256.ofNat block.compactPc)
+            astack = true := by
+        rw [← hPc]; exact hMemPc
       have hOk := check?_blockOk hCheck hBlock
-      simp only [blockOk?, hEntry, hInstr, beq_iff_eq] at hOk
-      have hSucc :
-          lookupHeight cert.heights
-              (EvmYul.UInt256.ofNat (block.compactPc + 1)) =
-            some state.stack.length := hOk
-      show lookupHeight cert.heights _ = _
+      simp only [blockOk?, hInstr] at hOk
+      have hSucc := all_stacksAt_apply hOk hEntry
       have hNextPc :
           ((afterEVMInstructionChargeAt state).incrPC).pc =
             EvmYul.UInt256.ofNat (block.compactPc + 1) := by
@@ -100,8 +478,11 @@ theorem heightPoint_label_step
           ((afterEVMInstructionChargeAt state).incrPC).stack = state.stack := by
         simp [EvmYul.EVM.State.incrPC, afterEVMInstructionChargeAt,
           afterMemoryChargeAt, chargeGas]
-      rw [hNextPc, hNextStack]
-      exact hSucc
+      refine ⟨astack, ?_, ?_⟩
+      · rw [hNextPc]
+        exact hSucc
+      · rw [hNextStack]
+        exact hAgrees
 
 theorem heightPoint_push_step
     {source : Assembly.Program} {pinnedPushPcs : List Nat}
@@ -115,14 +496,14 @@ theorem heightPoint_push_step
     (hBlock : block ∈ artifact.blocks)
     (hInstr : block.sourceInstr = .push value)
     (hPc : state.pc = EvmYul.UInt256.ofNat block.compactPc)
-    (hHeight : HeightPoint cert.heights state)
+    (hHeight : HeightPoint cert.table state)
     (hStep :
       EvmYul.EVM.step stepFuel (dynamicGasCostAt state)
         (some
           ((EvmYul.EVM.decode state.executionEnv.code state.pc).getD
             (EvmYul.Operation.STOP, none)))
         (afterMemoryChargeAt state) = .ok next) :
-    HeightPoint cert.heights next := by
+    HeightPoint cert.table next := by
   obtain ⟨width, located, hWidth, hMem, hLocatedPc, hLocatedInstr⟩ :=
     compact_push_entry_mem hCompile hBlock hInstr
   have hLocatedValid :=
@@ -153,22 +534,19 @@ theorem heightPoint_push_step
       have hNext : next = gasfulPushNext width value state := by
         simpa using hStep.symm
       subst next
+      obtain ⟨astack, hMemPc, hAgrees⟩ := hHeight
       have hEntry :
-          lookupHeight cert.heights (EvmYul.UInt256.ofNat block.compactPc) =
-            some state.stack.length := by
-        rw [← hPc]; exact hHeight
+          memStack cert.table (EvmYul.UInt256.ofNat block.compactPc)
+            astack = true := by
+        rw [← hPc]; exact hMemPc
       have hSize : Compact.sourceInstrSizeAt? artifact.pinnedPushPcs
           artifact.branchWidth block.sourcePc block.sourceInstr =
             some (width + 1) := by
         simp [hInstr, Compact.sourceInstrSizeAt?, hWidth]
       have hOk := check?_blockOk hCheck hBlock
       rw [hInstr] at hSize
-      simp only [blockOk?, hEntry, hInstr, hSize, beq_iff_eq] at hOk
-      have hSucc :
-          lookupHeight cert.heights
-              (EvmYul.UInt256.ofNat (block.compactPc + (width + 1))) =
-            some (state.stack.length + 1) := hOk
-      show lookupHeight cert.heights _ = _
+      simp only [blockOk?, hInstr, hSize] at hOk
+      have hSucc := all_stacksAt_apply hOk hEntry
       have hNextPc :
           (gasfulPushNext width value state).pc =
             EvmYul.UInt256.ofNat (block.compactPc + (width + 1)) := by
@@ -177,13 +555,16 @@ theorem heightPoint_push_step
           afterMemoryChargeAt, chargeGas, hPc, uint256_ofNat_add,
           Nat.add_assoc]
       have hNextStack :
-          (gasfulPushNext width value state).stack.length =
-            state.stack.length + 1 := by
+          (gasfulPushNext width value state).stack =
+            value :: state.stack := by
         simp [gasfulPushNext, EvmYul.EVM.State.replaceStackAndIncrPC,
           EvmYul.EVM.State.incrPC, EvmYul.Stack.push,
           afterEVMInstructionChargeAt, afterMemoryChargeAt, chargeGas]
-      rw [hNextPc, hNextStack]
-      exact hSucc
+      refine ⟨some value :: astack, ?_, ?_⟩
+      · rw [hNextPc]
+        exact hSucc
+      · rw [hNextStack]
+        exact agrees_cons rfl hAgrees
 
 theorem heightPoint_branch_push_step
     {source : Assembly.Program} {pinnedPushPcs : List Nat}
@@ -198,14 +579,14 @@ theorem heightPoint_branch_push_step
     (hInstr : block.sourceInstr =
       if isJumpi then .jumpi label else .jump label)
     (hPc : state.pc = EvmYul.UInt256.ofNat block.compactPc)
-    (hHeight : HeightPoint cert.heights state)
+    (hHeight : HeightPoint cert.table state)
     (hStep :
       EvmYul.EVM.step stepFuel (dynamicGasCostAt state)
         (some
           ((EvmYul.EVM.decode state.executionEnv.code state.pc).getD
             (EvmYul.Operation.STOP, none)))
         (afterMemoryChargeAt state) = .ok next) :
-    HeightPoint cert.heights next := by
+    HeightPoint cert.table next := by
   obtain ⟨dest, located, hLookup, hMem, hLocatedPc, hLocatedInstr⟩ :=
     compact_branch_entry_mem hCompile hBlock hInstr
   have hLocatedValid :=
@@ -241,28 +622,28 @@ theorem heightPoint_branch_push_step
           (EvmYul.UInt256.ofNat dest) state := by
         simpa using hStep.symm
       subst next
+      obtain ⟨astack, hMemPc, hAgrees⟩ := hHeight
       have hEntry :
-          lookupHeight cert.heights (EvmYul.UInt256.ofNat block.compactPc) =
-            some state.stack.length := by
-        rw [← hPc]; exact hHeight
+          memStack cert.table (EvmYul.UInt256.ofNat block.compactPc)
+            astack = true := by
+        rw [← hPc]; exact hMemPc
       have hSucc :
-          lookupHeight cert.heights
+          memStack cert.table
               (EvmYul.UInt256.ofNat
-                (block.compactPc + artifact.branchWidth + 1)) =
-            some (state.stack.length + 1) := by
+                (block.compactPc + artifact.branchWidth + 1))
+              (some (EvmYul.UInt256.ofNat dest) :: astack) = true := by
         have hOk := check?_blockOk hCheck hBlock
         cases hJumpi : isJumpi
         · rw [hJumpi] at hInstr
           simp only [Bool.false_eq_true, if_false] at hInstr
-          simp only [blockOk?, hEntry, hInstr, hLookup, Bool.and_eq_true,
-            beq_iff_eq] at hOk
-          exact hOk.1
+          simp only [blockOk?, hInstr, hLookup, Bool.and_eq_true] at hOk
+          have hFlow := all_stacksAt_apply hOk.1 hEntry
+          exact hFlow
         · rw [hJumpi] at hInstr
           simp only [if_true] at hInstr
-          simp only [blockOk?, hEntry, hInstr, hLookup, Bool.and_eq_true,
-            beq_iff_eq, decide_eq_true_eq] at hOk
-          exact hOk.1.1.2
-      show lookupHeight cert.heights _ = _
+          simp only [blockOk?, hInstr, hLookup, Bool.and_eq_true] at hOk
+          have hFlow := all_stacksAt_apply hOk.1 hEntry
+          exact hFlow
       have hNextPc :
           (gasfulPushNext artifact.branchWidth
               (EvmYul.UInt256.ofNat dest) state).pc =
@@ -274,78 +655,90 @@ theorem heightPoint_branch_push_step
           Nat.add_assoc]
       have hNextStack :
           (gasfulPushNext artifact.branchWidth
-              (EvmYul.UInt256.ofNat dest) state).stack.length =
-            state.stack.length + 1 := by
+              (EvmYul.UInt256.ofNat dest) state).stack =
+            EvmYul.UInt256.ofNat dest :: state.stack := by
         simp [gasfulPushNext, EvmYul.EVM.State.replaceStackAndIncrPC,
           EvmYul.EVM.State.incrPC, EvmYul.Stack.push,
           afterEVMInstructionChargeAt, afterMemoryChargeAt, chargeGas]
-      rw [hNextPc, hNextStack]
-      exact hSucc
+      refine ⟨some (EvmYul.UInt256.ofNat dest) :: astack, ?_, ?_⟩
+      · rw [hNextPc]
+        exact hSucc
+      · rw [hNextStack]
+        exact agrees_cons rfl hAgrees
 
-/-- Height entry relation at a branch midpoint: the block entry exists and
-the midpoint entry is exactly one above it. -/
-theorem branchMid_heights
+/-- Abstract-stack inversion at a `JUMP` midpoint: every admitted midpoint
+abstract stack pops to an admitted abstract stack of the jump target. -/
+theorem branchMid_jump_stacks
     {artifact : Compact.Artifact} {cert : Cert}
-    {block : Compact.SourceBlock} {label : Label} {isJumpi : Bool}
-    {dest : Nat} {midLen : Nat}
+    {block : Compact.SourceBlock} {label : Label}
+    {dest : Nat} {mv : Option Word} {mrest : AbsStack}
     (hCheck : check? artifact cert = true)
     (hBlock : block ∈ artifact.blocks)
-    (hInstr : block.sourceInstr =
-      if isJumpi then .jumpi label else .jump label)
+    (hInstr : block.sourceInstr = .jump label)
     (hLookup : Compact.lookupLabel? artifact.labels label = some dest)
     (hMid :
-      lookupHeight cert.heights
+      memStack cert.table
           (EvmYul.UInt256.ofNat
-            (block.compactPc + artifact.branchWidth + 1)) =
-        some midLen) :
-    ∃ h, midLen = h + 1 ∧
-      lookupHeight cert.heights (EvmYul.UInt256.ofNat block.compactPc) =
-        some h ∧
-      (if isJumpi then
-          1 ≤ h ∧
-          lookupHeight cert.heights (EvmYul.UInt256.ofNat dest) =
-              some (h - 1) ∧
-            lookupHeight cert.heights
-                (EvmYul.UInt256.ofNat
-                  (block.compactPc + artifact.branchWidth + 2)) =
-              some (h - 1)
-        else
-          lookupHeight cert.heights (EvmYul.UInt256.ofNat dest) =
-            some h) := by
+            (block.compactPc + artifact.branchWidth + 1)) (mv :: mrest) =
+        true) :
+    memStack cert.table (EvmYul.UInt256.ofNat dest) mrest = true := by
   have hOk := check?_blockOk hCheck hBlock
-  cases hJumpi : isJumpi
-  · rw [hJumpi] at hInstr
-    simp only [Bool.false_eq_true, if_false] at hInstr
-    cases hEntry :
-        lookupHeight cert.heights (EvmYul.UInt256.ofNat block.compactPc) with
-    | none =>
-        simp only [blockOk?, hEntry, hInstr, beq_iff_eq] at hOk
-        rw [hOk] at hMid
-        cases hMid
-    | some h =>
-        simp only [blockOk?, hEntry, hInstr, hLookup, Bool.and_eq_true,
-          beq_iff_eq] at hOk
-        refine ⟨h, ?_, rfl, ?_⟩
-        · rw [hOk.1] at hMid
-          exact (Option.some.inj hMid).symm
-        · simp only [Bool.false_eq_true, if_false]
-          exact hOk.2
-  · rw [hJumpi] at hInstr
-    simp only [if_true] at hInstr
-    cases hEntry :
-        lookupHeight cert.heights (EvmYul.UInt256.ofNat block.compactPc) with
-    | none =>
-        simp only [blockOk?, hEntry, hInstr, beq_iff_eq] at hOk
-        rw [hOk] at hMid
-        cases hMid
-    | some h =>
-        simp only [blockOk?, hEntry, hInstr, hLookup, Bool.and_eq_true,
-          beq_iff_eq, decide_eq_true_eq] at hOk
-        refine ⟨h, ?_, rfl, ?_⟩
-        · rw [hOk.1.1.2] at hMid
-          exact (Option.some.inj hMid).symm
-        · simp only [if_true]
-          exact ⟨hOk.1.1.1, hOk.1.2, hOk.2⟩
+  simp only [blockOk?, hInstr, hLookup, Bool.and_eq_true] at hOk
+  have hCase := all_stacksAt_apply hOk.2 hMid
+  simpa using hCase
+
+/-- Abstract-stack inversion at a `JUMPI` midpoint: every admitted midpoint
+abstract stack pops to admitted abstract stacks of the still-possible branch
+targets, where a known condition cell (which must agree with the concrete
+condition) selects a single target. -/
+theorem branchMid_jumpi_stacks
+    {artifact : Compact.Artifact} {cert : Cert}
+    {block : Compact.SourceBlock} {label : Label}
+    {dest : Nat} {mv cv : Option Word} {mtail : AbsStack} {cond : Word}
+    (hCheck : check? artifact cert = true)
+    (hBlock : block ∈ artifact.blocks)
+    (hInstr : block.sourceInstr = .jumpi label)
+    (hLookup : Compact.lookupLabel? artifact.labels label = some dest)
+    (hMid :
+      memStack cert.table
+          (EvmYul.UInt256.ofNat
+            (block.compactPc + artifact.branchWidth + 1))
+          (mv :: cv :: mtail) = true)
+    (hCv : AgreesVal cv cond) :
+    (cond ≠ EvmYul.UInt256.ofNat 0 →
+        memStack cert.table (EvmYul.UInt256.ofNat dest) mtail = true) ∧
+      (cond = EvmYul.UInt256.ofNat 0 →
+        memStack cert.table
+            (EvmYul.UInt256.ofNat
+              (block.compactPc + artifact.branchWidth + 2)) mtail =
+          true) := by
+  have hOk := check?_blockOk hCheck hBlock
+  simp only [blockOk?, hInstr, hLookup, Bool.and_eq_true] at hOk
+  have hCase := all_stacksAt_apply hOk.2 hMid
+  cases cv with
+  | some c =>
+      have hcEq : c = cond := agreesVal_some hCv
+      subst hcEq
+      have hIf :
+          (if c = EvmYul.UInt256.ofNat 0 then
+              memStack cert.table
+                (EvmYul.UInt256.ofNat
+                  (block.compactPc + artifact.branchWidth + 2)) mtail
+            else memStack cert.table (EvmYul.UInt256.ofNat dest) mtail) =
+            true := hCase
+      by_cases hc : c = EvmYul.UInt256.ofNat 0
+      · rw [if_pos hc] at hIf
+        exact ⟨fun hne => absurd hc hne, fun _ => hIf⟩
+      · rw [if_neg hc] at hIf
+        exact ⟨fun _ => hIf, fun hzero => absurd hzero hc⟩
+  | none =>
+      have hBoth : (memStack cert.table (EvmYul.UInt256.ofNat dest) mtail &&
+          memStack cert.table
+            (EvmYul.UInt256.ofNat
+              (block.compactPc + artifact.branchWidth + 2)) mtail) =
+          true := hCase
+      simp only [Bool.and_eq_true] at hBoth
+      exact ⟨fun _ => hBoth.1, fun _ => hBoth.2⟩
 
 theorem heightPoint_branchMid_step
     {source : Assembly.Program} {pinnedPushPcs : List Nat}
@@ -365,22 +758,20 @@ theorem heightPoint_branchMid_step
       (block.compactPc + artifact.branchWidth + 1))
     (hStack : state.stack = EvmYul.UInt256.ofNat dest :: rest)
     (hPrefix : XSstoreStipendChecksPass validJumps state)
-    (hHeight : HeightPoint cert.heights state)
+    (hHeight : HeightPoint cert.table state)
     (hStep :
       EvmYul.EVM.step stepFuel (dynamicGasCostAt state)
         (some
           ((EvmYul.EVM.decode state.executionEnv.code state.pc).getD
             (EvmYul.Operation.STOP, none)))
         (afterMemoryChargeAt state) = .ok next) :
-    HeightPoint cert.heights next := by
+    HeightPoint cert.table next := by
+  obtain ⟨mid, hMemMid, hAgrees⟩ := hHeight
   have hMidEntry :
-      lookupHeight cert.heights
+      memStack cert.table
           (EvmYul.UInt256.ofNat
-            (block.compactPc + artifact.branchWidth + 1)) =
-        some state.stack.length := by
-    rw [← hPc]; exact hHeight
-  obtain ⟨h, hMidLen, _hEntry, hRest⟩ :=
-    branchMid_heights hCheck hBlock hInstr hLookup hMidEntry
+            (block.compactPc + artifact.branchWidth + 1)) mid = true := by
+    rw [← hPc]; exact hMemMid
   obtain ⟨located, hMem, hLocatedPc, hLocatedInstr⟩ :=
     compact_branch_midpoint_mem hCompile hBlock hInstr
   obtain ⟨decoded, hInstrDecoded, hBytesDecoded⟩ :=
@@ -392,8 +783,8 @@ theorem heightPoint_branchMid_step
         hPc.trans (congrArg EvmYul.UInt256.ofNat hLocatedPc.symm)
       cases hJumpi : isJumpi
       · -- JUMP
-        rw [hJumpi] at hLocatedInstr hRest
-        simp only [Bool.false_eq_true, if_false] at hLocatedInstr hRest
+        rw [hJumpi] at hLocatedInstr hInstr
+        simp only [Bool.false_eq_true, if_false] at hLocatedInstr hInstr
         rw [hLocatedInstr] at hInstrDecoded
         simp [Compact.Instr.decoded?] at hInstrDecoded
         subst decoded
@@ -411,25 +802,28 @@ theorem heightPoint_branchMid_step
             next = gasfulJumpNext state rest (EvmYul.UInt256.ofNat dest) := by
           simpa using hStep.symm
         subst next
-        have hLen : state.stack.length = rest.length + 1 := by
-          rw [hStack]; rfl
-        show lookupHeight cert.heights _ = _
-        have hNextPc :
-            (gasfulJumpNext state rest (EvmYul.UInt256.ofNat dest)).pc =
-              EvmYul.UInt256.ofNat dest := by
-          simp [gasfulJumpNext]
-        have hNextStack :
-            (gasfulJumpNext state rest (EvmYul.UInt256.ofNat dest)).stack =
-              rest := by
-          simp [gasfulJumpNext]
-        rw [hNextPc, hNextStack]
-        have hRestLen : rest.length = h := by omega
-        rw [hRestLen]
-        exact hRest
+        rw [hStack] at hAgrees
+        cases hAgrees with
+        | cons hv hAgreesRest =>
+            rename_i mv mrest
+            have hDestMem :=
+              branchMid_jump_stacks hCheck hBlock hInstr hLookup hMidEntry
+            have hNextPc :
+                (gasfulJumpNext state rest (EvmYul.UInt256.ofNat dest)).pc =
+                  EvmYul.UInt256.ofNat dest := by
+              simp [gasfulJumpNext]
+            have hNextStack :
+                (gasfulJumpNext state rest
+                    (EvmYul.UInt256.ofNat dest)).stack = rest := by
+              simp [gasfulJumpNext]
+            refine ⟨mrest, ?_, ?_⟩
+            · rw [hNextPc]
+              exact hDestMem
+            · rw [hNextStack]
+              exact hAgreesRest
       · -- JUMPI
-        rw [hJumpi] at hLocatedInstr hRest
-        simp only [if_true] at hLocatedInstr hRest
-        obtain ⟨hOne, hDest, hFall⟩ := hRest
+        rw [hJumpi] at hLocatedInstr hInstr
+        simp only [if_true] at hLocatedInstr hInstr
         rw [hLocatedInstr] at hInstrDecoded
         simp [Compact.Instr.decoded?] at hInstrDecoded
         subst decoded
@@ -464,35 +858,52 @@ theorem heightPoint_branchMid_step
                 (EvmYul.UInt256.ofNat dest) cond := by
               simpa using hStep.symm
             subst next
-            have hLen : state.stack.length = tail.length + 2 := by
-              rw [hStack']; rfl
-            have hTailLen : tail.length = h - 1 := by omega
-            show lookupHeight cert.heights _ = _
-            by_cases hCond : cond != EvmYul.UInt256.ofNat 0
-            · have hNextPc :
-                  (gasfulJumpiNext state tail
-                      (EvmYul.UInt256.ofNat dest) cond).pc =
-                    EvmYul.UInt256.ofNat dest := by
-                simp [gasfulJumpiNext, hCond]
-              have hNextStack :
-                  (gasfulJumpiNext state tail
-                      (EvmYul.UInt256.ofNat dest) cond).stack = tail := by
-                simp [gasfulJumpiNext]
-              rw [hNextPc, hNextStack, hTailLen]
-              exact hDest
-            · have hNextPc :
-                  (gasfulJumpiNext state tail
-                      (EvmYul.UInt256.ofNat dest) cond).pc =
-                    EvmYul.UInt256.ofNat
-                      (block.compactPc + artifact.branchWidth + 2) := by
-                simp [gasfulJumpiNext, hCond, hPc]
-                rw [uint256_ofNat_add]
-              have hNextStack :
-                  (gasfulJumpiNext state tail
-                      (EvmYul.UInt256.ofNat dest) cond).stack = tail := by
-                simp [gasfulJumpiNext]
-              rw [hNextPc, hNextStack, hTailLen]
-              exact hFall
+            rw [hStack'] at hAgrees
+            cases hAgrees with
+            | cons hv hAgrees1 =>
+                cases hAgrees1 with
+                | cons hCv hAgreesTail =>
+                    rename_i mv cv mtail
+                    have hBoth :=
+                      branchMid_jumpi_stacks hCheck hBlock hInstr hLookup
+                        hMidEntry hCv
+                    by_cases hCond : cond != EvmYul.UInt256.ofNat 0
+                    · have hNextPc :
+                          (gasfulJumpiNext state tail
+                              (EvmYul.UInt256.ofNat dest) cond).pc =
+                            EvmYul.UInt256.ofNat dest := by
+                        simp [gasfulJumpiNext, hCond]
+                      have hNextStack :
+                          (gasfulJumpiNext state tail
+                              (EvmYul.UInt256.ofNat dest) cond).stack =
+                            tail := by
+                        simp [gasfulJumpiNext]
+                      refine ⟨mtail, ?_, ?_⟩
+                      · rw [hNextPc]
+                        exact hBoth.1 (word_bne_eq_true_iff.mp hCond)
+                      · rw [hNextStack]
+                        exact hAgreesTail
+                    · have hCondEq : cond = EvmYul.UInt256.ofNat 0 := by
+                        by_contra hne
+                        exact hCond (word_bne_eq_true_iff.mpr hne)
+                      have hNextPc :
+                          (gasfulJumpiNext state tail
+                              (EvmYul.UInt256.ofNat dest) cond).pc =
+                            EvmYul.UInt256.ofNat
+                              (block.compactPc + artifact.branchWidth +
+                                2) := by
+                        simp [gasfulJumpiNext, hCond, hPc]
+                        rw [uint256_ofNat_add]
+                      have hNextStack :
+                          (gasfulJumpiNext state tail
+                              (EvmYul.UInt256.ofNat dest) cond).stack =
+                            tail := by
+                        simp [gasfulJumpiNext]
+                      refine ⟨mtail, ?_, ?_⟩
+                      · rw [hNextPc]
+                        exact hBoth.2 hCondEq
+                      · rw [hNextStack]
+                        exact hAgreesTail
 
 theorem heightPoint_sentinel_no_success
     {artifact : Compact.Artifact} {bytes : ByteArray}
@@ -535,14 +946,14 @@ theorem heightPoint_prim_continuing_step
     (hPc : state.pc = EvmYul.UInt256.ofNat block.compactPc)
     (hContinuing : op.continuingStep? = some primStep)
     (hPrefix : XSstoreStipendChecksPass validJumps state)
-    (hHeight : HeightPoint cert.heights state)
+    (hHeight : HeightPoint cert.table state)
     (hStep :
       EvmYul.EVM.step stepFuel (dynamicGasCostAt state)
         (some
           ((EvmYul.EVM.decode state.executionEnv.code state.pc).getD
             (EvmYul.Operation.STOP, none)))
         (afterMemoryChargeAt state) = .ok next) :
-    HeightPoint cert.heights next := by
+    HeightPoint cert.table next := by
   have hDecoded := artifact_prim_decode hCompile hDecode hCode hBlock
     hInstr hPc
   cases stepFuel with
@@ -571,25 +982,32 @@ theorem heightPoint_prim_continuing_step
         simp [PrimStep.run] at hPrim
       · obtain ⟨input, output, hArity⟩ :=
           stackArity?_isSome_of_continuingStep hContinuing
-        have hNextLen :=
-          PrimOp.step_stack_length_of_stackArity hArity hPrim
         have hNextPcRaw := PrimOp.step_pc_of_stackArity hArity hPrim
-        rw [afterEVMInstructionChargeAt_stack] at hNextLen
         have hNextPc : next.pc =
             EvmYul.UInt256.ofNat (block.compactPc + 1) := by
           rw [hNextPcRaw, afterEVMInstructionChargeAt_pc, hPc,
             uint256_ofNat_add]
+        obtain ⟨astack, hMemPc, hAgrees⟩ := hHeight
         have hEntry :
-            lookupHeight cert.heights
-                (EvmYul.UInt256.ofNat block.compactPc) =
-              some state.stack.length := by
-          rw [← hPc]; exact hHeight
+            memStack cert.table
+                (EvmYul.UInt256.ofNat block.compactPc) astack = true := by
+          rw [← hPc]; exact hMemPc
         have hOk := check?_blockOk hCheck hBlock
-        simp only [blockOk?, hEntry, hInstr, if_neg hInvalid, hArity,
-          Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq] at hOk
-        show lookupHeight cert.heights _ = _
-        rw [hNextPc, hNextLen]
-        exact hOk.2
+        simp only [blockOk?, hInstr, if_neg hInvalid, hArity] at hOk
+        have hFlow := all_stacksAt_apply hOk hEntry
+        cases hAbs : absPrim? op astack with
+        | none =>
+            rw [hAbs] at hFlow
+            cases hFlow
+        | some astack' =>
+        rw [hAbs] at hFlow
+        refine ⟨astack', ?_, ?_⟩
+        · rw [hNextPc]
+          exact hFlow
+        · exact agrees_absPrim_step hContinuing hArity hAbs
+            (by
+              rw [afterEVMInstructionChargeAt_stack]
+              exact hAgrees) hPrim
 
 theorem heightPoint_resource_step
     {source : Assembly.Program} {pinnedPushPcs : List Nat}
@@ -604,14 +1022,14 @@ theorem heightPoint_resource_step
     (hBlock : block ∈ artifact.blocks)
     (hInstr : block.sourceInstr = .prim (resourcePrimOp kind))
     (hPc : state.pc = EvmYul.UInt256.ofNat block.compactPc)
-    (hHeight : HeightPoint cert.heights state)
+    (hHeight : HeightPoint cert.table state)
     (hStep :
       EvmYul.EVM.step stepFuel (dynamicGasCostAt state)
         (some
           ((EvmYul.EVM.decode state.executionEnv.code state.pc).getD
             (EvmYul.Operation.STOP, none)))
         (afterMemoryChargeAt state) = .ok next) :
-    HeightPoint cert.heights next := by
+    HeightPoint cert.table next := by
   have hDecoded := artifact_prim_decode hCompile hDecode hCode hBlock
     hInstr hPc
   cases stepFuel with
@@ -624,19 +1042,26 @@ theorem heightPoint_resource_step
         simpa [hDecoded] using hStep
       rw [evm_step_resource_eq] at hActual
       cases hActual
+      obtain ⟨astack, hMemPc, hAgrees⟩ := hHeight
       have hEntry :
-          lookupHeight cert.heights (EvmYul.UInt256.ofNat block.compactPc) =
-            some state.stack.length := by
-        rw [← hPc]; exact hHeight
+          memStack cert.table (EvmYul.UInt256.ofNat block.compactPc)
+            astack = true := by
+        rw [← hPc]; exact hMemPc
       have hArity :
           (resourcePrimOp kind).stackArity? = some (0, 1) := by
         cases kind <;> rfl
       have hOk := check?_blockOk hCheck hBlock
       have hInvalid : resourcePrimOp kind ≠ .invalid := by
         cases kind <;> simp [resourcePrimOp]
-      simp only [blockOk?, hEntry, hInstr, if_neg hInvalid, hArity,
-        Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq] at hOk
-      show lookupHeight cert.heights _ = _
+      simp only [blockOk?, hInstr, if_neg hInvalid, hArity] at hOk
+      have hFlow := all_stacksAt_apply hOk hEntry
+      have hAbs : absPrim? (resourcePrimOp kind) astack =
+          some (none :: astack) := by
+        cases kind <;>
+          simp [absPrim?, PrimOp.continuingStep?, PrimOp.stackArity?,
+            resourcePrimOp, EvmYul.EVM.δ, EvmYul.EVM.α, PrimOp.toEVM,
+            List.replicate]
+      rw [hAbs] at hFlow
       have hNextPc :
           (gasfulResourceNext kind state).pc =
             EvmYul.UInt256.ofNat (block.compactPc + 1) := by
@@ -644,7 +1069,7 @@ theorem heightPoint_resource_step
           afterMemoryChargeAt, afterDynamicChargeAt, chargeGas,
           EvmYul.EVM.State.replaceStackAndIncrPC,
           EvmYul.EVM.State.incrPC, hPc, uint256_ofNat_add]
-      have hNextStack :
+      have hNextLen :
           (gasfulResourceNext kind state).stack.length =
             state.stack.length + 1 := by
         cases kind <;>
@@ -652,8 +1077,28 @@ theorem heightPoint_resource_step
             afterMemoryChargeAt, afterDynamicChargeAt, chargeGas,
             EvmYul.EVM.State.replaceStackAndIncrPC,
             EvmYul.EVM.State.incrPC, EvmYul.Stack.push]
-      rw [hNextPc, hNextStack]
-      simpa using hOk.2
+      have hNextTail :
+          (gasfulResourceNext kind state).stack.tail = state.stack := by
+        cases kind <;>
+          simp [gasfulResourceNext, afterEVMInstructionChargeAt,
+            afterMemoryChargeAt, afterDynamicChargeAt, chargeGas,
+            EvmYul.EVM.State.replaceStackAndIncrPC,
+            EvmYul.EVM.State.incrPC, EvmYul.Stack.push]
+      cases hNS : (gasfulResourceNext kind state).stack with
+      | nil =>
+          rw [hNS] at hNextLen
+          simp at hNextLen
+      | cons v tl =>
+          have hTl : tl = state.stack := by
+            have hT := hNextTail
+            rw [hNS] at hT
+            simpa using hT
+          subst hTl
+          refine ⟨none :: astack, ?_, ?_⟩
+          · rw [hNextPc]
+            exact hFlow
+          · rw [hNS]
+            exact agrees_cons agreesVal_none hAgrees
 
 theorem heightPoint_pc_step
     {source : Assembly.Program} {pinnedPushPcs : List Nat}
@@ -667,14 +1112,14 @@ theorem heightPoint_pc_step
     (hBlock : block ∈ artifact.blocks)
     (hInstr : block.sourceInstr = .prim .pc)
     (hPc : state.pc = EvmYul.UInt256.ofNat block.compactPc)
-    (hHeight : HeightPoint cert.heights state)
+    (hHeight : HeightPoint cert.table state)
     (hStep :
       EvmYul.EVM.step stepFuel (dynamicGasCostAt state)
         (some
           ((EvmYul.EVM.decode state.executionEnv.code state.pc).getD
             (EvmYul.Operation.STOP, none)))
         (afterMemoryChargeAt state) = .ok next) :
-    HeightPoint cert.heights next := by
+    HeightPoint cert.table next := by
   have hDecoded := artifact_prim_decode hCompile hDecode hCode hBlock
     hInstr hPc
   cases stepFuel with
@@ -687,16 +1132,20 @@ theorem heightPoint_pc_step
         simpa [hDecoded, PrimOp.toEVM] using hStep
       rw [evm_step_pc_eq_next] at hActual
       cases hActual
+      obtain ⟨astack, hMemPc, hAgrees⟩ := hHeight
       have hEntry :
-          lookupHeight cert.heights (EvmYul.UInt256.ofNat block.compactPc) =
-            some state.stack.length := by
-        rw [← hPc]; exact hHeight
+          memStack cert.table (EvmYul.UInt256.ofNat block.compactPc)
+            astack = true := by
+        rw [← hPc]; exact hMemPc
       have hOk := check?_blockOk hCheck hBlock
       have hInvalid : PrimOp.pc ≠ PrimOp.invalid := by simp
       have hArity : PrimOp.pc.stackArity? = some (0, 1) := rfl
-      simp only [blockOk?, hEntry, hInstr, if_neg hInvalid, hArity,
-        Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq] at hOk
-      show lookupHeight cert.heights _ = _
+      simp only [blockOk?, hInstr, if_neg hInvalid, hArity] at hOk
+      have hFlow := all_stacksAt_apply hOk hEntry
+      have hAbs : absPrim? PrimOp.pc astack = some (none :: astack) := by
+        simp [absPrim?, PrimOp.continuingStep?, PrimOp.stackArity?,
+          EvmYul.EVM.δ, EvmYul.EVM.α, PrimOp.toEVM, List.replicate]
+      rw [hAbs] at hFlow
       have hNextPc :
           (gasfulPcNext state).pc =
             EvmYul.UInt256.ofNat (block.compactPc + 1) := by
@@ -704,14 +1153,34 @@ theorem heightPoint_pc_step
           afterMemoryChargeAt, afterDynamicChargeAt, chargeGas,
           EvmYul.EVM.State.replaceStackAndIncrPC,
           EvmYul.EVM.State.incrPC, hPc, uint256_ofNat_add]
-      have hNextStack :
-          (gasfulPcNext state).stack.length = state.stack.length + 1 := by
+      have hNextLen :
+          (gasfulPcNext state).stack.length =
+            state.stack.length + 1 := by
         simp [gasfulPcNext, afterEVMInstructionChargeAt,
           afterMemoryChargeAt, afterDynamicChargeAt, chargeGas,
           EvmYul.EVM.State.replaceStackAndIncrPC,
           EvmYul.EVM.State.incrPC, EvmYul.Stack.push]
-      rw [hNextPc, hNextStack]
-      simpa using hOk.2
+      have hNextTail :
+          (gasfulPcNext state).stack.tail = state.stack := by
+        simp [gasfulPcNext, afterEVMInstructionChargeAt,
+          afterMemoryChargeAt, afterDynamicChargeAt, chargeGas,
+          EvmYul.EVM.State.replaceStackAndIncrPC,
+          EvmYul.EVM.State.incrPC, EvmYul.Stack.push]
+      cases hNS : (gasfulPcNext state).stack with
+      | nil =>
+          rw [hNS] at hNextLen
+          simp at hNextLen
+      | cons v tl =>
+          have hTl : tl = state.stack := by
+            have hT := hNextTail
+            rw [hNS] at hT
+            simpa using hT
+          subst hTl
+          refine ⟨none :: astack, ?_, ?_⟩
+          · rw [hNextPc]
+            exact hFlow
+          · rw [hNS]
+            exact agrees_cons agreesVal_none hAgrees
 
 theorem callPrimOp_args_arity
     (kind : Simulation.CallKind) (operands : Simulation.CallOperands) :
@@ -739,14 +1208,14 @@ theorem heightPoint_call_step
     (hInstr : block.sourceInstr = .prim (callPrimOp kind))
     (hPc : state.pc = EvmYul.UInt256.ofNat block.compactPc)
     (hPrefix : XSstoreStipendChecksPass validJumps state)
-    (hHeight : HeightPoint cert.heights state)
+    (hHeight : HeightPoint cert.table state)
     (hStep :
       EvmYul.EVM.step stepFuel (dynamicGasCostAt state)
         (some
           ((EvmYul.EVM.decode state.executionEnv.code state.pc).getD
             (EvmYul.Operation.STOP, none)))
         (afterMemoryChargeAt state) = .ok next) :
-    HeightPoint cert.heights next := by
+    HeightPoint cert.table next := by
   have hDecoded := artifact_prim_decode hCompile hDecode hCode hBlock
     hInstr hPc
   have hOpEq : (callPrimOp kind).toEVM = kind.toEVMOperation := by
@@ -771,7 +1240,12 @@ theorem heightPoint_call_step
       have hLen : state.stack.length =
           (Simulation.CallKind.args kind operands).length + rest.length := by
         rw [hStack]; simp
-      have hNextStack : next.stack.length = rest.length + 1 := by
+      have hNextLen : next.stack.length = rest.length + 1 := by
+        have hStackEq := hResponse.openStateRel.stack_eq
+        rw [hStackEq]
+        simp [InteractionSemantics.EVMState.finishCall,
+          EvmYul.EVM.State.incrPC]
+      have hNextTail : next.stack.tail = rest := by
         have hStackEq := hResponse.openStateRel.stack_eq
         rw [hStackEq]
         simp [InteractionSemantics.EVMState.finishCall,
@@ -790,25 +1264,54 @@ theorem heightPoint_call_step
               EvmYul.EVM.State.incrPC]
           _ = EvmYul.UInt256.ofNat (block.compactPc + 1) := by
             rw [hPc, uint256_ofNat_add]
+      obtain ⟨astack, hMemPc, hAgrees⟩ := hHeight
       have hEntry :
-          lookupHeight cert.heights (EvmYul.UInt256.ofNat block.compactPc) =
-            some state.stack.length := by
-        rw [← hPc]; exact hHeight
+          memStack cert.table (EvmYul.UInt256.ofNat block.compactPc)
+            astack = true := by
+        rw [← hPc]; exact hMemPc
       have hArity := callPrimOp_args_arity kind operands
       have hInvalid : callPrimOp kind ≠ .invalid := by
         cases kind <;> simp [callPrimOp]
       have hOk := check?_blockOk hCheck hBlock
-      simp only [blockOk?, hEntry, hInstr, if_neg hInvalid, hArity,
-        Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq] at hOk
-      show lookupHeight cert.heights _ = _
-      rw [hNextPc, hNextStack]
-      have hExpected :
-          state.stack.length -
-              (Simulation.CallKind.args kind operands).length + 1 =
-            rest.length + 1 := by
+      simp only [blockOk?, hInstr, if_neg hInvalid, hArity] at hOk
+      have hFlow := all_stacksAt_apply hOk hEntry
+      have hNe : callPrimOp kind ≠ .eq := by
+        cases kind <;> simp [callPrimOp]
+      have hCont : (callPrimOp kind).continuingStep? = none := by
+        cases kind <;> rfl
+      have hBound :
+          (Simulation.CallKind.args kind operands).length ≤
+            astack.length := by
+        rw [agrees_length hAgrees]
         omega
-      rw [← hExpected]
-      exact hOk.2
+      have hAbs : absPrim? (callPrimOp kind) astack =
+          some (none ::
+            astack.drop
+              (Simulation.CallKind.args kind operands).length) := by
+        simp [absPrim?, hNe, hCont, hArity, List.replicate]
+        simpa using hBound
+      rw [hAbs] at hFlow
+      obtain ⟨v, tl, hNS⟩ :
+          ∃ v tl, next.stack = v :: tl := by
+        cases hCase : next.stack with
+        | nil => rw [hCase] at hNextLen; simp at hNextLen
+        | cons v tl => exact ⟨v, tl, rfl⟩
+      have hTl : tl = rest := by
+        have := hNextTail
+        rw [hNS] at this
+        simpa using this
+      subst hTl
+      refine ⟨none ::
+        astack.drop (Simulation.CallKind.args kind operands).length,
+        ?_, ?_⟩
+      · rw [hNextPc]
+        exact hFlow
+      · rw [hNS]
+        refine agrees_cons agreesVal_none ?_
+        have hDrop := agrees_drop hAgrees
+          (Simulation.CallKind.args kind operands).length
+        rw [hStack, List.drop_left] at hDrop
+        exact hDrop
 
 theorem heightPoint_create_step
     {source : Assembly.Program} {pinnedPushPcs : List Nat}
@@ -824,14 +1327,14 @@ theorem heightPoint_create_step
     (hInstr : block.sourceInstr = .prim (createPrimOp kind))
     (hPc : state.pc = EvmYul.UInt256.ofNat block.compactPc)
     (hPrefix : XSstoreStipendChecksPass validJumps state)
-    (hHeight : HeightPoint cert.heights state)
+    (hHeight : HeightPoint cert.table state)
     (hStep :
       EvmYul.EVM.step stepFuel (dynamicGasCostAt state)
         (some
           ((EvmYul.EVM.decode state.executionEnv.code state.pc).getD
             (EvmYul.Operation.STOP, none)))
         (afterMemoryChargeAt state) = .ok next) :
-    HeightPoint cert.heights next := by
+    HeightPoint cert.table next := by
   have hDecoded := artifact_prim_decode hCompile hDecode hCode hBlock
     hInstr hPc
   have hOpEq : (createPrimOp kind).toEVM = kind.toEVMOperation := by
@@ -857,7 +1360,12 @@ theorem heightPoint_create_step
           (Simulation.CreateKind.args kind operands).length +
             rest.length := by
         rw [hStack]; simp
-      have hNextStack : next.stack.length = rest.length + 1 := by
+      have hNextLen : next.stack.length = rest.length + 1 := by
+        have hStackEq := hResponse.openStateRel.stack_eq
+        rw [hStackEq]
+        simp [InteractionSemantics.EVMState.finishCreate,
+          EvmYul.EVM.State.incrPC]
+      have hNextTail : next.stack.tail = rest := by
         have hStackEq := hResponse.openStateRel.stack_eq
         rw [hStackEq]
         simp [InteractionSemantics.EVMState.finishCreate,
@@ -876,25 +1384,54 @@ theorem heightPoint_create_step
               EvmYul.EVM.State.incrPC]
           _ = EvmYul.UInt256.ofNat (block.compactPc + 1) := by
             rw [hPc, uint256_ofNat_add]
+      obtain ⟨astack, hMemPc, hAgrees⟩ := hHeight
       have hEntry :
-          lookupHeight cert.heights (EvmYul.UInt256.ofNat block.compactPc) =
-            some state.stack.length := by
-        rw [← hPc]; exact hHeight
+          memStack cert.table (EvmYul.UInt256.ofNat block.compactPc)
+            astack = true := by
+        rw [← hPc]; exact hMemPc
       have hArity := createPrimOp_args_arity kind operands
       have hInvalid : createPrimOp kind ≠ .invalid := by
         cases kind <;> simp [createPrimOp]
       have hOk := check?_blockOk hCheck hBlock
-      simp only [blockOk?, hEntry, hInstr, if_neg hInvalid, hArity,
-        Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq] at hOk
-      show lookupHeight cert.heights _ = _
-      rw [hNextPc, hNextStack]
-      have hExpected :
-          state.stack.length -
-              (Simulation.CreateKind.args kind operands).length + 1 =
-            rest.length + 1 := by
+      simp only [blockOk?, hInstr, if_neg hInvalid, hArity] at hOk
+      have hFlow := all_stacksAt_apply hOk hEntry
+      have hNe : createPrimOp kind ≠ .eq := by
+        cases kind <;> simp [createPrimOp]
+      have hCont : (createPrimOp kind).continuingStep? = none := by
+        cases kind <;> rfl
+      have hBound :
+          (Simulation.CreateKind.args kind operands).length ≤
+            astack.length := by
+        rw [agrees_length hAgrees]
         omega
-      rw [← hExpected]
-      exact hOk.2
+      have hAbs : absPrim? (createPrimOp kind) astack =
+          some (none ::
+            astack.drop
+              (Simulation.CreateKind.args kind operands).length) := by
+        simp [absPrim?, hNe, hCont, hArity, List.replicate]
+        simpa using hBound
+      rw [hAbs] at hFlow
+      obtain ⟨v, tl, hNS⟩ :
+          ∃ v tl, next.stack = v :: tl := by
+        cases hCase : next.stack with
+        | nil => rw [hCase] at hNextLen; simp at hNextLen
+        | cons v tl => exact ⟨v, tl, rfl⟩
+      have hTl : tl = rest := by
+        have := hNextTail
+        rw [hNS] at this
+        simpa using this
+      subst hTl
+      refine ⟨none ::
+        astack.drop (Simulation.CreateKind.args kind operands).length,
+        ?_, ?_⟩
+      · rw [hNextPc]
+        exact hFlow
+      · rw [hNS]
+        refine agrees_cons agreesVal_none ?_
+        have hDrop := agrees_drop hAgrees
+          (Simulation.CreateKind.args kind operands).length
+        rw [hStack, List.drop_left] at hDrop
+        exact hDrop
 
 /-! ## The height invariant along reachable frame states -/
 
@@ -909,7 +1446,7 @@ theorem heightPoint_step
       (Compact.Program.codeByteLength artifact.program.code)
       (.prim .invalid))
     (hPoint : ArtifactFramePoint artifact bytes current)
-    (hHeight : HeightPoint cert.heights current)
+    (hHeight : HeightPoint cert.table current)
     (hPrefix : XSstoreStipendChecksPass validJumps current)
     (hStep :
       EvmYul.EVM.step stepFuel (dynamicGasCostAt current)
@@ -918,7 +1455,7 @@ theorem heightPoint_step
             (EvmYul.Operation.STOP, none)))
         (afterMemoryChargeAt current) = .ok next)
     (hContinues : haltOutputAt next (decodedOperationAt current) = none) :
-    HeightPoint cert.heights next := by
+    HeightPoint cert.table next := by
   rcases hPoint with ⟨hCode, hControl⟩
   cases hControl with
   | boundary block hBlock hPc =>
@@ -1028,10 +1565,12 @@ theorem heightPoint_initial {cert : Cert} {artifact : Compact.Artifact}
     (hCheck : check? artifact cert = true)
     (hPc : initial.pc = EvmYul.UInt256.ofNat 0)
     (hStack : initial.stack = []) :
-    HeightPoint cert.heights initial := by
-  show lookupHeight cert.heights _ = _
-  rw [hPc, hStack]
-  simpa using check?_anchor hCheck
+    HeightPoint cert.table initial := by
+  refine ⟨[], ?_, ?_⟩
+  · rw [hPc]
+    exact check?_anchor hCheck
+  · rw [hStack]
+    exact List.Forall₂.nil
 
 theorem reach_heightPoint
     {source : Assembly.Program} {pinnedPushPcs : List Nat}
@@ -1044,9 +1583,9 @@ theorem reach_heightPoint
       (Compact.Program.codeByteLength artifact.program.code)
       (.prim .invalid))
     (hFrame : ArtifactFrameInvariant artifact bytes validJumps initial)
-    (hInitialHeight : HeightPoint cert.heights initial) :
+    (hInitialHeight : HeightPoint cert.table initial) :
     ∀ state, FrameReachable validJumps initial state →
-      HeightPoint cert.heights state := by
+      HeightPoint cert.table state := by
   intro state hReach
   induction hReach with
   | initial => exact hInitialHeight
@@ -1252,12 +1791,14 @@ theorem noOverflow_of_heightPoint
       (Compact.Program.codeByteLength artifact.program.code)
       (.prim .invalid))
     (hPoint : ArtifactFramePoint artifact bytes state)
-    (hHeight : HeightPoint cert.heights state) :
+    (hHeight : HeightPoint cert.table state) :
     ¬ stackOverflowAt state := by
   intro hOverflow
   unfold stackOverflowAt at hOverflow
-  have hLen : state.stack.length ≤ stackCap :=
-    lookupHeight_le_cap (check?_bounded hCheck) hHeight
+  obtain ⟨astack, hMem, hAgrees⟩ := hHeight
+  have hLen : state.stack.length ≤ stackCap := by
+    rw [← agrees_length hAgrees]
+    exact memStack_length_le_cap (check?_bounded hCheck) hMem
   obtain ⟨hNet, hDelta⟩ :=
     decoded_alpha_le_delta_succ hCompile hDecode hSentinel hPoint
   unfold stackCap at hLen
@@ -1276,7 +1817,7 @@ theorem reach_noOverflow
       (Compact.Program.codeByteLength artifact.program.code)
       (.prim .invalid))
     (hFrame : ArtifactFrameInvariant artifact bytes validJumps initial)
-    (hInitialHeight : HeightPoint cert.heights initial) :
+    (hInitialHeight : HeightPoint cert.table initial) :
     ∀ state, FrameReachable validJumps initial state →
       ¬ stackOverflowAt state := by
   intro state hReach

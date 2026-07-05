@@ -6,8 +6,8 @@ import EvmCompiler.Assembly.StackHeadroomSound
 
 Standalone stack-headroom certification for compiled verified stack object
 artifacts: `stackHeadroomCert?` produces (fail-closed) a validated per-pc
-height certificate for the artifact's compact program, and the endpoint
-theorems below turn a successful certificate into
+abstract-stack-set certificate for the artifact's compact program, and the
+endpoint theorems below turn a successful certificate into
 
 * `EvmYul.EVM.X` never returning `StackOverflow` on the artifact's byte image
   entered with an empty stack (both the exact runtime image and the
@@ -16,9 +16,11 @@ theorems below turn a successful certificate into
   (`RunRefinesOpenNoStackOverflow`).
 
 The certificate producer is deliberately not a blocking compile gate: the
-stage-1 checker covers the uniform-height fragment (no shared procedure
-bodies entered at distinct stack depths); artifacts outside the fragment
-simply do not receive the strengthened theorems.
+stage-2 checker tracks per-pc SETS of constant-folded abstract stacks, so
+shared procedure bodies entered at several stack depths (the emitted
+return-dispatch call protocol) are certified per call-site inflow; genuinely
+recursive programs, whose operand stacks really are input-unbounded, fail
+closed and simply do not receive the strengthened theorems.
 -/
 
 namespace EvmCompiler
