@@ -56,6 +56,8 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.Frontend.compile?_byteDiff_of_differingPushPcs
 #check EvmCompiler.Solidity.Frontend.Object.compileVerifiedStackCodeArtifactIn?_byteDiff
 #check EvmCompiler.Solidity.Frontend.Object.patchImmutables_compileWithImmutableValues?
+#check EvmCompiler.Solidity.Frontend.Object.patchImmutables_compileWithImmutableValues?_ofCompile
+#check EvmCompiler.Solidity.Frontend.Object.patchImmutables_image_compileWithImmutableValues?_ofCompile
 #check EvmCompiler.Solidity.Frontend.Object.Expr.userCallsResolved?_user_call
 #check EvmCompiler.Solidity.Frontend.Expr.List.resolveObjectBuiltinsIn?_mem
 #check EvmCompiler.Solidity.Frontend.Stmt.List.resolveObjectBuiltinsIn?_mem
@@ -1046,6 +1048,8 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.Frontend.compile?_byteDiff_of_differingPushPcs
 #print axioms EvmCompiler.Solidity.Frontend.Object.compileVerifiedStackCodeArtifactIn?_byteDiff
 #print axioms EvmCompiler.Solidity.Frontend.Object.patchImmutables_compileWithImmutableValues?
+#print axioms EvmCompiler.Solidity.Frontend.Object.patchImmutables_compileWithImmutableValues?_ofCompile
+#print axioms EvmCompiler.Solidity.Frontend.Object.patchImmutables_image_compileWithImmutableValues?_ofCompile
 #print axioms EvmCompiler.Solidity.Frontend.Object.Expr.userCallsResolved?_user_call
 #print axioms EvmCompiler.Solidity.Frontend.Expr.List.resolveObjectBuiltinsIn?_mem
 #print axioms EvmCompiler.Solidity.Frontend.Stmt.List.resolveObjectBuiltinsIn?_mem

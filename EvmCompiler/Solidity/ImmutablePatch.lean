@@ -36,33 +36,11 @@ namespace Frontend
 
 namespace Bytecode
 
-/-! ## The patcher -/
+/-! ## The patcher
 
-/-- Patch one immutable value into every exported reference site. -/
-def patchImmutableReferences (value : Word) :
-    List UInt8 → List ImmutableReference → List UInt8
-  | bytes, [] => bytes
-  | bytes, reference :: rest =>
-      patchImmutableReferences value
-        (patchBytesAt reference.start (Assembly.Bytecode.encodeWord32 value)
-          bytes) rest
-
-/-- Patch deploy-time immutable `values` into `bytes` at the exported
-`refs` (the shape of `ObjectImage.immutableReferences`).  Mirrors
-`zeroImmutableReferenceEntries`, writing the value assigned to each name
-instead of the zero word.  Reference groups whose name carries no assigned
-value are left untouched. -/
-def patchImmutables (bytes : List UInt8)
-    (refs : List (Name × List ImmutableReference))
-    (values : List (Name × Word)) : List UInt8 :=
-  match refs with
-  | [] => bytes
-  | (name, references) :: rest =>
-      match values.find? (fun entry => entry.fst == name) with
-      | some entry =>
-          patchImmutables (patchImmutableReferences entry.snd bytes references)
-            rest values
-      | none => patchImmutables bytes rest values
+`patchImmutableReferences` and `patchImmutables` live in `Frontend.lean`'s
+`Bytecode` namespace so the checked pipeline can gate on them at compile
+time; this module carries their semantics. -/
 
 /-! ## Pointwise characterisation of `patchBytesAt` -/
 
@@ -1272,6 +1250,1035 @@ theorem Object.patchImmutables_compileWithImmutableValues?
   exact Bytecode.patchImmutables_valueBytes_of_byteDiffs hDiffBase hDiffValue
     hSitesBase hMatch hCoverValue
 
+/-! ## Compile-gate semantics: unconditional deploy-time patching
+
+`Object.immutablePatchChecked?` runs inside every successful
+`compileVerifiedStackCodeArtifactIn?`.  The lemmas below extract its Boolean
+facts into the hypotheses the patch reconstruction needs, so the headline
+theorem `Object.patchImmutables_compileWithImmutableValues?_ofCompile` takes
+only the two compile-success hypotheses. -/
+
+namespace Bytecode
+
+/-! ### Length and outside-window preservation for the patcher -/
+
+theorem patchImmutableReferences_length {value : Word} :
+    ∀ {references : List ImmutableReference} {bytes : List UInt8},
+      (∀ r ∈ references, r.start + 32 ≤ bytes.length) →
+      (patchImmutableReferences value bytes references).length = bytes.length
+  | [], _bytes, _hIn => rfl
+  | reference :: rest, bytes, hIn => by
+      have hHead : reference.start + 32 ≤ bytes.length :=
+        hIn reference (List.mem_cons_self ..)
+      have hEnc : (Assembly.Bytecode.encodeWord32 value).length = 32 :=
+        Assembly.Bytecode.encodeWord32_length value
+      have hLen : (patchBytesAt reference.start
+          (Assembly.Bytecode.encodeWord32 value) bytes).length =
+            bytes.length :=
+        patchBytesAt_length (by rw [hEnc]; omega)
+      rw [patchImmutableReferences,
+        patchImmutableReferences_length (fun r hr => by
+          rw [hLen]; exact hIn r (List.mem_cons_of_mem _ hr)), hLen]
+
+theorem patchImmutables_length {values : List (Name × Word)} :
+    ∀ {refs : List (Name × List ImmutableReference)} {bytes : List UInt8},
+      (∀ e ∈ refs, ∀ r ∈ e.snd, r.start + 32 ≤ bytes.length) →
+      (patchImmutables bytes refs values).length = bytes.length
+  | [], _bytes, _hIn => rfl
+  | (name, references) :: rest, bytes, hIn => by
+      have hHead : ∀ r ∈ references, r.start + 32 ≤ bytes.length :=
+        hIn (name, references) (List.mem_cons_self ..)
+      cases hFind : values.find? (fun entry => entry.fst == name) with
+      | none =>
+          rw [patchImmutables, hFind]
+          exact patchImmutables_length
+            (fun e he => hIn e (List.mem_cons_of_mem _ he))
+      | some entry =>
+          have hLen := patchImmutableReferences_length (value := entry.snd)
+            (references := references) (bytes := bytes) hHead
+          rw [patchImmutables, hFind,
+            patchImmutables_length (fun e he r hr => by
+              rw [hLen]; exact hIn e (List.mem_cons_of_mem _ he) r hr), hLen]
+
+theorem patchImmutableReferences_getElem?_notCovered {value : Word} :
+    ∀ {references : List ImmutableReference} {bytes : List UInt8} {p : Nat},
+      (∀ r ∈ references, r.start + 32 ≤ bytes.length) →
+      ¬ CoveredByReferences references p →
+      (patchImmutableReferences value bytes references)[p]? = bytes[p]?
+  | [], _bytes, _p, _hIn, _hNCov => rfl
+  | reference :: rest, bytes, p, hIn, hNCov => by
+      have hHead : reference.start + 32 ≤ bytes.length :=
+        hIn reference (List.mem_cons_self ..)
+      have hEnc : (Assembly.Bytecode.encodeWord32 value).length = 32 :=
+        Assembly.Bytecode.encodeWord32_length value
+      have hIn' : reference.start +
+          (Assembly.Bytecode.encodeWord32 value).length ≤ bytes.length := by
+        rw [hEnc]; omega
+      have hLen := patchBytesAt_length hIn'
+      have hNHead : ¬ (reference.start ≤ p ∧ p < reference.start + 32) :=
+        fun h => hNCov ⟨reference, List.mem_cons_self .., h⟩
+      have hNRest : ¬ CoveredByReferences rest p := by
+        rintro ⟨r, hr, hw⟩
+        exact hNCov ⟨r, List.mem_cons_of_mem _ hr, hw⟩
+      rw [patchImmutableReferences,
+        patchImmutableReferences_getElem?_notCovered
+          (fun r hr => by rw [hLen]; exact hIn r (List.mem_cons_of_mem _ hr))
+          hNRest]
+      rcases Nat.lt_or_ge p reference.start with hLt | hGe
+      · exact patchBytesAt_getElem?_left hIn' hLt
+      · have hGe32 : reference.start +
+            (Assembly.Bytecode.encodeWord32 value).length ≤ p := by
+          rw [hEnc]
+          by_contra h
+          exact hNHead ⟨hGe, by omega⟩
+        exact patchBytesAt_getElem?_right hIn' hGe32
+
+theorem patchImmutables_getElem?_notCovered {values : List (Name × Word)} :
+    ∀ {refs : List (Name × List ImmutableReference)} {bytes : List UInt8}
+      {p : Nat},
+      (∀ e ∈ refs, ∀ r ∈ e.snd, r.start + 32 ≤ bytes.length) →
+      ¬ CoveredByRefs refs p →
+      (patchImmutables bytes refs values)[p]? = bytes[p]?
+  | [], _bytes, _p, _hIn, _hNCov => rfl
+  | (name, references) :: rest, bytes, p, hIn, hNCov => by
+      have hHead : ∀ r ∈ references, r.start + 32 ≤ bytes.length :=
+        hIn (name, references) (List.mem_cons_self ..)
+      have hNHead : ¬ CoveredByReferences references p :=
+        fun h => hNCov ⟨(name, references), List.mem_cons_self .., h⟩
+      have hNRest : ¬ CoveredByRefs rest p := by
+        rintro ⟨e, he, hw⟩
+        exact hNCov ⟨e, List.mem_cons_of_mem _ he, hw⟩
+      cases hFind : values.find? (fun entry => entry.fst == name) with
+      | none =>
+          rw [patchImmutables, hFind]
+          exact patchImmutables_getElem?_notCovered
+            (fun e he => hIn e (List.mem_cons_of_mem _ he)) hNRest
+      | some entry =>
+          have hLen := patchImmutableReferences_length (value := entry.snd)
+            (references := references) (bytes := bytes) hHead
+          rw [patchImmutables, hFind,
+            patchImmutables_getElem?_notCovered (fun e he r hr => by
+              rw [hLen]; exact hIn e (List.mem_cons_of_mem _ he) r hr)
+              hNRest]
+          exact patchImmutableReferences_getElem?_notCovered hHead hNHead
+
+/-! ### The zero word is thirty-two zero bytes -/
+
+private theorem toBytesLE_zero :
+    ∀ width, Assembly.Bytecode.toBytesLE width 0 = List.replicate width 0
+  | 0 => rfl
+  | width + 1 => by
+      simp [Assembly.Bytecode.toBytesLE, toBytesLE_zero width,
+        List.replicate_succ]
+
+theorem zeroWord32_eq_replicate : zeroWord32 = List.replicate 32 0 := by
+  have h0 : (EvmYul.UInt256.ofNat 0).toNat = 0 := rfl
+  rw [zeroWord32, Assembly.Bytecode.encodeWord32, h0, toBytesLE_zero]
+  simp
+
+/-! ### Patching all-zero values fills every covered position with zero -/
+
+private theorem patchImmutableReferences_getElem?_zero :
+    ∀ {references : List ImmutableReference} {bytes : List UInt8} {p : Nat},
+      (∀ r ∈ references, r.start + 32 ≤ bytes.length) →
+      (CoveredByReferences references p ∨ bytes[p]? = some 0) →
+      (patchImmutableReferences (EvmYul.UInt256.ofNat 0) bytes
+        references)[p]? = some 0
+  | [], _bytes, _p, _hIn, hCov => by
+      rcases hCov with hCov | hEq
+      · rcases hCov with ⟨r, hr, _⟩; simp at hr
+      · simpa using hEq
+  | reference :: rest, bytes, p, hIn, hCov => by
+      have hHead : reference.start + 32 ≤ bytes.length :=
+        hIn reference (List.mem_cons_self ..)
+      have hEnc : (Assembly.Bytecode.encodeWord32
+          (EvmYul.UInt256.ofNat 0)).length = 32 :=
+        Assembly.Bytecode.encodeWord32_length _
+      have hIn' : reference.start + (Assembly.Bytecode.encodeWord32
+          (EvmYul.UInt256.ofNat 0)).length ≤ bytes.length := by
+        rw [hEnc]; omega
+      have hLen := patchBytesAt_length hIn'
+      rw [patchImmutableReferences]
+      refine patchImmutableReferences_getElem?_zero
+        (fun r hr => by rw [hLen]; exact hIn r (List.mem_cons_of_mem _ hr))
+        ?_
+      by_cases hWin : reference.start ≤ p ∧ p < reference.start + 32
+      · right
+        rw [patchBytesAt_getElem?_inside hIn' hWin.1
+          (by rw [hEnc]; exact hWin.2)]
+        have hRepl : Assembly.Bytecode.encodeWord32
+            (EvmYul.UInt256.ofNat 0) = List.replicate 32 0 :=
+          zeroWord32_eq_replicate
+        rw [hRepl, List.getElem?_replicate, if_pos (by omega)]
+      · rcases hCov with hCovRefs | hZero
+        · rcases hCovRefs with ⟨r, hr, hw⟩
+          rcases List.mem_cons.mp hr with rfl | hr'
+          · exact absurd hw hWin
+          · exact Or.inl ⟨r, hr', hw⟩
+        · right
+          rcases Nat.lt_or_ge p reference.start with hLt | hGe
+          · rw [patchBytesAt_getElem?_left hIn' hLt]; exact hZero
+          · have hGe32 : reference.start + (Assembly.Bytecode.encodeWord32
+                (EvmYul.UInt256.ofNat 0)).length ≤ p := by
+              rw [hEnc]
+              by_contra h
+              exact hWin ⟨hGe, by omega⟩
+            rw [patchBytesAt_getElem?_right hIn' hGe32]; exact hZero
+
+theorem patchImmutables_getElem?_zero
+    {values : List (Name × Word)}
+    (hValsZero : ∀ e ∈ values, e.snd = EvmYul.UInt256.ofNat 0) :
+    ∀ {refs : List (Name × List ImmutableReference)} {bytes : List UInt8}
+      {p : Nat},
+      (∀ e ∈ refs, ∀ r ∈ e.snd, r.start + 32 ≤ bytes.length) →
+      (∀ e ∈ refs, (values.find? (fun v => v.fst == e.fst)).isSome) →
+      (CoveredByRefs refs p ∨ bytes[p]? = some 0) →
+      (patchImmutables bytes refs values)[p]? = some 0
+  | [], _bytes, _p, _hIn, _hBound, hCov => by
+      rcases hCov with hCov | hEq
+      · rcases hCov with ⟨e, he, _⟩; simp at he
+      · simpa using hEq
+  | (name, references) :: rest, bytes, p, hIn, hBound, hCov => by
+      have hSome := hBound (name, references) (List.mem_cons_self ..)
+      cases hFind : values.find? (fun entry => entry.fst == name) with
+      | none => rw [hFind] at hSome; simp at hSome
+      | some entry =>
+          have hEntryMem : entry ∈ values := List.mem_of_find?_eq_some hFind
+          have hZero : entry.snd = EvmYul.UInt256.ofNat 0 :=
+            hValsZero entry hEntryMem
+          have hHead : ∀ r ∈ references, r.start + 32 ≤ bytes.length :=
+            hIn (name, references) (List.mem_cons_self ..)
+          have hLen := patchImmutableReferences_length (value := entry.snd)
+            (references := references) (bytes := bytes) hHead
+          rw [patchImmutables, hFind]
+          refine patchImmutables_getElem?_zero hValsZero
+            (fun e he r hr => by
+              rw [hLen]; exact hIn e (List.mem_cons_of_mem _ he) r hr)
+            (fun e he => hBound e (List.mem_cons_of_mem _ he))
+            ?_
+          rcases hCov with hCovRefs | hZeroByte
+          · rcases hCovRefs with ⟨e, he, hw⟩
+            rcases List.mem_cons.mp he with rfl | he'
+            · right
+              rw [hZero]
+              exact patchImmutableReferences_getElem?_zero hHead (Or.inl hw)
+            · exact Or.inl ⟨e, he', hw⟩
+          · right
+            rw [hZero]
+            exact patchImmutableReferences_getElem?_zero hHead
+              (Or.inr hZeroByte)
+
+/-! ### Patching is input-congruent outside the written windows -/
+
+private theorem patchImmutableReferences_getElem?_congr {value : Word} :
+    ∀ {references : List ImmutableReference} {X Y : List UInt8} {p : Nat},
+      X.length = Y.length →
+      (∀ r ∈ references, r.start + 32 ≤ X.length) →
+      (X[p]? = Y[p]? ∨ CoveredByReferences references p) →
+      (patchImmutableReferences value X references)[p]? =
+        (patchImmutableReferences value Y references)[p]?
+  | [], _X, _Y, _p, _hLen, _hIn, hAgree => by
+      rcases hAgree with hEq | hCov
+      · exact hEq
+      · rcases hCov with ⟨r, hr, _⟩; simp at hr
+  | reference :: rest, X, Y, p, hLen, hIn, hAgree => by
+      have hHead : reference.start + 32 ≤ X.length :=
+        hIn reference (List.mem_cons_self ..)
+      have hEnc : (Assembly.Bytecode.encodeWord32 value).length = 32 :=
+        Assembly.Bytecode.encodeWord32_length value
+      have hInX : reference.start +
+          (Assembly.Bytecode.encodeWord32 value).length ≤ X.length := by
+        rw [hEnc]; omega
+      have hInY : reference.start +
+          (Assembly.Bytecode.encodeWord32 value).length ≤ Y.length := by
+        rw [hEnc]; omega
+      have hLenX := patchBytesAt_length (bytes := X)
+        (start := reference.start) hInX
+      have hLenY := patchBytesAt_length (bytes := Y)
+        (start := reference.start) hInY
+      simp only [patchImmutableReferences]
+      refine patchImmutableReferences_getElem?_congr
+        (by rw [hLenX, hLenY, hLen])
+        (fun r hr => by rw [hLenX]; exact hIn r (List.mem_cons_of_mem _ hr))
+        ?_
+      by_cases hWin : reference.start ≤ p ∧ p < reference.start + 32
+      · left
+        rw [patchBytesAt_getElem?_inside hInX hWin.1
+            (by rw [hEnc]; exact hWin.2),
+          patchBytesAt_getElem?_inside hInY hWin.1
+            (by rw [hEnc]; exact hWin.2)]
+      · rcases hAgree with hEq | hCov
+        · left
+          rcases Nat.lt_or_ge p reference.start with hLt | hGe
+          · rw [patchBytesAt_getElem?_left hInX hLt,
+              patchBytesAt_getElem?_left hInY hLt]
+            exact hEq
+          · have hGe32 : reference.start +
+                (Assembly.Bytecode.encodeWord32 value).length ≤ p := by
+              rw [hEnc]
+              by_contra h
+              exact hWin ⟨hGe, by omega⟩
+            rw [patchBytesAt_getElem?_right hInX hGe32,
+              patchBytesAt_getElem?_right hInY hGe32]
+            exact hEq
+        · rcases hCov with ⟨r, hr, hw⟩
+          rcases List.mem_cons.mp hr with rfl | hr'
+          · exact absurd hw hWin
+          · exact Or.inr ⟨r, hr', hw⟩
+
+theorem patchImmutables_getElem?_congr {values : List (Name × Word)} :
+    ∀ {refs : List (Name × List ImmutableReference)} {X Y : List UInt8}
+      {p : Nat},
+      X.length = Y.length →
+      (∀ e ∈ refs, ∀ r ∈ e.snd, r.start + 32 ≤ X.length) →
+      (∀ e ∈ refs, (values.find? (fun v => v.fst == e.fst)).isSome) →
+      (X[p]? = Y[p]? ∨ CoveredByRefs refs p) →
+      (patchImmutables X refs values)[p]? =
+        (patchImmutables Y refs values)[p]?
+  | [], _X, _Y, _p, _hLen, _hIn, _hBound, hAgree => by
+      rcases hAgree with hEq | hCov
+      · exact hEq
+      · rcases hCov with ⟨e, he, _⟩; simp at he
+  | (name, references) :: rest, X, Y, p, hLen, hIn, hBound, hAgree => by
+      have hSome := hBound (name, references) (List.mem_cons_self ..)
+      cases hFind : values.find? (fun entry => entry.fst == name) with
+      | none => rw [hFind] at hSome; simp at hSome
+      | some entry =>
+          have hHead : ∀ r ∈ references, r.start + 32 ≤ X.length :=
+            hIn (name, references) (List.mem_cons_self ..)
+          have hLenX := patchImmutableReferences_length (value := entry.snd)
+            (references := references) (bytes := X) hHead
+          have hLenY := patchImmutableReferences_length (value := entry.snd)
+            (references := references) (bytes := Y)
+            (fun r hr => by rw [← hLen]; exact hHead r hr)
+          simp only [patchImmutables, hFind]
+          refine patchImmutables_getElem?_congr
+            (by rw [hLenX, hLenY, hLen])
+            (fun e he r hr => by
+              rw [hLenX]; exact hIn e (List.mem_cons_of_mem _ he) r hr)
+            (fun e he => hBound e (List.mem_cons_of_mem _ he))
+            ?_
+          rcases hAgree with hEq | hCov
+          · left
+            exact patchImmutableReferences_getElem?_congr hLen hHead
+              (Or.inl hEq)
+          · rcases hCov with ⟨e, he, hw⟩
+            rcases List.mem_cons.mp he with rfl | he'
+            · left
+              exact patchImmutableReferences_getElem?_congr hLen hHead
+                (Or.inr hw)
+            · exact Or.inr ⟨e, he', hw⟩
+
+theorem patchImmutables_congr {values : List (Name × Word)}
+    {refs : List (Name × List ImmutableReference)} {X Y : List UInt8}
+    (hLen : X.length = Y.length)
+    (hIn : ∀ e ∈ refs, ∀ r ∈ e.snd, r.start + 32 ≤ X.length)
+    (hBound : ∀ e ∈ refs, (values.find? (fun v => v.fst == e.fst)).isSome)
+    (hAgree : ∀ p, X[p]? = Y[p]? ∨ CoveredByRefs refs p) :
+    patchImmutables X refs values = patchImmutables Y refs values :=
+  List.ext_getElem? fun p =>
+    patchImmutables_getElem?_congr hLen hIn hBound (hAgree p)
+
+/-! ### Marker-only reference exports -/
+
+theorem mem_immutableReferencesForMarker_startsWithAt
+    {bytes : List UInt8} {value : Word} {r : ImmutableReference}
+    (hMem : r ∈ immutableReferencesForMarker bytes value) :
+    startsWithAt (Assembly.Bytecode.encodeWord32 value) bytes r.start =
+      true := by
+  unfold immutableReferencesForMarker at hMem
+  rcases List.mem_map.mp hMem with ⟨start, hStart, rfl⟩
+  have hLen : (Assembly.Bytecode.encodeWord32 value).length = 32 :=
+    Assembly.Bytecode.encodeWord32_length value
+  cases hEnc : Assembly.Bytecode.encodeWord32 value with
+  | nil => rw [hEnc] at hLen; simp at hLen
+  | cons b tail =>
+      rw [hEnc, findOccurrences] at hStart
+      rcases startsWithAt_of_mem_findOccurrencesAux hStart with hAcc | hHit
+      · simp at hAcc
+      · exact hEnc ▸ hHit.1
+
+theorem mem_immutableReferenceEntries {markerBytes : List UInt8} :
+    ∀ {entries : List (Name × Word)} {e : Name × Word}, e ∈ entries →
+      (e.fst, immutableReferencesForMarker markerBytes e.snd) ∈
+        immutableReferenceEntries markerBytes entries
+  | [], e, hMem => by simp at hMem
+  | (name, value) :: rest, e, hMem => by
+      rcases List.mem_cons.mp hMem with rfl | hMem'
+      · exact List.mem_cons_self ..
+      · exact List.mem_cons_of_mem _ (mem_immutableReferenceEntries hMem')
+
+theorem mem_immutableReferenceEntries_elim {markerBytes : List UInt8} :
+    ∀ {entries : List (Name × Word)}
+      {bucket : Name × List ImmutableReference},
+      bucket ∈ immutableReferenceEntries markerBytes entries →
+      ∃ value, (bucket.fst, value) ∈ entries ∧
+        bucket.snd = immutableReferencesForMarker markerBytes value
+  | [], bucket, hMem => by simp [immutableReferenceEntries] at hMem
+  | (name, value) :: rest, bucket, hMem => by
+      rw [immutableReferenceEntries] at hMem
+      rcases List.mem_cons.mp hMem with rfl | hMem'
+      · exact ⟨value, List.mem_cons_self .., rfl⟩
+      · obtain ⟨v, hv, hEq⟩ := mem_immutableReferenceEntries_elim hMem'
+        exact ⟨v, List.mem_cons_of_mem _ hv, hEq⟩
+
+theorem immutableReferenceEntries_inBounds {markerBytes : List UInt8}
+    {entries : List (Name × Word)} :
+    ∀ e ∈ immutableReferenceEntries markerBytes entries, ∀ r ∈ e.snd,
+      r.start + 32 ≤ markerBytes.length := by
+  intro e he r hr
+  obtain ⟨value, _hVal, hRefs⟩ := mem_immutableReferenceEntries_elim he
+  rw [hRefs] at hr
+  have hStarts := mem_immutableReferencesForMarker_startsWithAt hr
+  have hLen := length_le_of_startsWithAt
+    (by rw [Assembly.Bytecode.encodeWord32_length]; omega) hStarts
+  rw [Assembly.Bytecode.encodeWord32_length] at hLen
+  exact hLen
+
+/-- When the zero-window filter passes at every marker occurrence, the
+zero-filtered export equals the marker-only export. -/
+theorem immutableReferenceEntriesFromCodes_eq_of_zeroBase
+    {zeroBytes markerBytes : List UInt8} :
+    ∀ {entries : List (Name × Word)},
+      (∀ e ∈ entries, ∀ p ∈ findOccurrences
+          (Assembly.Bytecode.encodeWord32 e.snd) markerBytes,
+        startsWithAt zeroWord32 zeroBytes p = true) →
+      immutableReferenceEntriesFromCodes zeroBytes markerBytes entries =
+        immutableReferenceEntries markerBytes entries
+  | [], _hZero => rfl
+  | (name, value) :: rest, hZero => by
+      rw [immutableReferenceEntriesFromCodes, immutableReferenceEntries,
+        immutableReferenceEntriesFromCodes_eq_of_zeroBase
+          (fun e he => hZero e (List.mem_cons_of_mem _ he))]
+      unfold immutableReferencesForMarkerFromCodes
+        immutableReferencesForMarker
+      rw [List.filter_eq_self.mpr
+        (fun p hp => hZero (name, value) (List.mem_cons_self ..) p hp)]
+
+theorem startsWithAt_zeroWord32_of_all_zero {bytes : List UInt8}
+    {start : Nat} (hLen : start + 32 ≤ bytes.length)
+    (hZero : ∀ p, start ≤ p → p < start + 32 → bytes[p]? = some 0) :
+    startsWithAt zeroWord32 bytes start = true := by
+  have hZLen : zeroWord32.length = 32 := by
+    rw [zeroWord32_eq_replicate]; simp
+  suffices h : (bytes.drop start).take zeroWord32.length = zeroWord32 by
+    unfold startsWithAt
+    rw [h]
+    simp
+  rw [hZLen, zeroWord32_eq_replicate]
+  apply List.ext_getElem?
+  intro k
+  by_cases hk : k < 32
+  · rw [List.getElem?_take_of_lt hk, List.getElem?_drop,
+      hZero (start + k) (by omega) (by omega),
+      List.getElem?_replicate, if_pos hk]
+  · have hLeft : ((bytes.drop start).take 32)[k]? = none := by
+      apply List.getElem?_eq_none
+      simp
+      omega
+    have hRight : (List.replicate 32 (0 : UInt8))[k]? = none := by
+      apply List.getElem?_eq_none
+      simp
+      omega
+    rw [hLeft, hRight]
+
+/-! ### Patching a code prefix commutes with payload suffixes -/
+
+theorem patchBytesAt_append {start : Nat}
+    {replacement bytes suffix : List UInt8}
+    (hIn : start + replacement.length ≤ bytes.length) :
+    patchBytesAt start replacement (bytes ++ suffix) =
+      patchBytesAt start replacement bytes ++ suffix := by
+  unfold patchBytesAt
+  rw [List.take_append_of_le_length (by omega),
+    List.drop_append_of_le_length (by omega)]
+  simp [List.append_assoc]
+
+theorem patchImmutableReferences_append {value : Word} :
+    ∀ {references : List ImmutableReference} {bytes suffix : List UInt8},
+      (∀ r ∈ references, r.start + 32 ≤ bytes.length) →
+      patchImmutableReferences value (bytes ++ suffix) references =
+        patchImmutableReferences value bytes references ++ suffix
+  | [], _bytes, _suffix, _hIn => rfl
+  | reference :: rest, bytes, suffix, hIn => by
+      have hHead : reference.start + 32 ≤ bytes.length :=
+        hIn reference (List.mem_cons_self ..)
+      have hEnc : (Assembly.Bytecode.encodeWord32 value).length = 32 :=
+        Assembly.Bytecode.encodeWord32_length value
+      have hIn' : reference.start +
+          (Assembly.Bytecode.encodeWord32 value).length ≤ bytes.length := by
+        rw [hEnc]; omega
+      have hLen := patchBytesAt_length hIn'
+      rw [patchImmutableReferences, patchBytesAt_append hIn',
+        patchImmutableReferences_append (fun r hr => by
+          rw [hLen]; exact hIn r (List.mem_cons_of_mem _ hr)),
+        patchImmutableReferences]
+
+theorem patchImmutables_append {values : List (Name × Word)} :
+    ∀ {refs : List (Name × List ImmutableReference)}
+      {bytes suffix : List UInt8},
+      (∀ e ∈ refs, ∀ r ∈ e.snd, r.start + 32 ≤ bytes.length) →
+      patchImmutables (bytes ++ suffix) refs values =
+        patchImmutables bytes refs values ++ suffix
+  | [], _bytes, _suffix, _hIn => rfl
+  | (name, references) :: rest, bytes, suffix, hIn => by
+      have hHead : ∀ r ∈ references, r.start + 32 ≤ bytes.length :=
+        hIn (name, references) (List.mem_cons_self ..)
+      cases hFind : values.find? (fun entry => entry.fst == name) with
+      | none =>
+          rw [patchImmutables, hFind, patchImmutables_append
+            (fun e he => hIn e (List.mem_cons_of_mem _ he)), patchImmutables,
+            hFind]
+      | some entry =>
+          have hLen := patchImmutableReferences_length (value := entry.snd)
+            (references := references) (bytes := bytes) hHead
+          simp only [patchImmutables, hFind]
+          rw [patchImmutableReferences_append hHead,
+            patchImmutables_append (fun e he r hr => by
+              rw [hLen]; exact hIn e (List.mem_cons_of_mem _ he) r hr)]
+
+/-- Exported reference windows are in bounds of the zero-compile bytes. -/
+theorem immutableReferenceEntriesFromCodes_inBounds_zero
+    {zeroBytes markerBytes : List UInt8} {entries : List (Name × Word)} :
+    ∀ e ∈ immutableReferenceEntriesFromCodes zeroBytes markerBytes entries,
+      ∀ r ∈ e.snd, r.start + 32 ≤ zeroBytes.length := by
+  intro e he r hr
+  obtain ⟨value, _hv, hRefs⟩ :=
+    mem_immutableReferenceEntriesFromCodes_elim he
+  rw [hRefs] at hr
+  obtain ⟨_hMarker, hZero, _hLen⟩ :=
+    mem_immutableReferencesForMarkerFromCodes_facts hr
+  have hzl : zeroWord32.length = 32 := by
+    rw [zeroWord32_eq_replicate]; simp
+  have hBound := length_le_of_startsWithAt (by rw [hzl]; omega) hZero
+  rw [hzl] at hBound
+  exact hBound
+
+end Bytecode
+
+/-! ### Marker and zero entry plumbing -/
+
+theorem ImmutableReference.markerEntriesFromNat_map_fst :
+    ∀ (index : Nat) (names : List Name),
+      (ImmutableReference.markerEntriesFromNat index names).map Prod.fst =
+        names
+  | _index, [] => rfl
+  | index, _name :: rest => by
+      simp [ImmutableReference.markerEntriesFromNat,
+        ImmutableReference.markerEntriesFromNat_map_fst (index + 1) rest]
+
+theorem ImmutableReference.zeroEntries_snd :
+    ∀ {names : List Name} {e : Name × Word},
+      e ∈ ImmutableReference.zeroEntries names →
+      e.snd = EvmYul.UInt256.ofNat 0
+  | [], _e, hMem => by simp [ImmutableReference.zeroEntries] at hMem
+  | _name :: rest, e, hMem => by
+      rw [ImmutableReference.zeroEntries] at hMem
+      rcases List.mem_cons.mp hMem with rfl | hMem'
+      · rfl
+      · exact ImmutableReference.zeroEntries_snd hMem'
+
+theorem ImmutableReference.zeroEntries_find?_isSome :
+    ∀ {names : List Name} {name : Name}, name ∈ names →
+      ((ImmutableReference.zeroEntries names).find?
+        (fun e => e.fst == name)).isSome
+  | [], _name, hMem => by simp at hMem
+  | n :: rest, name, hMem => by
+      rw [ImmutableReference.zeroEntries]
+      by_cases hEq : (n == name) = true
+      · simp [List.find?_cons, hEq]
+      · rcases List.mem_cons.mp hMem with rfl | hMem'
+        · simp at hEq
+        · simp only [List.find?_cons, hEq]
+          exact ImmutableReference.zeroEntries_find?_isSome hMem'
+
+/-! ### Gate extraction -/
+
+theorem Object.immutablePatchChecked?_none_elim
+    {object : Object} {context : ObjectBuiltinContext}
+    {plan : Object.ImmutablePushPlan} {bytes markerBytes : List UInt8}
+    (hTarget : plan.markerTarget? = none)
+    (hGate : object.immutablePatchChecked? context plan bytes markerBytes =
+      true) :
+    object.loadImmutableNames = [] ∧ context.immutableValues = [] := by
+  unfold Object.immutablePatchChecked? at hGate
+  rw [hTarget] at hGate
+  simpa using hGate
+
+theorem Object.immutablePatchChecked?_some_elim
+    {object : Object} {context : ObjectBuiltinContext}
+    {plan : Object.ImmutablePushPlan} {bytes markerBytes : List UInt8}
+    {markerTarget : Assembly.Program}
+    (hTarget : plan.markerTarget? = some markerTarget)
+    (hGate : object.immutablePatchChecked? context plan bytes markerBytes =
+      true) :
+    plan.pinnedPushPcs =
+      Object.markerPushPcs
+        ((ImmutableReference.markerEntriesFromNat 0
+          object.loadImmutableNames).map Prod.snd) markerTarget ∧
+    (∀ name ∈ object.loadImmutableNames,
+      (context.immutableValues.find? fun entry =>
+        entry.fst == name).isSome = true) ∧
+    Bytecode.patchImmutables markerBytes
+        (Bytecode.immutableReferenceEntries markerBytes
+          (ImmutableReference.markerEntriesFromNat 0
+            object.loadImmutableNames))
+        context.immutableValues = bytes := by
+  unfold Object.immutablePatchChecked? at hGate
+  rw [hTarget] at hGate
+  simp only [Bool.and_eq_true, beq_iff_eq, List.all_eq_true] at hGate
+  exact ⟨hGate.1.1, fun name h => hGate.1.2 name h, hGate.2⟩
+
+/-! ### Push-plan extraction -/
+
+private theorem immutablePushPlanFor?_nilNames
+    {object : Object} {context : ObjectBuiltinContext}
+    {actual : Assembly.Program} {plan : Object.ImmutablePushPlan}
+    (hNames : object.loadImmutableNames = [])
+    (hPlan : object.immutablePushPlanFor? context actual = some plan) :
+    plan = { pinnedPushPcs := [], markerTarget? := none } := by
+  unfold Object.immutablePushPlanFor? at hPlan
+  rw [hNames] at hPlan
+  simp only [Option.some.injEq] at hPlan
+  exact hPlan.symm
+
+private theorem immutablePushPlanFor?_marker_chain
+    {object : Object} {context : ObjectBuiltinContext}
+    {actual : Assembly.Program} {plan : Object.ImmutablePushPlan}
+    {markerTarget : Assembly.Program}
+    (hPlan : object.immutablePushPlanFor? context actual = some plan)
+    (hTarget : plan.markerTarget? = some markerTarget) :
+    Assembly.Compact.differingPushPcs? actual markerTarget =
+        some plan.pinnedPushPcs ∧
+      ∃ resolved ordered lower compiledMarker,
+        object.resolveObjectBuiltinsIn?
+            { context with
+              immutableValues :=
+                ImmutableReference.markerEntriesFromNat 0
+                  object.loadImmutableNames } = some resolved ∧
+        resolved.toSolcYulOrderedProgram? = some ordered ∧
+        ordered.toObjects? = some lower ∧
+        Compiler.StackArtifact.compile? lower.toFunctions =
+          some compiledMarker ∧
+        markerTarget = compiledMarker.certified.target := by
+  unfold Object.immutablePushPlanFor? at hPlan
+  dsimp only [] at hPlan
+  split at hPlan
+  · simp only [Option.some.injEq] at hPlan
+    rw [← hPlan] at hTarget
+    simp at hTarget
+  · split at hPlan
+    · simp only [Option.some.injEq] at hPlan
+      rw [← hPlan] at hTarget
+      simp at hTarget
+    · simp only [Option.pure_def, Option.bind_eq_bind,
+        Option.bind_eq_some_iff] at hPlan
+      obtain ⟨resolved, hResolved, hPlan⟩ := hPlan
+      obtain ⟨ordered, hOrdered, hPlan⟩ := hPlan
+      obtain ⟨lower, hLower, hPlan⟩ := hPlan
+      obtain ⟨compiled, hCompiled, hPlan⟩ := hPlan
+      obtain ⟨pins, hPins, hPlan⟩ := hPlan
+      simp only [Option.some.injEq] at hPlan
+      rw [← hPlan] at hTarget ⊢
+      simp only [Option.some.injEq] at hTarget
+      subst hTarget
+      exact ⟨hPins, resolved, ordered, lower, compiled, hResolved,
+        hOrdered, hLower, hCompiled, rfl⟩
+
+/-! ### The unconditional endpoint -/
+
+/-- **Deploy-time patching is the value compile, unconditionally.**  Given
+only two compile-success hypotheses — the base compile with the zero
+immutable values (exactly what the checked object pipeline runs) and a
+compile with arbitrary deploy `values` — patching the base bytes at the
+exported immutable references with `values` reproduces the value compile's
+bytes exactly.  Every other hypothesis of
+`Object.patchImmutables_compileWithImmutableValues?` is discharged by the
+`immutablePatchChecked?` compile gate. -/
+theorem Object.patchImmutables_compileWithImmutableValues?_ofCompile
+    {object : Object} {context : ObjectBuiltinContext}
+    {values : List (Name × Word)}
+    {base withValues : VerifiedStackCodeArtifact}
+    (hBase : object.compileVerifiedStackCodeArtifactWithImmutableValues?
+      context (ImmutableReference.zeroEntries object.loadImmutableNames) =
+        some base)
+    (hValues : object.compileVerifiedStackCodeArtifactWithImmutableValues?
+      context values = some withValues) :
+    Bytecode.patchImmutables base.bytes
+      (Bytecode.immutableReferenceEntriesFromCodes base.bytes
+        base.immutableMarkerBytes
+        (ImmutableReference.markerEntriesFromNat 0
+          object.loadImmutableNames))
+      values = withValues.bytes := by
+  unfold Object.compileVerifiedStackCodeArtifactWithImmutableValues?
+    at hBase hValues
+  obtain ⟨_, _, _, _, planB, hPlanB, _, _, hMarkerB, hGateB⟩ :=
+    compileVerifiedStackCodeArtifactIn?_partsChecked hBase
+  obtain ⟨_, _, _, _, planV, hPlanV, _, _, hMarkerV, hGateV⟩ :=
+    compileVerifiedStackCodeArtifactIn?_partsChecked hValues
+  by_cases hNs : object.loadImmutableNames = []
+  · have hPlanVNil := immutablePushPlanFor?_nilNames hNs hPlanV
+    have hNoneV : planV.markerTarget? = none := by
+      rw [hPlanVNil]
+    have hVEmpty :=
+      (Object.immutablePatchChecked?_none_elim hNoneV hGateV).2
+    dsimp only at hVEmpty
+    have hCtxEq :
+        ({ context with
+            immutableValues :=
+              ImmutableReference.zeroEntries object.loadImmutableNames } :
+          ObjectBuiltinContext) =
+        { context with immutableValues := values } := by
+      rw [hNs, hVEmpty]
+      rfl
+    rw [hCtxEq] at hBase
+    have hSame : base = withValues :=
+      Option.some.inj (hBase.symm.trans hValues)
+    rw [hNs]
+    simp [ImmutableReference.markerEntriesFromNat,
+      Bytecode.immutableReferenceEntriesFromCodes,
+      Bytecode.patchImmutables, hSame]
+  · have hNsNe : object.loadImmutableNames ≠ [] := hNs
+    cases hTgtB : planB.markerTarget? with
+      | none =>
+          exact absurd
+            (Object.immutablePatchChecked?_none_elim hTgtB hGateB).1 hNsNe
+      | some mtB =>
+      cases hTgtV : planV.markerTarget? with
+      | none =>
+          exact absurd
+            (Object.immutablePatchChecked?_none_elim hTgtV hGateV).1 hNsNe
+      | some mtV =>
+      obtain ⟨_hDiffB, resolvedB, orderedB, lowerB, compiledMB,
+          hResB, hOrdB, hLowB, hCompB, hMtB⟩ :=
+        immutablePushPlanFor?_marker_chain hPlanB hTgtB
+      obtain ⟨_hDiffV, resolvedV, orderedV, lowerV, compiledMV,
+          hResV, hOrdV, hLowV, hCompV, hMtV⟩ :=
+        immutablePushPlanFor?_marker_chain hPlanV hTgtV
+      -- Both marker contexts are the same record, so the marker chains agree.
+      have hCtxMarker :
+          ({ { context with
+                immutableValues :=
+                  ImmutableReference.zeroEntries object.loadImmutableNames }
+              with
+              immutableValues :=
+                ImmutableReference.markerEntriesFromNat 0
+                  object.loadImmutableNames } : ObjectBuiltinContext) =
+          { { context with immutableValues := values } with
+              immutableValues :=
+                ImmutableReference.markerEntriesFromNat 0
+                  object.loadImmutableNames } := rfl
+      rw [hCtxMarker] at hResB
+      have hResEq : resolvedB = resolvedV :=
+        Option.some.inj (hResB.symm.trans hResV)
+      subst hResEq
+      have hOrdEq : orderedB = orderedV :=
+        Option.some.inj (hOrdB.symm.trans hOrdV)
+      subst hOrdEq
+      have hLowEq : lowerB = lowerV :=
+        Option.some.inj (hLowB.symm.trans hLowV)
+      subst hLowEq
+      have hCompEq : compiledMB = compiledMV :=
+        Option.some.inj (hCompB.symm.trans hCompV)
+      subst hCompEq
+      have hMtEq : mtB = mtV := by
+        rw [hMtB, hMtV]
+      -- Gate facts for both compiles.
+      obtain ⟨hPinsB, _hBoundB, hPatchB⟩ :=
+        Object.immutablePatchChecked?_some_elim hTgtB hGateB
+      obtain ⟨hPinsV, hBoundV, hPatchV⟩ :=
+        Object.immutablePatchChecked?_some_elim hTgtV hGateV
+      dsimp only at hPatchB hPatchV hBoundV
+      have hPinsEq : planB.pinnedPushPcs = planV.pinnedPushPcs := by
+        rw [hPinsB, hPinsV, hMtEq]
+      -- The two marker compiles coincide.
+      rcases compileImmutableMarkerBytes?_elim hMarkerB with
+        ⟨hNoneB, _⟩ | ⟨mtB', mcB, hTgtB', hCompactMB, hBytesMB⟩
+      · rw [hNoneB] at hTgtB
+        cases hTgtB
+      rcases compileImmutableMarkerBytes?_elim hMarkerV with
+        ⟨hNoneV, _⟩ | ⟨mtV', mcV, hTgtV', hCompactMV, hBytesMV⟩
+      · rw [hNoneV] at hTgtV
+        cases hTgtV
+      have hMtB' : mtB' = mtB :=
+        Option.some.inj (hTgtB'.symm.trans hTgtB)
+      have hMtV' : mtV' = mtV :=
+        Option.some.inj (hTgtV'.symm.trans hTgtV)
+      rw [hMtB', hMtEq] at hCompactMB
+      rw [hMtV'] at hCompactMV
+      rw [hPinsEq] at hCompactMB
+      have hMcEq : mcB = mcV :=
+        Option.some.inj (hCompactMB.symm.trans hCompactMV)
+      have hMEq : withValues.immutableMarkerBytes =
+          base.immutableMarkerBytes := by
+        rw [hBytesMV, hBytesMB, hMcEq]
+      rw [hMEq] at hPatchV
+      -- Abbreviations.
+      set M := base.immutableMarkerBytes with hM
+      set entries := ImmutableReference.markerEntriesFromNat 0
+        object.loadImmutableNames with hEntries
+      set refsM := Bytecode.immutableReferenceEntries M entries with hRefsM
+      -- Window bounds and lengths.
+      have hInM : ∀ e ∈ refsM, ∀ r ∈ e.snd, r.start + 32 ≤ M.length :=
+        Bytecode.immutableReferenceEntries_inBounds
+      have hLenBase : base.bytes.length = M.length := by
+        rw [← hPatchB]
+        exact Bytecode.patchImmutables_length hInM
+      -- Every reference-group name is an immutable name.
+      have hFstMem : ∀ e ∈ refsM, e.fst ∈ object.loadImmutableNames := by
+        intro e he
+        obtain ⟨v, hv, _⟩ := Bytecode.mem_immutableReferenceEntries_elim he
+        have hMem : e.fst ∈ entries.map Prod.fst :=
+          List.mem_map.mpr ⟨(e.fst, v), hv, rfl⟩
+        rwa [hEntries, ImmutableReference.markerEntriesFromNat_map_fst]
+          at hMem
+      have hBoundZero : ∀ e ∈ refsM,
+          ((ImmutableReference.zeroEntries object.loadImmutableNames).find?
+            (fun v => v.fst == e.fst)).isSome :=
+        fun e he => ImmutableReference.zeroEntries_find?_isSome (hFstMem e he)
+      have hBoundVals : ∀ e ∈ refsM,
+          (values.find? (fun v => v.fst == e.fst)).isSome :=
+        fun e he => hBoundV e.fst (hFstMem e he)
+      -- The compiled base agrees with the marker compile outside the windows.
+      have hAgree : ∀ p, base.bytes[p]? = M[p]? ∨
+          Bytecode.CoveredByRefs refsM p := by
+        intro p
+        by_cases hCov : Bytecode.CoveredByRefs refsM p
+        · exact Or.inr hCov
+        · left
+          rw [← hPatchB]
+          exact Bytecode.patchImmutables_getElem?_notCovered hInM hCov
+      -- The base carries the zero word at every exported window, so the
+      -- zero-filtered export equals the marker-only export.
+      have hZeroSites : ∀ e ∈ entries, ∀ p ∈ Bytecode.findOccurrences
+          (Assembly.Bytecode.encodeWord32 e.snd) M,
+          Bytecode.startsWithAt Bytecode.zeroWord32 base.bytes p = true := by
+        intro e he p hp
+        have hRef :
+            (⟨p, ImmutableReference.patchLength⟩ : ImmutableReference) ∈
+              Bytecode.immutableReferencesForMarker M e.snd :=
+          List.mem_map.mpr ⟨p, hp, rfl⟩
+        have hBucket := Bytecode.mem_immutableReferenceEntries
+          (markerBytes := M) he
+        have hStarts :=
+          Bytecode.mem_immutableReferencesForMarker_startsWithAt hRef
+        have hpLen : p + 32 ≤ M.length := by
+          have := Bytecode.length_le_of_startsWithAt
+            (by rw [Assembly.Bytecode.encodeWord32_length]; omega) hStarts
+          rw [Assembly.Bytecode.encodeWord32_length] at this
+          exact this
+        apply Bytecode.startsWithAt_zeroWord32_of_all_zero
+          (by rw [hLenBase]; exact hpLen)
+        intro q hq1 hq2
+        rw [← hPatchB]
+        apply Bytecode.patchImmutables_getElem?_zero
+          (fun e' he' => ImmutableReference.zeroEntries_snd he')
+          hInM hBoundZero
+        left
+        exact ⟨(e.fst, Bytecode.immutableReferencesForMarker M e.snd),
+          hBucket,
+          ⟨⟨p, ImmutableReference.patchLength⟩, hRef,
+            by constructor <;> omega⟩⟩
+      have hRefsEq : Bytecode.immutableReferenceEntriesFromCodes base.bytes
+          M entries = refsM :=
+        Bytecode.immutableReferenceEntriesFromCodes_eq_of_zeroBase hZeroSites
+      -- Assemble.
+      calc
+        Bytecode.patchImmutables base.bytes
+            (Bytecode.immutableReferenceEntriesFromCodes base.bytes M
+              entries) values
+            = Bytecode.patchImmutables base.bytes refsM values := by
+              rw [hRefsEq]
+        _ = Bytecode.patchImmutables M refsM values :=
+              Bytecode.patchImmutables_congr hLenBase
+                (fun e he r hr => by
+                  rw [hLenBase]; exact hInM e he r hr)
+                hBoundVals hAgree
+        _ = withValues.bytes := hPatchV
+
+/-! ### Image-level lift -/
+
+private theorem stabilizeObjectCodeBaseArtifact?_context_immutableValues
+    {α : Type}
+    {object : Object} {linkerSymbols : List (Name × Word)}
+    {childImages : List ObjectImage}
+    {childImmutableReferences : List (Name × List ImmutableReference)}
+    {immutableValues dataSizes : List (Name × Word)}
+    {items : List ObjectItemRef} {payload : List UInt8}
+    {compileArtifactIn? : ObjectBuiltinContext → Option α}
+    {artifactBytes : α → List UInt8}
+    {fuel candidate : Nat} {plan : Object.ObjectCodeBasePlan} {artifact : α}
+    (hStabilize :
+      Object.stabilizeObjectCodeBaseArtifact? object linkerSymbols
+        childImages childImmutableReferences immutableValues dataSizes items
+        payload compileArtifactIn? artifactBytes fuel candidate =
+          some (plan, artifact)) :
+    plan.context.immutableValues = immutableValues := by
+  induction fuel generalizing candidate with
+  | zero =>
+      unfold Object.stabilizeObjectCodeBaseArtifact? at hStabilize
+      obtain ⟨layout, _hLayout, hAfterLayout⟩ :=
+        Option.bind_eq_some_iff.mp hStabilize
+      obtain ⟨dataOffsets, _hOffsets, hAfterOffsets⟩ :=
+        Option.bind_eq_some_iff.mp hAfterLayout
+      let context : ObjectBuiltinContext :=
+        { layout := { entries := layout }
+          dataSizes := dataSizes
+          dataOffsets := dataOffsets
+          linkerSymbols := linkerSymbols
+          immutableValues := immutableValues
+          immutableReferences := childImmutableReferences
+          selfSize? := some
+            (object.name, EvmYul.UInt256.ofNat (candidate + payload.length)) }
+      change (if (!context.objectDataNamesUnique?) = true then none else
+        (compileArtifactIn? context).bind fun compiled =>
+          if ((artifactBytes compiled).length == candidate) = true then
+            some
+              ({ codeBase := candidate, layout, dataOffsets, context },
+                compiled)
+          else none) = some (plan, artifact) at hAfterOffsets
+      by_cases hUnique : context.objectDataNamesUnique?
+      · simp only [hUnique, Bool.not_true, Bool.false_eq_true, ↓reduceIte]
+          at hAfterOffsets
+        obtain ⟨compiled, _hCompiled, hAfterCompiled⟩ :=
+          Option.bind_eq_some_iff.mp hAfterOffsets
+        by_cases hLength : (artifactBytes compiled).length = candidate
+        · have hEq :
+              ({ codeBase := candidate, layout, dataOffsets, context },
+                  compiled) =
+                (plan, artifact) := by
+            simpa [hLength] using hAfterCompiled
+          cases hEq
+          rfl
+        · simp [hLength] at hAfterCompiled
+      · simp [hUnique] at hAfterOffsets
+  | succ fuel ih =>
+      unfold Object.stabilizeObjectCodeBaseArtifact? at hStabilize
+      obtain ⟨layout, _hLayout, hAfterLayout⟩ :=
+        Option.bind_eq_some_iff.mp hStabilize
+      obtain ⟨dataOffsets, _hOffsets, hAfterOffsets⟩ :=
+        Option.bind_eq_some_iff.mp hAfterLayout
+      let context : ObjectBuiltinContext :=
+        { layout := { entries := layout }
+          dataSizes := dataSizes
+          dataOffsets := dataOffsets
+          linkerSymbols := linkerSymbols
+          immutableValues := immutableValues
+          immutableReferences := childImmutableReferences
+          selfSize? := some
+            (object.name, EvmYul.UInt256.ofNat (candidate + payload.length)) }
+      change (if (!context.objectDataNamesUnique?) = true then none else
+        (compileArtifactIn? context).bind fun compiled =>
+          if ((artifactBytes compiled).length == candidate) = true then
+            some
+              ({ codeBase := candidate, layout, dataOffsets, context },
+                compiled)
+          else
+            Object.stabilizeObjectCodeBaseArtifact? object linkerSymbols
+              childImages childImmutableReferences immutableValues dataSizes
+              items payload compileArtifactIn? artifactBytes fuel
+                (artifactBytes compiled).length) =
+          some (plan, artifact) at hAfterOffsets
+      by_cases hUnique : context.objectDataNamesUnique?
+      · simp only [hUnique, Bool.not_true, Bool.false_eq_true, ↓reduceIte]
+          at hAfterOffsets
+        obtain ⟨compiled, _hCompiled, hAfterCompiled⟩ :=
+          Option.bind_eq_some_iff.mp hAfterOffsets
+        by_cases hLength : (artifactBytes compiled).length = candidate
+        · have hEq :
+              ({ codeBase := candidate, layout, dataOffsets, context },
+                  compiled) =
+                (plan, artifact) := by
+            simpa [hLength] using hAfterCompiled
+          cases hEq
+          rfl
+        · simp [hLength] at hAfterCompiled
+          exact ih hAfterCompiled
+      · simp [hUnique] at hAfterOffsets
+
+private theorem planObjectArtifactFromChildImagesArtifactWith?_context_immutableValues
+    {α : Type}
+    {object : Object} {linkerSymbols : List (Name × Word)}
+    {childImages : List ObjectImage}
+    {compileArtifactIn? : ObjectBuiltinContext → Option α}
+    {artifactBytes : α → List UInt8}
+    {plan : Object.ObjectArtifactPlan} {artifact : α}
+    (hPlan :
+      Object.planObjectArtifactFromChildImagesArtifactWith? object
+        linkerSymbols childImages compileArtifactIn? artifactBytes =
+          some (plan, artifact)) :
+    plan.context.immutableValues =
+      ImmutableReference.zeroEntries object.loadImmutableNames := by
+  unfold Object.planObjectArtifactFromChildImagesArtifactWith? at hPlan
+  obtain ⟨items, _hItems, hAfterItems⟩ :=
+    Option.bind_eq_some_iff.mp hPlan
+  obtain ⟨dataSizes, _hDataSizes, hAfterDataSizes⟩ :=
+    Option.bind_eq_some_iff.mp hAfterItems
+  obtain ⟨payload, _hPayload, hAfterPayload⟩ :=
+    Option.bind_eq_some_iff.mp hAfterDataSizes
+  obtain ⟨stabilizedArtifact, hStabilized, hAfterStabilized⟩ :=
+    Option.bind_eq_some_iff.mp hAfterPayload
+  rcases stabilizedArtifact with ⟨stabilized, compiled⟩
+  simp only [Option.some.injEq, Prod.mk.injEq] at hAfterStabilized
+  rcases hAfterStabilized with ⟨hPlanEq, hArtifactEq⟩
+  subst plan
+  subst artifact
+  exact stabilizeObjectCodeBaseArtifact?_context_immutableValues hStabilized
+
+/-- **Deploy-time patching at image level, unconditionally.**  For any
+successful object-artifact compile (the exported pipeline itself) and any
+successful code compile with deploy `values` in the artifact's own context,
+patching the exported image bytes at the artifact's own immutable references
+yields the value compile's code bytes followed by the unchanged payload. -/
+theorem Object.patchImmutables_image_compileWithImmutableValues?_ofCompile
+    {object : Object} {linkerSymbols values : List (Name × Word)}
+    {artifact : VerifiedStackObjectArtifact}
+    {withValues : VerifiedStackCodeArtifact}
+    (hArtifact : object.compileVerifiedStackObjectArtifactWithLinkerSymbols?
+      linkerSymbols = some artifact)
+    (hValues : object.compileVerifiedStackCodeArtifactWithImmutableValues?
+      artifact.computed.context values = some withValues) :
+    Bytecode.patchImmutables artifact.image.bytes
+      (Bytecode.immutableReferenceEntriesFromCodes
+        artifact.codeArtifact.bytes
+        artifact.codeArtifact.immutableMarkerBytes
+        (ImmutableReference.markerEntriesFromNat 0
+          object.loadImmutableNames))
+      values = withValues.bytes ++ artifact.computed.payload := by
+  obtain ⟨childArtifacts, plan, codeArtifact, _hChildren, hPlan, _hFinish,
+      hCode, _hChildrenEq, hContextEq, _hChildImages, hPayloadEq, hImage⟩ :=
+    Object.compileVerifiedStackObjectArtifactWithLinkerSymbols?_parts
+      hArtifact
+  have hPlanIv : plan.context.immutableValues =
+      ImmutableReference.zeroEntries object.loadImmutableNames := by
+    unfold Object.planVerifiedStackObjectArtifactFromChildren? at hPlan
+    exact
+      planObjectArtifactFromChildImagesArtifactWith?_context_immutableValues
+        hPlan
+  have hCtx : ({ plan.context with
+      immutableValues :=
+        ImmutableReference.zeroEntries object.loadImmutableNames } :
+        ObjectBuiltinContext) = plan.context := by
+    rw [← hPlanIv]
+  have hBase : object.compileVerifiedStackCodeArtifactWithImmutableValues?
+      plan.context
+      (ImmutableReference.zeroEntries object.loadImmutableNames) =
+      some artifact.codeArtifact := by
+    unfold Object.compileVerifiedStackCodeArtifactWithImmutableValues?
+    rw [hCtx]
+    exact hCode
+  rw [hContextEq] at hValues
+  have hPatchCode :=
+    Object.patchImmutables_compileWithImmutableValues?_ofCompile hBase
+      hValues
+  have hInCode := Bytecode.immutableReferenceEntriesFromCodes_inBounds_zero
+    (zeroBytes := artifact.codeArtifact.bytes)
+    (markerBytes := artifact.codeArtifact.immutableMarkerBytes)
+    (entries := ImmutableReference.markerEntriesFromNat 0
+      object.loadImmutableNames)
+  rw [hImage, hPayloadEq, Bytecode.patchImmutables_append hInCode,
+    hPatchCode]
+
 end Frontend
 end Solidity
 end EvmCompiler
@@ -1289,3 +2296,7 @@ end EvmCompiler
   EvmCompiler.Solidity.Frontend.Bytecode.patchImmutables_valueBytes_of_byteDiffs
 #print axioms
   EvmCompiler.Solidity.Frontend.Object.patchImmutables_compileWithImmutableValues?
+#print axioms
+  EvmCompiler.Solidity.Frontend.Object.patchImmutables_compileWithImmutableValues?_ofCompile
+#print axioms
+  EvmCompiler.Solidity.Frontend.Object.patchImmutables_image_compileWithImmutableValues?_ofCompile

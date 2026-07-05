@@ -1648,6 +1648,32 @@ def zeroImmutableReferenceEntries : List UInt8 →
       zeroImmutableReferenceEntries
         (zeroImmutableReferences bytes references) rest
 
+/-- Patch one immutable value into every exported reference site. -/
+def patchImmutableReferences (value : Word) :
+    List UInt8 → List ImmutableReference → List UInt8
+  | bytes, [] => bytes
+  | bytes, reference :: rest =>
+      patchImmutableReferences value
+        (patchBytesAt reference.start (Assembly.Bytecode.encodeWord32 value)
+          bytes) rest
+
+/-- Patch deploy-time immutable `values` into `bytes` at the exported
+`refs` (the shape of `ObjectImage.immutableReferences`).  Mirrors
+`zeroImmutableReferenceEntries`, writing the value assigned to each name
+instead of the zero word.  Reference groups whose name carries no assigned
+value are left untouched. -/
+def patchImmutables (bytes : List UInt8)
+    (refs : List (Name × List ImmutableReference))
+    (values : List (Name × Word)) : List UInt8 :=
+  match refs with
+  | [] => bytes
+  | (name, references) :: rest =>
+      match values.find? (fun entry => entry.fst == name) with
+      | some entry =>
+          patchImmutables (patchImmutableReferences entry.snd bytes references)
+            rest values
+      | none => patchImmutables bytes rest values
+
 def immutableReferencesForMarker (bytes : List UInt8) (value : Word) :
     List ImmutableReference :=
   (findOccurrences (Assembly.Bytecode.encodeWord32 value) bytes).map
@@ -3575,6 +3601,55 @@ def compileImmutableMarkerBytes? (plan : ImmutablePushPlan)
         Assembly.Compact.compile? markerTarget plan.pinnedPushPcs
       some (markerCompact.bytes.toList ++ verifiedCodeSentinel)
 
+/-- Source pcs of the pushes in the prepared marker program whose payload is
+one of the marker words.  Pin sets accepted by `immutablePatchChecked?` must
+equal this list, which makes the pin set — and hence the marker compile — a
+function of the marker program alone, independent of the immutable values
+being resolved into the actual compile. -/
+def markerPushPcsFrom (markerWords : List Word) :
+    Assembly.Program → Nat → List Nat
+  | [], _sourcePc => []
+  | .push value :: rest, sourcePc =>
+      if markerWords.contains value then
+        sourcePc ::
+          markerPushPcsFrom markerWords rest
+            (sourcePc + (Assembly.Instr.push value).byteSize)
+      else
+        markerPushPcsFrom markerWords rest
+          (sourcePc + (Assembly.Instr.push value).byteSize)
+  | instr :: rest, sourcePc =>
+      markerPushPcsFrom markerWords rest (sourcePc + instr.byteSize)
+
+def markerPushPcs (markerWords : List Word) (marker : Assembly.Program) :
+    List Nat :=
+  markerPushPcsFrom markerWords (Assembly.Compact.prepare marker) 0
+
+/-- Compile-time immutable-patch gate.  A compile is accepted only when its
+byte image is literally the marker compile patched at the marker-word
+occurrence sites with the context's own immutable values, the pin set is the
+canonical marker pin set, and every immutable name is bound in the context.
+Compiles without a marker pass are accepted only for immutable-free objects
+under an empty immutable-value assignment.  Successful compilation therefore
+hands every deploy-time patch theorem its hypotheses. -/
+def immutablePatchChecked? (object : Object)
+    (context : ObjectBuiltinContext) (plan : ImmutablePushPlan)
+    (bytes immutableMarkerBytes : List UInt8) : Bool :=
+  match plan.markerTarget? with
+  | none =>
+      object.loadImmutableNames.isEmpty && context.immutableValues.isEmpty
+  | some markerTarget =>
+      let entries :=
+        ImmutableReference.markerEntriesFromNat 0 object.loadImmutableNames
+      plan.pinnedPushPcs ==
+          markerPushPcs (entries.map Prod.snd) markerTarget &&
+        object.loadImmutableNames.all (fun name =>
+          (context.immutableValues.find? fun entry =>
+            entry.fst == name).isSome) &&
+        Bytecode.patchImmutables immutableMarkerBytes
+            (Bytecode.immutableReferenceEntries immutableMarkerBytes entries)
+            context.immutableValues ==
+          bytes
+
 def compileVerifiedStackCodeArtifactIn? (object : Object)
     (context : ObjectBuiltinContext) : Option VerifiedStackCodeArtifact := do
   let resolved ← object.resolveObjectBuiltinsIn? context
@@ -3587,11 +3662,15 @@ def compileVerifiedStackCodeArtifactIn? (object : Object)
     Assembly.Compact.compile? compiled.certified.target pushPlan.pinnedPushPcs
   let bytes := compact.bytes.toList ++ verifiedCodeSentinel
   let immutableMarkerBytes ← compileImmutableMarkerBytes? pushPlan compact
-  some
-    { resolved, ordered, lower, compiled, compact, bytes,
-      immutableMarkerBytes }
+  if object.immutablePatchChecked? context pushPlan bytes
+      immutableMarkerBytes then
+    some
+      { resolved, ordered, lower, compiled, compact, bytes,
+        immutableMarkerBytes }
+  else
+    none
 
-theorem compileVerifiedStackCodeArtifactIn?_parts
+theorem compileVerifiedStackCodeArtifactIn?_partsChecked
     {object : Object} {context : ObjectBuiltinContext}
     {artifact : VerifiedStackCodeArtifact}
     (hCompile : object.compileVerifiedStackCodeArtifactIn? context =
@@ -3609,7 +3688,9 @@ theorem compileVerifiedStackCodeArtifactIn?_parts
         artifact.bytes =
           artifact.compact.bytes.toList ++ verifiedCodeSentinel ∧
         compileImmutableMarkerBytes? pushPlan artifact.compact =
-          some artifact.immutableMarkerBytes := by
+          some artifact.immutableMarkerBytes ∧
+        object.immutablePatchChecked? context pushPlan artifact.bytes
+          artifact.immutableMarkerBytes = true := by
   unfold compileVerifiedStackCodeArtifactIn? at hCompile
   cases hResolved : object.resolveObjectBuiltinsIn? context with
   | none => simp [hResolved] at hCompile
@@ -3647,6 +3728,7 @@ theorem compileVerifiedStackCodeArtifactIn?_parts
                           | some immutableMarkerBytes =>
                               simp [hResolved, hOrdered, hLower, hCompiled,
                                 hPlan, hCompact, hMarker] at hCompile
+                              obtain ⟨hGate, hArtifact⟩ := hCompile
                               subst artifact
                               exact
                                 ⟨by simpa using hResolved,
@@ -3655,7 +3737,33 @@ theorem compileVerifiedStackCodeArtifactIn?_parts
                                   by simpa using hCompiled,
                                   pushPlan, by simpa using hPlan,
                                   by simpa using hCompact, by simp,
-                                  by simpa using hMarker⟩
+                                  by simpa using hMarker,
+                                  by simpa using hGate⟩
+
+theorem compileVerifiedStackCodeArtifactIn?_parts
+    {object : Object} {context : ObjectBuiltinContext}
+    {artifact : VerifiedStackCodeArtifact}
+    (hCompile : object.compileVerifiedStackCodeArtifactIn? context =
+      some artifact) :
+    object.resolveObjectBuiltinsIn? context = some artifact.resolved ∧
+      artifact.resolved.toSolcYulOrderedProgram? = some artifact.ordered ∧
+      artifact.ordered.toObjects? = some artifact.lower ∧
+      Compiler.StackArtifact.compile? artifact.lower.toFunctions =
+        some artifact.compiled ∧
+      ∃ pushPlan,
+        object.immutablePushPlanFor? context artifact.compiled.certified.target =
+          some pushPlan ∧
+        Assembly.Compact.compile? artifact.compiled.certified.target
+            pushPlan.pinnedPushPcs = some artifact.compact ∧
+        artifact.bytes =
+          artifact.compact.bytes.toList ++ verifiedCodeSentinel ∧
+        compileImmutableMarkerBytes? pushPlan artifact.compact =
+          some artifact.immutableMarkerBytes := by
+  obtain ⟨hResolved, hOrdered, hLower, hCompiled, pushPlan, hPlan, hCompact,
+      hBytes, hMarker, _hGate⟩ :=
+    compileVerifiedStackCodeArtifactIn?_partsChecked hCompile
+  exact ⟨hResolved, hOrdered, hLower, hCompiled, pushPlan, hPlan, hCompact,
+    hBytes, hMarker⟩
 
 theorem compileVerifiedStackCodeArtifactIn?_function_entry
     {object : Object} {context : ObjectBuiltinContext}
