@@ -204,16 +204,19 @@ def Diag.render : Diag → String
   | .fuel visited => s!"fuel-exhausted visited={visited}"
 
 /-- Instrumented mirror of `StackHeadroom.buildLoop`: identical traversal
-order and fuel, but reports WHY the builder returns `none`. -/
+order, fuel, and accept/reject behaviour (`mkStacks? = none` exactly when
+this returns a non-`ok` diagnosis), but reports WHY the builder returns
+`none` and how large the built table is. -/
 partial def diagLoop (artifact : Compact.Artifact)
     (table : Std.HashMap Nat Compact.SourceBlock) :
     Nat → Std.HashMap Nat (List StackHeadroom.AbsStack) →
-      List (Nat × StackHeadroom.AbsStack) → Nat → Diag
-  | _, _, [], visited => .ok visited
-  | 0, _, _, visited => .fuel visited
+      List (Nat × StackHeadroom.AbsStack) → Nat →
+      Diag × Std.HashMap Nat (List StackHeadroom.AbsStack)
+  | _, acc, [], visited => (.ok visited, acc)
+  | 0, acc, _, visited => (.fuel visited, acc)
   | fuel + 1, acc, (pc, astack) :: work, visited =>
       if astack.length > StackHeadroom.stackCap then
-        .cap pc astack.length visited
+        (.cap pc astack.length visited, acc)
       else
         let known := (acc.get? pc).getD []
         if known.contains astack then
@@ -225,20 +228,35 @@ partial def diagLoop (artifact : Compact.Artifact)
           | some block =>
               match StackHeadroom.builderSuccessors artifact block astack with
               | none =>
-                  .stuck pc (instrKind block.sourceInstr) astack.length
-                    visited
+                  (.stuck pc (instrKind block.sourceInstr) astack.length
+                    visited, acc)
               | some successors =>
                   diagLoop artifact table fuel acc (successors ++ work)
                     (visited + 1)
 
-def diagnose (artifact : Compact.Artifact) : Diag :=
+def diagnose (artifact : Compact.Artifact) :
+    Diag × Std.HashMap Nat (List StackHeadroom.AbsStack) :=
   diagLoop artifact (StackHeadroom.blockTable artifact.blocks)
     (16 * (StackHeadroom.stackCap + 1) * (artifact.blocks.length + 1) + 16)
     Std.HashMap.emptyWithCapacity [(0, [])] 0
 
+/-- `check?` scans the full flat table once per `stacksAt`/`memStack`
+query, so validating a table of `E` entries against `B` blocks costs on
+the order of `B * E` table-element visits (more with midpoint queries).
+Above this budget the interpreted validator would run for hours, so the
+probe reports the builder verdict and skips the trusted re-validation.
+Tune with PROBE_CHECK_BUDGET=<Nat> (0 = never skip). -/
+def defaultCheckBudget : Nat := 2000000000
+
 def main : IO Unit := do
+  let budget :=
+    match (← IO.getEnv "PROBE_CHECK_BUDGET") with
+    | some value => value.toNat?.getD defaultCheckBudget
+    | none => defaultCheckBudget
+  let stdout ← IO.getStdout
   let mut accepted := 0
   let mut rejected := 0
+  let mut builderOnly := 0
   let mut compileFailed := 0
   for case in probeCases do
     let input ← IO.FS.readFile case.rawPath
@@ -249,36 +267,56 @@ def main : IO Unit := do
         let caseEnd ← IO.monoMsNow
         IO.println (case.label ++ "\tCOMPILE_FAILED\tms=" ++
           toString (caseEnd - caseStart))
+        stdout.flush
     | some artifact =>
         let compact := artifact.codeArtifact.compact
-        let cert? := StackHeadroom.mkCert? compact
-        match cert? with
-        | some cert =>
-            accepted := accepted + 1
-            let caseEnd ← IO.monoMsNow
-            IO.println (case.label ++ "\tACCEPT" ++
-              "\tblocks=" ++ toString compact.blocks.length ++
-              "\tbytes=" ++ toString artifact.image.bytes.length ++
-              "\tentries=" ++ toString cert.table.length ++
-              "\tms=" ++ toString (caseEnd - caseStart))
-        | none =>
+        let blocks := compact.blocks.length
+        let (diag, built) := diagnose compact
+        let entries :=
+          built.toList.foldl (fun acc entry => acc + entry.2.length) 0
+        let stats :=
+          "\tblocks=" ++ toString blocks ++
+          "\tbytes=" ++ toString artifact.image.bytes.length ++
+          "\tentries=" ++ toString entries
+        match diag with
+        | .ok _ =>
+            if budget == 0 || blocks * entries ≤ budget then
+              -- The ground truth: the fail-closed certificate producer.
+              match StackHeadroom.mkCert? compact with
+              | some cert =>
+                  accepted := accepted + 1
+                  let caseEnd ← IO.monoMsNow
+                  IO.println (case.label ++ "\tACCEPT" ++ stats ++
+                    "\tcert_entries=" ++ toString cert.table.length ++
+                    "\tms=" ++ toString (caseEnd - caseStart))
+              | none =>
+                  rejected := rejected + 1
+                  let caseEnd ← IO.monoMsNow
+                  IO.println (case.label ++ "\tREJECT" ++ stats ++
+                    "\tms=" ++ toString (caseEnd - caseStart) ++
+                    "\tdiag=check?-failed after " ++ diag.render)
+            else
+              builderOnly := builderOnly + 1
+              let caseEnd ← IO.monoMsNow
+              IO.println (case.label ++ "\tBUILDER_OK_CHECK_SKIPPED" ++
+                stats ++ "\tms=" ++ toString (caseEnd - caseStart) ++
+                "\tdiag=" ++ diag.render ++
+                " (blocks*entries=" ++ toString (blocks * entries) ++
+                " > budget " ++ toString budget ++
+                "; interpreted check? would take hours)")
+        | _ =>
+            -- The diagnostic loop mirrors `buildLoop` exactly, so a
+            -- non-ok diagnosis means `mkStacks?` (hence `mkCert?`)
+            -- returns `none`.
             rejected := rejected + 1
-            let diag := diagnose compact
-            let detail :=
-              match diag with
-              | .ok _ =>
-                  -- Builder succeeded, so the trusted re-validation
-                  -- (`check?`) rejected the built table.
-                  "check?-failed after " ++ diag.render
-              | _ => diag.render
             let caseEnd ← IO.monoMsNow
-            IO.println (case.label ++ "\tREJECT" ++
-              "\tblocks=" ++ toString compact.blocks.length ++
-              "\tbytes=" ++ toString artifact.image.bytes.length ++
+            IO.println (case.label ++ "\tREJECT" ++ stats ++
               "\tms=" ++ toString (caseEnd - caseStart) ++
-              "\tdiag=" ++ detail)
+              "\tdiag=" ++ diag.render)
+        stdout.flush
   IO.println ("accepted=" ++ toString accepted ++
     " rejected=" ++ toString rejected ++
+    " builder_only=" ++ toString builderOnly ++
     " compile_failed=" ++ toString compileFailed)
 """
 
