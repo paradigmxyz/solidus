@@ -157,9 +157,14 @@ checked dialect profile. Unknown future names fail closed.
 
 Closed native frame execution is governed by the EVMYulLean commit selected in
 `lakefile.lean`. This compiler repo currently pins
-`8b610d524898f9bc7d451b017e0df6057cc88cd9`, which includes native `CLZ`,
-execution-side EIP-7702 delegated-code lookup, and Fusaka MODEXP gas/size
-rules. The raw solc `clz` builtin is still supported through the verified
+`3c5c44a62f4e7964bd1bc648caa708a111664c84` (branch `djtotal`), which includes
+native `CLZ`, execution-side EIP-7702 delegated-code lookup, Fusaka MODEXP
+gas/size rules, and a total Nat-indexed jumpdest scanner `D_J_aux`
+(`termination_by c.size - n`) with unfolding lemmas
+(`D_J_aux_out_of_bounds`/`D_J_aux_step`/`D_J_def`); `D_J`'s signature and
+values are unchanged, but the scanner is no longer opaque, which is what lets
+this repo prove jumpdest-scan membership instead of gating on the runtime
+`jumpdestCorrect?` check. The raw solc `clz` builtin is still supported through the verified
 generated-helper lowering, so the compiler does not need to emit the native
 opcode. EIP-7702 transaction authorization-list processing remains outside this
 frame-level compiler theorem.
@@ -221,9 +226,25 @@ endpoints
 entered at that run reports the same exceptional halt, and a message-call
 boundary `Θ` built on it commits to the canonical exceptional-halt collapse —
 caller world and substate restored to the checkpoint, zero returned gas,
-failure flag set, empty output. The residual bad-jump and stack-overflow
-branches still record only the exceptional label with a transcript-prefix
-fact; strengthening them is tracked by their own campaigns.
+failure flag set, empty output.
+
+The bad-jump branch is now excluded outright for compiled artifacts when the
+jump table is the interpreter's own jumpdest scan of the installed image —
+exactly the table `Ξ`/`Θ` install (`EVM.X f (D_J code 0)`). The compact
+compiler emits fixed-label branches only; every label destination lowers to a
+located `JUMPDEST`, and `Assembly.Compact.D_J_contains_of_decodingCorrect`
+proves EVMYulLean's scanner lists each of them over the artifact image
+(suffix-tolerantly, so creation frames with appended constructor arguments
+are covered). `Assembly.GasfulBridge.x_ne_badJumpDestination_of_frame` turns
+this into `EVM.X fuel validJumps s ≠ .error BadJumpDestination` with no
+stack certificate, and the endpoints
+`Solidity.Frontend.VerifiedStackObjectArtifact.x_ne_badJumpDestination`
+(+ `_withCodeSuffix`) and `...runRefinesOpen_noBadJump` (+ `_withCodeSuffix`)
+prune the `badJumpDestination` constructor from any `RunRefinesOpen` witness
+(`Assembly.GasfulBridge.RunRefinesOpenNoBadJump`). The residual
+stack-overflow branch is excluded separately by the fail-closed
+stack-headroom certificate (`RunRefinesOpenNoStackOverflow`); the
+`RunRefinesOpen` constructor itself is retained additively for now.
 
 ## Creation Frames And Constructor Arguments
 
@@ -240,10 +261,13 @@ sides, so source `CODESIZE`/`CODECOPY` observe exactly the code decoded by the
 target machine — the mechanism solc constructors use to read their arguments.
 The gasful variant enters at `EVM.X f (D_J (image ++ suffix) 0) initial`,
 matching EvmYul's real creation-frame entry: jump-destination validity is
-computed over the full installed code, covered-path jump targets still come
-from the compact layout inside the checked image, and jumps into the suffix
-are absorbed by the pre-existing bad-jump branch of `RunRefinesOpen`. The
-bad-jump and out-of-gas outcome branches of the bridge relation are unchanged.
+computed over the full installed code, and covered-path jump targets still
+come from the compact layout inside the checked image. With the jumpdest-scan
+membership theorems, that entry table provably lists every compiled label
+destination even with the suffix appended, so the bad-jump branch is
+refutable for these frames
+(`VerifiedStackObjectArtifact.x_ne_badJumpDestination_withCodeSuffix`); the
+out-of-gas outcome branch of the bridge relation is unchanged.
 The exact-image theorems are the `suffix := []` instances (up to
 `List.append_nil`), and remain the published runtime-code endpoints.
 

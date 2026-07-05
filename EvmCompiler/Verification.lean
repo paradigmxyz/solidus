@@ -23,6 +23,7 @@ import EvmCompiler.Solidity.ImmutablePatch
 import EvmCompiler.Solidity.LibraryPatch
 import EvmCompiler.Solidity.RawAstPublic
 import EvmCompiler.Solidity.RawAstEndToEnd
+import EvmCompiler.Solidity.JumpTargetEndToEnd
 import EvmCompiler.Yul.FunctionsInteractionProgram
 import EvmCompiler.Yul.EndToEnd
 import EvmCompiler.Yul.GasfulEndToEnd
@@ -1952,3 +1953,32 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Yul.EndToEnd.optimizedSolcYulToGasfulRawBytecodeOfRecursiveFrameBridge
 #print axioms EvmCompiler.Yul.EndToEnd.optimizedSolcYulToRawBytecodeFinished
 #print axioms EvmCompiler.Yul.EndToEnd.optimizedSolcYulToRawBytecodeFinishedLegacy
+
+/-! ## Bad-jump exclusion (jumpdest-scan membership, no certificate) -/
+
+#check EvmCompiler.Assembly.Compact.D_J_aux_contains_mono
+#check EvmCompiler.Assembly.Compact.parse_of_decodeAt
+#check EvmCompiler.Assembly.Compact.D_J_aux_contains_of_layout
+#check EvmCompiler.Assembly.Compact.D_J_contains_of_decodingCorrect
+#check EvmCompiler.Assembly.GasfulBridge.compact_lookup_destination_jumpdest_mem
+#check EvmCompiler.Assembly.GasfulBridge.LabelTargetsListed
+#check EvmCompiler.Assembly.GasfulBridge.labelTargetsListed_D_J
+#check EvmCompiler.Assembly.GasfulBridge.artifactFramePoint_not_badJump
+#check EvmCompiler.Assembly.GasfulBridge.step_error_ne_badJumpDestination_at
+#check EvmCompiler.Assembly.GasfulBridge.x_ne_badJumpDestination_of_invariants
+#check EvmCompiler.Assembly.GasfulBridge.x_ne_badJumpDestination_of_frame
+#check EvmCompiler.Assembly.GasfulBridge.RunRefinesOpenNoBadJump
+#check EvmCompiler.Assembly.GasfulBridge.runRefinesOpenNoBadJump_of_ne
+#check EvmCompiler.Solidity.Frontend.VerifiedStackObjectArtifact.x_ne_badJumpDestination
+#check EvmCompiler.Solidity.Frontend.VerifiedStackObjectArtifact.x_ne_badJumpDestination_withCodeSuffix
+#check EvmCompiler.Solidity.Frontend.VerifiedStackObjectArtifact.runRefinesOpen_noBadJump
+#check EvmCompiler.Solidity.Frontend.VerifiedStackObjectArtifact.runRefinesOpen_noBadJump_withCodeSuffix
+
+#print axioms EvmCompiler.Assembly.Compact.D_J_contains_of_decodingCorrect
+#print axioms EvmCompiler.Assembly.GasfulBridge.labelTargetsListed_D_J
+#print axioms EvmCompiler.Assembly.GasfulBridge.artifactFramePoint_not_badJump
+#print axioms EvmCompiler.Assembly.GasfulBridge.x_ne_badJumpDestination_of_frame
+#print axioms EvmCompiler.Solidity.Frontend.VerifiedStackObjectArtifact.x_ne_badJumpDestination
+#print axioms EvmCompiler.Solidity.Frontend.VerifiedStackObjectArtifact.x_ne_badJumpDestination_withCodeSuffix
+#print axioms EvmCompiler.Solidity.Frontend.VerifiedStackObjectArtifact.runRefinesOpen_noBadJump
+#print axioms EvmCompiler.Solidity.Frontend.VerifiedStackObjectArtifact.runRefinesOpen_noBadJump_withCodeSuffix
