@@ -241,10 +241,34 @@ stack certificate, and the endpoints
 `Solidity.Frontend.VerifiedStackObjectArtifact.x_ne_badJumpDestination`
 (+ `_withCodeSuffix`) and `...runRefinesOpen_noBadJump` (+ `_withCodeSuffix`)
 prune the `badJumpDestination` constructor from any `RunRefinesOpen` witness
-(`Assembly.GasfulBridge.RunRefinesOpenNoBadJump`). The residual
-stack-overflow branch is excluded separately by the fail-closed
-stack-headroom certificate (`RunRefinesOpenNoStackOverflow`); the
-`RunRefinesOpen` constructor itself is retained additively for now.
+(`Assembly.GasfulBridge.RunRefinesOpenNoBadJump`). The stack-overflow
+branch is excluded separately by the fail-closed stack-headroom certificate
+(`VerifiedStackObjectArtifact.stackHeadroomCert?`,
+`...x_ne_stackOverflow` + `_withCodeSuffix`,
+`RunRefinesOpenNoStackOverflow`); the `RunRefinesOpen` constructors are
+retained additively as intermediate views.
+
+These prunings are composed into a single crown at the gasful boundary. For
+a compiled artifact that carries a stack-headroom certificate
+(`stackHeadroomCert? = some cert`), the endpoints
+`Yul.EndToEnd.optimizedSolcYulToGasfulRawBytecodeTotal`
+(+ `FinishedTotal`, `TerminalTotal`, and `TotalWithCodeSuffix` for creation
+frames) conclude `Assembly.GasfulBridge.RunRefinesOpenTotal` at the
+gas-derived fuel `max budget (gasAvailable + 6)` against the interpreter's
+own jumpdest scan of the installed image, from compile success and
+`OpenStateRel` for the concrete initial frame alone. `RunRefinesOpenTotal`
+has no escape constructor: the charged run either completes in refinement
+with the source-related open run, collapses an exceptional child frame in
+step with the open run per EVM frame semantics (with the charged label
+provably none of `OutOfFuel`, `StackOverflow`, `BadJumpDestination`), or
+halts out-of-gas with the pinned committal rollback semantics
+(`OutOfGasFrameSemantics`: `Ξ` exceptional halt, `Θ` checkpoint rollback,
+zero returned gas, failure flag, empty output) — nothing else. `outOfFuel`
+is discharged structurally by the gas-derived fuel bound
+(`Assembly.GasfulFuelBound.x_ne_outOfFuel_of_gas_lt_fuel`), not by a
+per-execution hypothesis. Genuinely recursive programs, whose operand
+stacks are input-unbounded, fail the certificate closed and keep the
+committal endpoints instead.
 
 ## Creation Frames And Constructor Arguments
 

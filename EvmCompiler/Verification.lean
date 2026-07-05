@@ -24,9 +24,11 @@ import EvmCompiler.Solidity.LibraryPatch
 import EvmCompiler.Solidity.RawAstPublic
 import EvmCompiler.Solidity.RawAstEndToEnd
 import EvmCompiler.Solidity.JumpTargetEndToEnd
+import EvmCompiler.Solidity.StackHeadroomEndToEnd
 import EvmCompiler.Yul.FunctionsInteractionProgram
 import EvmCompiler.Yul.EndToEnd
 import EvmCompiler.Yul.GasfulEndToEnd
+import EvmCompiler.Yul.GasfulCrown
 
 /-!
 Production verification root for the optimized-solc-Yul stack-only backend.
@@ -1982,3 +1984,39 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.Frontend.VerifiedStackObjectArtifact.x_ne_badJumpDestination_withCodeSuffix
 #print axioms EvmCompiler.Solidity.Frontend.VerifiedStackObjectArtifact.runRefinesOpen_noBadJump
 #print axioms EvmCompiler.Solidity.Frontend.VerifiedStackObjectArtifact.runRefinesOpen_noBadJump_withCodeSuffix
+
+/-! ## Stack-headroom certificate (fail-closed, per-artifact) -/
+
+#check EvmCompiler.Solidity.Frontend.VerifiedStackObjectArtifact.stackHeadroomCert?
+#check EvmCompiler.Solidity.Frontend.VerifiedStackObjectArtifact.x_ne_stackOverflow
+#check EvmCompiler.Solidity.Frontend.VerifiedStackObjectArtifact.x_ne_stackOverflow_withCodeSuffix
+#check EvmCompiler.Solidity.Frontend.VerifiedStackObjectArtifact.runRefinesOpen_noStackOverflow
+#check EvmCompiler.Solidity.Frontend.VerifiedStackObjectArtifact.runRefinesOpen_noStackOverflow_withCodeSuffix
+
+#print axioms EvmCompiler.Solidity.Frontend.VerifiedStackObjectArtifact.x_ne_stackOverflow
+#print axioms EvmCompiler.Solidity.Frontend.VerifiedStackObjectArtifact.x_ne_stackOverflow_withCodeSuffix
+#print axioms EvmCompiler.Solidity.Frontend.VerifiedStackObjectArtifact.runRefinesOpen_noStackOverflow
+#print axioms EvmCompiler.Solidity.Frontend.VerifiedStackObjectArtifact.runRefinesOpen_noStackOverflow_withCodeSuffix
+
+/-! ## Gasful crown: no residual escape constructors -/
+
+#check EvmCompiler.Assembly.GasfulBridge.RunRefinesOpenTotal
+#check EvmCompiler.Assembly.GasfulBridge.RunRefinesOpenTotal.toRunRefinesOpenCommittal
+#check EvmCompiler.Assembly.GasfulBridge.runRefinesOpenTotal_of_committal
+#check EvmCompiler.Assembly.GasfulBridge.runRefinesOpenTotal_of_ne
+#check EvmCompiler.Yul.EndToEnd.verifiedArtifact_initial_code_eq
+#check EvmCompiler.Yul.EndToEnd.verifiedArtifact_initial_pc_eq
+#check EvmCompiler.Yul.EndToEnd.verifiedArtifact_initial_stack_eq
+#check EvmCompiler.Yul.EndToEnd.optimizedSolcYulToGasfulRawBytecodeGasBoundedWithCodeSuffix
+#check EvmCompiler.Yul.EndToEnd.optimizedSolcYulToGasfulRawBytecodeTotal
+#check EvmCompiler.Yul.EndToEnd.optimizedSolcYulToGasfulRawBytecodeFinishedTotal
+#check EvmCompiler.Yul.EndToEnd.optimizedSolcYulToGasfulRawBytecodeTerminalTotal
+#check EvmCompiler.Yul.EndToEnd.optimizedSolcYulToGasfulRawBytecodeTotalWithCodeSuffix
+
+#print axioms EvmCompiler.Assembly.GasfulBridge.runRefinesOpenTotal_of_committal
+#print axioms EvmCompiler.Assembly.GasfulBridge.runRefinesOpenTotal_of_ne
+#print axioms EvmCompiler.Yul.EndToEnd.optimizedSolcYulToGasfulRawBytecodeGasBoundedWithCodeSuffix
+#print axioms EvmCompiler.Yul.EndToEnd.optimizedSolcYulToGasfulRawBytecodeTotal
+#print axioms EvmCompiler.Yul.EndToEnd.optimizedSolcYulToGasfulRawBytecodeFinishedTotal
+#print axioms EvmCompiler.Yul.EndToEnd.optimizedSolcYulToGasfulRawBytecodeTerminalTotal
+#print axioms EvmCompiler.Yul.EndToEnd.optimizedSolcYulToGasfulRawBytecodeTotalWithCodeSuffix
