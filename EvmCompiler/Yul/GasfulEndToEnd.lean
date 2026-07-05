@@ -791,6 +791,308 @@ theorem optimizedSolcYulToGasfulRawBytecodeOfRecursiveFrameBridgeWithCodeSuffix
       Assembly.GasfulBridge.FrameReachable.initial hInitial
   exact ⟨structuredFuel, transcript, hAccepted, hForward, hGasful⟩
 
+/-!
+Escape-free gasful endpoints.
+
+The charged `EVM.X` interpreter threads its structural fuel through concrete
+CALL-family child frames, while the open runner models each call as a single
+exchange step. A frame that performs a CALL therefore couples the charged
+run's fuel demand to the concrete world state (the callee code installed in
+the account map), which the compiler-computed structural budget does not
+observe. The endpoints below prune the fuel-exhaustion constructor from the
+one fact that is both sufficient and checkable on the concrete run: the
+charged `EVM.X` evaluation at the compiler-computed budget does not report
+structural fuel exhaustion. For call-free frames this hypothesis reduces to a
+top-frame step-count margin; for call-bearing frames it additionally covers
+the concrete child frames.
+-/
+
+/-- Gasful recursive-frame endpoint with the structural fuel escape pruned.
+`hNoFuelStop` is checkable by evaluating the concrete charged run at the
+compiler-computed budget. -/
+theorem optimizedSolcYulToGasfulRawBytecodeOfRecursiveFrameBridgeHalting
+    {object : Solidity.Frontend.Object}
+    {linkerSymbols : List
+      (Solidity.Frontend.Name × Solidity.Frontend.Word)}
+    {artifact : Solidity.Frontend.VerifiedStackObjectArtifact}
+    {sourceFuel : Nat}
+    {baseSource : EvmYul.SharedState .Yul}
+    {gasfulInitial : Assembly.EVMState}
+    (hObject :
+      object.compileVerifiedStackObjectArtifactWithLinkerSymbols?
+          linkerSymbols = some artifact)
+    (hInitial :
+      Assembly.GasfulBridge.OpenStateRel gasfulInitial
+        { (initialExpressionsState artifact baseSource).evm with
+          pc := EvmYul.UInt256.ofNat 0 })
+    (hNoFuelStop :
+      ∀ structuredFuel,
+        EvmYul.EVM.X
+          (2 *
+            ((Structured.InteractionStaticCost.blockBudget
+                artifact.codeArtifact.compiled.expressions.toStructured
+                structuredFuel
+                artifact.codeArtifact.compiled.expressions.toStructured.body +
+                  1) *
+              TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
+                artifact.codeArtifact.compiled.cfg))
+          (EvmYul.EVM.D_J
+            (Assembly.Bytecode.ofList artifact.image.bytes)
+            (EvmYul.UInt256.ofNat 0))
+          gasfulInitial ≠
+          .error EvmYul.EVM.ExecutionException.OutOfFuel) :
+    ∃ structuredFuel transcript,
+      Assembly.Accepted artifact.codeArtifact.compiled.certified.target ∧
+        Simulation.Interaction.ForwardRel
+          FunctionsInteractionPrimitive.Truncated
+          (Compiler.OpenInteractionComposition.VerifiedStackObjectPrefixDoneRel
+            artifact)
+          (InteractionSemantics.exec (sourceFuel + 1)
+            (.Block
+              [artifact.codeArtifact.ordered.program.contract.dispatcher])
+            (some artifact.codeArtifact.ordered.program.contract)
+            (installedSourceState artifact baseSource))
+          (Assembly.Compact.InteractionSemantics.openRunNResult
+            (Assembly.Bytecode.ofList artifact.image.bytes)
+            (2 *
+              ((Structured.InteractionStaticCost.blockBudget
+                  artifact.codeArtifact.compiled.expressions.toStructured
+                  structuredFuel
+                  artifact.codeArtifact.compiled.expressions.toStructured.body +
+                    1) *
+                TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
+                  artifact.codeArtifact.compiled.cfg))
+            { (initialExpressionsState artifact baseSource).evm with
+              pc := EvmYul.UInt256.ofNat 0 }) ∧
+        Assembly.GasfulBridge.RunRefinesOpenHalting
+          (EvmYul.EVM.X
+            (2 *
+              ((Structured.InteractionStaticCost.blockBudget
+                  artifact.codeArtifact.compiled.expressions.toStructured
+                  structuredFuel
+                  artifact.codeArtifact.compiled.expressions.toStructured.body +
+                    1) *
+                TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
+                  artifact.codeArtifact.compiled.cfg))
+            (EvmYul.EVM.D_J
+              (Assembly.Bytecode.ofList artifact.image.bytes)
+              (EvmYul.UInt256.ofNat 0))
+            gasfulInitial)
+          (Assembly.Compact.InteractionSemantics.openRunNResult
+            (Assembly.Bytecode.ofList artifact.image.bytes)
+            (2 *
+              ((Structured.InteractionStaticCost.blockBudget
+                  artifact.codeArtifact.compiled.expressions.toStructured
+                  structuredFuel
+                  artifact.codeArtifact.compiled.expressions.toStructured.body +
+                    1) *
+                TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
+                  artifact.codeArtifact.compiled.cfg))
+            { (initialExpressionsState artifact baseSource).evm with
+              pc := EvmYul.UInt256.ofNat 0 })
+          transcript := by
+  obtain ⟨structuredFuel, transcript, hAccepted, hForward, hGasful⟩ :=
+    optimizedSolcYulToGasfulRawBytecodeOfRecursiveFrameBridge
+      (sourceFuel := sourceFuel) hObject hInitial
+  exact ⟨structuredFuel, transcript, hAccepted, hForward,
+    Assembly.GasfulBridge.runRefinesOpenHalting_of_not_outOfFuel hGasful
+      (hNoFuelStop structuredFuel)⟩
+
+/-- Escape-free gasful endpoint for every genuinely finished source tree. The
+source-side hypothesis upgrades the finite-prefix `ForwardRel` to a full
+open-world `Rel`; the charged-run hypothesis prunes the fuel-exhaustion
+constructor from the bridge conclusion. -/
+theorem optimizedSolcYulToGasfulRawBytecodeFinishedHalting
+    {object : Solidity.Frontend.Object}
+    {linkerSymbols : List
+      (Solidity.Frontend.Name × Solidity.Frontend.Word)}
+    {artifact : Solidity.Frontend.VerifiedStackObjectArtifact}
+    {sourceFuel : Nat}
+    {baseSource : EvmYul.SharedState .Yul}
+    {gasfulInitial : Assembly.EVMState}
+    (hObject :
+      object.compileVerifiedStackObjectArtifactWithLinkerSymbols?
+          linkerSymbols = some artifact)
+    (hInitial :
+      Assembly.GasfulBridge.OpenStateRel gasfulInitial
+        { (initialExpressionsState artifact baseSource).evm with
+          pc := EvmYul.UInt256.ofNat 0 })
+    (hFinished : Simulation.Interaction.AllDone
+      FunctionsInteractionProgram.SourceFinished
+      (InteractionSemantics.exec (sourceFuel + 1)
+        (.Block [artifact.codeArtifact.ordered.program.contract.dispatcher])
+        (some artifact.codeArtifact.ordered.program.contract)
+        (installedSourceState artifact baseSource)))
+    (hNoFuelStop :
+      ∀ structuredFuel,
+        EvmYul.EVM.X
+          (2 *
+            ((Structured.InteractionStaticCost.blockBudget
+                artifact.codeArtifact.compiled.expressions.toStructured
+                structuredFuel
+                artifact.codeArtifact.compiled.expressions.toStructured.body +
+                  1) *
+              TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
+                artifact.codeArtifact.compiled.cfg))
+          (EvmYul.EVM.D_J
+            (Assembly.Bytecode.ofList artifact.image.bytes)
+            (EvmYul.UInt256.ofNat 0))
+          gasfulInitial ≠
+          .error EvmYul.EVM.ExecutionException.OutOfFuel) :
+    ∃ structuredFuel transcript,
+      Assembly.Accepted artifact.codeArtifact.compiled.certified.target ∧
+        Simulation.Interaction.Rel
+          (Compiler.OpenInteractionComposition.VerifiedStackObjectPrefixDoneRel
+            artifact)
+          (InteractionSemantics.exec (sourceFuel + 1)
+            (.Block
+              [artifact.codeArtifact.ordered.program.contract.dispatcher])
+            (some artifact.codeArtifact.ordered.program.contract)
+            (installedSourceState artifact baseSource))
+          (Assembly.Compact.InteractionSemantics.openRunNResult
+            (Assembly.Bytecode.ofList artifact.image.bytes)
+            (2 *
+              ((Structured.InteractionStaticCost.blockBudget
+                  artifact.codeArtifact.compiled.expressions.toStructured
+                  structuredFuel
+                  artifact.codeArtifact.compiled.expressions.toStructured.body +
+                    1) *
+                TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
+                  artifact.codeArtifact.compiled.cfg))
+            { (initialExpressionsState artifact baseSource).evm with
+              pc := EvmYul.UInt256.ofNat 0 }) ∧
+        Assembly.GasfulBridge.RunRefinesOpenHalting
+          (EvmYul.EVM.X
+            (2 *
+              ((Structured.InteractionStaticCost.blockBudget
+                  artifact.codeArtifact.compiled.expressions.toStructured
+                  structuredFuel
+                  artifact.codeArtifact.compiled.expressions.toStructured.body +
+                    1) *
+                TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
+                  artifact.codeArtifact.compiled.cfg))
+            (EvmYul.EVM.D_J
+              (Assembly.Bytecode.ofList artifact.image.bytes)
+              (EvmYul.UInt256.ofNat 0))
+            gasfulInitial)
+          (Assembly.Compact.InteractionSemantics.openRunNResult
+            (Assembly.Bytecode.ofList artifact.image.bytes)
+            (2 *
+              ((Structured.InteractionStaticCost.blockBudget
+                  artifact.codeArtifact.compiled.expressions.toStructured
+                  structuredFuel
+                  artifact.codeArtifact.compiled.expressions.toStructured.body +
+                    1) *
+                TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
+                  artifact.codeArtifact.compiled.cfg))
+            { (initialExpressionsState artifact baseSource).evm with
+              pc := EvmYul.UInt256.ofNat 0 })
+          transcript := by
+  obtain ⟨structuredFuel, transcript, hAccepted, hForward, hGasful⟩ :=
+    optimizedSolcYulToGasfulRawBytecodeOfRecursiveFrameBridge
+      (sourceFuel := sourceFuel) hObject hInitial
+  refine ⟨structuredFuel, transcript, hAccepted, ?_, ?_⟩
+  · exact Simulation.Interaction.ForwardRel.rel_of_allDone hForward hFinished
+      (fun failure hSourceFinished hTruncated =>
+        FunctionsInteractionProgram.SourceFinished.excludes_truncated
+          hSourceFinished hTruncated)
+  · exact Assembly.GasfulBridge.runRefinesOpenHalting_of_not_outOfFuel hGasful
+      (hNoFuelStop structuredFuel)
+
+/-- Escape-free gasful endpoint for source trees whose every branch halts. -/
+theorem optimizedSolcYulToGasfulRawBytecodeTerminalHalting
+    {object : Solidity.Frontend.Object}
+    {linkerSymbols : List
+      (Solidity.Frontend.Name × Solidity.Frontend.Word)}
+    {artifact : Solidity.Frontend.VerifiedStackObjectArtifact}
+    {sourceFuel : Nat}
+    {baseSource : EvmYul.SharedState .Yul}
+    {gasfulInitial : Assembly.EVMState}
+    (hObject :
+      object.compileVerifiedStackObjectArtifactWithLinkerSymbols?
+          linkerSymbols = some artifact)
+    (hInitial :
+      Assembly.GasfulBridge.OpenStateRel gasfulInitial
+        { (initialExpressionsState artifact baseSource).evm with
+          pc := EvmYul.UInt256.ofNat 0 })
+    (hTerminal : Simulation.Interaction.AllDone
+      FunctionsInteractionProgram.SourceTerminal
+      (InteractionSemantics.exec (sourceFuel + 1)
+        (.Block [artifact.codeArtifact.ordered.program.contract.dispatcher])
+        (some artifact.codeArtifact.ordered.program.contract)
+        (installedSourceState artifact baseSource)))
+    (hNoFuelStop :
+      ∀ structuredFuel,
+        EvmYul.EVM.X
+          (2 *
+            ((Structured.InteractionStaticCost.blockBudget
+                artifact.codeArtifact.compiled.expressions.toStructured
+                structuredFuel
+                artifact.codeArtifact.compiled.expressions.toStructured.body +
+                  1) *
+              TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
+                artifact.codeArtifact.compiled.cfg))
+          (EvmYul.EVM.D_J
+            (Assembly.Bytecode.ofList artifact.image.bytes)
+            (EvmYul.UInt256.ofNat 0))
+          gasfulInitial ≠
+          .error EvmYul.EVM.ExecutionException.OutOfFuel) :
+    ∃ structuredFuel transcript,
+      Assembly.Accepted artifact.codeArtifact.compiled.certified.target ∧
+        Simulation.Interaction.Rel
+          (Compiler.OpenInteractionComposition.VerifiedStackObjectPrefixDoneRel
+            artifact)
+          (InteractionSemantics.exec (sourceFuel + 1)
+            (.Block
+              [artifact.codeArtifact.ordered.program.contract.dispatcher])
+            (some artifact.codeArtifact.ordered.program.contract)
+            (installedSourceState artifact baseSource))
+          (Assembly.Compact.InteractionSemantics.openRunNResult
+            (Assembly.Bytecode.ofList artifact.image.bytes)
+            (2 *
+              ((Structured.InteractionStaticCost.blockBudget
+                  artifact.codeArtifact.compiled.expressions.toStructured
+                  structuredFuel
+                  artifact.codeArtifact.compiled.expressions.toStructured.body +
+                    1) *
+                TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
+                  artifact.codeArtifact.compiled.cfg))
+            { (initialExpressionsState artifact baseSource).evm with
+              pc := EvmYul.UInt256.ofNat 0 }) ∧
+        Assembly.GasfulBridge.RunRefinesOpenHalting
+          (EvmYul.EVM.X
+            (2 *
+              ((Structured.InteractionStaticCost.blockBudget
+                  artifact.codeArtifact.compiled.expressions.toStructured
+                  structuredFuel
+                  artifact.codeArtifact.compiled.expressions.toStructured.body +
+                    1) *
+                TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
+                  artifact.codeArtifact.compiled.cfg))
+            (EvmYul.EVM.D_J
+              (Assembly.Bytecode.ofList artifact.image.bytes)
+              (EvmYul.UInt256.ofNat 0))
+            gasfulInitial)
+          (Assembly.Compact.InteractionSemantics.openRunNResult
+            (Assembly.Bytecode.ofList artifact.image.bytes)
+            (2 *
+              ((Structured.InteractionStaticCost.blockBudget
+                  artifact.codeArtifact.compiled.expressions.toStructured
+                  structuredFuel
+                  artifact.codeArtifact.compiled.expressions.toStructured.body +
+                    1) *
+                TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
+                  artifact.codeArtifact.compiled.cfg))
+            { (initialExpressionsState artifact baseSource).evm with
+              pc := EvmYul.UInt256.ofNat 0 })
+          transcript := by
+  apply optimizedSolcYulToGasfulRawBytecodeFinishedHalting
+    (sourceFuel := sourceFuel) hObject hInitial
+  · exact Simulation.Interaction.AllDone.mono hTerminal
+      (fun sourceDone hSourceTerminal =>
+        FunctionsInteractionProgram.SourceFinished.of_terminal hSourceTerminal)
+  · exact hNoFuelStop
+
 end EndToEnd
 end Yul
 end EvmCompiler

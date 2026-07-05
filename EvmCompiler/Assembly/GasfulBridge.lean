@@ -11559,6 +11559,78 @@ theorem runRefinesOpen_create_initcode_outOfGas
         hPrefix hCreate hTooLarge)
       (Interaction.Follows.nil openRun)
 
+/-- `RunRefinesOpen` outcomes with the structural fuel-exhaustion escape
+removed. Once the charged run is known not to stop on structural interpreter
+fuel, every remaining outcome is either a related terminal leaf or a genuine
+target-only precheck interruption over an open transcript prefix. -/
+inductive RunRefinesOpenHalting
+    (gasful : Except EVMException (EvmYul.EVM.ExecutionResult EVMState))
+    (openRun : Interaction EVMException StepResult) :
+    Interaction.Transcript → Prop where
+  | completed {transcript openDone} :
+      Interaction.Executes openRun transcript openDone →
+      DoneRel gasful openDone →
+      RunRefinesOpenHalting gasful openRun transcript
+  | exceptionalFrame {transcript gasErr openErr} :
+      gasErr ≠ EvmYul.EVM.ExecutionException.OutOfFuel →
+      openErr ≠ EvmYul.EVM.ExecutionException.OutOfFuel →
+      gasful = .error gasErr →
+      Interaction.Executes openRun transcript (.error openErr) →
+      RunRefinesOpenHalting gasful openRun transcript
+  | outOfGas {transcript} :
+      gasful = .error EvmYul.EVM.ExecutionException.OutOfGass →
+      Interaction.Follows openRun transcript →
+      RunRefinesOpenHalting gasful openRun transcript
+  | badJumpDestination {transcript} :
+      gasful = .error EvmYul.EVM.ExecutionException.BadJumpDestination →
+      Interaction.Follows openRun transcript →
+      RunRefinesOpenHalting gasful openRun transcript
+  | stackOverflow {transcript} :
+      gasful = .error EvmYul.EVM.ExecutionException.StackOverflow →
+      Interaction.Follows openRun transcript →
+      RunRefinesOpenHalting gasful openRun transcript
+
+/-- Every escape-free bridge outcome is in particular a `RunRefinesOpen`
+outcome. -/
+theorem RunRefinesOpenHalting.toRunRefinesOpen
+    {gasful : Except EVMException (EvmYul.EVM.ExecutionResult EVMState)}
+    {openRun : Interaction EVMException StepResult}
+    {transcript : Interaction.Transcript}
+    (hBridge : RunRefinesOpenHalting gasful openRun transcript) :
+    RunRefinesOpen gasful openRun transcript := by
+  cases hBridge with
+  | completed hExec hDone => exact .completed hExec hDone
+  | exceptionalFrame hGas hOpen hEq hExec =>
+      exact .exceptionalFrame hGas hOpen hEq hExec
+  | outOfGas hEq hFollow => exact .outOfGas hEq hFollow
+  | badJumpDestination hEq hFollow => exact .badJumpDestination hEq hFollow
+  | stackOverflow hEq hFollow => exact .stackOverflow hEq hFollow
+
+/-- Escape pruning. The charged interpreter threads its structural fuel
+through concrete CALL-family child frames (`step` → `call` → `Θ` → child
+`X`), while the open runner models each call as a single exchange step, so a
+charged run over a call-bearing frame can stop on structural fuel strictly
+before the open runner does even when the open run halts within the same
+budget. The fuel-exhaustion constructor is therefore pruned from an actual
+non-exhaustion fact about the concrete charged run rather than from an
+open-side halting hypothesis. -/
+theorem runRefinesOpenHalting_of_not_outOfFuel
+    {gasful : Except EVMException (EvmYul.EVM.ExecutionResult EVMState)}
+    {openRun : Interaction EVMException StepResult}
+    {transcript : Interaction.Transcript}
+    (hBridge : RunRefinesOpen gasful openRun transcript)
+    (hNoFuelStop :
+      gasful ≠ .error EvmYul.EVM.ExecutionException.OutOfFuel) :
+    RunRefinesOpenHalting gasful openRun transcript := by
+  cases hBridge with
+  | completed hExec hDone => exact .completed hExec hDone
+  | exceptionalFrame hGas hOpen hEq hExec =>
+      exact .exceptionalFrame hGas hOpen hEq hExec
+  | outOfGas hEq hFollow => exact .outOfGas hEq hFollow
+  | outOfFuel hEq hFollow => exact absurd hEq hNoFuelStop
+  | badJumpDestination hEq hFollow => exact .badJumpDestination hEq hFollow
+  | stackOverflow hEq hFollow => exact .stackOverflow hEq hFollow
+
 end GasfulBridge
 end Assembly
 end EvmCompiler
