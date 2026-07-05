@@ -80,7 +80,10 @@ Successful artifact construction internally derives all of the following:
 - stack-only lowering with no compiler memory access or scratch reservation;
 - `memoryguard(size) = size` for the stack-only backend;
 - canonical Yul-to-Functions and Functions-to-Expressions initial relations;
-- exact installation of the compiled byte image for `CODESIZE`/`CODECOPY`;
+- exact installation of the compiled byte image for `CODESIZE`/`CODECOPY`
+  (with `WithCodeSuffix` variants installing `image ++ suffix` uniformly on
+  both sides for creation frames; see "Creation Frames And Constructor
+  Arguments" below);
 - target-fuel bounds preserving every source-visible prefix, plus exclusion of
   compiler-introduced structural `OutOfFuel` in the derived all-finished result;
 - TypedCfg generation, certification, assembly acceptance, compact relocation,
@@ -207,6 +210,28 @@ frame. It has no `hFinished`, response oracle, replay, generated-name, layout, o
 certificate premise. The result is intentionally frame-level and finite-prefix:
 source semantic fuel may truncate an unobserved suffix, while transaction and
 chain finalization remain outside the declared theorem boundary.
+
+## Creation Frames And Constructor Arguments
+
+Creation frames execute the checked image with the caller's ABI-encoded
+constructor arguments appended: `executionEnv.code = image ++ args`. The
+suffix-tolerant endpoints
+`RawAst.optimizedRawSolcIrToRawBytecodeWithCodeSuffix` and
+`RawAst.optimizedRawSolcIrToGasfulRawBytecodeWithCodeSuffix` (and the
+canonical `Yul.EndToEnd.optimizedSolcYulToRawBytecodeWithCodeSuffix`,
+`...FinishedWithCodeSuffix`, `...TerminalWithCodeSuffix`, and
+`...ToGasfulRawBytecodeOfRecursiveFrameBridgeWithCodeSuffix`) quantify over an
+arbitrary appended byte suffix and install `image ++ suffix` uniformly on both
+sides, so source `CODESIZE`/`CODECOPY` observe exactly the code decoded by the
+target machine — the mechanism solc constructors use to read their arguments.
+The gasful variant enters at `EVM.X f (D_J (image ++ suffix) 0) initial`,
+matching EvmYul's real creation-frame entry: jump-destination validity is
+computed over the full installed code, covered-path jump targets still come
+from the compact layout inside the checked image, and jumps into the suffix
+are absorbed by the pre-existing bad-jump branch of `RunRefinesOpen`. The
+bad-jump and out-of-gas outcome branches of the bridge relation are unchanged.
+The exact-image theorems are the `suffix := []` instances (up to
+`List.append_nil`), and remain the published runtime-code endpoints.
 
 ## Not Compiler-Preservation Gaps
 

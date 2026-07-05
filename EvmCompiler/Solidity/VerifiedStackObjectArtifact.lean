@@ -254,6 +254,32 @@ theorem compileVerifiedStackObjectArtifactWithLinkerSymbols?_decodingCorrect
     (Assembly.Compact.compile?_decodingCorrect_with_suffix
       hCompact (verifiedCodeSentinel ++ plan.payload))
 
+/-- Suffix-tolerant decoding correctness: the checked object image remains a
+correct decoding prefix under any appended byte suffix (for example
+ABI-encoded constructor arguments in a creation frame). The exact-image
+theorem `compileVerifiedStackObjectArtifactWithLinkerSymbols?_decodingCorrect`
+is the `suffix := []` instance. -/
+theorem compileVerifiedStackObjectArtifactWithLinkerSymbols?_decodingCorrect_withCodeSuffix
+    {object : Object} {linkerSymbols : List (Name × Word)}
+    {artifact : VerifiedStackObjectArtifact}
+    (hCompile :
+      object.compileVerifiedStackObjectArtifactWithLinkerSymbols?
+          linkerSymbols = some artifact)
+    (suffix : List UInt8) :
+    Assembly.Compact.DecodingCorrect artifact.codeArtifact.compact.program
+      (Assembly.Bytecode.ofList (artifact.image.bytes ++ suffix)) := by
+  obtain ⟨_children, plan, _codeArtifact, _hChildren, _hPlan, _hFinish, hCode,
+      _hArtifactChildren, _hContext, _hChildImages, _hPayload, hImage⟩ :=
+    compileVerifiedStackObjectArtifactWithLinkerSymbols?_parts hCompile
+  rw [hImage]
+  obtain ⟨_hResolved, _hOrdered, _hLower, _hStack, _pinnedPushPcs,
+      _hPins, hCompact, hBytes, _hMarker⟩ :=
+    compileVerifiedStackCodeArtifactIn?_parts hCode
+  rw [hBytes]
+  simpa [List.append_assoc] using
+    (Assembly.Compact.compile?_decodingCorrect_with_suffix
+      hCompact (verifiedCodeSentinel ++ plan.payload ++ suffix))
+
 mutual
   inductive VerifiedStackObjectArtifact.ValidFor
       (linkerSymbols : List (Name × Word)) :

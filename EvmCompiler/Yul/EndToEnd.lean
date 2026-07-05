@@ -370,6 +370,211 @@ theorem optimizedSolcYulToRawBytecodeFinishedLegacy
   · exact Functions.StackRelation.initial _
   · exact hFinished
 
+/-!
+Suffix-tolerant endpoints.
+
+Creation frames execute the checked image with the caller's ABI-encoded
+constructor arguments appended (`executionEnv.code = image ++ args`). The
+following definitions install `image.bytes ++ suffix` uniformly on both sides,
+so source `CODESIZE`/`CODECOPY` observe exactly the code image decoded by the
+target machine. The exact-image definitions and theorems above are the
+`suffix := []` instances (up to `List.append_nil`).
+-/
+
+/-- Canonical source state for the checked object's active code with an
+appended caller-owned byte suffix (for example ABI constructor arguments in a
+creation frame). -/
+def installedSourceStateWithCodeSuffix
+    (artifact : Solidity.Frontend.VerifiedStackObjectArtifact)
+    (suffix : List UInt8)
+    (base : EvmYul.SharedState .Yul) : Yul.InteractionSemantics.State :=
+  FunctionsInteractionRelation.ScopedStateRel.installedSourceState
+    artifact.codeArtifact.ordered.program.contract
+    (Assembly.Bytecode.ofList (artifact.image.bytes ++ suffix)) base
+
+def initialFunctionsStateWithCodeSuffix
+    (artifact : Solidity.Frontend.VerifiedStackObjectArtifact)
+    (suffix : List UInt8)
+    (base : EvmYul.SharedState .Yul) :
+    Functions.InteractionSemantics.State :=
+  FunctionsInteractionRelation.ScopedStateRel.initialTarget
+    (FunctionsInteractionRelation.ScopedStateRel.installedSourceShared
+      artifact.codeArtifact.ordered.program.contract
+      (Assembly.Bytecode.ofList (artifact.image.bytes ++ suffix)) base)
+
+def initialExpressionsStateWithCodeSuffix
+    (artifact : Solidity.Frontend.VerifiedStackObjectArtifact)
+    (suffix : List UInt8)
+    (base : EvmYul.SharedState .Yul) :
+    Expressions.InteractionSemantics.RunState :=
+  Functions.StackRelation.initialTarget
+    (initialFunctionsStateWithCodeSuffix artifact suffix base)
+
+/-- Suffix-tolerant primary public theorem: checked optimized Yul compilation
+preserves every finite ordered open-world prefix from the canonical installed
+initial state whose code image carries an appended caller-owned suffix. -/
+theorem optimizedSolcYulToRawBytecodeWithCodeSuffix
+    {object : Solidity.Frontend.Object}
+    {linkerSymbols : List
+      (Solidity.Frontend.Name × Solidity.Frontend.Word)}
+    {artifact : Solidity.Frontend.VerifiedStackObjectArtifact}
+    {sourceFuel : Nat}
+    {baseSource : EvmYul.SharedState .Yul}
+    (suffix : List UInt8)
+    (hObject :
+      object.compileVerifiedStackObjectArtifactWithLinkerSymbols?
+          linkerSymbols = some artifact) :
+    ∃ structuredFuel,
+      Assembly.Accepted artifact.codeArtifact.compiled.certified.target ∧
+        Simulation.Interaction.ForwardRel
+          FunctionsInteractionPrimitive.Truncated
+          (Compiler.OpenInteractionComposition.VerifiedStackObjectPrefixDoneRel
+            artifact)
+          (InteractionSemantics.exec (sourceFuel + 1)
+            (.Block
+              [artifact.codeArtifact.ordered.program.contract.dispatcher])
+            (some artifact.codeArtifact.ordered.program.contract)
+            (installedSourceStateWithCodeSuffix artifact suffix baseSource))
+          (Assembly.Compact.InteractionSemantics.openRunNResult
+            (Assembly.Bytecode.ofList (artifact.image.bytes ++ suffix))
+            (2 *
+              ((Structured.InteractionStaticCost.blockBudget
+                  artifact.codeArtifact.compiled.expressions.toStructured
+                  structuredFuel
+                  artifact.codeArtifact.compiled.expressions.toStructured.body +
+                    1) *
+                TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
+                  artifact.codeArtifact.compiled.cfg))
+            { (initialExpressionsStateWithCodeSuffix
+                artifact suffix baseSource).evm with
+              pc := EvmYul.UInt256.ofNat 0 }) := by
+  apply
+    Compiler.OpenInteractionComposition.compiledVerifiedStackObjectToRawBytecodeForwardPublicWithCodeSuffix
+      suffix hObject
+  · exact FunctionsInteractionRelation.ScopedStateRel.initial _
+  · exact
+      FunctionsInteractionRelation.ScopedStateRel.initial_targetDomainWithin
+        _ _
+  · exact Functions.StackRelation.initial _
+
+/-- Suffix-tolerant all-finished upgrade of
+`optimizedSolcYulToRawBytecodeWithCodeSuffix`. -/
+theorem optimizedSolcYulToRawBytecodeFinishedWithCodeSuffix
+    {object : Solidity.Frontend.Object}
+    {linkerSymbols : List
+      (Solidity.Frontend.Name × Solidity.Frontend.Word)}
+    {artifact : Solidity.Frontend.VerifiedStackObjectArtifact}
+    {sourceFuel : Nat}
+    {baseSource : EvmYul.SharedState .Yul}
+    (suffix : List UInt8)
+    (hObject :
+      object.compileVerifiedStackObjectArtifactWithLinkerSymbols?
+          linkerSymbols = some artifact)
+    (hFinished : Simulation.Interaction.AllDone
+      FunctionsInteractionProgram.SourceFinished
+      (InteractionSemantics.exec (sourceFuel + 1)
+        (.Block [artifact.codeArtifact.ordered.program.contract.dispatcher])
+        (some artifact.codeArtifact.ordered.program.contract)
+        (installedSourceStateWithCodeSuffix artifact suffix baseSource))) :
+    ∃ structuredFuel,
+      Assembly.Accepted artifact.codeArtifact.compiled.certified.target ∧
+        Simulation.Interaction.Rel
+          (Compiler.OpenInteractionComposition.VerifiedStackObjectPrefixDoneRel
+            artifact)
+          (InteractionSemantics.exec (sourceFuel + 1)
+            (.Block
+              [artifact.codeArtifact.ordered.program.contract.dispatcher])
+            (some artifact.codeArtifact.ordered.program.contract)
+            (installedSourceStateWithCodeSuffix artifact suffix baseSource))
+          (Assembly.Compact.InteractionSemantics.openRunNResult
+            (Assembly.Bytecode.ofList (artifact.image.bytes ++ suffix))
+            (2 *
+              ((Structured.InteractionStaticCost.blockBudget
+                  artifact.codeArtifact.compiled.expressions.toStructured
+                  structuredFuel
+                  artifact.codeArtifact.compiled.expressions.toStructured.body +
+                    1) *
+                TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
+                  artifact.codeArtifact.compiled.cfg))
+            { (initialExpressionsStateWithCodeSuffix
+                artifact suffix baseSource).evm with
+              pc := EvmYul.UInt256.ofNat 0 }) := by
+  obtain ⟨structuredFuel, hAccepted, hForward⟩ :=
+    optimizedSolcYulToRawBytecodeWithCodeSuffix suffix hObject
+  refine ⟨structuredFuel, hAccepted, ?_⟩
+  exact Simulation.Interaction.ForwardRel.rel_of_allDone hForward hFinished
+    (fun failure hSourceFinished hTruncated =>
+      FunctionsInteractionProgram.SourceFinished.excludes_truncated
+        hSourceFinished hTruncated)
+
+/-- Suffix-tolerant terminal-only theorem retained for callers that require
+every source branch to halt. -/
+theorem optimizedSolcYulToRawBytecodeTerminalWithCodeSuffix
+    {object : Solidity.Frontend.Object}
+    {linkerSymbols : List
+      (Solidity.Frontend.Name × Solidity.Frontend.Word)}
+    {artifact : Solidity.Frontend.VerifiedStackObjectArtifact}
+    {sourceFuel : Nat}
+    {baseSource : EvmYul.SharedState .Yul}
+    (suffix : List UInt8)
+    (hObject :
+      object.compileVerifiedStackObjectArtifactWithLinkerSymbols?
+          linkerSymbols = some artifact)
+    (hTerminal : Simulation.Interaction.AllDone
+      FunctionsInteractionProgram.SourceTerminal
+      (InteractionSemantics.exec (sourceFuel + 1)
+        (.Block [artifact.codeArtifact.ordered.program.contract.dispatcher])
+        (some artifact.codeArtifact.ordered.program.contract)
+        (installedSourceStateWithCodeSuffix artifact suffix baseSource))) :
+    ∃ structuredFuel,
+      Assembly.Accepted artifact.codeArtifact.compiled.certified.target ∧
+        Simulation.Interaction.Rel
+          (Compiler.OpenInteractionComposition.VerifiedStackObjectDoneRel
+            artifact)
+          (InteractionSemantics.exec (sourceFuel + 1)
+            (.Block
+              [artifact.codeArtifact.ordered.program.contract.dispatcher])
+            (some artifact.codeArtifact.ordered.program.contract)
+            (installedSourceStateWithCodeSuffix artifact suffix baseSource))
+          (Assembly.Compact.InteractionSemantics.openRunNResult
+            (Assembly.Bytecode.ofList (artifact.image.bytes ++ suffix))
+            (2 *
+              (Structured.InteractionStaticCost.blockBudget
+                  artifact.codeArtifact.compiled.expressions.toStructured
+                  structuredFuel
+                  artifact.codeArtifact.compiled.expressions.toStructured.body *
+                TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
+                  artifact.codeArtifact.compiled.cfg))
+            { (initialExpressionsStateWithCodeSuffix
+                artifact suffix baseSource).evm with
+              pc := EvmYul.UInt256.ofNat 0 }) := by
+  apply
+    Compiler.OpenInteractionComposition.compiledVerifiedStackObjectToRawBytecodePublicWithCodeSuffix
+      suffix hObject
+  · exact FunctionsInteractionRelation.ScopedStateRel.initial _
+  · exact
+      FunctionsInteractionRelation.ScopedStateRel.initial_targetDomainWithin
+        _ _
+  · exact Functions.StackRelation.initial _
+  · exact hTerminal
+
+/-- The exact-image installed state is the `suffix := []` instance of the
+suffix-tolerant installed state. -/
+theorem installedSourceStateWithCodeSuffix_nil
+    (artifact : Solidity.Frontend.VerifiedStackObjectArtifact)
+    (base : EvmYul.SharedState .Yul) :
+    installedSourceStateWithCodeSuffix artifact [] base =
+      installedSourceState artifact base := by
+  simp [installedSourceStateWithCodeSuffix, installedSourceState]
+
+theorem initialExpressionsStateWithCodeSuffix_nil
+    (artifact : Solidity.Frontend.VerifiedStackObjectArtifact)
+    (base : EvmYul.SharedState .Yul) :
+    initialExpressionsStateWithCodeSuffix artifact [] base =
+      initialExpressionsState artifact base := by
+  simp [initialExpressionsStateWithCodeSuffix, initialExpressionsState,
+    initialFunctionsStateWithCodeSuffix, initialFunctionsState]
+
 end EndToEnd
 end Yul
 end EvmCompiler

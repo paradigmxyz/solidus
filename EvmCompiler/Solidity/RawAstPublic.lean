@@ -661,6 +661,26 @@ theorem compileArtifactFromRawSolcIr?_decodingCorrect
                   (program := program) (linkerSymbols := linkerSymbols)
                   (artifact := artifact) hProgramCompile
 
+/-- Suffix-tolerant decoding correctness for the raw-solc entry point: the
+checked image remains a correct decoding prefix with any appended caller-owned
+byte suffix (for example ABI-encoded constructor arguments in a creation
+frame). `compileArtifactFromRawSolcIr?_decodingCorrect` is the `suffix := []`
+instance. -/
+theorem compileArtifactFromRawSolcIr?_decodingCorrect_withCodeSuffix
+    {rawJson : String} {selection : Selection}
+    {artifact : Frontend.Program.Artifact}
+    (hCompile :
+      compileArtifactFromRawSolcIr? rawJson selection = some artifact)
+    (suffix : List UInt8) :
+    Assembly.Compact.DecodingCorrect
+      artifact.codeArtifact.compact.program
+      (Assembly.Bytecode.ofList (artifact.image.bytes ++ suffix)) := by
+  rcases compileArtifactFromRawSolcIr?_decoded hCompile with
+    ⟨program, linkerSymbols, _hDecode, _hLinker, hProgramCompile⟩
+  exact
+    Frontend.Object.compileVerifiedStackObjectArtifactWithLinkerSymbols?_decodingCorrect_withCodeSuffix
+      hProgramCompile suffix
+
 theorem compileArtifactFromRawSolcIrWithLinkerSymbols?_valid
     {rawJson : String} {selection : Selection}
     {linkerSymbols : List (Frontend.Name × Frontend.Word)}

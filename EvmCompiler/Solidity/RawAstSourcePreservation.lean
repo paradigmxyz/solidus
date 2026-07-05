@@ -15206,6 +15206,258 @@ theorem rawSourceCodeEquivalentToRawBytecode
   rawSourceCodePreservedToRawBytecode
     ctx hCode hCodeRun.preserved
 
+/-!
+Suffix-tolerant raw-source endpoints.
+
+Creation frames install `image ++ constructorArgs` as the active code. The raw
+source-preservation corridor is insensitive to the installed code image, so
+the following theorems replay the exact-image proofs at the suffixed installed
+state and compose with the suffix-tolerant backend endpoint.
+-/
+
+theorem rawSourceCodeInstalledPreservedToRawBytecodeWithCodeSuffix
+    {rawJson : String} {selection : Selection}
+    {artifact : Frontend.Program.Artifact}
+    {rawFuel : Nat}
+    {baseSource : EvmYul.SharedState .Yul}
+    (suffix : List UInt8)
+    (ctx : ArtifactRawSourceContext rawJson selection artifact)
+    {code : List Raw.Stmt}
+    (hCode : ctx.selected.root.code? = some code) :
+    ∃ structuredFuel : Nat,
+      Assembly.Accepted artifact.codeArtifact.compiled.certified.target ∧
+        Simulation.Interaction.ForwardRel
+          Yul.FunctionsInteractionPrimitive.Truncated
+          (RawSourceBytecodePrefixDoneRel artifact)
+          (rawObjectRun (rawFuel + 1) ctx.context ctx.selected.root
+            (Yul.EndToEnd.installedSourceStateWithCodeSuffix
+              artifact suffix baseSource))
+          (Assembly.Compact.InteractionSemantics.openRunNResult
+            (Assembly.Bytecode.ofList (artifact.image.bytes ++ suffix))
+            (2 *
+              ((Structured.InteractionStaticCost.blockBudget
+                  artifact.codeArtifact.compiled.expressions.toStructured
+                  structuredFuel
+                  artifact.codeArtifact.compiled.expressions.toStructured.body +
+                    1) *
+                TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
+                  artifact.codeArtifact.compiled.cfg))
+            { (Yul.EndToEnd.initialExpressionsStateWithCodeSuffix
+                artifact suffix baseSource).evm with
+              pc := EvmYul.UInt256.ofNat 0 }) := by
+  rcases ctx.code_functionScope hCode with ⟨rawScope, hScope⟩
+  let installedShared : EvmYul.SharedState .Yul :=
+    Yul.FunctionsInteractionRelation.ScopedStateRel.installedSourceShared
+      artifact.codeArtifact.ordered.program.contract
+      (Assembly.Bytecode.ofList (artifact.image.bytes ++ suffix)) baseSource
+  rcases ctx.dispatcherSeqRunForward_ok hCode hScope rawFuel
+      installedShared (default : EvmYul.Yul.VarStore) with
+    ⟨orderedSeqFuel, hSeq⟩
+  have hBlock := blockRunForward_of_scope_seq hScope hSeq
+  have hRawOrdered :
+      RunForward (rawFuel + 1) (orderedSeqFuel + 1)
+        ctx.context ctx.selected.root artifact.codeArtifact.ordered
+        (Yul.EndToEnd.installedSourceStateWithCodeSuffix
+          artifact suffix baseSource) := by
+    unfold RunForward BlockRunForward at *
+    rw [rawObjectRun_some_code_succ hCode]
+    simpa [Yul.EndToEnd.installedSourceStateWithCodeSuffix,
+      Yul.FunctionsInteractionRelation.ScopedStateRel.installedSourceState,
+      installedShared] using hBlock
+  rcases
+      Yul.EndToEnd.optimizedSolcYulToRawBytecodeWithCodeSuffix
+        (object := ctx.program.object)
+        (linkerSymbols := ctx.linkerSymbols)
+        (artifact := artifact)
+        (sourceFuel := orderedSeqFuel)
+        (baseSource := baseSource)
+        suffix
+        ctx.compile with
+    ⟨structuredFuel, hAccepted, hOrderedBytecode⟩
+  refine ⟨structuredFuel, hAccepted, ?_⟩
+  exact
+    Simulation.Interaction.ForwardRel.trans
+      hRawOrdered hOrderedBytecode
+      (by
+        intro rawDone orderedError hSame hTruncated
+        subst rawDone
+        exact ⟨orderedError, rfl, hTruncated⟩)
+
+theorem rawSourceNoCodeInstalledPreservedToRawBytecodeWithCodeSuffix
+    {rawJson : String} {selection : Selection}
+    {artifact : Frontend.Program.Artifact}
+    {rawFuel : Nat}
+    {baseSource : EvmYul.SharedState .Yul}
+    (suffix : List UInt8)
+    (ctx : ArtifactRawSourceContext rawJson selection artifact)
+    (hCode : ctx.selected.root.code? = none) :
+    ∃ structuredFuel : Nat,
+      Assembly.Accepted artifact.codeArtifact.compiled.certified.target ∧
+        Simulation.Interaction.ForwardRel
+          Yul.FunctionsInteractionPrimitive.Truncated
+          (RawSourceBytecodePrefixDoneRel artifact)
+          (rawObjectRun (rawFuel + 1) ctx.context ctx.selected.root
+            (Yul.EndToEnd.installedSourceStateWithCodeSuffix
+              artifact suffix baseSource))
+          (Assembly.Compact.InteractionSemantics.openRunNResult
+            (Assembly.Bytecode.ofList (artifact.image.bytes ++ suffix))
+            (2 *
+              ((Structured.InteractionStaticCost.blockBudget
+                  artifact.codeArtifact.compiled.expressions.toStructured
+                  structuredFuel
+                  artifact.codeArtifact.compiled.expressions.toStructured.body +
+                    1) *
+                TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
+                  artifact.codeArtifact.compiled.cfg))
+            { (Yul.EndToEnd.initialExpressionsStateWithCodeSuffix
+                artifact suffix baseSource).evm with
+              pc := EvmYul.UInt256.ofNat 0 }) := by
+  have hDispatcher := ctx.dispatcher_empty_of_code_none hCode
+  let installedShared : EvmYul.SharedState .Yul :=
+    Yul.FunctionsInteractionRelation.ScopedStateRel.installedSourceShared
+      artifact.codeArtifact.ordered.program.contract
+      (Assembly.Bytecode.ofList (artifact.image.bytes ++ suffix)) baseSource
+  have hInstalled :
+      Yul.EndToEnd.installedSourceStateWithCodeSuffix
+          artifact suffix baseSource =
+        (.Ok installedShared default : State) := rfl
+  have hPure (state : State) :
+      (pure state : Open State) = .done (.ok state) := rfl
+  have hRestrict :
+      ((.Ok installedShared default : State).restrictStoreTo default) =
+        (.Ok installedShared default : State) := rfl
+  have hStore :
+      (.Ok installedShared default : State).store = default := rfl
+  have hOrderedRun :
+      orderedRun 4 artifact.codeArtifact.ordered
+          (Yul.EndToEnd.installedSourceStateWithCodeSuffix
+            artifact suffix baseSource) =
+        pure (Yul.EndToEnd.installedSourceStateWithCodeSuffix
+          artifact suffix baseSource) := by
+    unfold orderedRun
+    rw [hDispatcher]
+    rw [show 4 = 3 + 1 by omega]
+    rw [Yul.InteractionSemantics.Exec.block_succ]
+    rw [show 3 = 2 + 1 by omega]
+    rw [Yul.InteractionSemantics.ExecSeq.cons_succ]
+    rw [show 2 = 1 + 1 by omega]
+    rw [Yul.InteractionSemantics.Exec.block_succ]
+    rw [Yul.InteractionSemantics.ExecSeq.nil_succ]
+    rw [hInstalled]
+    simp only [hPure, Simulation.Interaction.bind_done_ok, hStore, hRestrict,
+      Yul.InteractionSemantics.ExecSeq.nil_succ]
+  have hRawRun :
+      rawObjectRun (rawFuel + 1) ctx.context ctx.selected.root
+          (Yul.EndToEnd.installedSourceStateWithCodeSuffix
+            artifact suffix baseSource) =
+        pure (Yul.EndToEnd.installedSourceStateWithCodeSuffix
+          artifact suffix baseSource) :=
+    rawObjectRun_none_code hCode
+  have hRawOrdered :
+      RunForward (rawFuel + 1) 4 ctx.context ctx.selected.root
+        artifact.codeArtifact.ordered
+        (Yul.EndToEnd.installedSourceStateWithCodeSuffix
+          artifact suffix baseSource) :=
+    runForward_of_eq (hRawRun.trans hOrderedRun.symm)
+  rcases
+      Yul.EndToEnd.optimizedSolcYulToRawBytecodeWithCodeSuffix
+        (object := ctx.program.object)
+        (linkerSymbols := ctx.linkerSymbols)
+        (artifact := artifact)
+        (sourceFuel := 3)
+        (baseSource := baseSource)
+        suffix
+        ctx.compile with
+    ⟨structuredFuel, hAccepted, hOrderedBytecode⟩
+  refine ⟨structuredFuel, hAccepted, ?_⟩
+  exact
+    Simulation.Interaction.ForwardRel.trans
+      hRawOrdered hOrderedBytecode
+      (by
+        intro rawDone orderedError hSame hTruncated
+        subst rawDone
+        exact ⟨orderedError, rfl, hTruncated⟩)
+
+/-- Suffix-tolerant public raw-frontend preservation theorem. -/
+theorem rawSourceInstalledPreservedToRawBytecodeWithCodeSuffix
+    {rawJson : String} {selection : Selection}
+    {artifact : Frontend.Program.Artifact}
+    {rawFuel : Nat}
+    {baseSource : EvmYul.SharedState .Yul}
+    (suffix : List UInt8)
+    (ctx : ArtifactRawSourceContext rawJson selection artifact) :
+    ∃ structuredFuel : Nat,
+      Assembly.Accepted artifact.codeArtifact.compiled.certified.target ∧
+        Simulation.Interaction.ForwardRel
+          Yul.FunctionsInteractionPrimitive.Truncated
+          (RawSourceBytecodePrefixDoneRel artifact)
+          (rawObjectRun (rawFuel + 1) ctx.context ctx.selected.root
+            (Yul.EndToEnd.installedSourceStateWithCodeSuffix
+              artifact suffix baseSource))
+          (Assembly.Compact.InteractionSemantics.openRunNResult
+            (Assembly.Bytecode.ofList (artifact.image.bytes ++ suffix))
+            (2 *
+              ((Structured.InteractionStaticCost.blockBudget
+                  artifact.codeArtifact.compiled.expressions.toStructured
+                  structuredFuel
+                  artifact.codeArtifact.compiled.expressions.toStructured.body +
+                    1) *
+                TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
+                  artifact.codeArtifact.compiled.cfg))
+            { (Yul.EndToEnd.initialExpressionsStateWithCodeSuffix
+                artifact suffix baseSource).evm with
+              pc := EvmYul.UInt256.ofNat 0 }) := by
+  cases hCode : ctx.selected.root.code? with
+  | none =>
+      exact rawSourceNoCodeInstalledPreservedToRawBytecodeWithCodeSuffix
+        suffix ctx hCode
+  | some code =>
+      exact rawSourceCodeInstalledPreservedToRawBytecodeWithCodeSuffix
+        suffix ctx hCode
+
+/-- Suffix-tolerant raw Standard JSON entry theorem: the checked image remains
+correct with any appended caller-owned code suffix (for example ABI-encoded
+constructor arguments in a creation frame). -/
+theorem optimizedRawSolcIrToRawSourceBytecodeWithCodeSuffix
+    {rawJson : String} {selection : Selection}
+    {artifact : Frontend.Program.Artifact}
+    {rawFuel : Nat}
+    {baseSource : EvmYul.SharedState .Yul}
+    (suffix : List UInt8)
+    (hCompile :
+      compileArtifactFromRawSolcIr? rawJson selection = some artifact) :
+    ∃ (json : Lean.Json) (selected : SelectedIr)
+        (context : Frontend.ObjectBuiltinContext) (structuredFuel : Nat),
+      Lean.Json.parse rawJson = .ok json ∧
+        decodeSelectedIr json selection = .ok selected ∧
+          Assembly.Accepted
+            artifact.codeArtifact.compiled.certified.target ∧
+            Simulation.Interaction.ForwardRel
+              Yul.FunctionsInteractionPrimitive.Truncated
+              (RawSourceBytecodePrefixDoneRel artifact)
+              (rawObjectRun (rawFuel + 1) context selected.root
+                (Yul.EndToEnd.installedSourceStateWithCodeSuffix
+                  artifact suffix baseSource))
+              (Assembly.Compact.InteractionSemantics.openRunNResult
+                (Assembly.Bytecode.ofList (artifact.image.bytes ++ suffix))
+                (2 *
+                  ((Structured.InteractionStaticCost.blockBudget
+                      artifact.codeArtifact.compiled.expressions.toStructured
+                      structuredFuel
+                      artifact.codeArtifact.compiled.expressions.toStructured.body +
+                        1) *
+                    TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
+                      artifact.codeArtifact.compiled.cfg))
+                { (Yul.EndToEnd.initialExpressionsStateWithCodeSuffix
+                    artifact suffix baseSource).evm with
+                  pc := EvmYul.UInt256.ofNat 0 }) := by
+  rcases ArtifactRawSourceContext.nonempty_of_compile hCompile with ⟨ctx⟩
+  rcases rawSourceInstalledPreservedToRawBytecodeWithCodeSuffix suffix ctx with
+    ⟨structuredFuel, hAccepted, hForward⟩
+  exact
+    ⟨ctx.json, ctx.selected, ctx.context, structuredFuel,
+      ctx.parse, ctx.selected_ok, hAccepted, hForward⟩
+
 end SourcePreservation
 end Raw
 end RawAst

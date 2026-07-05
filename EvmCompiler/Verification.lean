@@ -18,6 +18,7 @@ import EvmCompiler.Assembly.InteractionBytecode
 import EvmCompiler.Assembly.InteractionFuelSafety
 import EvmCompiler.Assembly.Compact
 import EvmCompiler.Solidity.VerifiedStackObjectArtifact
+import EvmCompiler.Solidity.CreationRuntimeImage
 import EvmCompiler.Solidity.RawAstPublic
 import EvmCompiler.Solidity.RawAstEndToEnd
 import EvmCompiler.Yul.FunctionsInteractionProgram
@@ -48,6 +49,8 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.Frontend.Object.compileVerifiedStackObjectArtifactWithLinkerSymbols?_valid
 #check EvmCompiler.Solidity.Frontend.Object.compileVerifiedStackObjectArtifactWithLinkerSymbols?_decodingCorrect
 #check EvmCompiler.Solidity.Frontend.Object.compileVerifiedStackObjectArtifactWithLinkerSymbols?_sentinelImage
+#check EvmCompiler.Solidity.Frontend.Object.compileVerifiedStackObjectArtifact_child_image_embedded
+#check EvmCompiler.Solidity.Frontend.Object.creationImage_embeds_deployedRuntimeImage
 #check EvmCompiler.Solidity.Frontend.Object.Expr.userCallsResolved?_user_call
 #check EvmCompiler.Solidity.Frontend.Expr.List.resolveObjectBuiltinsIn?_mem
 #check EvmCompiler.Solidity.Frontend.Stmt.List.resolveObjectBuiltinsIn?_mem
@@ -595,6 +598,15 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.RawAst.compileArtifactFromRawSolcIrWithLinkerSymbols?_decodingCorrect
 #check EvmCompiler.Solidity.RawAst.optimizedRawSolcIrToRawBytecode
 #check EvmCompiler.Solidity.RawAst.optimizedRawSolcIrToGasfulRawBytecode
+#check EvmCompiler.Solidity.RawAst.optimizedRawSolcIrToRawBytecodeWithCodeSuffix
+#check EvmCompiler.Solidity.RawAst.optimizedRawSolcIrToGasfulRawBytecodeWithCodeSuffix
+#check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.optimizedRawSolcIrToRawSourceBytecodeWithCodeSuffix
+#check EvmCompiler.Solidity.RawAst.compileArtifactFromRawSolcIr?_decodingCorrect_withCodeSuffix
+#check EvmCompiler.Yul.EndToEnd.optimizedSolcYulToRawBytecodeWithCodeSuffix
+#check EvmCompiler.Yul.EndToEnd.optimizedSolcYulToRawBytecodeFinishedWithCodeSuffix
+#check EvmCompiler.Yul.EndToEnd.optimizedSolcYulToRawBytecodeTerminalWithCodeSuffix
+#check EvmCompiler.Yul.EndToEnd.optimizedSolcYulToGasfulRawBytecodeOfRecursiveFrameBridgeWithCodeSuffix
+#check EvmCompiler.Solidity.Frontend.Object.compileVerifiedStackObjectArtifactWithLinkerSymbols?_decodingCorrect_withCodeSuffix
 #check EvmCompiler.Solidity.RawAst.optimizedRawSolcIrArtifactToRawBytecode
 #check EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.optimizedRawSolcIrToRawSourceBytecode
 #check EvmCompiler.Solidity.RawAst.optimizedRawSolcIrToRawBytecodeFinished
@@ -1024,6 +1036,8 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.Frontend.Expr.resolveObjectBuiltins_memoryguard
 #print axioms EvmCompiler.Solidity.Frontend.Object.compileVerifiedStackObjectArtifactWithLinkerSymbols?_valid
 #print axioms EvmCompiler.Solidity.Frontend.Object.compileVerifiedStackObjectArtifactWithLinkerSymbols?_sentinelImage
+#print axioms EvmCompiler.Solidity.Frontend.Object.compileVerifiedStackObjectArtifact_child_image_embedded
+#print axioms EvmCompiler.Solidity.Frontend.Object.creationImage_embeds_deployedRuntimeImage
 #print axioms EvmCompiler.Solidity.Frontend.Object.Expr.userCallsResolved?_user_call
 #print axioms EvmCompiler.Solidity.Frontend.Expr.List.resolveObjectBuiltinsIn?_mem
 #print axioms EvmCompiler.Solidity.Frontend.Stmt.List.resolveObjectBuiltinsIn?_mem
@@ -1449,6 +1463,15 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.RawAst.compileArtifactFromRawSolcIrWithLinkerSymbols?_decodingCorrect
 #print axioms EvmCompiler.Solidity.RawAst.optimizedRawSolcIrToRawBytecode
 #print axioms EvmCompiler.Solidity.RawAst.optimizedRawSolcIrToGasfulRawBytecode
+#print axioms EvmCompiler.Solidity.RawAst.optimizedRawSolcIrToRawBytecodeWithCodeSuffix
+#print axioms EvmCompiler.Solidity.RawAst.optimizedRawSolcIrToGasfulRawBytecodeWithCodeSuffix
+#print axioms EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.optimizedRawSolcIrToRawSourceBytecodeWithCodeSuffix
+#print axioms EvmCompiler.Solidity.RawAst.compileArtifactFromRawSolcIr?_decodingCorrect_withCodeSuffix
+#print axioms EvmCompiler.Yul.EndToEnd.optimizedSolcYulToRawBytecodeWithCodeSuffix
+#print axioms EvmCompiler.Yul.EndToEnd.optimizedSolcYulToRawBytecodeFinishedWithCodeSuffix
+#print axioms EvmCompiler.Yul.EndToEnd.optimizedSolcYulToRawBytecodeTerminalWithCodeSuffix
+#print axioms EvmCompiler.Yul.EndToEnd.optimizedSolcYulToGasfulRawBytecodeOfRecursiveFrameBridgeWithCodeSuffix
+#print axioms EvmCompiler.Solidity.Frontend.Object.compileVerifiedStackObjectArtifactWithLinkerSymbols?_decodingCorrect_withCodeSuffix
 #print axioms EvmCompiler.Solidity.RawAst.optimizedRawSolcIrArtifactToRawBytecode
 #print axioms EvmCompiler.Solidity.RawAst.Raw.SourcePreservation.optimizedRawSolcIrToRawSourceBytecode
 #print axioms EvmCompiler.Solidity.RawAst.optimizedRawSolcIrToRawBytecodeFinished

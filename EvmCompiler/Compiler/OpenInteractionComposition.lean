@@ -2797,6 +2797,302 @@ theorem compiledVerifiedStackObjectToRawBytecodeFinishedPublic
   exact Simulation.Interaction.Rel.mono hRel
     (fun _ _ hDone => ⟨generated, hDone⟩)
 
+/-!
+Suffix-tolerant object corollaries.
+
+Creation frames execute `image ++ constructorArgs`: the caller appends
+ABI-encoded constructor arguments after the checked object image. The generic
+cores above are already parametric in an arbitrary trailing payload, so these
+corollaries simply instantiate them with `plan.payload ++ suffix` and rewrite
+the checked image equation. The exact-image theorems are the `suffix := []`
+instances.
+-/
+
+/-- Suffix-tolerant variant of `compiledVerifiedStackObjectToRawBytecodeForward`:
+the finite-prefix relation holds against the checked image with any appended
+caller-owned byte suffix. -/
+theorem compiledVerifiedStackObjectToRawBytecodeForwardWithCodeSuffix
+    {object : Solidity.Frontend.Object}
+    {linkerSymbols : List
+      (Solidity.Frontend.Name × Solidity.Frontend.Word)}
+    {artifact : Solidity.Frontend.VerifiedStackObjectArtifact}
+    {sourceFuel : Nat}
+    {source : Yul.InteractionSemantics.State}
+    {functionsState : Functions.InteractionSemantics.State}
+    {expressionsState : Expressions.InteractionSemantics.RunState}
+    (suffix : List UInt8)
+    (hObject :
+      object.compileVerifiedStackObjectArtifactWithLinkerSymbols?
+          linkerSymbols = some artifact)
+    (hYulInitial : Yul.FunctionsInteractionRelation.ScopedStateRel
+      [] source functionsState)
+    (hYulDomain : Yul.FunctionsInteractionRelation.TargetDomainWithin
+      (Yul.Fresh.initial
+        (Yul.Contract.names
+          artifact.codeArtifact.ordered.program.contract)).used
+      functionsState.vars)
+    (hStackInitial : Functions.StackRelation.StateRel
+      Locals.Ctx.initial.layout [] [] functionsState expressionsState) :
+    exists structuredFuel,
+      Assembly.Accepted artifact.codeArtifact.compiled.certified.target /\
+        exists generated :
+            Structured.TypedCfgPreservation.Program.GeneratedContext
+              artifact.codeArtifact.compiled.expressions.toStructured
+              artifact.codeArtifact.compiled.entryShapes
+              artifact.codeArtifact.compiled.cfg,
+          Simulation.Interaction.ForwardRel
+            Yul.FunctionsInteractionPrimitive.Truncated
+            (YulStackCompactPrefixDoneRel
+              artifact.codeArtifact.compiled.expressions.toStructured
+              artifact.codeArtifact.compiled.entryShapes
+              artifact.codeArtifact.compiled.cfg generated
+              artifact.codeArtifact.compiled.certified.target)
+            (Yul.InteractionSemantics.exec (sourceFuel + 1)
+              (.Block
+                [artifact.codeArtifact.ordered.program.contract.dispatcher])
+              (some artifact.codeArtifact.ordered.program.contract) source)
+            (Assembly.Compact.InteractionSemantics.openRunNResult
+              (Assembly.Bytecode.ofList (artifact.image.bytes ++ suffix))
+              (2 *
+                ((Structured.InteractionStaticCost.blockBudget
+                    artifact.codeArtifact.compiled.expressions.toStructured
+                    structuredFuel
+                    artifact.codeArtifact.compiled.expressions.toStructured.body +
+                      1) *
+                  TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
+                    artifact.codeArtifact.compiled.cfg))
+              { expressionsState.evm with
+                pc := EvmYul.UInt256.ofNat 0 }) := by
+  obtain ⟨_children, plan, _codeArtifact, _hChildren, _hPlan, _hFinish, hCode,
+      _hArtifactChildren, _hContext, _hChildImages, _hPayload, hImage⟩ :=
+    Solidity.Frontend.Object.compileVerifiedStackObjectArtifactWithLinkerSymbols?_parts
+      hObject
+  have hResult :=
+    compiledVerifiedStackCodeToRawBytecodeForward
+      (sourceFuel := sourceFuel) (payload := plan.payload ++ suffix)
+      hCode hYulInitial hYulDomain hStackInitial
+  simpa [hImage, List.append_assoc] using hResult
+
+/-- Suffix-tolerant variant of
+`compiledVerifiedStackObjectToRawBytecodeForwardPublic`. -/
+theorem compiledVerifiedStackObjectToRawBytecodeForwardPublicWithCodeSuffix
+    {object : Solidity.Frontend.Object}
+    {linkerSymbols : List
+      (Solidity.Frontend.Name × Solidity.Frontend.Word)}
+    {artifact : Solidity.Frontend.VerifiedStackObjectArtifact}
+    {sourceFuel : Nat}
+    {source : Yul.InteractionSemantics.State}
+    {functionsState : Functions.InteractionSemantics.State}
+    {expressionsState : Expressions.InteractionSemantics.RunState}
+    (suffix : List UInt8)
+    (hObject :
+      object.compileVerifiedStackObjectArtifactWithLinkerSymbols?
+          linkerSymbols = some artifact)
+    (hYulInitial : Yul.FunctionsInteractionRelation.ScopedStateRel
+      [] source functionsState)
+    (hYulDomain : Yul.FunctionsInteractionRelation.TargetDomainWithin
+      (Yul.Fresh.initial
+        (Yul.Contract.names
+          artifact.codeArtifact.ordered.program.contract)).used
+      functionsState.vars)
+    (hStackInitial : Functions.StackRelation.StateRel
+      Locals.Ctx.initial.layout [] [] functionsState expressionsState) :
+    exists structuredFuel,
+      Assembly.Accepted artifact.codeArtifact.compiled.certified.target /\
+        Simulation.Interaction.ForwardRel
+          Yul.FunctionsInteractionPrimitive.Truncated
+          (VerifiedStackObjectPrefixDoneRel artifact)
+          (Yul.InteractionSemantics.exec (sourceFuel + 1)
+            (.Block
+              [artifact.codeArtifact.ordered.program.contract.dispatcher])
+            (some artifact.codeArtifact.ordered.program.contract) source)
+          (Assembly.Compact.InteractionSemantics.openRunNResult
+            (Assembly.Bytecode.ofList (artifact.image.bytes ++ suffix))
+            (2 *
+              ((Structured.InteractionStaticCost.blockBudget
+                  artifact.codeArtifact.compiled.expressions.toStructured
+                  structuredFuel
+                  artifact.codeArtifact.compiled.expressions.toStructured.body +
+                    1) *
+                TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
+                  artifact.codeArtifact.compiled.cfg))
+            { expressionsState.evm with
+              pc := EvmYul.UInt256.ofNat 0 }) := by
+  obtain ⟨structuredFuel, hAccepted, generated, hForward⟩ :=
+    compiledVerifiedStackObjectToRawBytecodeForwardWithCodeSuffix suffix
+      hObject hYulInitial hYulDomain hStackInitial
+  refine ⟨structuredFuel, hAccepted, ?_⟩
+  exact Simulation.Interaction.ForwardRel.mono hForward
+    (fun _sourceDone _targetDone hDone => ⟨generated, hDone⟩)
+
+/-- Suffix-tolerant variant of `compiledVerifiedStackObjectToRawBytecodePublic`
+(terminal source runs). -/
+theorem compiledVerifiedStackObjectToRawBytecodePublicWithCodeSuffix
+    {object : Solidity.Frontend.Object}
+    {linkerSymbols : List
+      (Solidity.Frontend.Name × Solidity.Frontend.Word)}
+    {artifact : Solidity.Frontend.VerifiedStackObjectArtifact}
+    {sourceFuel : Nat}
+    {source : Yul.InteractionSemantics.State}
+    {functionsState : Functions.InteractionSemantics.State}
+    {expressionsState : Expressions.InteractionSemantics.RunState}
+    (suffix : List UInt8)
+    (hObject :
+      object.compileVerifiedStackObjectArtifactWithLinkerSymbols?
+          linkerSymbols = some artifact)
+    (hYulInitial : Yul.FunctionsInteractionRelation.ScopedStateRel
+      [] source functionsState)
+    (hYulDomain : Yul.FunctionsInteractionRelation.TargetDomainWithin
+      (Yul.Fresh.initial
+        (Yul.Contract.names
+          artifact.codeArtifact.ordered.program.contract)).used
+      functionsState.vars)
+    (hStackInitial : Functions.StackRelation.StateRel
+      Locals.Ctx.initial.layout [] [] functionsState expressionsState)
+    (hTerminal : Simulation.Interaction.AllDone
+      Yul.FunctionsInteractionProgram.SourceTerminal
+      (Yul.InteractionSemantics.exec (sourceFuel + 1)
+        (.Block [artifact.codeArtifact.ordered.program.contract.dispatcher])
+        (some artifact.codeArtifact.ordered.program.contract) source)) :
+    ∃ structuredFuel,
+      Assembly.Accepted artifact.codeArtifact.compiled.certified.target ∧
+        Simulation.Interaction.Rel
+          (VerifiedStackObjectDoneRel artifact)
+          (Yul.InteractionSemantics.exec (sourceFuel + 1)
+            (.Block
+              [artifact.codeArtifact.ordered.program.contract.dispatcher])
+            (some artifact.codeArtifact.ordered.program.contract) source)
+          (Assembly.Compact.InteractionSemantics.openRunNResult
+            (Assembly.Bytecode.ofList (artifact.image.bytes ++ suffix))
+            (2 *
+              (Structured.InteractionStaticCost.blockBudget
+                  artifact.codeArtifact.compiled.expressions.toStructured
+                  structuredFuel
+                  artifact.codeArtifact.compiled.expressions.toStructured.body *
+                TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
+                  artifact.codeArtifact.compiled.cfg))
+            { expressionsState.evm with
+              pc := EvmYul.UInt256.ofNat 0 }) := by
+  obtain ⟨_children, plan, _codeArtifact, _hChildren, _hPlan, _hFinish, hCode,
+      _hArtifactChildren, _hContext, _hChildImages, _hPayload, hImage⟩ :=
+    Solidity.Frontend.Object.compileVerifiedStackObjectArtifactWithLinkerSymbols?_parts
+      hObject
+  have hResult :=
+    compiledVerifiedStackCodeToRawBytecode
+      (suffix := plan.payload ++ suffix) hCode hYulInitial hYulDomain
+      hStackInitial hTerminal
+  obtain ⟨structuredFuel, hAccepted, generated, hRel⟩ := hResult
+  refine ⟨structuredFuel, hAccepted, ?_⟩
+  have hRelImage :
+      Simulation.Interaction.Rel
+        (YulStackCompactDoneRel
+          artifact.codeArtifact.compiled.expressions.toStructured
+          artifact.codeArtifact.compiled.entryShapes
+          artifact.codeArtifact.compiled.cfg generated
+          artifact.codeArtifact.compiled.certified.target)
+        (Yul.InteractionSemantics.exec (sourceFuel + 1)
+          (.Block
+            [artifact.codeArtifact.ordered.program.contract.dispatcher])
+          (some artifact.codeArtifact.ordered.program.contract) source)
+        (Assembly.Compact.InteractionSemantics.openRunNResult
+          (Assembly.Bytecode.ofList (artifact.image.bytes ++ suffix))
+          (2 *
+            (Structured.InteractionStaticCost.blockBudget
+                artifact.codeArtifact.compiled.expressions.toStructured
+                structuredFuel
+                artifact.codeArtifact.compiled.expressions.toStructured.body *
+              TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
+                artifact.codeArtifact.compiled.cfg))
+          { expressionsState.evm with
+            pc := EvmYul.UInt256.ofNat 0 }) := by
+    simpa [hImage, List.append_assoc] using hRel
+  exact Simulation.Interaction.Rel.mono hRelImage
+    (fun _ _ hDone => ⟨generated, hDone⟩)
+
+/-- Suffix-tolerant variant of
+`compiledVerifiedStackObjectToRawBytecodeFinishedPublic`. -/
+theorem compiledVerifiedStackObjectToRawBytecodeFinishedPublicWithCodeSuffix
+    {object : Solidity.Frontend.Object}
+    {linkerSymbols : List
+      (Solidity.Frontend.Name × Solidity.Frontend.Word)}
+    {artifact : Solidity.Frontend.VerifiedStackObjectArtifact}
+    {sourceFuel : Nat}
+    {source : Yul.InteractionSemantics.State}
+    {functionsState : Functions.InteractionSemantics.State}
+    {expressionsState : Expressions.InteractionSemantics.RunState}
+    (suffix : List UInt8)
+    (hObject :
+      object.compileVerifiedStackObjectArtifactWithLinkerSymbols?
+          linkerSymbols = some artifact)
+    (hYulInitial : Yul.FunctionsInteractionRelation.ScopedStateRel
+      [] source functionsState)
+    (hYulDomain : Yul.FunctionsInteractionRelation.TargetDomainWithin
+      (Yul.Fresh.initial
+        (Yul.Contract.names
+          artifact.codeArtifact.ordered.program.contract)).used
+      functionsState.vars)
+    (hStackInitial : Functions.StackRelation.StateRel
+      Locals.Ctx.initial.layout [] [] functionsState expressionsState)
+    (hFinished : Simulation.Interaction.AllDone
+      Yul.FunctionsInteractionProgram.SourceFinished
+      (Yul.InteractionSemantics.exec (sourceFuel + 1)
+        (.Block [artifact.codeArtifact.ordered.program.contract.dispatcher])
+        (some artifact.codeArtifact.ordered.program.contract) source)) :
+    ∃ structuredFuel,
+      Assembly.Accepted artifact.codeArtifact.compiled.certified.target ∧
+        Simulation.Interaction.Rel
+          (VerifiedStackObjectDoneRel artifact)
+          (Yul.InteractionSemantics.exec (sourceFuel + 1)
+            (.Block
+              [artifact.codeArtifact.ordered.program.contract.dispatcher])
+            (some artifact.codeArtifact.ordered.program.contract) source)
+          (Assembly.Compact.InteractionSemantics.openRunNResult
+            (Assembly.Bytecode.ofList (artifact.image.bytes ++ suffix))
+            (2 *
+              (Structured.InteractionStaticCost.blockBudget
+                  artifact.codeArtifact.compiled.expressions.toStructured
+                  structuredFuel
+                  artifact.codeArtifact.compiled.expressions.toStructured.body *
+                TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
+                  artifact.codeArtifact.compiled.cfg))
+            { expressionsState.evm with
+              pc := EvmYul.UInt256.ofNat 0 }) := by
+  obtain ⟨_children, plan, _codeArtifact, _hChildren, _hPlan, _hFinish, hCode,
+      _hArtifactChildren, _hContext, _hChildImages, _hPayload, hImage⟩ :=
+    Solidity.Frontend.Object.compileVerifiedStackObjectArtifactWithLinkerSymbols?_parts
+      hObject
+  have hResult :=
+    compiledVerifiedStackCodeToRawBytecodeFinished
+      (payload := plan.payload ++ suffix) hCode hYulInitial hYulDomain
+      hStackInitial hFinished
+  obtain ⟨structuredFuel, hAccepted, generated, hRel⟩ := hResult
+  refine ⟨structuredFuel, hAccepted, ?_⟩
+  have hRelImage :
+      Simulation.Interaction.Rel
+        (YulStackCompactDoneRel
+          artifact.codeArtifact.compiled.expressions.toStructured
+          artifact.codeArtifact.compiled.entryShapes
+          artifact.codeArtifact.compiled.cfg generated
+          artifact.codeArtifact.compiled.certified.target)
+        (Yul.InteractionSemantics.exec (sourceFuel + 1)
+          (.Block
+            [artifact.codeArtifact.ordered.program.contract.dispatcher])
+          (some artifact.codeArtifact.ordered.program.contract) source)
+        (Assembly.Compact.InteractionSemantics.openRunNResult
+          (Assembly.Bytecode.ofList (artifact.image.bytes ++ suffix))
+          (2 *
+            (Structured.InteractionStaticCost.blockBudget
+                artifact.codeArtifact.compiled.expressions.toStructured
+                structuredFuel
+                artifact.codeArtifact.compiled.expressions.toStructured.body *
+              TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
+                artifact.codeArtifact.compiled.cfg))
+          { expressionsState.evm with
+            pc := EvmYul.UInt256.ofNat 0 }) := by
+    simpa [hImage, List.append_assoc] using hRel
+  exact Simulation.Interaction.Rel.mono hRelImage
+    (fun _ _ hDone => ⟨generated, hDone⟩)
+
 end OpenInteractionComposition
 end Compiler
 end EvmCompiler
