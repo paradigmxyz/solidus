@@ -73,5 +73,7 @@ No manual virtual-environment activation or `pip install` is needed. Use
 script that imports project Python dependencies.
 
 Detailed bridge and diagnostic command documentation lives in
-[`scripts/README.md`](scripts/README.md). Current proof scope and remaining
-gaps are tracked in [`ROADMAP.md`](ROADMAP.md).
+[`scripts/README.md`](scripts/README.md). The authoritative trust and theorem
+boundary — including a "Which theorem should I rely on?" guide — is
+[`PRODUCTION_ASSUMPTIONS.md`](PRODUCTION_ASSUMPTIONS.md); current proof scope
+and remaining gaps are tracked in [`ROADMAP.md`](ROADMAP.md).

@@ -13,6 +13,54 @@ This file and `ROADMAP.md` are the only authoritative current gap descriptions.
 proof requests, and archived roadmap files describe the checkpoint at which
 they were written and must not be read as current status.
 
+## Which Theorem Should I Rely On?
+
+Every entry below is a checked Lean theorem on the supported raw-solc spine.
+The sections after this one state exact hypotheses and caveats; this list only
+routes a claim to its endpoint.
+
+- Raw finite-prefix preservation:
+  `RawAst.optimizedRawSolcIrToRawBytecode`
+  (`EvmCompiler/Solidity/RawAstEndToEnd.lean`) relates execution of the
+  selected raw solc `irOptimizedAst` object to the emitted byte image in the
+  gas-free open semantics, from compile success alone.
+- Gasful frame refinement:
+  `RawAst.optimizedRawSolcIrToGasfulRawBytecode` (same file) adds the
+  recursive gasful `EVM.X` frame refinement; its only runtime premise is the
+  initial `GasfulBridge.OpenStateRel`.
+- Gasful claims with no escape branch:
+  `Yul.EndToEnd.optimizedSolcYulToGasfulRawBytecodeTotal` (+ `FinishedTotal`,
+  `TerminalTotal`, `TotalWithCodeSuffix`;
+  `EvmCompiler/Yul/GasfulCrown.lean`) is the crown for artifacts that carry a
+  stack-headroom certificate: the charged run completes in refinement,
+  collapses an exceptional child frame in step, or halts out-of-gas with the
+  committal rollback semantics; `OutOfFuel`, `StackOverflow`, and
+  `BadJumpDestination` are excluded outright.
+- Creation frames with constructor arguments:
+  `RawAst.optimizedRawSolcIrToRawBytecodeWithCodeSuffix` and
+  `RawAst.optimizedRawSolcIrToGasfulRawBytecodeWithCodeSuffix`
+  (`EvmCompiler/Solidity/RawAstEndToEnd.lean`) install `image ++ suffix`
+  uniformly on both sides, covering solc's appended ABI-encoded constructor
+  arguments.
+- Creation-to-runtime image linkage:
+  `Object.creationImage_embeds_deployedRuntimeImage`
+  (`EvmCompiler/Solidity/CreationRuntimeImage.lean`) proves, for the
+  standard single-runtime-child creation shape, that the compiled runtime
+  child image is embedded verbatim at its planned layout offset inside the
+  creation image.
+- Deploy-time immutable patching:
+  `Object.patchImmutables_image_compileWithImmutableValues?_ofCompile`
+  (`EvmCompiler/Solidity/ImmutablePatch.lean`) proves patching the compiled
+  image's immutable windows equals a fresh compile with those values, from
+  compile success alone.
+- Unlinked libraries:
+  `Object.patchImmutablesAndLibraries_image_ofCompileUnlinked` and
+  `Object.compileVerifiedStackObjectArtifactUnlinked?_withValues_resolvesOriginal`
+  (`EvmCompiler/Solidity/LibraryPatch.lean`) prove that writing the 20
+  address bytes at the exported `linkReferences` offsets of an unlinked
+  compile reproduces the pipeline's own compile with those addresses
+  resolved (see "Unlinked Libraries" for the placeholder-byte caveat).
+
 ## Public Theorem
 
 The primary raw-input theorem is
@@ -75,8 +123,10 @@ Successful artifact construction internally derives all of the following:
   recursive frontend object;
 - Functions normalization and its preservation theorem;
 - liveness, symbolic layouts, schedules, joins, dormant frames, symbolic stack
-  depth, and top-16 accessibility; this is not yet a global proof of the real
-  EVM's 1024-word stack headroom on every recursive trace;
+  depth, and top-16 accessibility; these compile-time facts alone are not a
+  global proof of the real EVM's 1024-word stack headroom — that bound is
+  discharged separately, for artifacts that carry one, by the fail-closed
+  stack-headroom certificate (see "Completed Compiler-Preservation Chain");
 - stack-only lowering with no compiler memory access or scratch reservation;
 - `memoryguard(size) = size` for the stack-only backend;
 - canonical Yul-to-Functions and Functions-to-Expressions initial relations;
@@ -261,14 +311,19 @@ has no escape constructor: the charged run either completes in refinement
 with the source-related open run, collapses an exceptional child frame in
 step with the open run per EVM frame semantics (with the charged label
 provably none of `OutOfFuel`, `StackOverflow`, `BadJumpDestination`), or
-halts out-of-gas with the pinned committal rollback semantics
-(`OutOfGasFrameSemantics`: `Ξ` exceptional halt, `Θ` checkpoint rollback,
-zero returned gas, failure flag, empty output) — nothing else. `outOfFuel`
-is discharged structurally by the gas-derived fuel bound
+halts out-of-gas with the committal `OutOfGasFrameSemantics` rollback pinned
+above — nothing else. `outOfFuel` is discharged structurally by the
+gas-derived fuel bound
 (`Assembly.GasfulFuelBound.x_ne_outOfFuel_of_gas_lt_fuel`), not by a
-per-execution hypothesis. Genuinely recursive programs, whose operand
-stacks are input-unbounded, fail the certificate closed and keep the
-committal endpoints instead.
+per-execution hypothesis.
+
+Honest caveats on the crown: gas charging, the derived fuel bound, and the
+out-of-gas boundary follow the gas schedule of the EVMYulLean commit pinned
+in `lakefile.lean` (see "Fork Surface"); CALL/CREATE-family effects remain
+open request/response exchanges (see "Open World"), so the crown does not
+verify external programs; and genuinely recursive programs, whose operand
+stacks are input-unbounded, fail the stack-headroom certificate closed and
+keep the committal endpoints instead.
 
 ## Creation Frames And Constructor Arguments
 
@@ -361,8 +416,9 @@ structured `irOptimizedAst`; the raw compiler rejects its missing AST. Safe and
 EntryPoint are compile gates; only cases for which solc emits a reference image
 are counted as differential execution tests. The kernel proof gate replays
 `#print axioms` for the primary raw and gasful theorems and the canonical
-`Yul.EndToEnd` theorems, and fails unless every report is exactly `propext`,
-`Classical.choice`, and `Quot.sound`.
+`Yul.EndToEnd` theorems — including the gasful Total crown endpoints and the
+immutable/library patch theorems — and fails unless every report is exactly
+`propext`, `Classical.choice`, and `Quot.sound`.
 The supported-version matrix also compiles honest London and Cancun fixtures
 and rejects Cancun-only `MCOPY`/transient-storage syntax relabeled as London.
 It separately compiles London `difficulty()` and Paris `prevrandao()`, then

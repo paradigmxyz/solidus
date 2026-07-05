@@ -63,6 +63,28 @@ To share dependency package builds across worktrees while retaining a local
 scripts/setup_shared_lake_cache.sh
 ```
 
+## Stack-Headroom Certificate Probe
+
+`probe_stack_headroom_corpus.sh` is a diagnostic (non-gate) probe of the
+fail-closed stack-headroom certificate producer
+(`Assembly.StackHeadroom.mkCert?`, the body of
+`VerifiedStackObjectArtifact.stackHeadroomCert?`) on the large pinned
+real-world corpora: Aave v3 `Pool`, Uniswap v4 `PoolManager`, Safe,
+ERC-4337 `EntryPoint`, and the EigenLayer BN254 library.  For every
+deployable creation/runtime object it compiles the contract through the
+supported raw solc spine and records `some`/`none` for the certificate plus a
+builder-first failure diagnosis for every `none`:
+
+```sh
+scripts/probe_stack_headroom_corpus.sh [--corpus NAME ...] [--keep] \
+  [--cache-dir DIR]
+```
+
+Corpus repos are shallow-cloned into the cache directory
+(`$EVM_COMPILER_CORPUS_CACHE` or `<outdir>/repos`) and reused when present.
+See the docstring in `scripts/probe_stack_headroom_corpus.py` for corpus
+definitions and intentionally unprobed suites.
+
 ## Oracle Reviews
 
 `oracle.py` builds compact review packets and submits them to the OpenAI
@@ -132,9 +154,6 @@ explicit `--unverified-diagnostic` flag (or
 `EVM_COMPILER_UNVERIFIED_DIAGNOSTIC=1`).  Supported artifact production goes
 through the verified raw path instead: `scripts/solc_lean_standard_json.py`
 or `lake exe evm-compiler-backend raw-image` on solc Standard JSON output.
-
-```sh
-```
 
 You can also hand the bridge solc's native Standard JSON input directly.  The
 bridge augments `settings.outputSelection` with the Yul representation it
@@ -594,8 +613,15 @@ with `lake exe evm-compiler-backend raw-image`
 (`Solidity.RawAst.compileArtifactFromRawSolcIr?`), replacing
 `evm.bytecode.object` and `evm.deployedBytecode.object` (plus
 `immutableReferences`) with Lean-produced bytecode.  No Python-side Yul
-translation is involved.  Extra solc arguments from Forge are forwarded to the
-real solc invocation:
+translation is involved.  When a contract uses `linkersymbol` libraries whose
+addresses are not supplied in `settings.libraries`, `raw-image` falls back to
+the verified unlinked pipeline
+(`Solidity.RawAst.compileArtifactUnlinkedFromRawSolcIr?`): the emitted
+bytecode carries zero-filled PUSH32 windows (not solc's `__$hash$__`
+placeholder text), and the wrapper exports solc-shaped `linkReferences`
+offsets so a standard linker that writes the 20 address bytes at each offset
+reproduces the pipeline's own linked compile.  Extra solc arguments from
+Forge are forwarded to the real solc invocation:
 
 ```sh
 SOLC_LEAN_REAL_SOLC=solc \
@@ -616,9 +642,8 @@ still checked for solc-shaped contract-map structure.  Set
 `SOLC_LEAN_VALIDATE_OUTPUT=0` only when you need to bypass that local
 validation while debugging the wrapper itself.  (`SOLC_LEAN_OPTIMIZED` and
 `SOLC_LEAN_BRIDGE_JSON_DIR` belonged to the retired Python bridge route: the
-raw path always consumes `irOptimizedAst` and emits no bridge JSON.)
-Set `SOLC_LEAN_OPTIMIZED=1` when the wrapper should request solc's
-`irOptimizedAst` path instead of the default `irAst` path.
+raw path always consumes `irOptimizedAst` and emits no bridge JSON.  Both are
+ignored; `SOLC_LEAN_BRIDGE_JSON_DIR` additionally prints a notice.)
 To run the same selected Forge tests through both compilers and compare
 pass/fail status, use:
 
@@ -631,16 +656,11 @@ SOLC=solc LAKE=lake \
 Set `PYTHON=/path/to/python` when schema validation should use a specific
 runtime, for example the bundled Codex Python with `jsonschema` installed.
 
-The comparison script also validates the persisted `bridge-json/manifest.json`
-package after a successful solc-lean compilation, emits and validates a
-`bridge-json-summary.json` preflight, and only then reports
-`forge_compare=pass`.  If a comparison fails or both runs fail the same way but
-solc-lean already wrote bridge JSON, the runner still validates and summarizes
-that package before printing the final status.  A passing comparison therefore
-includes both the structural handoff package check and the machine-readable
-backend compatibility inventory for every normalized bridge file produced by
-that run, while many non-passing comparisons still carry the same preflight
-diagnostics.
+Since the Python bridge driver was retired, the comparison script is a pure
+two-compiler Forge result comparison: it no longer produces or validates
+bridge-json manifests or summaries.  A passing comparison means the normalized
+`[PASS]`/`[FAIL]`/`[SKIP]` result sets matched and Forge's final summary line
+agreed with the normalized result count.
 
 For real project checkouts, `scripts/run_forge_project_compare.py` wraps that
 same comparison in a repo-level pipeline.  It can reuse a local Foundry project
@@ -668,28 +688,16 @@ runner prints
 `forge_compare_result_count=...`,
 `forge_compare_result_N=...`,
 `forge_compare_tests_passed=...`,
-`forge_compare_tests_failed=...`,
-`forge_compare_tests_skipped=...`,
-`bridge_json_backend_compatibility=...`,
-`bridge_json_summary_unsupported_primitives=...`,
-`bridge_json_summary_object_builtins=...`,
-`bridge_json_summary_dialect_builtins=...`,
-`bridge_json_summary_objects=...`, and
-`bridge_json_summary_skipped_contracts=...` so the package-level backend
-preflight is visible in the comparison output.  The solc-lean run writes
-normalized bridge JSON files under the comparison temp directory
-(`bridge-json/`) and prints `bridge_json_dir=...` plus
-`bridge_json_summary=...` when logs are kept, so a mismatch can be replayed
-through `--input-format bridge-json` without rerunning solc and inspected with
-the same summary preflight.  If a selector typo or overly narrow Forge filter
+`forge_compare_tests_failed=...`, and
+`forge_compare_tests_skipped=...`.  (Bridge-json preflight outputs belonged to
+the retired Python bridge route; the raw-path wrapper emits no bridge JSON, so
+no `bridge_json_*` lines are produced.)  If a selector typo or overly narrow
+Forge filter
 matches no tests, the runner fails with `reason=no_forge_test_results` instead
 of treating two empty result sets as an equivalence proof.  The runner also
 requires Forge's final summary line to be present and to agree with the number
 of normalized `[PASS]`/`[FAIL]`/`[SKIP]` result lines; otherwise it fails with
-`reason=forge_summary_missing` or `reason=forge_result_count_mismatch`.  The persisted
-manifest also records selected
-contracts that were skipped because solc did not emit the Yul/bytecode inputs
-needed by the Lean bytecode path, such as interfaces or abstract contracts.
+`reason=forge_summary_missing` or `reason=forge_result_count_mismatch`.
 The wrapper comparison is most useful once the test contract's generated Yul is
 inside the current backend subset.  For targeted comparisons where the test
 harness should stay compiled by full solc, use `--format forge-artifact` or
@@ -828,9 +836,9 @@ packages `ExternalCallBox`, validates/replays the manifest through Lean, runs
 the Lean backend-check preflight, and asserts that the runtime bridge summary
 preserves `call`, `staticcall`, `delegatecall`, `returndatasize`, and
 `returndatacopy`. Solc-emitted `gas()` is preserved by the checked compiler as
-an ordered open resource query rather than treated as a summary blocker. The
-remaining theorem is target-side: instantiate that query with the actual value
-observed by gasful EVM execution. The summary compatibility classifier treats
+an ordered open resource query rather than treated as a summary blocker; the
+gasful frame refinement instantiates that query with the actual value observed
+by charged EVM execution. The summary compatibility classifier treats
 the CALL-family primitives as supported open-boundary operations. Backend-check
 output may still report a later
 first failing stage for a concrete executable artifact, but the CALL-family
@@ -1573,10 +1581,10 @@ Current bridge limits are intentionally explicit:
   external-boundary events.
 - Direct resource observer primitives `gas()` and `msize()` are covered by the
   verified open theorem: source and emitted bytecode expose the same ordered
-  query and use the same answer for every value. What remains unproved is the
-  separate refinement showing that gasful EVM execution supplies those answers
-  and agrees with the open bytecode run after erasing target-only gas/control
-  state.
+  query and use the same answer for every value. The gasful recursive frame
+  refinement additionally instantiates those queries with the actual values
+  produced by charged `EVM.X` execution and relates the states after erasing
+  target-only gas/control bookkeeping (see `PRODUCTION_ASSUMPTIONS.md`).
 - The position observer primitive `pc()` remains an explicit dialect/raw-EVM
   exclusion before executable core-Yul lowering.
 - Raw EVM opcode-style calls such as `jump`, `jumpi`, `jumpdest`, `push*`,

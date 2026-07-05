@@ -25,9 +25,12 @@ metadata also accepts the family aliases Pectra for Prague and Fusaka for
 Osaka.
 
 Post-Cancun native EVM semantics are bounded by the EVMYulLean commit selected
-in `lakefile.lean`. The selected pin `8b610d524898f9bc7d451b017e0df6057cc88cd9`
-covers Fusaka opcode `CLZ`, Fusaka MODEXP gas/size changes, and execution-side
-EIP-7702 delegated EOA code-image lookup. The raw Yul `clz` builtin remains
+in `lakefile.lean`. The selected pin `3c5c44a62f4e7964bd1bc648caa708a111664c84`
+(branch `djtotal`) covers Fusaka opcode `CLZ`, Fusaka MODEXP gas/size changes,
+execution-side EIP-7702 delegated EOA code-image lookup, and a total
+Nat-indexed jumpdest scanner (`D_J_aux` with unfolding lemmas), which is what
+lets this repo prove jumpdest-scan membership for compiled label destinations.
+The raw Yul `clz` builtin remains
 supported by the existing generated-helper lowering and proof path; this
 compiler does not need to emit native `CLZ` for that coverage. EIP-7702
 transaction authorization-list processing remains outside this frame-level
@@ -162,7 +165,8 @@ Gasful EVM bridge checkpoint:
   `RunRefinesOpen`: the open raw-bytecode model intentionally does not validate
   jump destinations or the 1024-stack postcondition, so gasful
   `BadJumpDestination` and `StackOverflow` now refine an open transcript prefix
-  rather than a nonexistent matching open error.
+  rather than a nonexistent matching open error. (Both escapes were later
+  excluded outright for compiled artifacts; see the exclusion items below.)
 - [x] Tighten CALL/CREATE gas-accounting records: checked canonical-stack
   lemmas show CALL-family `dynamicGasCostAt` is exactly EVMYulLean `Ccall`
   parent gas, and CREATE/CREATE2 parent gas is recorded explicitly beside the
@@ -276,6 +280,29 @@ Gasful EVM bridge checkpoint:
   restoration through the EIP-150/returned-gas response relation. The compiler
   now constructs `ArtifactOrdinaryBoundaryStepInvariant`; initial control,
   generated branches, the checked sentinel, and reachability are internal.
+- [x] Make the out-of-gas branch committal: `RunRefinesOpenCommittal` carries
+  `OutOfGasFrameSemantics` (`Ξ` exceptional halt, `Θ` checkpoint rollback,
+  zero returned gas, failure flag, empty output) on the OOG branch.
+- [x] Eliminate `outOfFuel` structurally with the gas-derived fuel bound
+  (`Assembly.GasfulFuelBound.x_ne_outOfFuel_of_gas_lt_fuel`); gasful endpoints
+  run at fuel `max budget (gasAvailable + 6)` with no `hNoFuelStop` premise.
+- [x] Exclude the bad-jump escape for compiled artifacts:
+  `Assembly.Compact.D_J_contains_of_decodingCorrect` proves the interpreter's
+  own jumpdest scan lists every compiled label destination
+  (suffix-tolerantly), so `EVM.X` cannot report `BadJumpDestination`.
+- [x] Exclude the stack-overflow escape with the fail-closed stack-headroom
+  certificate (`VerifiedStackObjectArtifact.stackHeadroomCert?`), including
+  the constant-tracking abstract-stack-set stage and the indexed per-pc
+  validator proved equal to the reference checker; genuinely recursive
+  programs fail the certificate closed.
+- [x] Compose the four escape prunings into the gasful crown
+  `Yul.EndToEnd.optimizedSolcYulToGasfulRawBytecodeTotal` (+ `FinishedTotal`,
+  `TerminalTotal`, `TotalWithCodeSuffix`), concluding
+  `Assembly.GasfulBridge.RunRefinesOpenTotal` from compile success, the
+  certificate, and initial `OpenStateRel` alone.
+- [x] Publish suffix-tolerant `WithCodeSuffix` endpoints installing
+  `image ++ suffix` on both sides, covering creation frames with appended
+  ABI-encoded constructor arguments.
 
 `Compiler.StackArtifact` is the sole code-body artifact and
 `Solidity.Frontend.VerifiedStackObjectArtifact` is the sole recursive object
