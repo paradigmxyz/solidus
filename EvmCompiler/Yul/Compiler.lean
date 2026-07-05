@@ -174,6 +174,8 @@ def pureAliasPrim? : EvmYul.Operation .Yul → Bool
   | .StopArith .STOP => false
   | .StopArith _ => true
   | .CompBit _ => true
+  | .Env .CALLER => true
+  | .Env .CALLDATASIZE => true
   | _ => false
 
 mutual
