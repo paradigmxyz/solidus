@@ -19,6 +19,7 @@ import EvmCompiler.Assembly.InteractionFuelSafety
 import EvmCompiler.Assembly.Compact
 import EvmCompiler.Solidity.VerifiedStackObjectArtifact
 import EvmCompiler.Solidity.CreationRuntimeImage
+import EvmCompiler.Solidity.ImmutablePatch
 import EvmCompiler.Solidity.RawAstPublic
 import EvmCompiler.Solidity.RawAstEndToEnd
 import EvmCompiler.Yul.FunctionsInteractionProgram
@@ -51,6 +52,10 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #check EvmCompiler.Solidity.Frontend.Object.compileVerifiedStackObjectArtifactWithLinkerSymbols?_sentinelImage
 #check EvmCompiler.Solidity.Frontend.Object.compileVerifiedStackObjectArtifact_child_image_embedded
 #check EvmCompiler.Solidity.Frontend.Object.creationImage_embeds_deployedRuntimeImage
+#check EvmCompiler.Solidity.Frontend.Bytecode.patchImmutables
+#check EvmCompiler.Solidity.Frontend.compile?_byteDiff_of_differingPushPcs
+#check EvmCompiler.Solidity.Frontend.Object.compileVerifiedStackCodeArtifactIn?_byteDiff
+#check EvmCompiler.Solidity.Frontend.Object.patchImmutables_compileWithImmutableValues?
 #check EvmCompiler.Solidity.Frontend.Object.Expr.userCallsResolved?_user_call
 #check EvmCompiler.Solidity.Frontend.Expr.List.resolveObjectBuiltinsIn?_mem
 #check EvmCompiler.Solidity.Frontend.Stmt.List.resolveObjectBuiltinsIn?_mem
@@ -1038,6 +1043,9 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidity.Frontend.Object.compileVerifiedStackObjectArtifactWithLinkerSymbols?_sentinelImage
 #print axioms EvmCompiler.Solidity.Frontend.Object.compileVerifiedStackObjectArtifact_child_image_embedded
 #print axioms EvmCompiler.Solidity.Frontend.Object.creationImage_embeds_deployedRuntimeImage
+#print axioms EvmCompiler.Solidity.Frontend.compile?_byteDiff_of_differingPushPcs
+#print axioms EvmCompiler.Solidity.Frontend.Object.compileVerifiedStackCodeArtifactIn?_byteDiff
+#print axioms EvmCompiler.Solidity.Frontend.Object.patchImmutables_compileWithImmutableValues?
 #print axioms EvmCompiler.Solidity.Frontend.Object.Expr.userCallsResolved?_user_call
 #print axioms EvmCompiler.Solidity.Frontend.Expr.List.resolveObjectBuiltinsIn?_mem
 #print axioms EvmCompiler.Solidity.Frontend.Stmt.List.resolveObjectBuiltinsIn?_mem

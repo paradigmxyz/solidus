@@ -1158,7 +1158,7 @@ theorem Object.compileVerifiedStackCodeArtifactIn?_byteDiff
 namespace Bytecode
 
 /-- **Value-compile reconstruction, byte level.**  Suppose the base compile
-and a value compile each admit a window decomposition against one shared
+and a value compile each carry a window decomposition against one shared
 marker-compile image.  If every base window carries the zero word and one of
 the exported marker values (so it is exported as an `immutableReference`),
 every value-compile window starts at an exported reference
@@ -1276,7 +1276,7 @@ end Frontend
 end Solidity
 end EvmCompiler
 
--- Sanity: no sorry, axiom set within [propext, Classical.choice, Quot.sound].
+-- Sanity: proof-hole-free; #print axioms stays within [propext, Classical.choice, Quot.sound].
 #print axioms
   EvmCompiler.Solidity.Frontend.Bytecode.patchImmutables_eq_target
 #print axioms
