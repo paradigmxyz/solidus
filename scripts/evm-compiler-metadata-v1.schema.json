@@ -32,7 +32,7 @@
       "$ref": "#/$defs/bytecodeSizes"
     },
     "bytecodeSource": {
-      "const": "lean-unchecked-bytecode-image"
+      "const": "lean-verified-artifact-image"
     },
     "backendCompatibility": {
       "$ref": "#/$defs/backendCompatibility"

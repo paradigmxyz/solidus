@@ -519,18 +519,18 @@ local code-image relation for `codesize`/`codecopy`, so `datacopy`, `datasize`,
 `dataoffset`, `loadimmutable`, and `setimmutable` are handled by the computed
 object-image path.
 
-For executable MVP testing, `--format bytecode` emits unchecked backend bytecode
-hex by normalizing solc's Yul JSON AST in Python, writing the normalized bridge
+For executable MVP testing, `--format bytecode` emits backend bytecode hex
+by normalizing solc's Yul JSON AST in Python, writing the normalized bridge
 JSON to a temporary sidecar file, and invoking the native
-`evm-compiler-backend` executable to decode and evaluate
-`Program.bytecodeImageUnchecked?`. Lake keeps that executable current, avoiding
+`evm-compiler-backend` executable, which compiles the verified
+`compileVerifiedStackObjectArtifact?` pipeline. Lake keeps that executable current, avoiding
 the much slower Lean IR interpreter used by `lean --run`. The same
 path can start from a cached bridge file with `--input-format bridge-json`, so
 the Solidity/solc half and the Lean backend half are separable.  That path is
 the Solidity-facing object-image lane: it recursively compiles child objects,
 computes object/data offsets from this backend's emitted byte lengths, resolves
 object builtins, and appends child object/data payloads in the recorded solc
-order.  The older generated `programUncheckedBytecode` definitions are
+order.  The older generated `programArtifactBytecode` definitions are
 code-only lower-layer debugging helpers; the bytecode/artifact commands use the
 object-image definitions.
 The current smoke fixtures include storage reads/writes, checked arithmetic,

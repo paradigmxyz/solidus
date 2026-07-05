@@ -2483,20 +2483,20 @@ class SolidityToYulLeanTests(unittest.TestCase):
             rendered,
         )
         self.assertIn(
-            "def programUncheckedTarget : "
+            "def programArtifactTarget : "
             "Option EvmCompiler.Assembly.TargetProgram",
             rendered,
         )
         self.assertIn("program.compileArtifact?", rendered)
-        self.assertIn("def programUncheckedBytecode : Option ByteArray", rendered)
+        self.assertIn("def programArtifactBytecode : Option ByteArray", rendered)
         self.assertIn("artifact.codeArtifact.compiled.target", rendered)
         self.assertIn("artifact.codeArtifact.bytes", rendered)
         self.assertIn(
-            "def programUncheckedBytecodeImage : Option ByteArray",
+            "def programArtifactBytecodeImage : Option ByteArray",
             rendered,
         )
         self.assertIn(
-            "def programUncheckedObjectImage : "
+            "def programArtifactObjectImage : "
             "Option EvmCompiler.Solidity.Frontend.ObjectImage",
             rendered,
         )
@@ -2516,11 +2516,11 @@ class SolidityToYulLeanTests(unittest.TestCase):
             rendered,
         )
         self.assertIn(
-            "def programUncheckedObjectImageWithLinkerSymbols",
+            "def programArtifactObjectImageWithLinkerSymbols",
             rendered,
         )
         self.assertIn(
-            "def programUncheckedBytecodeImageWithLinkerSymbols",
+            "def programArtifactBytecodeImageWithLinkerSymbols",
             rendered,
         )
         self.assertIn(
@@ -2582,13 +2582,13 @@ class SolidityToYulLeanTests(unittest.TestCase):
             rendered,
         )
         self.assertIn(
-            "def programUncheckedTargetWithLayout : "
+            "def programArtifactTargetWithLayout : "
             "Option EvmCompiler.Assembly.TargetProgram",
             rendered,
         )
         self.assertIn("programVerifiedCodeArtifactAt 0", rendered)
         self.assertIn(
-            "def programUncheckedBytecodeWithLayout : Option ByteArray",
+            "def programArtifactBytecodeWithLayout : Option ByteArray",
             rendered,
         )
         self.assertIn("def programVerifiedCodeArtifactAt (base : Nat)", rendered)
@@ -2756,7 +2756,7 @@ class SolidityToYulLeanTests(unittest.TestCase):
             rendered,
         )
         self.assertIn(
-            "def programUncheckedTargetWithLocalDataBase : "
+            "def programArtifactTargetWithLocalDataBase : "
             "Option EvmCompiler.Assembly.TargetProgram",
             rendered,
         )
@@ -2765,7 +2765,7 @@ class SolidityToYulLeanTests(unittest.TestCase):
             rendered,
         )
         self.assertIn(
-            "def programUncheckedBytecodeWithLocalDataBase : Option ByteArray",
+            "def programArtifactBytecodeWithLocalDataBase : Option ByteArray",
             rendered,
         )
         self.assertIn(
@@ -3549,7 +3549,7 @@ class SolidityToYulLeanTests(unittest.TestCase):
     def test_bytecode_format_selects_most_resolved_definition(self):
         self.assertEqual(
             bridge.bytecode_definition_name("program", [], None),
-            "programUncheckedBytecodeImage",
+            "programArtifactBytecodeImage",
         )
         self.assertEqual(
             bridge.bytecode_definition_name(
@@ -3557,11 +3557,11 @@ class SolidityToYulLeanTests(unittest.TestCase):
                 [bridge.ObjectLayoutEntry("runtime", 43, 418)],
                 None,
             ),
-            "programUncheckedBytecodeImage",
+            "programArtifactBytecodeImage",
         )
         self.assertEqual(
             bridge.bytecode_definition_name("program", [], 32),
-            "programUncheckedBytecodeImage",
+            "programArtifactBytecodeImage",
         )
         self.assertEqual(
             bridge.bytecode_definition_name(
@@ -3570,13 +3570,13 @@ class SolidityToYulLeanTests(unittest.TestCase):
                 None,
                 [bridge.LinkerSymbolEntry("MathLib.sol:MathLib", 0)],
             ),
-            "programUncheckedBytecodeImageWithLinkerSymbols",
+            "programArtifactBytecodeImageWithLinkerSymbols",
         )
 
     def test_legacy_bytecode_definition_tracks_layout_witnesses(self):
         self.assertEqual(
             bridge.legacy_bytecode_definition_name("program", [], None),
-            "programUncheckedBytecode",
+            "programArtifactBytecode",
         )
         self.assertEqual(
             bridge.legacy_bytecode_definition_name(
@@ -3584,19 +3584,19 @@ class SolidityToYulLeanTests(unittest.TestCase):
                 [bridge.ObjectLayoutEntry("runtime", 43, 418)],
                 None,
             ),
-            "programUncheckedBytecodeWithLayout",
+            "programArtifactBytecodeWithLayout",
         )
         self.assertEqual(
             bridge.legacy_bytecode_definition_name("program", [], 32),
-            "programUncheckedBytecodeWithLocalDataBase",
+            "programArtifactBytecodeWithLocalDataBase",
         )
 
     def test_bytecode_runner_prints_hex_from_selected_definition(self):
         rendered = bridge.render_bytecode_runner(
-            "Generated.Simple.programUncheckedBytecodeWithLayout"
+            "Generated.Simple.programArtifactBytecodeWithLayout"
         )
         self.assertIn(
-            "match Generated.Simple.programUncheckedBytecodeWithLayout with",
+            "match Generated.Simple.programArtifactBytecodeWithLayout with",
             rendered,
         )
         self.assertIn(
@@ -3664,7 +3664,7 @@ class SolidityToYulLeanTests(unittest.TestCase):
         try:
             def fake_run_lake_object_image(lake, json_path, cwd, linker_symbols):
                 raise bridge.ConversionError(
-                    "unchecked object-image generation returned none; "
+                    "verified object-image generation returned none; "
                     "the selected object likely needs object layout/data-base "
                     "resolution or uses unsupported Yul"
                 )

@@ -2875,6 +2875,12 @@ mutual
 end
 
 mutual
+  /--
+  The CANONICAL supported statement lowering for the verified pipeline.
+  Despite the name, this is not an unverified shortcut: "unchecked" refers
+  only to skipping the legacy checked side-conditions, and this lowering is
+  fully covered by the end-to-end compiler theorems.
+  -/
   def toFunctionsListUncheckedFuel? :
       Nat → Fresh.State → AstStmt →
         Option (List Functions.Stmt × Fresh.State)

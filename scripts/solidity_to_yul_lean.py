@@ -2402,14 +2402,14 @@ noncomputable def {bytecode} : Option ByteArray := do
 """
 
 
-def render_frontend_unchecked_backend_defs(
+def render_frontend_artifact_backend_defs(
     target_definition: str,
     bytecode_definition: str,
     target_expr: str,
     bytecode_expr: str,
 ) -> str:
-    validate_lean_name(target_definition, "unchecked target definition name")
-    validate_lean_name(bytecode_definition, "unchecked bytecode definition name")
+    validate_lean_name(target_definition, "artifact target definition name")
+    validate_lean_name(bytecode_definition, "artifact bytecode definition name")
     return f"""
 def {target_definition} : Option EvmCompiler.Assembly.TargetProgram :=
   {target_expr}
@@ -2576,9 +2576,9 @@ noncomputable def {to_objects_definition} : Option EvmCompiler.Objects.Program :
 def {verified_artifact_definition} : Option {LEAN_FRONTEND}.Program.Artifact :=
   {definition}.compileArtifact?
 """
-    body += render_frontend_unchecked_backend_defs(
-        definition + "UncheckedTarget",
-        definition + "UncheckedBytecode",
+    body += render_frontend_artifact_backend_defs(
+        definition + "ArtifactTarget",
+        definition + "ArtifactBytecode",
         "Option.map (fun artifact => artifact.codeArtifact.compiled.target)\n"
         f"    {verified_artifact_definition}",
         "Option.map\n"
@@ -2586,12 +2586,12 @@ def {verified_artifact_definition} : Option {LEAN_FRONTEND}.Program.Artifact :=
         "      EvmCompiler.Assembly.Bytecode.ofList artifact.codeArtifact.bytes)\n"
         f"    {verified_artifact_definition}",
     )
-    bytecode_image_definition = definition + "UncheckedBytecodeImage"
-    object_image_definition = definition + "UncheckedObjectImage"
+    bytecode_image_definition = definition + "ArtifactBytecodeImage"
+    object_image_definition = definition + "ArtifactObjectImage"
     checked_bytecode_image_definition = definition + "CheckedBytecodeImage"
     checked_object_image_definition = definition + "CheckedObjectImage"
-    validate_lean_name(bytecode_image_definition, "unchecked bytecode image definition name")
-    validate_lean_name(object_image_definition, "unchecked object image definition name")
+    validate_lean_name(bytecode_image_definition, "artifact bytecode image definition name")
+    validate_lean_name(object_image_definition, "artifact object image definition name")
     validate_lean_name(
         checked_bytecode_image_definition,
         "checked bytecode image definition name",
@@ -2628,10 +2628,10 @@ noncomputable def {checked_bytecode_image_definition} : Option ByteArray :=
         "verified artifact with linker symbols definition name",
     )
     object_image_with_linkers_definition = (
-        definition + "UncheckedObjectImageWithLinkerSymbols"
+        definition + "ArtifactObjectImageWithLinkerSymbols"
     )
     bytecode_image_with_linkers_definition = (
-        definition + "UncheckedBytecodeImageWithLinkerSymbols"
+        definition + "ArtifactBytecodeImageWithLinkerSymbols"
     )
     checked_object_image_with_linkers_definition = (
         definition + "CheckedObjectImageWithLinkerSymbols"
@@ -2642,11 +2642,11 @@ noncomputable def {checked_bytecode_image_definition} : Option ByteArray :=
     validate_lean_name(linker_symbols_definition, "linker-symbols definition name")
     validate_lean_name(
         object_image_with_linkers_definition,
-        "unchecked object image with linker symbols definition name",
+        "artifact object image with linker symbols definition name",
     )
     validate_lean_name(
         bytecode_image_with_linkers_definition,
-        "unchecked bytecode image with linker symbols definition name",
+        "artifact bytecode image with linker symbols definition name",
     )
     validate_lean_name(
         checked_object_image_with_linkers_definition,
@@ -2746,9 +2746,9 @@ def {verified_code_artifact_at_definition} (base : Nat) :
           object.loadImmutableNames }}
   object.compileVerifiedStackCodeArtifactIn? context
 """
-    body += render_frontend_unchecked_backend_defs(
-        definition + "UncheckedTargetWithLayout",
-        definition + "UncheckedBytecodeWithLayout",
+    body += render_frontend_artifact_backend_defs(
+        definition + "ArtifactTargetWithLayout",
+        definition + "ArtifactBytecodeWithLayout",
         "Option.map (fun artifact => artifact.compiled.target)\n"
         f"    ({verified_code_artifact_at_definition} 0)",
         "Option.map\n"
@@ -2769,9 +2769,9 @@ noncomputable def {to_objects_with_local_data_base_definition} :
     Option EvmCompiler.Objects.Program :=
   {definition}.toObjectsWithLocalDataBase? objectLayout localDataBase
 """
-        body += render_frontend_unchecked_backend_defs(
-            definition + "UncheckedTargetWithLocalDataBase",
-            definition + "UncheckedBytecodeWithLocalDataBase",
+        body += render_frontend_artifact_backend_defs(
+            definition + "ArtifactTargetWithLocalDataBase",
+            definition + "ArtifactBytecodeWithLocalDataBase",
             "Option.map (fun artifact => artifact.compiled.target)\n"
             f"    ({verified_code_artifact_at_definition} localDataBase)",
             "Option.map\n"
@@ -2901,21 +2901,21 @@ def {definition}VerifiedArtifact :
   let program ← {definition}
   program.compileArtifact?
 
-def {definition}UncheckedTarget : Option EvmCompiler.Assembly.TargetProgram := do
+def {definition}ArtifactTarget : Option EvmCompiler.Assembly.TargetProgram := do
   let artifact ← {definition}VerifiedArtifact
   some artifact.codeArtifact.compiled.target
 
-def {definition}UncheckedBytecode : Option ByteArray := do
+def {definition}ArtifactBytecode : Option ByteArray := do
   let artifact ← {definition}VerifiedArtifact
   some (EvmCompiler.Assembly.Bytecode.ofList artifact.codeArtifact.bytes)
 
-def {definition}UncheckedObjectImage :
+def {definition}ArtifactObjectImage :
     Option EvmCompiler.Solidity.Frontend.ObjectImage := do
   let artifact ← {definition}VerifiedArtifact
   some artifact.image
 
-def {definition}UncheckedBytecodeImage : Option ByteArray := do
-  let image ← {definition}UncheckedObjectImage
+def {definition}ArtifactBytecodeImage : Option ByteArray := do
+  let image ← {definition}ArtifactObjectImage
   some (EvmCompiler.Assembly.Bytecode.ofList image.bytes)
 
 noncomputable def {checked_object_image_definition} :
@@ -2937,10 +2937,10 @@ noncomputable def {checked_bytecode_image_definition} : Option ByteArray := do
         "verified artifact with linker symbols definition name",
     )
     object_image_with_linkers_definition = (
-        definition + "UncheckedObjectImageWithLinkerSymbols"
+        definition + "ArtifactObjectImageWithLinkerSymbols"
     )
     bytecode_image_with_linkers_definition = (
-        definition + "UncheckedBytecodeImageWithLinkerSymbols"
+        definition + "ArtifactBytecodeImageWithLinkerSymbols"
     )
     checked_object_image_with_linkers_definition = (
         definition + "CheckedObjectImageWithLinkerSymbols"
@@ -2951,11 +2951,11 @@ noncomputable def {checked_bytecode_image_definition} : Option ByteArray := do
     validate_lean_name(linker_symbols_definition, "linker-symbols definition name")
     validate_lean_name(
         object_image_with_linkers_definition,
-        "unchecked object image with linker symbols definition name",
+        "artifact object image with linker symbols definition name",
     )
     validate_lean_name(
         bytecode_image_with_linkers_definition,
-        "unchecked bytecode image with linker symbols definition name",
+        "artifact bytecode image with linker symbols definition name",
     )
     validate_lean_name(
         checked_object_image_with_linkers_definition,
@@ -3060,12 +3060,12 @@ def {definition}VerifiedCodeArtifactAt (base : Nat) :
           object.loadImmutableNames }}
   object.compileVerifiedStackCodeArtifactIn? context
 
-def {definition}UncheckedTargetWithLayout :
+def {definition}ArtifactTargetWithLayout :
     Option EvmCompiler.Assembly.TargetProgram := do
   let artifact ← {definition}VerifiedCodeArtifactAt 0
   some artifact.compiled.target
 
-def {definition}UncheckedBytecodeWithLayout : Option ByteArray := do
+def {definition}ArtifactBytecodeWithLayout : Option ByteArray := do
   let artifact ← {definition}VerifiedCodeArtifactAt 0
   some (EvmCompiler.Assembly.Bytecode.ofList artifact.bytes)
 """
@@ -3084,12 +3084,12 @@ noncomputable def {to_objects_with_local_data_base_definition} :
   let program ← {definition}
   program.toObjectsWithLocalDataBase? objectLayout localDataBase
 
-def {definition}UncheckedTargetWithLocalDataBase :
+def {definition}ArtifactTargetWithLocalDataBase :
     Option EvmCompiler.Assembly.TargetProgram := do
   let artifact ← {definition}VerifiedCodeArtifactAt localDataBase
   some artifact.compiled.target
 
-def {definition}UncheckedBytecodeWithLocalDataBase : Option ByteArray := do
+def {definition}ArtifactBytecodeWithLocalDataBase : Option ByteArray := do
   let artifact ← {definition}VerifiedCodeArtifactAt localDataBase
   some (EvmCompiler.Assembly.Bytecode.ofList artifact.bytes)
 """
@@ -5362,8 +5362,8 @@ def bytecode_definition_name(
     _ = object_layout
     _ = local_data_base
     if linker_symbols:
-        return definition + "UncheckedBytecodeImageWithLinkerSymbols"
-    return definition + "UncheckedBytecodeImage"
+        return definition + "ArtifactBytecodeImageWithLinkerSymbols"
+    return definition + "ArtifactBytecodeImage"
 
 
 def object_image_definition_name(
@@ -5371,8 +5371,8 @@ def object_image_definition_name(
     linker_symbols: Sequence[LinkerSymbolEntry] = (),
 ) -> str:
     if linker_symbols:
-        return definition + "UncheckedObjectImageWithLinkerSymbols"
-    return definition + "UncheckedObjectImage"
+        return definition + "ArtifactObjectImageWithLinkerSymbols"
+    return definition + "ArtifactObjectImage"
 
 
 def legacy_bytecode_definition_name(
@@ -5381,10 +5381,10 @@ def legacy_bytecode_definition_name(
     local_data_base: Optional[int],
 ) -> str:
     if local_data_base is not None:
-        return definition + "UncheckedBytecodeWithLocalDataBase"
+        return definition + "ArtifactBytecodeWithLocalDataBase"
     if object_layout:
-        return definition + "UncheckedBytecodeWithLayout"
-    return definition + "UncheckedBytecode"
+        return definition + "ArtifactBytecodeWithLayout"
+    return definition + "ArtifactBytecode"
 
 
 def render_bytecode_runner(qualified_bytecode_definition: str) -> str:
@@ -6098,7 +6098,7 @@ def run_lake_bytecode(lake: str, lean_source: str, cwd: Path) -> str:
         bytecode = lines[-1]
         if bytecode == "none":
             fail(
-                "unchecked bytecode generation returned none; the selected object "
+                "verified bytecode generation returned none; the selected object "
                 "likely needs object layout/data-base resolution or uses unsupported Yul"
             )
         if not re.fullmatch(r"0x[0-9a-f]*", bytecode):
@@ -6398,7 +6398,7 @@ def parse_object_image_output(output: str) -> CompiledObjectImage:
         fail("Lean object-image runner produced no output")
     if lines[-1] == "none":
         fail(
-            "unchecked object-image generation returned none; the selected object "
+            "verified object-image generation returned none; the selected object "
             "likely needs object layout/data-base resolution or uses unsupported Yul"
         )
     bytecode: Optional[str] = None
@@ -6621,7 +6621,7 @@ def compile_frontend_object_image(
                 linker_symbols,
             )
         except ConversionError as exc:
-            if "unchecked object-image generation returned none" not in str(exc):
+            if "verified object-image generation returned none" not in str(exc):
                 raise
             diagnostic_source = render_json_file_backend_check_runner(
                 bridge_json_path,
@@ -6976,7 +6976,7 @@ def render_forge_artifact_json(
             "creationBytes": bytecode_size(creation_bytecode),
             "runtimeBytes": bytecode_size(runtime_bytecode),
         },
-        "bytecodeSource": "lean-unchecked-bytecode-image",
+        "bytecodeSource": "lean-verified-artifact-image",
     }
     if backend_compatibility is not None:
         evm_compiler["backendCompatibility"] = copy.deepcopy(backend_compatibility)
@@ -7062,7 +7062,7 @@ def apply_standard_json_bytecode_artifact(
             "creationBytes": bytecode_size(artifact.creation_bytecode),
             "runtimeBytes": bytecode_size(artifact.runtime_bytecode),
         },
-        "bytecodeSource": "lean-unchecked-bytecode-image",
+        "bytecodeSource": "lean-verified-artifact-image",
     }
     if artifact.backend_compatibility is not None:
         contract_output["evmCompiler"]["backendCompatibility"] = copy.deepcopy(
@@ -7641,7 +7641,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
             "typed front-end Lean IR backed by normalized JSON, the normalized "
             "bridge AST JSON, a Lean-free structural summary of bridge JSON, "
             "a Lean sidecar decode check for bridge JSON, a staged Lean "
-            "backend handoff check, unchecked backend bytecode hex, a JSON "
+            "backend handoff check, diagnostic backend bytecode hex, a JSON "
             "artifact with creation and runtime bytecode, or a Foundry-shaped "
             "or solc Standard JSON artifact with Lean-produced bytecode"
         ),

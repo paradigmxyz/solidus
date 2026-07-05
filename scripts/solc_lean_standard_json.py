@@ -243,7 +243,7 @@ def replace_contract_bytecode(
             "creationBytes": len(creation_bytecode) // 2,
             "runtimeBytes": len(runtime_bytecode) // 2,
         },
-        "bytecodeSource": "lean-unchecked-bytecode-image",
+        "bytecodeSource": "lean-verified-artifact-image",
     }
 
 

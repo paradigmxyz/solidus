@@ -96,6 +96,12 @@ def toBasicOp? : EvmYul.Operation .Yul → Option Structured.BasicOp
 @[simp] theorem toBasicOp?_clz :
     toBasicOp? ((.CompBit .CLZ : EvmYul.Operation .Yul)) = none := rfl
 
+/--
+The CANONICAL supported primitive translation for the verified pipeline.
+Despite the name, this is not an unverified shortcut: "unchecked" refers only
+to skipping the legacy checked side-conditions (which rejected `msize`/`gas`),
+and this translation is fully covered by the end-to-end compiler theorems.
+-/
 def toUncheckedBasicOp? (prim : EvmYul.Operation .Yul) :
     Option Structured.BasicOp :=
   match prim with

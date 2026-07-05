@@ -1110,7 +1110,7 @@ def run (config : Config) : IO Unit := do
       match config.mode with
       | .check => printCheck program none false
       | .image | .summary =>
-          throw (IO.userError "unchecked object-image generation returned none")
+          throw (IO.userError "verified object-image generation returned none")
       | .stackAnalysis | .stackDiagnostics => pure ()
       | .rawImage | .rawSummary | .rawCheck => pure ()
   | some artifact =>

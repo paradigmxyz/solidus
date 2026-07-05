@@ -158,8 +158,8 @@ A visible layout witness for Yul object/data pseudo-builtins.
 
 Resolving through this structure only replaces `datasize("name")` and
 `dataoffset("name")` with literals before entering the current backend
-`Yul.Program`.  The executable `bytecodeImageUnchecked?` path below computes
-its own object/data layout and appends payload bytes; this witness remains for
+`Yul.Program`.  The executable verified-artifact path below computes its own
+object/data layout and appends payload bytes; this witness remains for
 explicit-layout debugging, compatibility code-only conversions, and checked
 layout theorem work.
 -/
