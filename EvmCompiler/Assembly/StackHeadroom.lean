@@ -228,6 +228,266 @@ def check? (artifact : Compact.Artifact) (cert : Cert) : Bool :=
     memStack cert.table (EvmYul.UInt256.ofNat 0) [] &&
     artifact.blocks.all (blockOk? artifact cert.table)
 
+/-! ## Indexed validator
+
+`check?` answers every `stacksAt`/`memStack` query with a linear scan of the
+whole flat table, so validating a table of `E` entries against `B` blocks
+costs on the order of `B * E` table-element visits — prohibitive on large
+production runtimes (tens of billions of visits).  `checkIndexed?` groups
+the table once into per-pc buckets keyed by `Word.toNat` and answers every
+query from the relevant bucket.  It is proved EQUAL to `check?`
+(`checkIndexed?_eq_check?`), in both directions at once, so `mkCert?` may
+call it while every soundness lemma stays keyed on `check?`. -/
+
+/-- Per-pc bucket index of a flat stack table, keyed by `Word.toNat`.
+Bucket order is the reverse of table order; only membership matters. -/
+def indexTable (table : StackTable) : Std.HashMap Nat (List AbsStack) :=
+  table.foldl
+    (fun acc entry =>
+      acc.insert entry.1.toNat (entry.2 :: acc.getD entry.1.toNat []))
+    Std.HashMap.emptyWithCapacity
+
+/-- Indexed counterpart of `stacksAt`. -/
+def stacksAtIdx (idx : Std.HashMap Nat (List AbsStack)) (pc : Word) :
+    List AbsStack :=
+  idx.getD pc.toNat []
+
+/-- Indexed counterpart of `memStack`. -/
+def memStackIdx (idx : Std.HashMap Nat (List AbsStack)) (pc : Word)
+    (astack : AbsStack) : Bool :=
+  (stacksAtIdx idx pc).any (fun entry => decide (entry = astack))
+
+theorem word_toNat_inj {a b : Word} (h : EvmYul.UInt256.toNat a =
+    EvmYul.UInt256.toNat b) : a = b := by
+  cases a; cases b
+  simp only [EvmYul.UInt256.toNat] at h
+  congr 1
+  exact Fin.ext h
+
+/-- Membership in the buckets built by the `indexTable` fold. -/
+theorem indexTable_fold_mem (l : StackTable)
+    (acc : Std.HashMap Nat (List AbsStack)) (k : Nat) (a : AbsStack) :
+    a ∈ (l.foldl
+        (fun acc entry =>
+          acc.insert entry.1.toNat (entry.2 :: acc.getD entry.1.toNat []))
+        acc).getD k [] ↔
+      a ∈ acc.getD k [] ∨
+        ∃ p, p ∈ l ∧ EvmYul.UInt256.toNat p.1 = k ∧ p.2 = a := by
+  induction l generalizing acc with
+  | nil => simp
+  | cons hd tl ih =>
+      rw [List.foldl_cons, ih]
+      have hIns :
+          a ∈ (acc.insert hd.1.toNat
+              (hd.2 :: acc.getD hd.1.toNat [])).getD k [] ↔
+            a ∈ acc.getD k [] ∨
+              (EvmYul.UInt256.toNat hd.1 = k ∧ hd.2 = a) := by
+        rw [Std.HashMap.getD_insert]
+        by_cases hk : EvmYul.UInt256.toNat hd.1 = k
+        · subst hk
+          simp [List.mem_cons, eq_comm, or_comm]
+        · simp [hk, Ne.symm hk]
+      rw [hIns]
+      constructor
+      · rintro ((hAcc | ⟨hPc, hStack⟩) | ⟨p, hMem, hPc, hStack⟩)
+        · exact Or.inl hAcc
+        · exact Or.inr ⟨hd, List.mem_cons_self .., hPc, hStack⟩
+        · exact Or.inr ⟨p, List.mem_cons_of_mem _ hMem, hPc, hStack⟩
+      · rintro (hAcc | ⟨p, hMem, hPc, hStack⟩)
+        · exact Or.inl (Or.inl hAcc)
+        · rcases List.mem_cons.mp hMem with hHd | hTl
+          · subst hHd
+            exact Or.inl (Or.inr ⟨hPc, hStack⟩)
+          · exact Or.inr ⟨p, hTl, hPc, hStack⟩
+
+theorem mem_stacksAt_iff {table : StackTable} {pc : Word} {a : AbsStack} :
+    a ∈ stacksAt table pc ↔ ∃ p, p ∈ table ∧ p.1 = pc ∧ p.2 = a := by
+  unfold stacksAt
+  constructor
+  · intro hMem
+    obtain ⟨p, hFilter, hEq⟩ := List.mem_map.mp hMem
+    obtain ⟨hTable, hPc⟩ := List.mem_filter.mp hFilter
+    exact ⟨p, hTable, of_decide_eq_true hPc, hEq⟩
+  · rintro ⟨p, hTable, hPc, hStack⟩
+    exact List.mem_map.mpr
+      ⟨p, List.mem_filter.mpr ⟨hTable, decide_eq_true hPc⟩, hStack⟩
+
+/-- The bucket index answers exactly the flat-table membership queries. -/
+theorem mem_stacksAtIdx_iff {table : StackTable} {pc : Word}
+    {a : AbsStack} :
+    a ∈ stacksAtIdx (indexTable table) pc ↔ a ∈ stacksAt table pc := by
+  unfold stacksAtIdx indexTable
+  rw [indexTable_fold_mem, mem_stacksAt_iff]
+  constructor
+  · rintro (hEmpty | ⟨p, hMem, hPc, hStack⟩)
+    · simp at hEmpty
+    · exact ⟨p, hMem, word_toNat_inj hPc, hStack⟩
+  · rintro ⟨p, hMem, hPc, hStack⟩
+    exact Or.inr ⟨p, hMem, by rw [hPc], hStack⟩
+
+theorem memStackIdx_eq (table : StackTable) (pc : Word)
+    (astack : AbsStack) :
+    memStackIdx (indexTable table) pc astack = memStack table pc astack := by
+  rw [Bool.eq_iff_iff]
+  unfold memStackIdx memStack
+  rw [List.any_eq_true, List.any_eq_true]
+  constructor
+  · rintro ⟨entry, hMem, hEq⟩
+    exact ⟨entry, mem_stacksAtIdx_iff.mp hMem, hEq⟩
+  · rintro ⟨entry, hMem, hEq⟩
+    exact ⟨entry, mem_stacksAtIdx_iff.mpr hMem, hEq⟩
+
+theorem stacksAtIdx_all_eq (table : StackTable) (pc : Word)
+    (f : AbsStack → Bool) :
+    (stacksAtIdx (indexTable table) pc).all f = (stacksAt table pc).all f := by
+  rw [Bool.eq_iff_iff, List.all_eq_true, List.all_eq_true]
+  constructor
+  · intro hAll a hMem
+    exact hAll a (mem_stacksAtIdx_iff.mpr hMem)
+  · intro hAll a hMem
+    exact hAll a (mem_stacksAtIdx_iff.mp hMem)
+
+theorem stacksAtIdx_isEmpty_eq (table : StackTable) (pc : Word) :
+    (stacksAtIdx (indexTable table) pc).isEmpty =
+      (stacksAt table pc).isEmpty := by
+  rw [Bool.eq_iff_iff, List.isEmpty_iff, List.isEmpty_iff,
+    List.eq_nil_iff_forall_not_mem, List.eq_nil_iff_forall_not_mem]
+  constructor
+  · intro hNone a hMem
+    exact hNone a (mem_stacksAtIdx_iff.mpr hMem)
+  · intro hNone a hMem
+    exact hNone a (mem_stacksAtIdx_iff.mp hMem)
+
+/-- Indexed mirror of `blockOk?`: same per-block, per-abstract-stack rules,
+every table query answered from the per-pc bucket index. -/
+def blockOkIdx? (artifact : Compact.Artifact)
+    (idx : Std.HashMap Nat (List AbsStack))
+    (block : Compact.SourceBlock) : Bool :=
+  match block.sourceInstr with
+  | .label _ =>
+      (stacksAtIdx idx (EvmYul.UInt256.ofNat block.compactPc)).all
+        (fun astack =>
+          memStackIdx idx
+            (EvmYul.UInt256.ofNat (block.compactPc + 1)) astack)
+  | .push value =>
+      match Compact.sourceInstrSizeAt? artifact.pinnedPushPcs
+          artifact.branchWidth block.sourcePc block.sourceInstr with
+      | some size =>
+          (stacksAtIdx idx (EvmYul.UInt256.ofNat block.compactPc)).all
+            (fun astack =>
+              memStackIdx idx
+                (EvmYul.UInt256.ofNat (block.compactPc + size))
+                (some value :: astack))
+      | none =>
+          (stacksAtIdx idx
+            (EvmYul.UInt256.ofNat block.compactPc)).isEmpty
+  | .pushLabel _ =>
+      (stacksAtIdx idx (EvmYul.UInt256.ofNat block.compactPc)).isEmpty
+  | .jumpDynamic =>
+      (stacksAtIdx idx (EvmYul.UInt256.ofNat block.compactPc)).isEmpty
+  | .jump target =>
+      match Compact.lookupLabel? artifact.labels target with
+      | some dest =>
+          ((stacksAtIdx idx (EvmYul.UInt256.ofNat block.compactPc)).all
+            (fun astack =>
+              memStackIdx idx
+                (EvmYul.UInt256.ofNat
+                  (block.compactPc + artifact.branchWidth + 1))
+                (some (EvmYul.UInt256.ofNat dest) :: astack))) &&
+            ((stacksAtIdx idx
+                (EvmYul.UInt256.ofNat
+                  (block.compactPc + artifact.branchWidth + 1))).all
+              (fun mid =>
+                match mid with
+                | _ :: rest =>
+                    memStackIdx idx (EvmYul.UInt256.ofNat dest) rest
+                | [] => false))
+      | none =>
+          (stacksAtIdx idx
+              (EvmYul.UInt256.ofNat block.compactPc)).isEmpty &&
+            (stacksAtIdx idx
+                (EvmYul.UInt256.ofNat
+                  (block.compactPc + artifact.branchWidth + 1))).isEmpty
+  | .jumpi target =>
+      match Compact.lookupLabel? artifact.labels target with
+      | some dest =>
+          ((stacksAtIdx idx (EvmYul.UInt256.ofNat block.compactPc)).all
+            (fun astack =>
+              memStackIdx idx
+                (EvmYul.UInt256.ofNat
+                  (block.compactPc + artifact.branchWidth + 1))
+                (some (EvmYul.UInt256.ofNat dest) :: astack))) &&
+            ((stacksAtIdx idx
+                (EvmYul.UInt256.ofNat
+                  (block.compactPc + artifact.branchWidth + 1))).all
+              (fun mid =>
+                match mid with
+                | _ :: cond :: rest =>
+                    (match cond with
+                      | some c =>
+                          if c = EvmYul.UInt256.ofNat 0 then
+                            memStackIdx idx
+                              (EvmYul.UInt256.ofNat
+                                (block.compactPc + artifact.branchWidth + 2))
+                              rest
+                          else
+                            memStackIdx idx (EvmYul.UInt256.ofNat dest) rest
+                      | none =>
+                          memStackIdx idx (EvmYul.UInt256.ofNat dest) rest &&
+                            memStackIdx idx
+                              (EvmYul.UInt256.ofNat
+                                (block.compactPc + artifact.branchWidth + 2))
+                              rest)
+                | _ => false))
+      | none =>
+          (stacksAtIdx idx
+              (EvmYul.UInt256.ofNat block.compactPc)).isEmpty &&
+            (stacksAtIdx idx
+                (EvmYul.UInt256.ofNat
+                  (block.compactPc + artifact.branchWidth + 1))).isEmpty
+  | .prim op =>
+      if op = .invalid then
+        true
+      else
+        match op.stackArity? with
+        | none => true
+        | some _ =>
+            (stacksAtIdx idx (EvmYul.UInt256.ofNat block.compactPc)).all
+              (fun astack =>
+                match absPrim? op astack with
+                | some astack' =>
+                    memStackIdx idx
+                      (EvmYul.UInt256.ofNat (block.compactPc + 1)) astack'
+                | none => false)
+
+theorem blockOkIdx?_eq (artifact : Compact.Artifact) (table : StackTable)
+    (block : Compact.SourceBlock) :
+    blockOkIdx? artifact (indexTable table) block =
+      blockOk? artifact table block := by
+  unfold blockOkIdx? blockOk?
+  cases block.sourceInstr <;>
+    simp only [memStackIdx_eq, stacksAtIdx_all_eq, stacksAtIdx_isEmpty_eq]
+
+/-- The fast validator: identical verdict to `check?`
+(`checkIndexed?_eq_check?`), bucket-indexed table queries. -/
+def checkIndexed? (artifact : Compact.Artifact) (cert : Cert) : Bool :=
+  let idx := indexTable cert.table
+  stacksBounded? cert.table &&
+    memStackIdx idx (EvmYul.UInt256.ofNat 0) [] &&
+    artifact.blocks.all (blockOkIdx? artifact idx)
+
+/-- Full behavioural equality of the fast and flat validators: no
+certificate changes verdict in either direction. -/
+theorem checkIndexed?_eq_check? (artifact : Compact.Artifact)
+    (cert : Cert) :
+    checkIndexed? artifact cert = check? artifact cert := by
+  simp only [checkIndexed?, check?]
+  have hBlocks :
+      blockOkIdx? artifact (indexTable cert.table) =
+        blockOk? artifact cert.table :=
+    funext (blockOkIdx?_eq artifact cert.table)
+  rw [memStackIdx_eq, hBlocks]
+
 /-! ## Untrusted certificate builder -/
 
 /-- Static successor edges of one block for the builder, in `Nat` pc space.
@@ -331,7 +591,9 @@ def mkStacks? (artifact : Compact.Artifact) :
     Std.HashMap.emptyWithCapacity [(0, [])]
 
 /-- Certificate producer: builds an abstract-stack-set table and re-validates
-it with the trusted checker.  Returns `none` unless `check?` succeeds. -/
+it with the fast validator `checkIndexed?` (proved equal to the trusted
+`check?` by `checkIndexed?_eq_check?`, so the accepted set is unchanged).
+Returns `none` unless the validation succeeds. -/
 def mkCert? (artifact : Compact.Artifact) : Option Cert := do
   let built ← mkStacks? artifact
   let cert : Cert :=
@@ -339,7 +601,7 @@ def mkCert? (artifact : Compact.Artifact) : Option Cert := do
         built.toList.flatMap (fun entry =>
           entry.2.map (fun astack =>
             (EvmYul.UInt256.ofNat entry.1, astack))) }
-  if check? artifact cert then some cert else none
+  if checkIndexed? artifact cert then some cert else none
 
 theorem mkCert?_check {artifact : Compact.Artifact} {cert : Cert}
     (hMk : mkCert? artifact = some cert) :
@@ -351,13 +613,14 @@ theorem mkCert?_check {artifact : Compact.Artifact} {cert : Cert}
       rw [hStacks] at hMk
       simp only [bind, Option.bind] at hMk
       by_cases hCheck :
-          check? artifact
+          checkIndexed? artifact
             { table :=
                 built.toList.flatMap (fun entry =>
                   entry.2.map (fun astack =>
                     (EvmYul.UInt256.ofNat entry.1, astack))) } = true
       · rw [if_pos hCheck] at hMk
         cases hMk
+        rw [← checkIndexed?_eq_check?]
         exact hCheck
       · rw [if_neg hCheck] at hMk
         cases hMk

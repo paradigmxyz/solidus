@@ -240,13 +240,12 @@ def diagnose (artifact : Compact.Artifact) :
     (16 * (StackHeadroom.stackCap + 1) * (artifact.blocks.length + 1) + 16)
     Std.HashMap.emptyWithCapacity [(0, [])] 0
 
-/-- `check?` scans the full flat table once per `stacksAt`/`memStack`
-query, so validating a table of `E` entries against `B` blocks costs on
-the order of `B * E` table-element visits (more with midpoint queries).
-Above this budget the interpreted validator would run for hours, so the
-probe reports the builder verdict and skips the trusted re-validation.
-Tune with PROBE_CHECK_BUDGET=<Nat> (0 = never skip). -/
-def defaultCheckBudget : Nat := 2000000000
+/-- `mkCert?` validates through the bucket-indexed `checkIndexed?` (proved
+equal to the flat `check?` by `checkIndexed?_eq_check?`), so full trusted
+re-validation is near-linear in the table and cheap even interpreted; the
+budget skip is retained only as an escape hatch.  Tune with
+PROBE_CHECK_BUDGET=<Nat> (0 = never skip, the default). -/
+def defaultCheckBudget : Nat := 0
 
 def main : IO Unit := do
   let budget :=
