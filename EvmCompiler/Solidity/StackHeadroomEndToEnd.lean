@@ -176,7 +176,11 @@ theorem VerifiedStackObjectArtifact.x_ne_stackOverflow_withCodeSuffix
 
 /-- Escape-free refinement for certified artifacts: any `RunRefinesOpen`
 witness over the artifact's gasful run strengthens to the variant without
-the `stackOverflow` constructor. -/
+the `stackOverflow` constructor. Single-branch pruning: unlike the combined
+crown (`Yul.EndToEnd.optimizedSolcYulToGasfulRawBytecodeTotal`, concluding
+`RunRefinesOpenTotal`), this applies at any fuel and against any jump table,
+without the jumpdest-scan or gas-derived-fuel hypotheses of the other
+branches. -/
 theorem VerifiedStackObjectArtifact.runRefinesOpen_noStackOverflow
     {object : Object}
     {linkerSymbols : List (Name × Word)}

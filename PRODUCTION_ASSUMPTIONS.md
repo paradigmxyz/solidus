@@ -267,10 +267,11 @@ source semantic fuel may truncate an unobserved suffix, while transaction and
 chain finalization remain outside the declared theorem boundary.
 
 The bridge's out-of-gas branch is committal, not merely a transcript-prefix
-fact. `Assembly.GasfulBridge.RunRefinesOpenCommittal` and the derived
-endpoints
-(`Yul.EndToEnd.optimizedSolcYulToGasfulRawBytecodeOfRecursiveFrameBridgeCommittal`,
-`...FinishedCommittal`, `...TerminalCommittal`) carry
+fact. `Assembly.GasfulBridge.RunRefinesOpenCommittal` and the endpoints
+concluding it
+(`Yul.EndToEnd.optimizedSolcYulToGasfulRawBytecodeGasBoundedCommittal`,
+`...TerminalGasBounded`, and the `Total` family via
+`RunRefinesOpenTotal.toRunRefinesOpenCommittal`) carry
 `Assembly.GasfulBridge.OutOfGasFrameSemantics` on that branch: the charged
 `EVM.X` run is exactly `.error .OutOfGass`, a code-execution boundary `Ξ`
 entered at that run reports the same exceptional halt, and a message-call

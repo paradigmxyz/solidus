@@ -184,7 +184,11 @@ theorem VerifiedStackObjectArtifact.x_ne_badJumpDestination_withCodeSuffix
 
 /-- Escape-free refinement for compiled artifacts: any `RunRefinesOpen`
 witness over the artifact's gasful run against its own jumpdest scan
-strengthens to the variant without the `badJumpDestination` constructor. -/
+strengthens to the variant without the `badJumpDestination` constructor.
+Single-branch pruning: unlike the combined crown
+(`Yul.EndToEnd.optimizedSolcYulToGasfulRawBytecodeTotal`, concluding
+`RunRefinesOpenTotal`), this applies at any fuel and needs no
+stack-headroom certificate. -/
 theorem VerifiedStackObjectArtifact.runRefinesOpen_noBadJump
     {object : Object}
     {linkerSymbols : List (Name × Word)}
