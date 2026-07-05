@@ -244,51 +244,6 @@ theorem target_openRunNResult_executes
   target_openRunNResult_executes_of_decoding
     hEncoding.decodingCorrect hExec
 
-/--
-Assembly-to-bytecode open-effects theorem.
-
-The compiler equation derives both the encoded bytes and the decoder
-certificate. A concrete source branch is then realized by bytecode with the
-same exact interaction transcript and terminal result.
--/
-theorem compile_openRunNResult_executes
-    {program : Program} {target : TargetProgram}
-    {fuel : Nat} {state : EVMState}
-    {transcript : Simulation.Interaction.Transcript}
-    {result : StepResult}
-    (hCompile : compile? program = some target)
-    (hWindow : TargetFitsDecodeWindow target)
-    (hJumpdest : JumpdestCorrect target)
-    (hExec :
-      Simulation.Interaction.Executes
-        (Assembly.InteractionSemantics.Source.openRunNResult
-          program fuel state)
-        transcript (.ok result)) :
-    Accepted program ∧
-      compileBytes? program = some (encodeTarget target) ∧
-        EncodingCorrect target (encodeTarget target) ∧
-          ∃ targetFuel,
-            Simulation.Interaction.Executes
-              (InteractionSemantics.openRunNResult
-                (encodeTarget target) targetFuel state)
-              transcript (.ok result) := by
-  have hEncoding :
-      EncodingCorrect target (encodeTarget target) :=
-    compile_encoding_correct_of_jumpdests hCompile
-      (compile_decodeSafety hCompile hWindow) hJumpdest
-  have hLen :
-      Program.byteLength program < EvmYul.UInt256.size := by
-    rw [← compile_codeByteLength hCompile]
-    unfold TargetFitsDecodeWindow at hWindow
-    unfold EvmYul.UInt256.size
-    omega
-  obtain ⟨hAccepted, targetFuel, hTarget⟩ :=
-    Assembly.InteractionPreservation.compile_openRunNResult_target_executes
-      hCompile hLen hExec
-  refine ⟨hAccepted, ?_, hEncoding, targetFuel, ?_⟩
-  · simp [compileBytes?, hCompile]
-  · exact target_openRunNResult_executes hEncoding hTarget
-
 end Bytecode
 end Assembly
 end EvmCompiler

@@ -174,7 +174,6 @@ import EvmCompiler.Yul.FunctionsInteractionTerminal
 #check EvmCompiler.Assembly.TargetInstr.ofDecoded?_op_arg
 #check EvmCompiler.Assembly.Bytecode.InteractionSemantics.openRunNResult
 #check EvmCompiler.Assembly.Bytecode.target_openRunNResult_executes
-#check EvmCompiler.Assembly.Bytecode.compile_openRunNResult_executes
 
 #print axioms EvmCompiler.Simulation.OpenAccount.ofYul_toYul
 #print axioms EvmCompiler.Simulation.OpenAccount.ofEVM_toEVM
@@ -277,7 +276,6 @@ import EvmCompiler.Yul.FunctionsInteractionTerminal
 #print axioms EvmCompiler.Structured.InteractionOwnerPreservation.OpenOutcome.GeneratedProgram.main_exec
 #print axioms EvmCompiler.Structured.InteractionOwnerPreservation.OpenOutcome.GeneratedProgram.generateWithProcEntryShapes?_main_exec
 #print axioms EvmCompiler.Assembly.Bytecode.target_openRunNResult_executes
-#print axioms EvmCompiler.Assembly.Bytecode.compile_openRunNResult_executes
 #print axioms EvmCompiler.Functions.AllocationInteractionCall.ArgList.forwardArg
 #print axioms EvmCompiler.Functions.AllocationInteractionCall.ArgList.forward
 #print axioms EvmCompiler.Functions.AllocationInteractionCall.CalleeEntry.stack_of_arguments

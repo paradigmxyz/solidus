@@ -173,62 +173,14 @@ extraction window used by the imported EVMYulLean bytecode decoder.
 def TargetFitsDecodeWindow (target : TargetProgram) : Prop :=
   codeByteLength target.code < 18446744073709551616
 
-/--
-Assumption boundary for EVMYulLean's jumpdest scanner.
-
-`EvmYul.EVM.D_J_aux` is opaque in the imported library, so this project can
-state and use the exact scanner property needed by `X`, but cannot currently
-derive it by unfolding `D_J`.
--/
-structure JumpdestCorrect (target : TargetProgram) : Prop where
-  jumpdests :
-    ∀ located,
-      located ∈ target.code →
-        located.instr = TargetInstr.jumpdest →
-          jumpdestListed (encodeTarget target) located.pc
-
 def targetFitsDecodeWindow? (target : TargetProgram) : Bool :=
   decide (codeByteLength target.code < 18446744073709551616)
-
-def jumpdestCorrect? (target : TargetProgram) : Bool :=
-  target.code.all fun located =>
-    if located.instr = TargetInstr.jumpdest then
-      jumpdestListed? (encodeTarget target) located.pc
-    else
-      true
-
-def bytecodeBridgeChecked? (target : TargetProgram) : Bool :=
-  targetFitsDecodeWindow? target && jumpdestCorrect? target
 
 theorem targetFitsDecodeWindow_of_check {target : TargetProgram}
     (hCheck : targetFitsDecodeWindow? target = true) :
     TargetFitsDecodeWindow target := by
   unfold TargetFitsDecodeWindow
   exact of_decide_eq_true (by simpa [targetFitsDecodeWindow?] using hCheck)
-
-theorem jumpdestCorrect_of_check {target : TargetProgram}
-    (hCheck : jumpdestCorrect? target = true) :
-    JumpdestCorrect target where
-  jumpdests := by
-    intro located hMem hInstr
-    have hLocated :=
-      (List.all_eq_true.mp hCheck) located hMem
-    simpa [jumpdestCorrect?, jumpdestListed, hInstr] using hLocated
-
-theorem targetFitsDecodeWindow_of_bytecodeBridgeChecked
-    {target : TargetProgram}
-    (hCheck : bytecodeBridgeChecked? target = true) :
-    TargetFitsDecodeWindow target := by
-  unfold bytecodeBridgeChecked? at hCheck
-  cases hWindow : targetFitsDecodeWindow? target <;> simp [hWindow] at hCheck
-  exact targetFitsDecodeWindow_of_check hWindow
-
-theorem jumpdestCorrect_of_bytecodeBridgeChecked {target : TargetProgram}
-    (hCheck : bytecodeBridgeChecked? target = true) :
-    JumpdestCorrect target := by
-  unfold bytecodeBridgeChecked? at hCheck
-  cases hWindow : targetFitsDecodeWindow? target <;> simp [hWindow] at hCheck
-  exact jumpdestCorrect_of_check hCheck
 
 theorem fromBytes_toBytesLE (width value : Nat) :
     EvmYul.fromBytes' (toBytesLE width value) = value % (256 ^ width) := by
@@ -1033,16 +985,6 @@ theorem compile_fetch_correct {program : Program} {target : TargetProgram}
   exact fetchInstr_of_decodeAt hCode
     (compile_decode_correct hCompile hSafety located hMem)
 
-theorem compile_encoding_correct_of_jumpdests {program : Program}
-    {target : TargetProgram}
-    (hCompile : compile? program = some target)
-    (hSafety : DecodeSafety target)
-    (hJumpdest : JumpdestCorrect target) :
-    EncodingCorrect target (encodeTarget target) where
-  bytes_eq := rfl
-  decodes := compile_decode_correct hCompile hSafety
-  jumpdests := hJumpdest.jumpdests
-
 /--
 Top-level theorem shape for the optional bytecode bridge.
 
@@ -1066,41 +1008,6 @@ theorem compile_runN_bytecode_bridge {program : Program}
   obtain ⟨hAccepted, targetState, hTrace, hErase⟩ :=
     Preservation.compile_runN_block_trace_projected_sound hCompile hRun
   exact ⟨hAccepted, hBytes.bytes_eq, targetState, hTrace, hErase⟩
-
-theorem compile_runN_bytecode_bridge_checked {program : Program}
-    {target : TargetProgram} {fuel : Nat} {state sourceState : EVMState}
-    (hCompile : compile? program = some target)
-    (hSafety : DecodeSafety target)
-    (hJumpdest : JumpdestCorrect target)
-    (hRun : Source.runN program fuel state = .ok sourceState) :
-    Accepted program ∧
-      ∃ targetState,
-        EncodingCorrect target (encodeTarget target) ∧
-          Preservation.BlockTrace program target fuel state targetState ∧
-            eraseGas targetState = eraseGas sourceState := by
-  obtain ⟨hAccepted, targetState, hTrace, hErase⟩ :=
-    Preservation.compile_runN_block_trace_projected_sound hCompile hRun
-  exact
-    ⟨hAccepted, targetState,
-      compile_encoding_correct_of_jumpdests hCompile hSafety hJumpdest,
-      hTrace, hErase⟩
-
-theorem compile_runN_result_bytecode_bridge_checked {program : Program}
-    {target : TargetProgram} {fuel : Nat} {state : EVMState}
-    {result : StepResult}
-    (hCompile : compile? program = some target)
-    (hSafety : DecodeSafety target)
-    (hJumpdest : JumpdestCorrect target)
-    (hRun : Source.runNResult program fuel state = .ok result) :
-    Accepted program ∧
-      EncodingCorrect target (encodeTarget target) ∧
-        Preservation.BlockTraceResult program target fuel state result := by
-  obtain ⟨hAccepted, hTrace⟩ :=
-    Preservation.compile_runN_result_block_trace_sound hCompile hRun
-  exact
-    ⟨hAccepted,
-      compile_encoding_correct_of_jumpdests hCompile hSafety hJumpdest,
-      hTrace⟩
 
 end Bytecode
 
