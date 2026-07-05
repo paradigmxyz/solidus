@@ -2,7 +2,7 @@ import Lake
 open Lake DSL
 
 require evmyul from git
-  "https://github.com/danrobinson/EVMYulLean.git" @ "8b610d524898f9bc7d451b017e0df6057cc88cd9"
+  "https://github.com/danrobinson/EVMYulLean.git" @ "3c5c44a62f4e7964bd1bc648caa708a111664c84"
 
 package «evm-compiler» {
   moreLeanArgs := #[
