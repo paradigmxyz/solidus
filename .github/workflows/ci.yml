@@ -1,0 +1,368 @@
+# =============================================================================
+# Solidus Arena — public CI (fast-fail / UX layer)
+# =============================================================================
+#
+# WHAT THIS IS
+#   This workflow is the PUBLIC, fast-feedback gate for pull requests. It exists
+#   to give contestants an early green/red signal that mirrors the contest
+#   rules in CHALLENGE.md. It is deliberately NOT a security boundary: the
+#   private scoring runner (sandboxed, offline, not in this repo) independently
+#   re-verifies EVERYTHING from trusted configuration — the frozen hashes, the
+#   proof gate, determinism, and the gas score. Nothing here needs to be
+#   ungameable; it needs to be clear and to fail early.
+#
+# TRIGGERS
+#   * pull_request  — every PR (against any branch). We use `pull_request`, NOT
+#     `pull_request_target`, so PR-authored code is never checked out with a
+#     write-scoped token. This workflow only ever runs read-only gates.
+#   * push to main / arena — keeps the protected branches continuously green.
+#   * workflow_call — lets arena-submission.yml reuse these exact gates instead
+#     of duplicating them.
+#
+# GATE STAGING (cheap gates first, so a bad PR fails in seconds, not minutes)
+#   Job 1  frozen-and-closure  (~seconds, Python only): hash-check the frozen
+#                              manifest + import-closure check.
+#   Job 2  proof-and-determinism (LONG, Lean build): the proof/axiom gate, then
+#                              the determinism double-compile. Runs only after
+#                              Job 1 passes. Both steps share ONE Lean build to
+#                              avoid compiling the proof root twice.
+#
+# LOCAL EQUIVALENT
+#   `scripts/opt_harness.sh full` runs the proof gate + the full gas bench
+#   locally. See OPTIMIZING.md.
+#
+# NOTE ON VALIDATION
+#   GitHub Actions cannot be executed locally, so this file was authored
+#   conservatively and is heavily commented rather than smoke-tested end to end.
+#   The YAML is syntax-validated; the shell/python steps are self-contained.
+# =============================================================================
+
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main, arena]
+  workflow_call: {}
+
+# Read-only by default. No job here needs write access to the repo.
+permissions:
+  contents: read
+
+# One in-flight run per ref; cancel superseded runs to save CI minutes.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Tool pins the evaluation scripts expect (see scripts/setup.sh,
+  # scripts/opt_harness.sh, OPTIMIZING.md). The Lean toolchain is pinned by the
+  # `lean-toolchain` file and installed automatically by elan.
+  SOLC_VERSION: "0.8.26"
+  # forge 1.5.1-stable / evm cancun is the pinned gas executor. Public CI runs
+  # the CHEAP determinism variant (no forge — see the determinism job), so
+  # Foundry is NOT installed here; the full gas bench is a private-runner /
+  # local `opt_harness.sh bench` concern. Pin kept for reference:
+  FOUNDRY_VERSION: "v1.5.1"
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # JOB 1 — cheap fast-fail gates (no Lean, no solc). Runs in seconds.
+  #   (a) frozen-files hash check against .github/frozen_hashes.json
+  #   (d) import-closure check via scripts/check_frozen_closure.py
+  # ---------------------------------------------------------------------------
+  frozen-and-closure:
+    name: frozen hashes + import closure
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout (read-only; PR head for a pull_request event)
+        uses: actions/checkout@v4
+        with:
+          # Shallow is fine: these gates only read working-tree file contents.
+          fetch-depth: 1
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # -----------------------------------------------------------------------
+      # (a) FROZEN-FILE HASH CHECK
+      #
+      #   Hash every file listed in benchmarks/frozen_manifest.txt and compare
+      #   against the pinned hashes in .github/frozen_hashes.json.
+      #
+      #   PROVISIONAL MODE: until the maintainer finalizes the freeze, that JSON
+      #   carries "provisional": true. In provisional mode a mismatch is a loud
+      #   WARNING (annotation), not a failure — so ordinary development PRs are
+      #   not blocked before the freeze is pinned, and so this workflow is
+      #   landable today while Lean files are still moving. Once the maintainer
+      #   flips "provisional" to false (after freezing the tree and repinning
+      #   the hashes), a mismatch becomes a HARD FAILURE pointing at CHALLENGE.md.
+      # -----------------------------------------------------------------------
+      - name: Frozen-file hash check
+        run: |
+          python3 - <<'PY'
+          import hashlib, json, os, sys
+
+          manifest = "benchmarks/frozen_manifest.txt"
+          hashes_file = ".github/frozen_hashes.json"
+
+          def frozen_files(path):
+              # Same parse as scripts/check_frozen_closure.py: skip blank lines,
+              # #-comments, #allow: / #trusted: directives; strip inline comments.
+              out = []
+              with open(path) as f:
+                  for raw in f:
+                      line = raw.strip()
+                      if not line or line.startswith("#"):
+                          continue
+                      entry = line.split("#", 1)[0].strip()
+                      if entry:
+                          out.append(entry)
+              return out
+
+          def sha256(p):
+              h = hashlib.sha256()
+              with open(p, "rb") as fh:
+                  for chunk in iter(lambda: fh.read(1 << 16), b""):
+                      h.update(chunk)
+              return h.hexdigest()
+
+          with open(hashes_file) as f:
+              pinned = json.load(f)
+          provisional = bool(pinned.get("provisional", True))
+          pinned_files = pinned.get("files", {})
+
+          files = frozen_files(manifest)
+          mismatches, missing_from_pin, missing_on_disk = [], [], []
+          for rel in files:
+              if not os.path.exists(rel):
+                  missing_on_disk.append(rel)
+                  continue
+              actual = sha256(rel)
+              expected = pinned_files.get(rel)
+              if expected is None:
+                  missing_from_pin.append(rel)
+              elif actual != expected:
+                  mismatches.append((rel, expected, actual))
+
+          def annotate(kind, msg):
+              # GitHub Actions workflow command: warning or error annotation.
+              print(f"::{kind}::{msg}")
+
+          bad = mismatches or missing_from_pin or missing_on_disk
+          for rel in missing_on_disk:
+              annotate("error", f"frozen file listed in manifest is missing on disk: {rel}")
+          for rel, exp, act in mismatches:
+              annotate("warning" if provisional else "error",
+                       f"FROZEN FILE MODIFIED: {rel} (pinned {exp[:12]}... got {act[:12]}...)")
+          for rel in missing_from_pin:
+              annotate("warning" if provisional else "error",
+                       f"frozen file not yet pinned in {hashes_file}: {rel}")
+
+          # missing-on-disk is always fatal (the manifest must be self-consistent).
+          if missing_on_disk:
+              print("\nERROR: the frozen manifest references files that do not exist.")
+              sys.exit(1)
+
+          if not bad:
+              print(f"OK: all {len(files)} frozen files match the pinned hashes.")
+              sys.exit(0)
+
+          print()
+          print("=" * 72)
+          if provisional:
+              print("FROZEN-HASH CHECK: provisional pin — differences reported as WARNINGS.")
+              print("The maintainer pins final hashes after the freeze finalizes; until")
+              print("then this gate does not block. See CHALLENGE.md ('What is frozen').")
+              print("=" * 72)
+              sys.exit(0)
+          else:
+              print("FROZEN-HASH CHECK FAILED.")
+              print("You modified a hash-frozen file. Submissions may NOT change the")
+              print("frozen specification, semantics, toolchain pins, or evaluation")
+              print("harness. See CHALLENGE.md ('What is frozen') and")
+              print("benchmarks/frozen_manifest.txt for the exact list. Revert those")
+              print("files; everything else — every compiler pass and internal proof —")
+              print("is yours to rewrite.")
+              print("=" * 72)
+              sys.exit(1)
+          PY
+
+      # -----------------------------------------------------------------------
+      # (d) IMPORT-CLOSURE CHECK
+      #     Every frozen .lean file may import only another frozen file, a
+      #     trusted external package, or a module explicitly #allow-ed in the
+      #     manifest. This keeps the freeze cone import-closed.
+      # -----------------------------------------------------------------------
+      - name: Frozen import-closure check
+        run: |
+          python3 scripts/check_frozen_closure.py benchmarks/frozen_manifest.txt
+
+  # ---------------------------------------------------------------------------
+  # JOB 2 — proof gate + determinism (the heavy Lean job).
+  #   (b) proof gate:  scripts/opt_harness.sh check
+  #                    -> lake build EvmCompiler.Verification + axiom footprint
+  #   (c) determinism: cheap documented variant — double-compile 3 sentinel
+  #                    contracts through the raw path and require byte-identical
+  #                    output. (The full `bench` double-run is ~6 min per pass
+  #                    plus a Foundry gas leg; per benchmarks/opt_baseline.json
+  #                    compile wall is ~354s. That is too slow to run twice in
+  #                    public CI, and OPTIMIZING.md's determinism claim is about
+  #                    the COMPILER OUTPUT being byte-identical — which the
+  #                    3-contract double raw-image pass checks directly and
+  #                    cheaply. The private runner does the full-corpus double
+  #                    bench.)
+  #
+  #   Both steps reuse ONE Lean build (check builds the EvmCompiler lib; the
+  #   determinism step's `lake build evm-compiler-backend` is then incremental).
+  # ---------------------------------------------------------------------------
+  proof-and-determinism:
+    name: proof gate + determinism
+    needs: frozen-and-closure
+    runs-on: ubuntu-latest
+    # Cold builds pull the Mathlib cache and elaborate the proof root
+    # (EvmCompiler.Verification, ~1300 Lake jobs) — "many minutes cold" per
+    # OPTIMIZING.md. Generous ceiling; the .lake cache makes warm runs far shorter.
+    timeout-minutes: 90
+    steps:
+      - name: Checkout (read-only)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      # ---- Lean toolchain (elan installs the version pinned in lean-toolchain).
+      - name: Install elan (Lean toolchain manager)
+        run: |
+          set -euo pipefail
+          curl -sSf https://elan.lean-lang.org/elan-init.sh \
+            | sh -s -- -y --default-toolchain none
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+
+      - name: Show pinned Lean toolchain
+        run: |
+          echo "lean-toolchain: $(cat lean-toolchain)"
+          # elan auto-installs this toolchain on first lake invocation.
+
+      # ---- Cache the Lake build tree (incl. downloaded Mathlib artifacts).
+      #      Keyed on the dependency pins so it invalidates when they change.
+      - name: Cache .lake build
+        uses: actions/cache@v4
+        with:
+          path: |
+            .lake
+            ~/.cache/mathlib
+          key: lake-${{ runner.os }}-${{ hashFiles('lean-toolchain', 'lake-manifest.json') }}
+          restore-keys: |
+            lake-${{ runner.os }}-
+
+      # ---- Pull the prebuilt Mathlib cache so we do NOT compile Mathlib from
+      #      source (that would take hours). Mirrors scripts/setup.sh.
+      - name: Download Mathlib build cache
+        run: |
+          set -euo pipefail
+          lake exe cache get || \
+            echo "::warning::lake exe cache get failed; Lake may build deps from source"
+
+      # ---- (b) PROOF GATE ---------------------------------------------------
+      #      Builds EvmCompiler.Verification and runs #print axioms on the two
+      #      public theorems; fails unless the footprint is exactly
+      #      [propext, Classical.choice, Quot.sound]. Exit codes: 10 build-fail,
+      #      11 axiom-fail (see OPTIMIZING.md).
+      - name: Proof gate (opt_harness.sh check)
+        run: |
+          set -euo pipefail
+          ./scripts/opt_harness.sh check
+
+      # ---- solc pin for the determinism compile (proof gate does not need it).
+      - name: Install pinned solc (${{ env.SOLC_VERSION }})
+        run: |
+          set -euo pipefail
+          python3 -m pip install --user "solc-select==1.2.0"
+          export PATH="$HOME/.local/bin:$PATH"
+          solc-select install "${SOLC_VERSION}"
+          solc-select use "${SOLC_VERSION}"
+          SOLC_BIN="$HOME/.solc-select/artifacts/solc-${SOLC_VERSION}/solc-${SOLC_VERSION}"
+          echo "SOLC_BIN=${SOLC_BIN}" >> "$GITHUB_ENV"
+          "${SOLC_BIN}" --version | tail -n 1
+
+      # ---- Build the raw-image backend exe (incremental after `check`).
+      - name: Build backend exe
+        run: |
+          set -euo pipefail
+          lake build evm-compiler-backend
+
+      # ---- (c) DETERMINISM: double-compile 3 sentinels, require identical bytes.
+      - name: Determinism check (double raw-image, 3 sentinels)
+        env:
+          # Point the solc driver at the pinned real solc + this checkout's lake.
+          SOLC_LEAN_REAL_SOLC: ${{ env.SOLC_BIN }}
+          SOLC_LEAN_VALIDATE_OUTPUT: "0"
+        run: |
+          set -euo pipefail
+          export SOLC_LEAN_LAKE="$(command -v lake)"
+          python3 - <<'PY'
+          import json, os, subprocess, sys
+
+          # Stable, small, cap-compliant corpus members (not the recursive
+          # AbiControlSurfaceBox, not the EIP-170 cap violators).
+          SENTINELS = [
+              "examples/Simple.sol",
+              "examples/Counter.sol",
+              "examples/ArithmeticBox.sol",
+          ]
+
+          def compile_once(src):
+              name = os.path.basename(src)
+              with open(src) as f:
+                  content = f.read()
+              std = {
+                  "language": "Solidity",
+                  "sources": {name: {"content": content}},
+                  "settings": {"outputSelection": {"*": {"*": [
+                      "evm.bytecode.object",
+                      "evm.deployedBytecode.object",
+                  ]}}},
+              }
+              proc = subprocess.run(
+                  [sys.executable, "scripts/solc_lean_standard_json.py",
+                   "--standard-json"],
+                  input=json.dumps(std), capture_output=True, text=True,
+              )
+              if proc.returncode != 0:
+                  sys.stderr.write(proc.stderr)
+                  raise SystemExit(f"compile failed for {src} (exit {proc.returncode})")
+              out = json.loads(proc.stdout)
+              images = {}
+              for _s, contracts in (out.get("contracts") or {}).items():
+                  for cname, cdata in contracts.items():
+                      evm = cdata.get("evm") or {}
+                      images[cname] = (
+                          (evm.get("bytecode") or {}).get("object") or "",
+                          (evm.get("deployedBytecode") or {}).get("object") or "",
+                      )
+              return images
+
+          failures = []
+          for src in SENTINELS:
+              a = compile_once(src)
+              b = compile_once(src)
+              if a != b:
+                  failures.append(src)
+                  print(f"::error::NON-DETERMINISTIC compiler output for {src}")
+                  for cname in sorted(set(a) | set(b)):
+                      if a.get(cname) != b.get(cname):
+                          print(f"  {cname}: run-to-run byte mismatch")
+              else:
+                  n = len(a)
+                  print(f"OK deterministic: {src} ({n} contract(s), identical bytes)")
+
+          if failures:
+              print()
+              print("DETERMINISM CHECK FAILED. The compiler must emit byte-identical")
+              print("output for identical input (CHALLENGE.md, 'Rules of engagement').")
+              sys.exit(1)
+          print("\nAll sentinels compiled deterministically.")
+          PY

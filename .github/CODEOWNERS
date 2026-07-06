@@ -1,0 +1,22 @@
+# =============================================================================
+# CODEOWNERS — Solidus Arena
+#
+# Required reviewers for the contest's trusted surface: the frozen spec/harness
+# and the CI that guards them. Everything else — compiler passes, internal
+# proofs — is open for contestants to rewrite and does not need owner review.
+#
+# TODO(maintainer): replace @danrobinson with the real GitHub handle / team
+# before making the repo public. This is a placeholder.
+# =============================================================================
+
+# The freeze surface: the manifest and the frozen files' pins.
+/benchmarks/frozen_manifest.txt   @danrobinson
+
+# The evaluation harness and the import-closure checker (frozen machinery).
+/scripts/opt_harness.sh           @danrobinson
+/scripts/opt_harness.py           @danrobinson
+/scripts/opt_gas_runner.py        @danrobinson
+/scripts/check_frozen_closure.py  @danrobinson
+
+# CI, workflows, CODEOWNERS, the provisional frozen hashes — the guard rails.
+/.github/                         @danrobinson

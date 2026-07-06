@@ -1,0 +1,175 @@
+# =============================================================================
+# Solidus Arena — submission workflow (PRs targeting the `arena` branch)
+# =============================================================================
+#
+# WHAT THIS IS
+#   The extra gates a contest submission must clear on top of the standard CI
+#   gates. It runs ONLY for pull requests whose base branch is `arena` (the
+#   current-record branch). It adds:
+#
+#     (gates)     the full ci.yml gate set, reused via `workflow_call`.
+#     (based-on)  verify the PR body declares `Based-on: record-N` and that the
+#                 PR history actually descends from that tag (git ancestry).
+#     (scoring)   a `scoring-requested` label hook that only POSTS A COMMENT
+#                 explaining that private scoring is maintainer-triggered out of
+#                 band. It runs no scoring itself — the real runner is NOT in
+#                 this repo.
+#
+# TRUST MODEL
+#   Like ci.yml, this is fast-fail UX only. The private scoring runner
+#   re-verifies ancestry, hashes, proofs, and gas independently from trusted
+#   configuration. Do not treat any check here as a security boundary.
+#
+# CANNOT BE RUN LOCALLY
+#   GitHub Actions cannot be exercised locally; this file is written
+#   conservatively and heavily commented. YAML is syntax-validated only.
+# =============================================================================
+
+name: arena-submission
+
+on:
+  # PRs whose BASE branch is `arena`. `pull_request` (not pull_request_target)
+  # for the gate/ancestry jobs: PR code is only ever read, never run with write
+  # scope. The label-comment job below is a separate, no-checkout job.
+  pull_request:
+    branches: [arena]
+    types: [opened, reopened, synchronize, edited]
+  # Maintainer applies the `scoring-requested` label. See the scoring job for
+  # why this arm safely uses pull_request_target (it checks out NOTHING).
+  pull_request_target:
+    types: [labeled]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: arena-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Reuse the standard CI gates (frozen hashes, import closure, proof gate,
+  # determinism). Only for the pull_request event (not the label event).
+  # ---------------------------------------------------------------------------
+  gates:
+    name: standard CI gates
+    if: github.event_name == 'pull_request'
+    uses: ./.github/workflows/ci.yml
+    permissions:
+      contents: read
+
+  # ---------------------------------------------------------------------------
+  # BASED-ON ANCESTRY
+  #   1. The PR body must contain a line `Based-on: record-N` (see
+  #      .github/pull_request_template.md and CHALLENGE.md 'How to enter').
+  #   2. The referenced tag must be an ANCESTOR of the PR head — i.e. the
+  #      submission actually builds on that record.
+  #
+  #   TOLERANCE: if the referenced tag does not exist yet (no records tagged at
+  #   launch), we SKIP WITH A NOTICE instead of failing, so this workflow is
+  #   landable today. Once records are tagged, the ancestry check becomes real.
+  # ---------------------------------------------------------------------------
+  based-on:
+    name: Based-on record ancestry
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout (full history + tags, read-only)
+        uses: actions/checkout@v4
+        with:
+          # Need full history and tags to test ancestry against record-N tags.
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Verify Based-on declaration and ancestry
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+
+          # 1) Extract `Based-on: record-N` from the PR body (case-insensitive,
+          #    tolerant of surrounding whitespace).
+          RECORD="$(printf '%s' "${PR_BODY:-}" \
+            | grep -ioE 'Based-on:[[:space:]]*record-[0-9]+' \
+            | head -n1 \
+            | grep -ioE 'record-[0-9]+' || true)"
+
+          if [ -z "${RECORD}" ]; then
+            echo "::error::PR body must declare which record you branched from,"
+            echo "::error::e.g. a line 'Based-on: record-3'. See CHALLENGE.md"
+            echo "::error::('How to enter') and the PR template."
+            exit 1
+          fi
+          echo "Declared base record: ${RECORD}"
+
+          # 2) Does that tag exist yet?
+          if ! git rev-parse -q --verify "refs/tags/${RECORD}" >/dev/null; then
+            echo "::notice::Tag '${RECORD}' does not exist yet — skipping the"
+            echo "::notice::ancestry check. (No records tagged at launch; this"
+            echo "::notice::becomes a hard check once record tags exist.)"
+            exit 0
+          fi
+
+          # 3) Ancestry: the record tag must be reachable from the PR head.
+          if git merge-base --is-ancestor "refs/tags/${RECORD}" "${HEAD_SHA}"; then
+            echo "OK: PR head descends from ${RECORD}."
+          else
+            echo "::error::PR head does NOT descend from ${RECORD}. Branch from"
+            echo "::error::'arena' or a record-N tag before submitting"
+            echo "::error::(CHALLENGE.md, 'How to enter')."
+            exit 1
+          fi
+
+  # ---------------------------------------------------------------------------
+  # SCORING-REQUESTED LABEL HOOK  (comment only — no scoring here)
+  #
+  #   A maintainer applies the `scoring-requested` label to signal that the PR
+  #   should be scored. This job does NOTHING but post an explanatory comment:
+  #   the actual private scoring runner is sandboxed, offline, and NOT part of
+  #   this repository; it is triggered by the maintainer out of band.
+  #
+  #   SAFETY: this arm uses `pull_request_target` (so it has the write scope
+  #   needed to comment on fork PRs) but it CHECKS OUT NOTHING and runs NO PR
+  #   code — it only calls the issues API. That is the GitHub-recommended safe
+  #   pattern and does not violate the "never checkout PR code under
+  #   pull_request_target" rule.
+  # ---------------------------------------------------------------------------
+  scoring-requested:
+    name: scoring-requested notice
+    if: >-
+      github.event_name == 'pull_request_target' &&
+      github.event.action == 'labeled' &&
+      github.event.label.name == 'scoring-requested'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      pull-requests: write
+      issues: write
+    steps:
+      - name: Post the scoring-is-out-of-band notice
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const body = [
+              '### 🏁 Private scoring is maintainer-triggered (out of band)',
+              '',
+              'The `scoring-requested` label was applied. **This label does not',
+              'run any scoring in this repository.** The private scoring runner',
+              'is sandboxed, offline, and lives outside this repo. A maintainer',
+              'triggers it manually.',
+              '',
+              'When it runs, it independently re-verifies the frozen hashes,',
+              're-runs the proof gate, compiles the private suite, and reports a',
+              'single number (total gas). Public CI here is only the fast-fail /',
+              'UX layer — see `CHALLENGE.md` for the full flow.',
+              '',
+              'Nothing further is required from you right now.',
+            ].join('\n');
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.payload.pull_request.number,
+              body,
+            });
