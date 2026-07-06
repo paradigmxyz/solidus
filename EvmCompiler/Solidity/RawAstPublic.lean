@@ -51,6 +51,72 @@ def compileArtifactUnlinkedFromRawSolcIr? (rawJson : String)
           | .ok linkerSymbols =>
               program.compileArtifactUnlinked? linkerSymbols
 
+/-- Unlinked raw entry that additionally surfaces the solc-compatible
+`linkReferences` view of the compiled image: the exported own-code
+immutable-reference groups whose names are unresolved library names,
+re-windowed to the 20 address bytes of each 32-byte push payload.  This is
+the data a linker consumes to patch real library addresses into the image. -/
+def compileArtifactUnlinkedFromRawSolcIrRefs? (rawJson : String)
+    (selection : Selection) :
+    Option (Frontend.Program.Artifact ×
+      List (Frontend.Name × List Frontend.ImmutableReference)) :=
+  match Lean.Json.parse rawJson with
+  | .error _ => none
+  | .ok json =>
+      match decodeAndElaborateSolcIrJson json selection with
+      | .error _ => none
+      | .ok program =>
+          match decodeLinkerSymbolsJson json selection with
+          | .error _ => none
+          | .ok linkerSymbols =>
+              match
+                program.object.compileVerifiedStackObjectArtifactUnlinked?
+                  linkerSymbols with
+              | none => none
+              | some artifact =>
+                  some (artifact,
+                    artifact.image.linkReferences
+                      (program.object.missingLinkerSymbolNames linkerSymbols))
+
+theorem compileArtifactUnlinkedFromRawSolcIrRefs?_parts
+    {rawJson : String} {selection : Selection}
+    {artifact : Frontend.Program.Artifact}
+    {refs : List (Frontend.Name × List Frontend.ImmutableReference)}
+    (hCompile :
+      compileArtifactUnlinkedFromRawSolcIrRefs? rawJson selection =
+        some (artifact, refs)) :
+    ∃ (program : Frontend.Program)
+        (linkerSymbols : List (Frontend.Name × Frontend.Word)),
+      decodeAndElaborateSolcIr? rawJson selection = some program ∧
+        decodeLinkerSymbols? rawJson selection = some linkerSymbols ∧
+          program.object.compileVerifiedStackObjectArtifactUnlinked?
+              linkerSymbols = some artifact ∧
+            refs =
+              artifact.image.linkReferences
+                (program.object.missingLinkerSymbolNames linkerSymbols) := by
+  unfold compileArtifactUnlinkedFromRawSolcIrRefs? at hCompile
+  cases hParse : Lean.Json.parse rawJson with
+  | error err => simp [hParse] at hCompile
+  | ok json =>
+      cases hDecode : decodeAndElaborateSolcIrJson json selection with
+      | error err => simp [hParse, hDecode] at hCompile
+      | ok program =>
+          cases hLinker : decodeLinkerSymbolsJson json selection with
+          | error err => simp [hParse, hDecode, hLinker] at hCompile
+          | ok linkerSymbols =>
+              cases hInner :
+                  program.object.compileVerifiedStackObjectArtifactUnlinked?
+                    linkerSymbols with
+              | none => simp [hParse, hDecode, hLinker, hInner] at hCompile
+              | some compiled =>
+                  simp only [hParse, hDecode, hLinker, hInner,
+                    Option.some.injEq, Prod.mk.injEq] at hCompile
+                  obtain ⟨hArt, hRefs⟩ := hCompile
+                  subst hArt
+                  refine ⟨program, linkerSymbols, ?_, ?_, hInner, hRefs.symm⟩
+                  · simp [decodeAndElaborateSolcIr?, hParse, hDecode]
+                  · simp [decodeLinkerSymbols?, hParse, hLinker]
+
 theorem compileArtifactUnlinkedFromRawSolcIr?_decoded
     {rawJson : String} {selection : Selection}
     {artifact : Frontend.Program.Artifact}

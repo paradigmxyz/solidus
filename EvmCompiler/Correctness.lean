@@ -1,6 +1,7 @@
 import EvmCompiler.Solidus.Defs
 import EvmCompiler.Solidity.SolidusInstall
 import EvmCompiler.Solidity.RawAstTotal
+import EvmCompiler.Solidity.SolidusUnlinked
 import EvmCompiler.Compiler.SolidusObservable
 
 /-!
@@ -211,6 +212,140 @@ theorem compile_correct_creation
       Solidity.Raw.SourcePreservation.RawSourceBytecodePrefixDoneRel.observable
         hDone,
     hTotal⟩
+
+/-!
+## Unlinked-library public surface
+
+The two theorems below extend the public claim to the verified
+unlinked-library pipeline (`compileUnlinked?`), which compiles a contract
+whose external `linkersymbol` library addresses the input's
+`settings.libraries` metadata leaves unresolved.  Missing libraries are
+rewritten to `loadimmutable` markers, so the deployed byte image is genuine
+compiler output carrying the same fail-closed stack-headroom certificate as
+`compile?`, plus a solc-compatible `linkReferences` export (the 20-byte
+address windows a linker patches).
+
+* `compile_correct_unlinked` is the escape-free crown for the **delivered
+  unlinked image** itself: the charged run at the gas-derived fuel refines the
+  open run with no escape constructor.  Because the missing libraries were
+  rewritten to `loadimmutable`, the source side of this claim is the
+  artifact's *own resolved program* — the rewrite-to-immutable form in which
+  every unresolved library slot reads as the zero address until patched.  This
+  is the exact analog of `compile_correct` for the bytes the unlinked pipeline
+  emits.
+
+* `compile_correct_unlinked_patch` is the **link-time bridge**: for every
+  deploy address assignment whose library addresses are address-sized and for
+  which the deploy-value compile succeeds, patching the exported windows of the
+  unlinked image reproduces, byte for byte, `withValues.bytes` followed by the
+  unchanged child payload — and that value compile is exactly the *original*
+  (un-rewritten) object resolved with those addresses supplied as linker
+  symbols, its ordered Yul program being the value compile's own ordered
+  program.  So "patching real library addresses into the unlinked image" and
+  "compiling the original source with those addresses" produce the same bytes;
+  the guarantee `compile_correct` makes about the value compile therefore
+  transfers to the patched image.
+
+### Residual gap (honest)
+
+Fusing the two into a single `RunRefinesOpenTotal` over the *patched* bytes
+with the *original* (linkersymbol) source in one statement is not delivered
+here: it would require identifying `withValues.bytes ++ payload` as the image
+of a full object-level `VerifiedStackObjectArtifact` obtained from the
+supported pipeline and re-running the gasful crown over it (an object-level
+value-compile crown / pipeline-identification campaign, beyond composition of
+the existing endpoints).  The two theorems together are the strongest true
+composed statement available from the current tower: the delivered bytes are
+fully covered against their own source, and the patch equation pins the linked
+bytes to a verified compile of the original source. -/
+theorem compile_correct_unlinked
+    {rawJson : String} {selection : Solidity.RawAst.Selection}
+    {bytes : List UInt8}
+    {refs : List (Solidity.Frontend.Name ×
+      List Solidity.Frontend.ImmutableReference)}
+    {sourceFuel : Nat}
+    {baseSource : EvmYul.SharedState .Yul}
+    {gasfulInitial : Assembly.EVMState}
+    (hCompile : compileUnlinked? rawJson selection = some (bytes, refs))
+    (hInitial :
+      Assembly.GasfulBridge.OpenStateRel gasfulInitial
+        (installedTarget bytes baseSource)) :
+    ∃ (artifact : Solidity.Frontend.VerifiedStackObjectArtifact)
+        (structuredFuel : Nat)
+        (transcript : Simulation.Interaction.Transcript),
+      bytes = artifact.image.bytes ∧
+      Assembly.Accepted artifact.codeArtifact.compiled.certified.target ∧
+        Simulation.Interaction.ForwardRel
+          Yul.FunctionsInteractionPrimitive.Truncated
+          (Compiler.OpenInteractionComposition.VerifiedStackObjectPrefixDoneRel
+            artifact)
+          (Yul.InteractionSemantics.exec (sourceFuel + 1)
+            (.Block
+              [artifact.codeArtifact.ordered.program.contract.dispatcher])
+            (some artifact.codeArtifact.ordered.program.contract)
+            (Yul.EndToEnd.installedSourceState artifact baseSource))
+          (Assembly.Compact.InteractionSemantics.openRunNResult
+            (Assembly.Bytecode.ofList artifact.image.bytes)
+            (2 *
+              ((Structured.InteractionStaticCost.blockBudget
+                  artifact.codeArtifact.compiled.expressions.toStructured
+                  structuredFuel
+                  artifact.codeArtifact.compiled.expressions.toStructured.body +
+                    1) *
+                TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
+                  artifact.codeArtifact.compiled.cfg))
+            { (Yul.EndToEnd.initialExpressionsState artifact baseSource).evm with
+              pc := EvmYul.UInt256.ofNat 0 }) ∧
+        Assembly.GasfulBridge.RunRefinesOpenTotal
+          (EvmYul.EVM.X
+            (max
+              (2 *
+                ((Structured.InteractionStaticCost.blockBudget
+                    artifact.codeArtifact.compiled.expressions.toStructured
+                    structuredFuel
+                    artifact.codeArtifact.compiled.expressions.toStructured.body +
+                      1) *
+                  TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
+                    artifact.codeArtifact.compiled.cfg))
+              (gasfulInitial.gasAvailable.toNat + 6))
+            (EvmYul.EVM.D_J
+              (Assembly.Bytecode.ofList artifact.image.bytes)
+              (EvmYul.UInt256.ofNat 0))
+            gasfulInitial)
+          (Assembly.Compact.InteractionSemantics.openRunNResult
+            (Assembly.Bytecode.ofList artifact.image.bytes)
+            (max
+              (2 *
+                ((Structured.InteractionStaticCost.blockBudget
+                    artifact.codeArtifact.compiled.expressions.toStructured
+                    structuredFuel
+                    artifact.codeArtifact.compiled.expressions.toStructured.body +
+                      1) *
+                  TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
+                    artifact.codeArtifact.compiled.cfg))
+              (gasfulInitial.gasAvailable.toNat + 6))
+            { (Yul.EndToEnd.initialExpressionsState artifact baseSource).evm with
+              pc := EvmYul.UInt256.ofNat 0 })
+          transcript := by
+  obtain ⟨artifact, program, provided, cert, _hDecode, _hLinker, hInner,
+      hCert, hBytes, _hRefs⟩ := compileUnlinked?_parts hCompile
+  obtain ⟨hInnerWith, _hGate⟩ :=
+    Solidity.Frontend.Object.compileVerifiedStackObjectArtifactUnlinked?_parts
+      hInner
+  subst hBytes
+  rw [installedTarget_eq artifact baseSource] at hInitial
+  obtain ⟨structuredFuel, transcript, hAccepted, hForward, hTotal⟩ :=
+    Yul.EndToEnd.optimizedSolcYulToGasfulRawBytecodeTotal
+      (sourceFuel := sourceFuel) (baseSource := baseSource)
+      hInnerWith hCert hInitial
+  exact ⟨artifact, structuredFuel, transcript, rfl, hAccepted, hForward, hTotal⟩
+
+/-- Link-time bridge for the unlinked pipeline: patching real library
+addresses into the unlinked image reproduces the verified value-compile of the
+original source with those addresses.  See the module note above; the full
+statement is `Solidus.compileUnlinked?_patchImmutablesAndLibraries_resolvesOriginal`. -/
+alias compile_correct_unlinked_patch :=
+  compileUnlinked?_patchImmutablesAndLibraries_resolvesOriginal
 
 end Solidus
 end EvmCompiler

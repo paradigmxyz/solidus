@@ -2023,3 +2023,5 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Yul.EndToEnd.optimizedSolcYulToGasfulRawBytecodeTotalWithCodeSuffix
 #print axioms EvmCompiler.Solidus.compile_correct
 #print axioms EvmCompiler.Solidus.compile_correct_creation
+#print axioms EvmCompiler.Solidus.compile_correct_unlinked
+#print axioms EvmCompiler.Solidus.compile_correct_unlinked_patch
