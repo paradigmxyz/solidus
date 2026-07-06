@@ -76,6 +76,7 @@ def frozenManifestModules : List Name :=
   , `EvmCompiler.Solidus.SourceRun
   , `EvmCompiler.Solidus.Defs
   , `EvmCompiler.Correctness
+  , `EvmCompiler.Solidus.OpenRunContainment
     -- semantic-base frozen files
   , `EvmCompiler.Assembly.StateRelation
   , `EvmCompiler.Assembly.Syntax

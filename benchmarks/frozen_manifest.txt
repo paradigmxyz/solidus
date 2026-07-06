@@ -23,6 +23,7 @@ EvmCompiler/Solidus/Frontend.lean      # C7: ObjectBuiltinContext (+ Name/Word/O
 EvmCompiler/Solidus/SourceRun.lean     # C3+C4: rawObjectRun + Truncated
 EvmCompiler/Solidus/Defs.lean          # public vocabulary (compile?/InstalledSource/ObservableDoneRel/...)
 EvmCompiler/Correctness.lean           # the two public theorem statements
+EvmCompiler/Solidus/OpenRunContainment.lean  # C6 containment theorems (openRun_triangulated et al.)
 
 # ---------------------------------------------------------------------------
 # Semantic-base files (SAFE): pure spec/semantics referenced at statement level.
@@ -90,14 +91,24 @@ lake-manifest.json
 #allow: EvmCompiler.Solidity.RawAst
 
 # ===========================================================================
-# KNOWN UNFROZEN STATEMENT SYMBOL (conflict C6, NOT yet relocated):
+# KNOWN UNFROZEN STATEMENT SYMBOL (conflict C6) — PROVED CONTAINED:
 #   Assembly.Compact.InteractionSemantics.openRunNResult / openStepResult
 #   still live in the mutable EvmCompiler/Assembly/Compact.lean (5.4k lines),
-#   whose `Instr` type is shared with the mutable compaction pass. This is the
-#   audit's MEDIUM-severity item, contained by the now-frozen DoneRel anchor
-#   (C1/A1): on any funded, valid run the RunRefinesOpenTotal.completed arm
-#   forces openRunNResult's done value to equal EVM.X via the frozen DoneRel.
-#   Relocating it requires splitting the shared `Instr` type + instruction
-#   dispatch out from under the compaction pass; deferred. Compact.lean is
-#   therefore intentionally NOT in the frozen set above.
+#   whose `Instr` type is shared with the mutable compaction pass; relocating
+#   would require splitting Instr + dispatch out from under that pass.
+#   The containment is no longer a prose argument: the frozen module
+#   EvmCompiler/Solidus/OpenRunContainment.lean proves it as checked theorems
+#   quantified over an ARBITRARY value in openRunNResult's result position
+#   (so every adversarial redefinition is covered as a corollary):
+#     - openRun_triangulated: any openRun satisfying both frozen conjuncts
+#       executes to a leaf DoneRel-related to pinned EVM.X and
+#       ObservableDoneRel-related to the source run.
+#     - doneRel_not_running / observableDoneRel_not_running /
+#       openRun_no_running_leaf: neither frozen relation accepts a .running
+#       target; the trivial-interpreter attack makes the theorem UNPROVABLE.
+#     - runRefinesOpenTotal_inversion: the non-agreement arms require genuine
+#       EVM.X faults the adversary cannot manufacture on a funded valid run.
+#   Axiom footprint: [propext, Classical.choice, Quot.sound].
+#   Compact.lean is therefore intentionally NOT in the frozen set above, and
+#   openRunNResult is the one accepted def-level residual (proved contained).
 # ===========================================================================
