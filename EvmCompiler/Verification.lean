@@ -29,6 +29,7 @@ import EvmCompiler.Yul.FunctionsInteractionProgram
 import EvmCompiler.Yul.EndToEnd
 import EvmCompiler.Yul.GasfulEndToEnd
 import EvmCompiler.Yul.GasfulCrown
+import EvmCompiler.Correctness
 
 /-!
 Production verification root for the optimized-solc-Yul stack-only backend.
@@ -2020,3 +2021,5 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Yul.EndToEnd.optimizedSolcYulToGasfulRawBytecodeFinishedTotal
 #print axioms EvmCompiler.Yul.EndToEnd.optimizedSolcYulToGasfulRawBytecodeTerminalTotal
 #print axioms EvmCompiler.Yul.EndToEnd.optimizedSolcYulToGasfulRawBytecodeTotalWithCodeSuffix
+#print axioms EvmCompiler.Solidus.compile_correct
+#print axioms EvmCompiler.Solidus.compile_correct_creation

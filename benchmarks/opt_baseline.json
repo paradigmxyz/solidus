@@ -1,0 +1,354 @@
+{
+  "commit": "c2ea1b17feddd07050df3a7ea686b698b12d6e68",
+  "date": "2026-07-06T02:47:20Z",
+  "solc_version": "0.8.26+commit.8a97fa7a.Darwin.appleclang",
+  "contracts": [
+    {
+      "name": "AbiBox.sol:AbiBox",
+      "runtime_bytes": 9866,
+      "creation_bytes": 9961,
+      "compile_ms": 6660
+    },
+    {
+      "name": "AbiControlSurfaceBox.sol:AbiControlSurfaceBox",
+      "runtime_bytes": 14656,
+      "creation_bytes": 14816,
+      "compile_ms": 6475
+    },
+    {
+      "name": "AdvancedTypeSurfaceBox.sol:AdvancedTypeSurfaceBox",
+      "runtime_bytes": 26287,
+      "creation_bytes": 26382,
+      "compile_ms": 12610
+    },
+    {
+      "name": "AdvancedTypeSurfaceBox.sol:PriceMath",
+      "runtime_bytes": 89,
+      "creation_bytes": 182,
+      "compile_ms": 12610
+    },
+    {
+      "name": "AdversarialStackPressure.sol:AdversarialStackPressure",
+      "runtime_bytes": 9025,
+      "creation_bytes": 9120,
+      "compile_ms": 6180
+    },
+    {
+      "name": "ArithmeticBox.sol:ArithmeticBox",
+      "runtime_bytes": 3801,
+      "creation_bytes": 3896,
+      "compile_ms": 6065
+    },
+    {
+      "name": "ArrayBox.sol:ArrayBox",
+      "runtime_bytes": 2603,
+      "creation_bytes": 2698,
+      "compile_ms": 6043
+    },
+    {
+      "name": "BitwiseBox.sol:BitwiseBox",
+      "runtime_bytes": 6599,
+      "creation_bytes": 6694,
+      "compile_ms": 6314
+    },
+    {
+      "name": "BytesBox.sol:BytesBox",
+      "runtime_bytes": 2066,
+      "creation_bytes": 2161,
+      "compile_ms": 6222
+    },
+    {
+      "name": "CancunOpcodeSurface.sol:CancunOpcodeSurface",
+      "runtime_bytes": 1697,
+      "creation_bytes": 1792,
+      "compile_ms": 6197
+    },
+    {
+      "name": "ConstructorAbiBox.sol:ConstructorAbiBox",
+      "runtime_bytes": 5349,
+      "creation_bytes": 8833,
+      "compile_ms": 6625
+    },
+    {
+      "name": "ConstructorCounter.sol:ConstructorCounter",
+      "runtime_bytes": 2168,
+      "creation_bytes": 3398,
+      "compile_ms": 6366
+    },
+    {
+      "name": "Counter.sol:Counter",
+      "runtime_bytes": 2672,
+      "creation_bytes": 2767,
+      "compile_ms": 6253
+    },
+    {
+      "name": "CreateLifecycleSurfaceBox.sol:CreateLifecycleChild",
+      "runtime_bytes": 843,
+      "creation_bytes": 2894,
+      "compile_ms": 12478
+    },
+    {
+      "name": "CreateLifecycleSurfaceBox.sol:CreateLifecycleSurfaceBox",
+      "runtime_bytes": 25751,
+      "creation_bytes": 25846,
+      "compile_ms": 12478
+    },
+    {
+      "name": "DynamicStorageSurfaceBox.sol:DynamicStorageSurfaceBox",
+      "runtime_bytes": 42848,
+      "creation_bytes": 42943,
+      "compile_ms": 6790
+    },
+    {
+      "name": "EffectOrderingSurfaceBox.sol:EffectOrderingSurfaceBox",
+      "runtime_bytes": 4487,
+      "creation_bytes": 4582,
+      "compile_ms": 6136
+    },
+    {
+      "name": "EnumBytesBox.sol:EnumBytesBox",
+      "runtime_bytes": 7987,
+      "creation_bytes": 9642,
+      "compile_ms": 6231
+    },
+    {
+      "name": "EnvBox.sol:EnvBox",
+      "runtime_bytes": 5123,
+      "creation_bytes": 5218,
+      "compile_ms": 6210
+    },
+    {
+      "name": "ErrorPanicBox.sol:ErrorPanicBox",
+      "runtime_bytes": 6566,
+      "creation_bytes": 7796,
+      "compile_ms": 6244
+    },
+    {
+      "name": "EventCounter.sol:EventCounter",
+      "runtime_bytes": 2853,
+      "creation_bytes": 2948,
+      "compile_ms": 6030
+    },
+    {
+      "name": "EventMatrix.sol:EventMatrix",
+      "runtime_bytes": 4344,
+      "creation_bytes": 4439,
+      "compile_ms": 6050
+    },
+    {
+      "name": "ExternalCallBox.sol:ExternalCallBox",
+      "runtime_bytes": 9330,
+      "creation_bytes": 9425,
+      "compile_ms": 6421
+    },
+    {
+      "name": "ExternalMathLib.sol:ExternalMathBox",
+      "runtime_bytes": 4972,
+      "creation_bytes": 5067,
+      "compile_ms": 12501
+    },
+    {
+      "name": "ExternalMathLib.sol:ExternalMathLib",
+      "runtime_bytes": 2472,
+      "creation_bytes": 2567,
+      "compile_ms": 12501
+    },
+    {
+      "name": "FactoryBox.sol:ChildBox",
+      "runtime_bytes": 1772,
+      "creation_bytes": 3153,
+      "compile_ms": 12654
+    },
+    {
+      "name": "FactoryBox.sol:FactoryBox",
+      "runtime_bytes": 12892,
+      "creation_bytes": 12987,
+      "compile_ms": 12654
+    },
+    {
+      "name": "FallbackBox.sol:FallbackBox",
+      "runtime_bytes": 5717,
+      "creation_bytes": 5812,
+      "compile_ms": 6311
+    },
+    {
+      "name": "ForkNeutralBox.sol:ForkNeutralBox",
+      "runtime_bytes": 1569,
+      "creation_bytes": 1664,
+      "compile_ms": 6242
+    },
+    {
+      "name": "ImmutableBox.sol:ImmutableBox",
+      "runtime_bytes": 1431,
+      "creation_bytes": 2252,
+      "compile_ms": 6331
+    },
+    {
+      "name": "InlineAssemblyBox.sol:InlineAssemblyBox",
+      "runtime_bytes": 5878,
+      "creation_bytes": 5973,
+      "compile_ms": 6213
+    },
+    {
+      "name": "InterfaceCase.sol:Impl",
+      "runtime_bytes": 1803,
+      "creation_bytes": 1898,
+      "compile_ms": 6175
+    },
+    {
+      "name": "LoopBox.sol:LoopBox",
+      "runtime_bytes": 5547,
+      "creation_bytes": 5642,
+      "compile_ms": 6101
+    },
+    {
+      "name": "MappingCounter.sol:MappingCounter",
+      "runtime_bytes": 3791,
+      "creation_bytes": 3886,
+      "compile_ms": 6317
+    },
+    {
+      "name": "MathLib.sol:MathLib",
+      "runtime_bytes": 89,
+      "creation_bytes": 182,
+      "compile_ms": 6178
+    },
+    {
+      "name": "MiniToken.sol:MiniToken",
+      "runtime_bytes": 10368,
+      "creation_bytes": 12716,
+      "compile_ms": 6315
+    },
+    {
+      "name": "ModifierBox.sol:ModifierBase",
+      "runtime_bytes": 1310,
+      "creation_bytes": 2540,
+      "compile_ms": 12221
+    },
+    {
+      "name": "ModifierBox.sol:ModifierBox",
+      "runtime_bytes": 5646,
+      "creation_bytes": 6918,
+      "compile_ms": 12221
+    },
+    {
+      "name": "Opcode44Surface.sol:Opcode44Surface",
+      "runtime_bytes": 659,
+      "creation_bytes": 754,
+      "compile_ms": 6178
+    },
+    {
+      "name": "PackedStorageBox.sol:PackedStorageBox",
+      "runtime_bytes": 38969,
+      "creation_bytes": 39064,
+      "compile_ms": 6772
+    },
+    {
+      "name": "PayableVault.sol:PayableVault",
+      "runtime_bytes": 1989,
+      "creation_bytes": 2935,
+      "compile_ms": 6251
+    },
+    {
+      "name": "PostCancunPrecompileBoundary.sol:PostCancunPrecompileBoundary",
+      "runtime_bytes": 10491,
+      "creation_bytes": 10586,
+      "compile_ms": 6323
+    },
+    {
+      "name": "ProxyLifecycleSurfaceBox.sol:ProxyLifecycleLogicV1",
+      "runtime_bytes": 6542,
+      "creation_bytes": 6637,
+      "compile_ms": 18841
+    },
+    {
+      "name": "ProxyLifecycleSurfaceBox.sol:ProxyLifecycleLogicV2",
+      "runtime_bytes": 6976,
+      "creation_bytes": 7071,
+      "compile_ms": 18841
+    },
+    {
+      "name": "ProxyLifecycleSurfaceBox.sol:ProxyLifecycleSurfaceBox",
+      "runtime_bytes": 10003,
+      "creation_bytes": 18350,
+      "compile_ms": 18841
+    },
+    {
+      "name": "ReentrantTryCatchSurfaceBox.sol:ReentrantTryCatchSurfaceBox",
+      "runtime_bytes": 14073,
+      "creation_bytes": 14168,
+      "compile_ms": 6453
+    },
+    {
+      "name": "ResourceObserverBox.sol:ResourceObserverBox",
+      "runtime_bytes": 659,
+      "creation_bytes": 778,
+      "compile_ms": 6168
+    },
+    {
+      "name": "RevertReason.sol:RevertReason",
+      "runtime_bytes": 2309,
+      "creation_bytes": 2404,
+      "compile_ms": 6106
+    },
+    {
+      "name": "SelfDestructBox.sol:SelfDestructBox",
+      "runtime_bytes": 3026,
+      "creation_bytes": 3083,
+      "compile_ms": 6218
+    },
+    {
+      "name": "SemanticSurfaceBox.sol:SemanticSurfaceBox",
+      "runtime_bytes": 22552,
+      "creation_bytes": 22647,
+      "compile_ms": 6467
+    },
+    {
+      "name": "Simple.sol:Simple",
+      "runtime_bytes": 1310,
+      "creation_bytes": 1405,
+      "compile_ms": 6057
+    },
+    {
+      "name": "StorageArrayBox.sol:StorageArrayBox",
+      "runtime_bytes": 11086,
+      "creation_bytes": 11181,
+      "compile_ms": 6296
+    },
+    {
+      "name": "StorageStructBox.sol:StorageStructBox",
+      "runtime_bytes": 22659,
+      "creation_bytes": 22754,
+      "compile_ms": 6563
+    },
+    {
+      "name": "StringBox.sol:StringBox",
+      "runtime_bytes": 3336,
+      "creation_bytes": 3431,
+      "compile_ms": 6174
+    },
+    {
+      "name": "StructBox.sol:StructBox",
+      "runtime_bytes": 8074,
+      "creation_bytes": 8169,
+      "compile_ms": 6122
+    },
+    {
+      "name": "TryCatchBox.sol:TryCatchBox",
+      "runtime_bytes": 6498,
+      "creation_bytes": 6593,
+      "compile_ms": 12072
+    },
+    {
+      "name": "TryCatchBox.sol:TryCatchTarget",
+      "runtime_bytes": 2457,
+      "creation_bytes": 2552,
+      "compile_ms": 12072
+    }
+  ],
+  "excluded": [],
+  "empty_sources": [],
+  "total_runtime_bytes": 435935,
+  "total_creation_bytes": 466252,
+  "wall_ms": 357294
+}

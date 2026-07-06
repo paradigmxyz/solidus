@@ -1,0 +1,61 @@
+# opt harness corpus manifest — one Solidity source per line, relative to repo root.
+# Lines beginning with # are comments. Edit freely to add/remove coverage.
+# Sources are compiled self-contained (single-file Standard JSON 'content').
+#
+# Excluded from this manifest (kept here for the record, do not compile via
+# the single-file harness):
+#   examples/EigenLayerBN254Corpus.sol  external import (eigen/...) + requires solc >= 0.8.27 (pinned 0.8.26)
+#   examples/UsesLibrary.sol            relative import ./MathLib.sol not resolved in single-file mode
+#   examples/UsesRemapping.sol          remapped import sample-lib/ScaleLib.sol not resolved in single-file mode
+#   examples/Object.yul                 raw Yul source, not a Solidity Standard-JSON input
+#   examples/vendor/ScaleLib.sol        library dependency of UsesRemapping, not a standalone entry
+#
+examples/AbiBox.sol
+examples/AbiControlSurfaceBox.sol
+examples/AdvancedTypeSurfaceBox.sol
+examples/AdversarialStackPressure.sol
+examples/ArithmeticBox.sol
+examples/ArrayBox.sol
+examples/BitwiseBox.sol
+examples/BytesBox.sol
+examples/CancunOpcodeSurface.sol
+examples/ConstructorAbiBox.sol
+examples/ConstructorCounter.sol
+examples/Counter.sol
+examples/CreateLifecycleSurfaceBox.sol
+examples/DynamicStorageSurfaceBox.sol
+examples/EffectOrderingSurfaceBox.sol
+examples/EnumBytesBox.sol
+examples/EnvBox.sol
+examples/ErrorPanicBox.sol
+examples/EventCounter.sol
+examples/EventMatrix.sol
+examples/ExternalCallBox.sol
+examples/ExternalMathLib.sol
+examples/FactoryBox.sol
+examples/FallbackBox.sol
+examples/ForkNeutralBox.sol
+examples/ImmutableBox.sol
+examples/InlineAssemblyBox.sol
+examples/InterfaceCase.sol
+examples/LoopBox.sol
+examples/MappingCounter.sol
+examples/MathLib.sol
+examples/MiniToken.sol
+examples/ModifierBox.sol
+examples/Opcode44Surface.sol
+examples/PackedStorageBox.sol
+examples/PayableVault.sol
+examples/PostCancunPrecompileBoundary.sol
+examples/ProxyLifecycleSurfaceBox.sol
+examples/ReentrantTryCatchSurfaceBox.sol
+examples/ResourceObserverBox.sol
+examples/RevertReason.sol
+examples/SelfDestructBox.sol
+examples/SemanticSurfaceBox.sol
+examples/Simple.sol
+examples/StorageArrayBox.sol
+examples/StorageStructBox.sol
+examples/StringBox.sol
+examples/StructBox.sol
+examples/TryCatchBox.sol
