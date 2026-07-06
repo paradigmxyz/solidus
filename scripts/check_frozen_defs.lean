@@ -43,11 +43,15 @@ open Lean
 namespace CheckFrozenDefs
 
 /-- Roots whose full definitional cone (type only, for theorems) is checked.
-The two public theorem statements. Every other root is discovered by scanning
-the spec modules below. -/
+The FOUR public theorem statements. Every other root is also discovered by
+scanning the spec modules below (all four live in `Correctness`, so they are
+covered by `declsInSpecModules` too; they are listed explicitly here so the
+root set is legible and robust to a module move). -/
 def rootTheorems : List Name :=
   [ ``EvmCompiler.Solidus.compile_correct
-  , ``EvmCompiler.Solidus.compile_correct_creation ]
+  , ``EvmCompiler.Solidus.compile_correct_creation
+  , ``EvmCompiler.Solidus.compile_correct_unlinked
+  , ``EvmCompiler.Solidus.compile_correct_unlinked_patch ]
 
 /-- Frozen "spec" modules: every declaration in these is a root. These are the
 relocated statement-vocabulary modules created by the freeze relocation. -/
@@ -203,7 +207,7 @@ def run : IO Unit := do
   -- plus every declaration in the spec modules.
   let mut roots := rootTheorems.toArray
   roots := roots ++ declsInSpecModules env
-  IO.println s!"[check_frozen_defs] roots: {roots.size} declarations across {specModules.length} spec modules + 2 theorems"
+  IO.println s!"[check_frozen_defs] roots: {roots.size} declarations across {specModules.length} spec modules + {rootTheorems.length} theorems"
 
   for r in roots do
     visit env visited escapes r r
