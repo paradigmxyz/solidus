@@ -283,7 +283,8 @@ theorem compileArtifactFromRawSolcIr?_noRawClzCall
       Lean.Json.parse rawJson = .ok json ∧
         decodeSelectedIr json selection = .ok selected ∧
           selected.root.elaborate? selected.evmVersion = .ok object ∧
-            Frontend.Object.noRawClzCall? object = true ∧
+            (selected.evmVersion.atLeast? .osaka = false →
+              Frontend.Object.noRawClzCall? object = true) ∧
               program =
                 { source := selected.source
                   contract := selected.contract
@@ -430,7 +431,8 @@ theorem compileArtifactFromRawSolcIr?_hoistedFunction_ordered_entry
     (hSelected : decodeSelectedIr json selection = .ok selected)
     (hCode : selected.root.code? = some code)
     (hCore :
-      Elab.elaborateCodeCore code = .ok (coreDispatcher, state))
+      Elab.elaborateCodeCore code selected.evmVersion =
+        .ok (coreDispatcher, state))
     (hHoisted : (name, fn) ∈ state.hoistedFunctions) :
     ∃ (program : Frontend.Program)
         (linkerSymbols : List (Frontend.Name × Frontend.Word))
@@ -465,11 +467,23 @@ theorem compileArtifactFromRawSolcIr?_hoistedFunction_ordered_entry
   cases hParse'
   rw [hSelected] at hSelected'
   cases hSelected'
+  rcases decodeAndElaborateSolcIr?_parts hDecode with
+    ⟨jsonParts, selectedParts, objectParts, hParseParts, hSelectedParts,
+      hObjectParts, hProgramParts⟩
+  rw [hParse] at hParseParts
+  cases hParseParts
+  rw [hSelected] at hSelectedParts
+  cases hSelectedParts
+  have hObjectVersion :
+      program.object.evmVersion = selected.evmVersion := by
+    rw [hProgramParts]
+    exact Raw.Object.elaborate?_evmVersion hObjectParts
   unfold Raw.Object.HoistedFunctionsRetained at hRetained
   rw [hCode] at hRetained
   rcases hRetained with
     ⟨coreDispatcher', state', helper?, arg?, ret?,
       hCore', _hCodeElab, hKeep⟩
+  rw [hObjectVersion] at hCore'
   rw [hCore] at hCore'
   cases hCore'
   have hFrontendMem : (name, fn) ∈ program.object.functions :=
@@ -888,7 +902,8 @@ theorem compileArtifactFromRawSolcIrWithLinkerSymbols?_noRawClzCall
       Lean.Json.parse rawJson = .ok json ∧
         decodeSelectedIr json selection = .ok selected ∧
           selected.root.elaborate? selected.evmVersion = .ok object ∧
-            Frontend.Object.noRawClzCall? object = true ∧
+            (selected.evmVersion.atLeast? .osaka = false →
+              Frontend.Object.noRawClzCall? object = true) ∧
               program =
                 { source := selected.source
                   contract := selected.contract

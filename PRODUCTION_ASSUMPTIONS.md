@@ -214,10 +214,10 @@ gas/size rules, and a total Nat-indexed jumpdest scanner `D_J_aux`
 (`D_J_aux_out_of_bounds`/`D_J_aux_step`/`D_J_def`); `D_J`'s signature and
 values are unchanged, but the scanner is no longer opaque, which is what lets
 this repo prove jumpdest-scan membership instead of gating on the runtime
-`jumpdestCorrect?` check. The raw solc `clz` builtin is still supported through the verified
-generated-helper lowering, so the compiler does not need to emit the native
-opcode. EIP-7702 transaction authorization-list processing remains outside this
-frame-level compiler theorem.
+`jumpdestCorrect?` check. The raw solc `clz` builtin is supported through the
+verified generated-helper lowering before Osaka and through native opcode
+emission from Osaka onward. EIP-7702 transaction authorization-list processing
+remains outside this frame-level compiler theorem.
 
 Solc-emitted precompile use is different: it reaches the compiler as ordinary
 `CALL`/`STATICCALL` to an address. That includes existing `ecrecover` lowering,
@@ -424,5 +424,6 @@ The supported-version matrix also compiles honest London and Cancun fixtures
 and rejects Cancun-only `MCOPY`/transient-storage syntax relabeled as London.
 It separately compiles London `difficulty()` and Paris `prevrandao()`, then
 rejects both cross-fork relabelings. Focused metadata tests cover Prague/Osaka
-canonical acceptance, Pectra/Fusaka bridge aliases, unknown-fork rejection, and
-the existing generated-helper lowering path for raw `clz`.
+canonical acceptance, Pectra/Fusaka bridge aliases, unknown-fork rejection,
+pre-Osaka generated-helper lowering for raw `clz`, and Osaka native raw `clz`
+emission.

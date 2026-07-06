@@ -4,6 +4,7 @@ import EvmCompiler.Solidity.RawAstClzAllocation
 import EvmCompiler.Solidity.RawAstSourceSemantics
 import EvmCompiler.Yul.EndToEnd
 import EvmCompiler.Yul.FunctionsInteractionPrimitive
+import EvmCompiler.Yul.FunctionsInteractionClosedPrimitive
 import EvmCompiler.Solidus.SourceRun
 
 /-!
@@ -126,13 +127,18 @@ theorem rawObjectBuiltinNameArg_of_elaboration
                   | ok argResult =>
                       rcases argResult with ⟨frontArg, argState⟩
                       simp [hArg] at hElab
-                      cases hHelper : Elab.ensureClzHelper.run argState with
-                      | error err => simp [hHelper] at hElab
-                      | ok helperResult =>
-                          rcases helperResult with ⟨helper, helperState⟩
-                          simp [hHelper] at hElab
-                          rcases hElab with ⟨rfl, rfl⟩
-                          simp [Frontend.Expr.objectBuiltinNameArg?] at hName
+                      cases hOsaka :
+                          (argState.evmVersion).atLeast? .osaka <;>
+                        simp [hOsaka] at hElab
+                      · cases hHelper : Elab.ensureClzHelper.run argState with
+                        | error err => simp [hHelper] at hElab
+                        | ok helperResult =>
+                            rcases helperResult with ⟨helper, helperState⟩
+                            simp [hHelper] at hElab
+                            rcases hElab with ⟨rfl, rfl⟩
+                            simp [Frontend.Expr.objectBuiltinNameArg?] at hName
+                      · rcases hElab with ⟨rfl, rfl⟩
+                        simp [Frontend.Expr.objectBuiltinNameArg?] at hName
               | cons extra tail =>
                   simp [Elab.Expr.elaborate] at hElab
                   unfold Elab.throw at hElab
@@ -545,13 +551,21 @@ theorem clz_elaboration_parts
     (hElab :
       (Elab.Expr.elaborate (.functionCall "clz" rawArgs)).run
         elabState = .ok (front, finalElabState)) :
-    ∃ rawArg frontArg argState helper helperState,
+    (∃ rawArg frontArg argState helper helperState,
       rawArgs = [rawArg] ∧
         (Elab.Expr.elaborate rawArg).run elabState =
           .ok (frontArg, argState) ∧
+        (argState.evmVersion).atLeast? .osaka = false ∧
         Elab.ensureClzHelper.run argState = .ok (helper, helperState) ∧
         front = .call .user helper [frontArg] ∧
-        finalElabState = helperState := by
+        finalElabState = helperState) ∨
+    (∃ rawArg frontArg argState,
+      rawArgs = [rawArg] ∧
+        (Elab.Expr.elaborate rawArg).run elabState =
+          .ok (frontArg, argState) ∧
+        (argState.evmVersion).atLeast? .osaka = true ∧
+        front = .call .primitive "clz" [frontArg] ∧
+        finalElabState = argState) := by
   cases rawArgs with
   | nil =>
       simp [Elab.Expr.elaborate] at hElab
@@ -566,18 +580,25 @@ theorem clz_elaboration_parts
           unfold Elab.Expr.elaborate at hElab
           cases hArg : (Elab.Expr.elaborate rawArg).run elabState with
           | error err => simp [hArg] at hElab
-          | ok argResult =>
-              rcases argResult with ⟨frontArg, argState⟩
-              simp [hArg] at hElab
-              cases hHelper : Elab.ensureClzHelper.run argState with
-              | error err => simp [hHelper] at hElab
-              | ok helperResult =>
-                  rcases helperResult with ⟨helper, helperState⟩
-                  simp [hHelper] at hElab
-                  rcases hElab with ⟨rfl, rfl⟩
-                  exact
-                    ⟨rawArg, frontArg, argState, helper, helperState,
-                      rfl, hArg, hHelper, rfl, rfl⟩
+              | ok argResult =>
+                  rcases argResult with ⟨frontArg, argState⟩
+                  simp [hArg] at hElab
+                  cases hOsaka :
+                      (argState.evmVersion).atLeast? .osaka <;>
+                    simp [hOsaka] at hElab
+                  · cases hHelper : Elab.ensureClzHelper.run argState with
+                    | error err => simp [hHelper] at hElab
+                    | ok helperResult =>
+                        rcases helperResult with ⟨helper, helperState⟩
+                        simp [hHelper] at hElab
+                        rcases hElab with ⟨rfl, rfl⟩
+                        exact Or.inl
+                          ⟨rawArg, frontArg, argState, helper, helperState,
+                            rfl, hArg, hOsaka, hHelper, rfl, rfl⟩
+                  · rcases hElab with ⟨rfl, rfl⟩
+                    exact Or.inr
+                      ⟨rawArg, frontArg, finalElabState, rfl, hArg, hOsaka,
+                        rfl, rfl⟩
       | cons extra tail =>
           simp [Elab.Expr.elaborate] at hElab
           unfold Elab.throw at hElab
@@ -5427,6 +5448,97 @@ theorem exprValuesRunForward_generatedClz
           unfold SameDoneRel
           rw [Elab.ClzHelperModel.run_eq_reference]
 
+theorem clzReference_eq_native (value : Frontend.Word) :
+    Elab.ClzHelperModel.reference value = EvmYul.UInt256.clz value := by
+  unfold Elab.ClzHelperModel.reference EvmYul.UInt256.clz
+    Elab.ClzHelperModel.zero Elab.ClzHelperModel.word
+  rfl
+
+theorem primitiveEval_clz_succ_succ
+    (fuel : Nat) (shared : EvmYul.SharedState .Yul)
+    (store : EvmYul.Yul.VarStore) (value : Frontend.Word) :
+    Yul.InteractionSemantics.primitiveSemantics.eval
+      (fuel + 2) (.Ok shared store) (.CompBit .CLZ) [value] =
+        pure (.Ok shared store, [Elab.ClzHelperModel.reference value]) := by
+  have h :=
+    (Yul.FunctionsInteractionClosedPrimitive.PureUnary.spec
+      Yul.FunctionsInteractionClosedPrimitive.PureUnary.clz).sourceSucc
+        fuel shared store [value] (by rfl)
+  simpa [Yul.InteractionSemantics.primitiveSemantics,
+    clzReference_eq_native] using h
+
+theorem orderedPrimitiveEvalValues_succ
+    (fuel : Nat) (op : EvmYul.Operation .Yul)
+    (args : List Frontend.AstExpr)
+    (contract : Frontend.AstContract) (state : State) :
+    Yul.InteractionSemantics.evalValues (fuel + 1)
+        (.Call (.inl op) args) (some contract) state =
+      Simulation.Interaction.bind
+        (Yul.InteractionSemantics.evalArgs fuel args.reverse
+          (some contract) state)
+        (fun argsResult =>
+          Yul.InteractionSemantics.primitiveSemantics.eval
+            fuel argsResult.1 op argsResult.2.reverse) := by
+  simp only [Yul.InteractionSemantics.evalValues,
+    Yul.Source.Canonical.evalValues, Yul.Source.Effectful.evalValues]
+  rfl
+
+theorem exprValuesRunForward_nativeClz
+    {rawArgFuel orderedArgFuel : Nat}
+    {context : Raw.SourceSemantics.Context}
+    {rawArg : Raw.Expr}
+    {orderedArg : Frontend.AstExpr}
+    {contract : Frontend.AstContract} {state : State}
+    (hArgTarget : 2 ≤ orderedArgFuel)
+    (hArg :
+      ExprRunForward rawArgFuel orderedArgFuel context rawArg orderedArg
+        contract state) :
+    ExprValuesRunForward (rawArgFuel + 1) (orderedArgFuel + 2)
+      context (.functionCall "clz" [rawArg])
+      (.Call (.inl (.CompBit .CLZ)) [orderedArg]) contract state := by
+  unfold ExprValuesRunForward
+  let orderedBase := orderedArgFuel - 2
+  have hBase : orderedBase + 2 = orderedArgFuel := by
+    dsimp [orderedBase]
+    omega
+  have hArgsFuel : orderedBase + 3 = orderedArgFuel + 1 := by
+    dsimp [orderedBase]
+    omega
+  rw [show orderedArgFuel + 2 = (orderedArgFuel + 1) + 1 by omega]
+  rw [orderedPrimitiveEvalValues_succ]
+  simp only [List.reverse_singleton]
+  rw [Raw.SourceSemantics.EvalValues.clz_succ]
+  rw [← hArgsFuel]
+  rw [orderedEvalArgs_single]
+  rw [hBase]
+  rw [Simulation.Interaction.bind_assoc]
+  unfold ExprRunForward at hArg
+  refine Simulation.Interaction.ForwardRel.bind_custom hArg ?_
+  intro rawDone orderedDone hDone
+  unfold SameDoneRel at hDone
+  subst orderedDone
+  cases rawDone with
+  | error error =>
+      exact Simulation.Interaction.ForwardRel.done rfl
+  | ok result =>
+      rcases result with ⟨stateAfterArg, value⟩
+      cases stateAfterArg with
+      | OutOfFuel =>
+          exact
+            Simulation.Interaction.ForwardRel.truncated
+              (by simp [Yul.FunctionsInteractionPrimitive.Truncated])
+      | Checkpoint jump =>
+          exact
+            Simulation.Interaction.ForwardRel.truncated
+              (by simp [Yul.FunctionsInteractionPrimitive.Truncated])
+      | Ok shared store =>
+          simp only [Simulation.Interaction.instMonad,
+            Simulation.Interaction.pure, Simulation.Interaction.bind,
+            List.reverse_singleton]
+          rw [show orderedBase + 3 = (orderedBase + 1) + 2 by omega]
+          rw [primitiveEval_clz_succ_succ]
+          exact Simulation.Interaction.ForwardRel.done rfl
+
 theorem exprValuesRunForward_of_scoped_clz_parts
     {rawArgFuel slack : Nat}
     {builtinContext : Frontend.ObjectBuiltinContext}
@@ -5508,27 +5620,47 @@ theorem exprValuesRunForward_of_scoped_elaborated_clz_at
         rawArgFuel + slack + 1) :
     ExprValuesRunForward (rawArgFuel + 1) ((rawArgFuel + slack) + 2)
       context (.functionCall "clz" rawArgs) ordered contract state := by
-  rcases clz_elaboration_parts hElab with
+  rcases clz_elaboration_parts hElab with hHelper | hNative
+  · rcases hHelper with
     ⟨rawArg, frontArg, argState, generated, helperState,
-      rfl, hArgElab, hEnsure, rfl, rfl⟩
-  rcases ExprNormalized.user_call_parts hNormalized with
-    ⟨orderedArgs, rfl, ⟨hArgsNormalized⟩⟩
-  rcases ExprListNormalized.cons_parts hArgsNormalized with
-    ⟨orderedArg, orderedTail, hOrderedArgs,
-      ⟨hArgNormalized⟩, ⟨hTailNormalized⟩⟩
-  have hTail : orderedTail = [] :=
-    ExprListNormalized.nil_ordered hTailNormalized
-  subst orderedTail
-  subst orderedArgs
-  have hArgExt :=
-    Elab.Expr.elaborate_preserves_clzAllocation rawArg hArgElab hValid
-  rcases Elab.ensureClzHelper_allocated hEnsure hArgExt.after_valid with
-    ⟨argName, returnName, hAllocated⟩
-  rcases hBindings hAllocated with ⟨binding⟩
-  exact
-    exprValuesRunForward_of_scoped_clz_parts
-      hExpr hContext hArgElab hArgNormalized binding
-      hArgTarget hHelperFuel
+      rfl, hArgElab, _hOsaka, hEnsure, rfl, rfl⟩
+    rcases ExprNormalized.user_call_parts hNormalized with
+      ⟨orderedArgs, rfl, ⟨hArgsNormalized⟩⟩
+    rcases ExprListNormalized.cons_parts hArgsNormalized with
+      ⟨orderedArg, orderedTail, hOrderedArgs,
+        ⟨hArgNormalized⟩, ⟨hTailNormalized⟩⟩
+    have hTail : orderedTail = [] :=
+      ExprListNormalized.nil_ordered hTailNormalized
+    subst orderedTail
+    subst orderedArgs
+    have hArgExt :=
+      Elab.Expr.elaborate_preserves_clzAllocation rawArg hArgElab hValid
+    rcases Elab.ensureClzHelper_allocated hEnsure hArgExt.after_valid with
+      ⟨argName, returnName, hAllocated⟩
+    rcases hBindings hAllocated with ⟨binding⟩
+    exact
+      exprValuesRunForward_of_scoped_clz_parts
+        hExpr hContext hArgElab hArgNormalized binding
+        hArgTarget hHelperFuel
+  · rcases hNative with
+      ⟨rawArg, frontArg, argState, rfl, hArgElab, _hOsaka, rfl, rfl⟩
+    rcases ExprNormalized.primitive_call_parts hNormalized with
+      ⟨op, orderedArgs, hOp, rfl, ⟨hArgsNormalized⟩⟩
+    have hOpEq : op = .CompBit .CLZ := by
+      simpa [Frontend.Primitive.ofName?] using hOp.symm
+    subst op
+    rcases ExprListNormalized.cons_parts hArgsNormalized with
+      ⟨orderedArg, orderedTail, hOrderedArgs,
+        ⟨hArgNormalized⟩, ⟨hTailNormalized⟩⟩
+    have hTail : orderedTail = [] :=
+      ExprListNormalized.nil_ordered hTailNormalized
+    subst orderedTail
+    subst orderedArgs
+    have hArgValues :=
+      hExpr (state := state) hContext hArgElab hArgNormalized
+    exact
+      exprValuesRunForward_nativeClz hArgTarget
+        (exprRunForward_of_values hArgValues)
 
 /-- Path-native generated-`clz` preservation. The argument prefix receives a
 resolver transported backward through `ensureClzHelper`; the exact helper
@@ -5559,57 +5691,77 @@ theorem exprValuesRunForward_of_scoped_elaborated_clz_path
         rawArgFuel + slack + 1) :
     ExprValuesRunForward (rawArgFuel + 1) ((rawArgFuel + slack) + 2)
       context (.functionCall "clz" rawArgs) ordered contract state := by
-  rcases clz_elaboration_parts hElab with
+  rcases clz_elaboration_parts hElab with hHelper | hNative
+  · rcases hHelper with
     ⟨rawArg, frontArg, argState, generated, helperState,
-      rfl, hArgElab, hEnsure, rfl, rfl⟩
-  rcases ExprNormalized.user_call_parts hNormalized with
-    ⟨orderedArgs, rfl, ⟨hArgsNormalized⟩⟩
-  rcases ExprListNormalized.cons_parts hArgsNormalized with
-    ⟨orderedArg, orderedTail, hOrderedArgs,
-      ⟨hArgNormalized⟩, ⟨hTailNormalized⟩⟩
-  have hTail : orderedTail = [] :=
-    ExprListNormalized.nil_ordered hTailNormalized
-  subst orderedTail
-  subst orderedArgs
-  have hArgExt :=
-    Elab.Expr.elaborate_preserves_clzAllocation rawArg
-      hArgElab hPath.entryValid
-  have hEnsureExt :=
-    Elab.ensureClzHelper_preserves_clzAllocation
-      hEnsure hArgExt.after_valid
-  have hArgPath :
-      ClzCompilationPath contract elabState argState :=
-    hPath.prefixPath hEnsureExt
-  have hArgValues :=
-    hExpr (state := state) hContext hArgPath hArgElab hArgNormalized
-  have hArgRun := exprRunForward_of_values hArgValues
-  rcases Elab.ensureClzHelper_allocated hEnsure hArgExt.after_valid with
-    ⟨argName, returnName, hAllocated⟩
-  rcases hPath.finalResolver hAllocated with ⟨binding⟩
-  let orderedBase := rawArgFuel + slack - 2
-  have hBase : orderedBase + 2 = rawArgFuel + slack := by
-    dsimp [orderedBase]
-    omega
-  have hBodyFuel :
-      Raw.ClzPreservation.stmtListFuel
-          (Elab.clzHelperBody binding.argName binding.returnName) + 2 ≤
-        orderedBase + 3 := by
-    rw [Raw.ClzPreservation.helperBodyFuel_eq]
-    dsimp [orderedBase]
-    omega
-  have hRun :
-      GeneratedClzCallRun rawArgFuel (orderedBase + 2) (orderedBase + 3)
-        context rawArg generated
-        orderedArg contract state :=
-    { binding := binding
-      bodyFuel := hBodyFuel
-      argForward := by simpa [hBase] using hArgRun }
-  have hCall := exprValuesRunForward_generatedClz hRun
-  have hTargetEq : orderedBase + 4 = rawArgFuel + slack + 2 := by
-    dsimp [orderedBase]
-    omega
-  rw [hTargetEq] at hCall
-  exact hCall
+      rfl, hArgElab, _hOsaka, hEnsure, rfl, rfl⟩
+    rcases ExprNormalized.user_call_parts hNormalized with
+      ⟨orderedArgs, rfl, ⟨hArgsNormalized⟩⟩
+    rcases ExprListNormalized.cons_parts hArgsNormalized with
+      ⟨orderedArg, orderedTail, hOrderedArgs,
+        ⟨hArgNormalized⟩, ⟨hTailNormalized⟩⟩
+    have hTail : orderedTail = [] :=
+      ExprListNormalized.nil_ordered hTailNormalized
+    subst orderedTail
+    subst orderedArgs
+    have hArgExt :=
+      Elab.Expr.elaborate_preserves_clzAllocation rawArg
+        hArgElab hPath.entryValid
+    have hEnsureExt :=
+      Elab.ensureClzHelper_preserves_clzAllocation
+        hEnsure hArgExt.after_valid
+    have hArgPath :
+        ClzCompilationPath contract elabState argState :=
+      hPath.prefixPath hEnsureExt
+    have hArgValues :=
+      hExpr (state := state) hContext hArgPath hArgElab hArgNormalized
+    have hArgRun := exprRunForward_of_values hArgValues
+    rcases Elab.ensureClzHelper_allocated hEnsure hArgExt.after_valid with
+      ⟨argName, returnName, hAllocated⟩
+    rcases hPath.finalResolver hAllocated with ⟨binding⟩
+    let orderedBase := rawArgFuel + slack - 2
+    have hBase : orderedBase + 2 = rawArgFuel + slack := by
+      dsimp [orderedBase]
+      omega
+    have hBodyFuel :
+        Raw.ClzPreservation.stmtListFuel
+            (Elab.clzHelperBody binding.argName binding.returnName) + 2 ≤
+          orderedBase + 3 := by
+      rw [Raw.ClzPreservation.helperBodyFuel_eq]
+      dsimp [orderedBase]
+      omega
+    have hRun :
+        GeneratedClzCallRun rawArgFuel (orderedBase + 2) (orderedBase + 3)
+          context rawArg generated
+          orderedArg contract state :=
+      { binding := binding
+        bodyFuel := hBodyFuel
+        argForward := by simpa [hBase] using hArgRun }
+    have hCall := exprValuesRunForward_generatedClz hRun
+    have hTargetEq : orderedBase + 4 = rawArgFuel + slack + 2 := by
+      dsimp [orderedBase]
+      omega
+    rw [hTargetEq] at hCall
+    exact hCall
+  · rcases hNative with
+      ⟨rawArg, frontArg, argState, rfl, hArgElab, _hOsaka, rfl, rfl⟩
+    rcases ExprNormalized.primitive_call_parts hNormalized with
+      ⟨op, orderedArgs, hOp, rfl, ⟨hArgsNormalized⟩⟩
+    have hOpEq : op = .CompBit .CLZ := by
+      simpa [Frontend.Primitive.ofName?] using hOp.symm
+    subst op
+    rcases ExprListNormalized.cons_parts hArgsNormalized with
+      ⟨orderedArg, orderedTail, hOrderedArgs,
+        ⟨hArgNormalized⟩, ⟨hTailNormalized⟩⟩
+    have hTail : orderedTail = [] :=
+      ExprListNormalized.nil_ordered hTailNormalized
+    subst orderedTail
+    subst orderedArgs
+    have hArgValues :=
+      hExpr (state := state) hContext hPath hArgElab hArgNormalized
+    exact
+      exprValuesRunForward_nativeClz hArgTarget
+        (exprRunForward_of_values hArgValues)
 
 theorem exprValuesRunForward_of_scoped_elaborated_clz
     {rawArgFuel slack : Nat}
@@ -5636,23 +5788,43 @@ theorem exprValuesRunForward_of_scoped_elaborated_clz
         rawArgFuel + slack + 1) :
     ExprValuesRunForward (rawArgFuel + 1) ((rawArgFuel + slack) + 2)
       context (.functionCall "clz" rawArgs) ordered contract state := by
-  rcases clz_elaboration_parts hElab with
+  rcases clz_elaboration_parts hElab with hHelper | hNative
+  · rcases hHelper with
     ⟨rawArg, frontArg, argState, generated, helperState,
-      rfl, hArgElab, hEnsure, rfl, rfl⟩
-  rcases ExprNormalized.user_call_parts hNormalized with
-    ⟨orderedArgs, rfl, ⟨hArgsNormalized⟩⟩
-  rcases ExprListNormalized.cons_parts hArgsNormalized with
-    ⟨orderedArg, orderedTail, hOrderedArgs,
-      ⟨hArgNormalized⟩, ⟨hTailNormalized⟩⟩
-  have hTail : orderedTail = [] :=
-    ExprListNormalized.nil_ordered hTailNormalized
-  subst orderedTail
-  subst orderedArgs
-  rcases hBindings hEnsure with ⟨binding⟩
-  exact
-    exprValuesRunForward_of_scoped_clz_parts
-      hExpr hContext hArgElab hArgNormalized binding
-      hArgTarget hHelperFuel
+      rfl, hArgElab, _hOsaka, hEnsure, rfl, rfl⟩
+    rcases ExprNormalized.user_call_parts hNormalized with
+      ⟨orderedArgs, rfl, ⟨hArgsNormalized⟩⟩
+    rcases ExprListNormalized.cons_parts hArgsNormalized with
+      ⟨orderedArg, orderedTail, hOrderedArgs,
+        ⟨hArgNormalized⟩, ⟨hTailNormalized⟩⟩
+    have hTail : orderedTail = [] :=
+      ExprListNormalized.nil_ordered hTailNormalized
+    subst orderedTail
+    subst orderedArgs
+    rcases hBindings hEnsure with ⟨binding⟩
+    exact
+      exprValuesRunForward_of_scoped_clz_parts
+        hExpr hContext hArgElab hArgNormalized binding
+        hArgTarget hHelperFuel
+  · rcases hNative with
+      ⟨rawArg, frontArg, argState, rfl, hArgElab, _hOsaka, rfl, rfl⟩
+    rcases ExprNormalized.primitive_call_parts hNormalized with
+      ⟨op, orderedArgs, hOp, rfl, ⟨hArgsNormalized⟩⟩
+    have hOpEq : op = .CompBit .CLZ := by
+      simpa [Frontend.Primitive.ofName?] using hOp.symm
+    subst op
+    rcases ExprListNormalized.cons_parts hArgsNormalized with
+      ⟨orderedArg, orderedTail, hOrderedArgs,
+        ⟨hArgNormalized⟩, ⟨hTailNormalized⟩⟩
+    have hTail : orderedTail = [] :=
+      ExprListNormalized.nil_ordered hTailNormalized
+    subst orderedTail
+    subst orderedArgs
+    have hArgValues :=
+      hExpr (state := state) hContext hArgElab hArgNormalized
+    exact
+      exprValuesRunForward_nativeClz hArgTarget
+        (exprRunForward_of_values hArgValues)
 
 def clzFrontendSlack : Nat :=
   Raw.ClzPreservation.helperBodyFuel + 1
@@ -5679,10 +5851,14 @@ theorem clzElaborationRunForwardAt_one
       1 clzFrontendSlack builtinContext contract := by
   intro rawContext rawArgs front ordered elabState finalElabState state
     hContext hElab hNormalized
-  rcases clz_elaboration_parts hElab with
+  rcases clz_elaboration_parts hElab with hHelper | hNative
+  · rcases hHelper with
     ⟨rawArg, frontArg, argState, generated, helperState,
-      rfl, hArgElab, hEnsure, rfl, rfl⟩
-  exact exprValuesRunForward_clz_one
+      rfl, hArgElab, _hOsaka, hEnsure, rfl, rfl⟩
+    exact exprValuesRunForward_clz_one
+  · rcases hNative with
+      ⟨rawArg, frontArg, argState, rfl, hArgElab, _hOsaka, rfl, rfl⟩
+    exact exprValuesRunForward_clz_one
 
 theorem clzElaborationRunForwardAt_succ_succ
     {argFuel : Nat}
@@ -5727,10 +5903,14 @@ theorem clzPathRunForwardAt_one
       1 clzFrontendSlack builtinContext contract := by
   intro rawContext rawArgs front ordered elabState finalElabState state
     hContext hPath hElab hNormalized
-  rcases clz_elaboration_parts hElab with
+  rcases clz_elaboration_parts hElab with hHelper | hNative
+  · rcases hHelper with
     ⟨rawArg, frontArg, argState, generated, helperState,
-      rfl, hArgElab, hEnsure, rfl, rfl⟩
-  exact exprValuesRunForward_clz_one
+      rfl, hArgElab, _hOsaka, hEnsure, rfl, rfl⟩
+    exact exprValuesRunForward_clz_one
+  · rcases hNative with
+      ⟨rawArg, frontArg, argState, rfl, hArgElab, _hOsaka, rfl, rfl⟩
+    exact exprValuesRunForward_clz_one
 
 theorem clzPathRunForwardAt_succ_succ
     {argFuel : Nat}
@@ -7791,58 +7971,87 @@ theorem stmtRunForward_of_path_elaborated_clz
     StmtRunForward (rawArgFuel + 2) ((rawArgFuel + 2) + slack)
       context (.expressionStatement (.functionCall "clz" rawArgs))
       (.ExprStmtCall ordered) contract state := by
-  rcases clz_elaboration_parts hElab with
+  rcases clz_elaboration_parts hElab with hHelper | hNative
+  · rcases hHelper with
     ⟨rawArg, frontArg, argState, generated, helperState,
-      rfl, hArgElab, hEnsure, rfl, rfl⟩
-  rcases ExprNormalized.user_call_parts hNormalized with
-    ⟨orderedArgs, rfl, ⟨hArgsNormalized⟩⟩
-  rcases ExprListNormalized.cons_parts hArgsNormalized with
-    ⟨orderedArg, orderedTail, hOrderedArgs,
-      ⟨hArgNormalized⟩, ⟨hTailNormalized⟩⟩
-  have hTail : orderedTail = [] :=
-    ExprListNormalized.nil_ordered hTailNormalized
-  subst orderedTail
-  subst orderedArgs
-  have hArgExt :=
-    Elab.Expr.elaborate_preserves_clzAllocation rawArg
-      hArgElab hPath.entryValid
-  have hEnsureExt :=
-    Elab.ensureClzHelper_preserves_clzAllocation
-      hEnsure hArgExt.after_valid
-  have hArgPath :
-      ClzCompilationPath contract elabState argState :=
-    hPath.prefixPath hEnsureExt
-  have hArgValues :=
-    hExpr (state := state) hContext hArgPath hArgElab hArgNormalized
-  have hArgRun := exprRunForward_of_values hArgValues
-  rcases Elab.ensureClzHelper_allocated hEnsure hArgExt.after_valid with
-    ⟨argName, returnName, hAllocated⟩
-  rcases hPath.finalResolver hAllocated with ⟨binding⟩
-  let orderedBase := rawArgFuel + slack - 2
-  have hBase : orderedBase + 2 = rawArgFuel + slack := by
-    dsimp [orderedBase]
-    omega
-  have hBodyFuel :
-      Raw.ClzPreservation.stmtListFuel
-          (Elab.clzHelperBody binding.argName binding.returnName) + 2 ≤
-        orderedBase + 2 := by
-    rw [Raw.ClzPreservation.helperBodyFuel_eq]
-    dsimp [orderedBase]
-    omega
-  have hRun :
-      GeneratedClzCallRun rawArgFuel (orderedBase + 2)
-        (orderedBase + 2) context rawArg generated orderedArg
-        contract state :=
-    { binding := binding
-      bodyFuel := hBodyFuel
-      argForward := by simpa [hBase] using hArgRun }
-  have hCall := stmtRunForward_expressionStatement_generatedClz hRun
-  have hTargetEq :
-      orderedBase + 4 = rawArgFuel + 2 + slack := by
-    dsimp [orderedBase]
-    omega
-  rw [hTargetEq] at hCall
-  exact hCall
+      rfl, hArgElab, _hOsaka, hEnsure, rfl, rfl⟩
+    rcases ExprNormalized.user_call_parts hNormalized with
+      ⟨orderedArgs, rfl, ⟨hArgsNormalized⟩⟩
+    rcases ExprListNormalized.cons_parts hArgsNormalized with
+      ⟨orderedArg, orderedTail, hOrderedArgs,
+        ⟨hArgNormalized⟩, ⟨hTailNormalized⟩⟩
+    have hTail : orderedTail = [] :=
+      ExprListNormalized.nil_ordered hTailNormalized
+    subst orderedTail
+    subst orderedArgs
+    have hArgExt :=
+      Elab.Expr.elaborate_preserves_clzAllocation rawArg
+        hArgElab hPath.entryValid
+    have hEnsureExt :=
+      Elab.ensureClzHelper_preserves_clzAllocation
+        hEnsure hArgExt.after_valid
+    have hArgPath :
+        ClzCompilationPath contract elabState argState :=
+      hPath.prefixPath hEnsureExt
+    have hArgValues :=
+      hExpr (state := state) hContext hArgPath hArgElab hArgNormalized
+    have hArgRun := exprRunForward_of_values hArgValues
+    rcases Elab.ensureClzHelper_allocated hEnsure hArgExt.after_valid with
+      ⟨argName, returnName, hAllocated⟩
+    rcases hPath.finalResolver hAllocated with ⟨binding⟩
+    let orderedBase := rawArgFuel + slack - 2
+    have hBase : orderedBase + 2 = rawArgFuel + slack := by
+      dsimp [orderedBase]
+      omega
+    have hBodyFuel :
+        Raw.ClzPreservation.stmtListFuel
+            (Elab.clzHelperBody binding.argName binding.returnName) + 2 ≤
+          orderedBase + 2 := by
+      rw [Raw.ClzPreservation.helperBodyFuel_eq]
+      dsimp [orderedBase]
+      omega
+    have hRun :
+        GeneratedClzCallRun rawArgFuel (orderedBase + 2)
+          (orderedBase + 2) context rawArg generated orderedArg
+          contract state :=
+      { binding := binding
+        bodyFuel := hBodyFuel
+        argForward := by simpa [hBase] using hArgRun }
+    have hCall := stmtRunForward_expressionStatement_generatedClz hRun
+    have hTargetEq :
+        orderedBase + 4 = rawArgFuel + 2 + slack := by
+      dsimp [orderedBase]
+      omega
+    rw [hTargetEq] at hCall
+    exact hCall
+  · rcases hNative with
+      ⟨rawArg, frontArg, argState, rfl, hArgElab, _hOsaka, rfl, rfl⟩
+    rcases ExprNormalized.primitive_call_parts hNormalized with
+      ⟨op, orderedArgs, hOp, rfl, ⟨hArgsNormalized⟩⟩
+    have hOpEq : op = .CompBit .CLZ := by
+      simpa [Frontend.Primitive.ofName?] using hOp.symm
+    subst op
+    rcases ExprListNormalized.cons_parts hArgsNormalized with
+      ⟨orderedArg, orderedTail, hOrderedArgs,
+        ⟨hArgNormalized⟩, ⟨hTailNormalized⟩⟩
+    have hTail : orderedTail = [] :=
+      ExprListNormalized.nil_ordered hTailNormalized
+    subst orderedTail
+    subst orderedArgs
+    have hArgValues :=
+      hExpr (state := state) hContext hPath hArgElab hArgNormalized
+    have hValues :=
+      exprValuesRunForward_nativeClz hArgTarget
+        (exprRunForward_of_values hArgValues)
+    have hStmt :=
+      stmtRunForward_expressionStatement_primitive_succ
+        (rawFuel := rawArgFuel + 1)
+        (orderedFuel := (rawArgFuel + slack) + 2)
+        (context := context) (name := "clz") (rawArgs := [rawArg])
+        (op := .CompBit .CLZ) (orderedArgs := [orderedArg])
+        (contract := contract) (state := state)
+        (by decide) hValues
+    simpa [Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using hStmt
 
 /-- Every accepted ordinary call statement is derived from checked
 elaboration and normalization. Generated user calls use the bundled occurrence
@@ -12170,12 +12379,25 @@ theorem scopedStmtRunForward_expressionStatement_of_path_below
             rcases exprResult with ⟨frontExpr, exprState⟩
             simp [hExprElab] at hElab
             rcases hElab with ⟨rfl, rfl⟩
-            rcases clz_elaboration_parts hExprElab with
-              ⟨rawArg, frontArg, argState, generated, helperState,
-                rfl, hArgElab, hEnsure, rfl, rfl⟩
-            rcases
-                StmtNormalized.exprStmt_call_parts_of_not_setimmutable
-                  (Or.inl (by intro hKind; cases hKind)) hNormalized with
+            have hStmtParts :
+                ∃ orderedExpr,
+                  ordered = .ExprStmtCall orderedExpr ∧
+                    Nonempty
+                      (ExprNormalized builtinContext frontExpr orderedExpr) := by
+              rcases clz_elaboration_parts hExprElab with hHelper | hNative
+              · rcases hHelper with
+                  ⟨rawArg, frontArg, argState, generated, helperState,
+                    rfl, hArgElab, _hOsaka, hEnsure, rfl, rfl⟩
+                exact
+                  StmtNormalized.exprStmt_call_parts_of_not_setimmutable
+                    (Or.inl (by intro hKind; cases hKind)) hNormalized
+              · rcases hNative with
+                  ⟨rawArg, frontArg, argState, rfl, hArgElab, _hOsaka,
+                    rfl, rfl⟩
+                exact
+                  StmtNormalized.exprStmt_call_parts_of_not_setimmutable
+                    (Or.inl (by intro hKind; cases hKind)) hNormalized
+            rcases hStmtParts with
               ⟨orderedExpr, rfl, ⟨hExprNormalized⟩⟩
             cases fuel with
             | zero =>
@@ -12418,10 +12640,15 @@ theorem frontendPathRunForwardAt_of_slack
                 intro rawContext rawArgs front ordered
                   elabState finalElabState state
                   hContext hPath hElab hNormalized
-                rcases clz_elaboration_parts hElab with
+                rcases clz_elaboration_parts hElab with hHelper | hNative
+                · rcases hHelper with
                   ⟨rawArg, frontArg, argState, generated, helperState,
-                    rfl, hArgElab, hEnsure, rfl, rfl⟩
-                exact exprValuesRunForward_clz_one
+                    rfl, hArgElab, _hOsaka, hEnsure, rfl, rfl⟩
+                  exact exprValuesRunForward_clz_one
+                · rcases hNative with
+                    ⟨rawArg, frontArg, argState, rfl, hArgElab, _hOsaka,
+                      rfl, rfl⟩
+                  exact exprValuesRunForward_clz_one
             | succ argFuel =>
                 apply clzPathRunForwardAt_succ_succ_of_slack hSlack
                 exact
@@ -13876,14 +14103,17 @@ structure ElaborateCodeCorePath
     ∀ {entry}, entry ∈ topFunctions → entry ∈ finalState.hoistedFunctions
 
 theorem elaborateCodeCore_path
-    {code : List Raw.Stmt} {dispatcher : List Frontend.Stmt}
+    {code : List Raw.Stmt} {evmVersion : Yul.SolcValidation.EvmVersion}
+    {dispatcher : List Frontend.Stmt}
     {finalState : Elab.State}
     (hCore :
-      Elab.elaborateCodeCore code = .ok (dispatcher, finalState)) :
+      Elab.elaborateCodeCore code evmVersion =
+        .ok (dispatcher, finalState)) :
     Nonempty (ElaborateCodeCorePath code dispatcher finalState) := by
   unfold Elab.elaborateCodeCore Elab.elaborateCodeAction at hCore
   simp [StateT.run_bind] at hCore
-  cases hPushIdentifier : Elab.pushIdentifierScope.run ({} : Elab.State) with
+  cases hPushIdentifier :
+      Elab.pushIdentifierScope.run ({ evmVersion := evmVersion } : Elab.State) with
   | error err => simp [hPushIdentifier] at hCore
   | ok pushIdentifierResult =>
       rcases pushIdentifierResult with ⟨_, identifierPushedState⟩
@@ -13946,9 +14176,13 @@ theorem elaborateCodeCore_path
                               rfl
                             rw [hPushed, hCollectScopes,
                               hPushIdentifierScopes]
+                          have hInitialValid :
+                              Elab.ClzAllocationValid
+                                ({ evmVersion := evmVersion } : Elab.State) := by
+                            exact Or.inl ⟨rfl, rfl, rfl⟩
                           have hPushIdentifierExt :=
                             Elab.pushIdentifierScope_preserves_clzAllocation
-                              hPushIdentifier Elab.initial_clzAllocationValid
+                              hPushIdentifier hInitialValid
                           have hCollectExt :=
                             collectTopFunctions_preserves_clzAllocation code
                               hCollect hPushIdentifierExt.after_valid
@@ -14171,15 +14405,16 @@ theorem topScopeCompiled
 end ElaborateCodeCorePath
 
 theorem elaborateCodeCore_rawFunctionScope
-    {stmts : List Raw.Stmt}
+    {stmts : List Raw.Stmt} {evmVersion : Yul.SolcValidation.EvmVersion}
     {dispatcher : List Frontend.Stmt} {state : Elab.State}
     (hCore :
-      Elab.elaborateCodeCore stmts = .ok (dispatcher, state)) :
+      Elab.elaborateCodeCore stmts evmVersion = .ok (dispatcher, state)) :
     ∃ rawScope,
       Raw.SourceSemantics.functionScope? stmts = some rawScope := by
   unfold Elab.elaborateCodeCore Elab.elaborateCodeAction at hCore
   simp [StateT.run_bind] at hCore
-  cases hPush : Elab.pushIdentifierScope.run {} with
+  cases hPush :
+      Elab.pushIdentifierScope.run ({ evmVersion := evmVersion } : Elab.State) with
   | error err =>
       simp [hPush] at hCore
   | ok pushResult =>
@@ -14196,12 +14431,12 @@ theorem elaborateCodeCore_rawFunctionScope
           exact ⟨rawScope, hRawScope⟩
 
 theorem elaborateCode_rawFunctionScope
-    {stmts : List Raw.Stmt}
+    {stmts : List Raw.Stmt} {evmVersion : Yul.SolcValidation.EvmVersion}
     {dispatcher : List Frontend.Stmt}
     {functions : List (Name × Frontend.FunctionDef)}
     {helper? arg? ret? : Option Name}
     (hElab :
-      Elab.elaborateCode stmts =
+      Elab.elaborateCode stmts evmVersion =
         .ok (dispatcher, functions, helper?, arg?, ret?)) :
     ∃ rawScope,
       Raw.SourceSemantics.functionScope? stmts = some rawScope := by
@@ -14278,14 +14513,14 @@ theorem code_elaborates
     {code : List Raw.Stmt}
     (hCode : ctx.selected.root.code? = some code) :
     ∃ helper? arg? ret?,
-      Elab.elaborateCode code =
+      Elab.elaborateCode code ctx.selected.evmVersion =
         .ok (ctx.program.object.dispatcher, ctx.program.object.functions,
           helper?, arg?, ret?) := by
   rcases Raw.Object.elaborate?_parts ctx.raw_elaborates with
     ⟨_itemFuel, dispatcher, functions, helper?, arg?, ret?,
       _data, _objects, _items, _hFuel, hCodeElab, _hItems, hFrontend⟩
   have hElab :
-      Elab.elaborateCode code =
+      Elab.elaborateCode code ctx.selected.evmVersion =
         .ok (dispatcher, functions, helper?, arg?, ret?) := by
     simpa [hCode] using hCodeElab
   refine ⟨helper?, arg?, ret?, ?_⟩
@@ -14309,7 +14544,8 @@ theorem clzBindingResolverAt
     {code : List Raw.Stmt}
     (hCode : ctx.selected.root.code? = some code) :
     ∃ coreDispatcher finalState,
-      Elab.elaborateCodeCore code = .ok (coreDispatcher, finalState) ∧
+      Elab.elaborateCodeCore code ctx.selected.evmVersion =
+        .ok (coreDispatcher, finalState) ∧
         ClzBindingResolverAt
           artifact.codeArtifact.ordered.program.contract finalState := by
   rcases ctx.code_elaborates hCode with
@@ -14328,7 +14564,7 @@ theorem clzBindingResolverAt
     rw [hRet]
     exact hAllocated.ret_eq
   have hExactElab :
-      Elab.elaborateCode code =
+      Elab.elaborateCode code ctx.selected.evmVersion =
         .ok (ctx.program.object.dispatcher, ctx.program.object.functions,
           some generated, some allocatedArg, some allocatedRet) := by
     simpa [hHelperOption, hArgOption, hRetOption] using hElab
@@ -14343,9 +14579,14 @@ theorem clzBindingResolverAt
       Raw.Object.FrontendValidated
         ctx.selected.root ctx.program.object := by
     simpa [hProgram] using hValidated
+  have hProgramVersion :
+      ctx.program.object.evmVersion = ctx.selected.evmVersion :=
+    Raw.Object.elaborate?_evmVersion ctx.raw_elaborates
   have hNamesBool :
-      Raw.Object.clzHelperNamesDistinct? ctx.selected.root = true :=
-    hValidatedProgram.2.1
+      Raw.Object.clzHelperNamesDistinct? ctx.selected.root
+        ctx.selected.evmVersion = true := by
+    rw [← hProgramVersion]
+    exact hValidatedProgram.2.1
   have hNames : allocatedArg ≠ allocatedRet :=
     Raw.Object.clzHelperNamesDistinct?_arg_ne
       hCode hExactElab hNamesBool
@@ -14400,7 +14641,8 @@ theorem hoistedFunctionResolverAt
     {code : List Raw.Stmt}
     (hCode : ctx.selected.root.code? = some code) :
     ∃ coreDispatcher finalState memoryContract,
-      Elab.elaborateCodeCore code = .ok (coreDispatcher, finalState) ∧
+      Elab.elaborateCodeCore code ctx.selected.evmVersion =
+        .ok (coreDispatcher, finalState) ∧
         Frontend.MemoryGuard.Object.inferredContract? ctx.program.object =
           some memoryContract ∧
         HoistedFunctionResolverAt
@@ -14463,7 +14705,7 @@ theorem dispatcher_parts
     {code : List Raw.Stmt}
     (hCode : ctx.selected.root.code? = some code) :
     ∃ helper? arg? ret? memoryContract resolvedDispatcher orderedDispatcher,
-      Elab.elaborateCode code =
+      Elab.elaborateCode code ctx.selected.evmVersion =
           .ok (ctx.program.object.dispatcher, ctx.program.object.functions,
             helper?, arg?, ret?) ∧
         Frontend.MemoryGuard.Object.inferredContract? ctx.program.object =
@@ -14503,7 +14745,7 @@ theorem dispatcher_normalized
     {code : List Raw.Stmt}
     (hCode : ctx.selected.root.code? = some code) :
     ∃ helper? arg? ret? memoryContract orderedDispatcher,
-      Elab.elaborateCode code =
+      Elab.elaborateCode code ctx.selected.evmVersion =
           .ok (ctx.program.object.dispatcher, ctx.program.object.functions,
             helper?, arg?, ret?) ∧
         Frontend.MemoryGuard.Object.inferredContract? ctx.program.object =

@@ -17139,11 +17139,16 @@ def Object.itemRefsPreserveOrder? (raw : Object)
     (frontend : Frontend.Object) : Bool :=
   Object.itemRefsPreserveOrderFuel? maxDecodeFuel raw frontend
 
+def Object.noRawClzCallPreOsaka? (frontend : Frontend.Object) : Bool :=
+  frontend.evmVersion.atLeast? .osaka ||
+    Frontend.Object.noRawClzCall? frontend
+
 def Object.FrontendValidated (raw : Object)
     (frontend : Frontend.Object) : Prop :=
   Object.itemRefsPreserveOrder? raw frontend = true ∧
     Object.clzHelperNamesDistinct? raw frontend.evmVersion = true ∧
-      Frontend.Object.noRawClzCall? frontend = true ∧
+      (frontend.evmVersion.atLeast? .osaka = false →
+        Frontend.Object.noRawClzCall? frontend = true) ∧
       Frontend.Object.functionDefStubsRetained? frontend = true ∧
         Frontend.Object.userCallsResolved? frontend = true ∧
           Object.ClzExpansionOk raw frontend ∧
@@ -17156,7 +17161,7 @@ def Object.elaboratePreservingOrder? (obj : Object)
   let frontend ← obj.elaborate? evmVersion
   if Object.itemRefsPreserveOrder? obj frontend then
     if Object.clzHelperNamesDistinct? obj evmVersion then
-      if Frontend.Object.noRawClzCall? frontend then
+      if Object.noRawClzCallPreOsaka? frontend then
         if Frontend.Object.functionDefStubsRetained? frontend then
           if Frontend.Object.userCallsResolved? frontend then
             pure frontend
@@ -17165,7 +17170,7 @@ def Object.elaboratePreservingOrder? (obj : Object)
         else
           .error "hoisted function stub mismatch"
       else
-        .error "raw clz call was not normalized"
+        .error "raw clz call was not normalized before Osaka"
     else
       .error "clz helper argument/result name collision"
   else
@@ -17192,7 +17197,7 @@ theorem Object.elaboratePreservingOrder?_parts
               simp [hObject, hOrder, hNames] at hElab
           | true =>
               cases hNoRawClz :
-                  Frontend.Object.noRawClzCall? object with
+                  Object.noRawClzCallPreOsaka? object with
               | false =>
                   simp [hObject, hOrder, hNames, hNoRawClz] at hElab
               | true =>
@@ -17238,13 +17243,15 @@ theorem Object.elaboratePreservingOrder?_noRawClzCall
     {obj : Object} {evmVersion : Yul.SolcValidation.EvmVersion}
     {frontend : Frontend.Object}
     (hElab :
-      Object.elaboratePreservingOrder? obj evmVersion = .ok frontend) :
+      Object.elaboratePreservingOrder? obj evmVersion = .ok frontend)
+    (hPreOsaka : evmVersion.atLeast? .osaka = false) :
     Frontend.Object.noRawClzCall? frontend = true := by
   unfold Object.elaboratePreservingOrder? at hElab
   cases hObject : Object.elaborate? obj evmVersion with
   | error err =>
       simp [hObject] at hElab
   | ok object =>
+      have hObjectVersion := Object.elaborate?_evmVersion hObject
       cases hOrder : Object.itemRefsPreserveOrder? obj object with
       | false =>
           simp [hObject, hOrder] at hElab
@@ -17253,7 +17260,7 @@ theorem Object.elaboratePreservingOrder?_noRawClzCall
           | false =>
               simp [hObject, hOrder, hNames] at hElab
           | true =>
-              cases hNoRawClz : Frontend.Object.noRawClzCall? object with
+              cases hNoRawClz : Object.noRawClzCallPreOsaka? object with
               | false =>
                   simp [hObject, hOrder, hNames, hNoRawClz] at hElab
               | true =>
@@ -17272,7 +17279,9 @@ theorem Object.elaboratePreservingOrder?_noRawClzCall
                           simp [hObject, hOrder, hNames, hNoRawClz, hStubs,
                             hResolved, pure, Except.pure] at hElab
                           subst frontend
-                          exact hNoRawClz
+                          unfold Object.noRawClzCallPreOsaka? at hNoRawClz
+                          rw [hObjectVersion, hPreOsaka] at hNoRawClz
+                          simpa using hNoRawClz
 
 theorem Object.elaboratePreservingOrder?_functionDefStubsRetained
     {obj : Object} {evmVersion : Yul.SolcValidation.EvmVersion}
@@ -17293,7 +17302,7 @@ theorem Object.elaboratePreservingOrder?_functionDefStubsRetained
           | false =>
               simp [hObject, hOrder, hNames] at hElab
           | true =>
-              cases hNoRawClz : Frontend.Object.noRawClzCall? object with
+              cases hNoRawClz : Object.noRawClzCallPreOsaka? object with
               | false =>
                   simp [hObject, hOrder, hNames, hNoRawClz] at hElab
               | true =>
@@ -17333,7 +17342,7 @@ theorem Object.elaboratePreservingOrder?_userCallsResolved
           | false =>
               simp [hObject, hOrder, hNames] at hElab
           | true =>
-              cases hNoRawClz : Frontend.Object.noRawClzCall? object with
+              cases hNoRawClz : Object.noRawClzCallPreOsaka? object with
               | false =>
                   simp [hObject, hOrder, hNames, hNoRawClz] at hElab
               | true =>
@@ -17371,7 +17380,9 @@ theorem Object.elaboratePreservingOrder?_frontendValidated
   exact
     ⟨hObject, hOrder,
       hNames,
-      Object.elaboratePreservingOrder?_noRawClzCall hElab,
+      (fun hPreOsaka =>
+        Object.elaboratePreservingOrder?_noRawClzCall hElab
+          (by simpa [hVer] using hPreOsaka)),
       Object.elaboratePreservingOrder?_functionDefStubsRetained hElab,
       Object.elaboratePreservingOrder?_userCallsResolved hElab,
       Object.elaborate?_clzExpansionOk hObject,
@@ -17633,7 +17644,8 @@ theorem decodeAndElaborateSolcIrJson_noRawClzCall
     ∃ (selected : SelectedIr) (object : Frontend.Object),
       decodeSelectedIr json selection = .ok selected ∧
         selected.root.elaborate? selected.evmVersion = .ok object ∧
-          Frontend.Object.noRawClzCall? object = true ∧
+          (selected.evmVersion.atLeast? .osaka = false →
+            Frontend.Object.noRawClzCall? object = true) ∧
             program =
               { source := selected.source
                 contract := selected.contract
@@ -17982,7 +17994,8 @@ theorem decodeAndElaborateSolcIr?_noRawClzCall
       Lean.Json.parse rawJson = .ok json ∧
         decodeSelectedIr json selection = .ok selected ∧
           selected.root.elaborate? selected.evmVersion = .ok object ∧
-            Frontend.Object.noRawClzCall? object = true ∧
+            (selected.evmVersion.atLeast? .osaka = false →
+              Frontend.Object.noRawClzCall? object = true) ∧
               program =
                 { source := selected.source
                   contract := selected.contract

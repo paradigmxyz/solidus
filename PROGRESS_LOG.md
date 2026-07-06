@@ -4,6 +4,21 @@ This is append-only implementation history, so older entries intentionally
 describe gaps that have since closed or changed shape. Current gap status is
 authoritative only in `ROADMAP.md` and `PRODUCTION_ASSUMPTIONS.md`.
 
+- 2026-07-06 13:25:58 PDT - feature/raw-osaka-native-clz - completed the
+  raw-solc frontend CLZ follow-up on branch `clz-native-osaka`: raw `clz(x)`
+  elaboration now preserves the existing generated-helper path before Osaka
+  and emits native `.call .primitive "clz"` from Osaka onward. The source
+  preservation proof now splits helper/native CLZ elaboration, reuses the
+  closed primitive `PureUnary.clz` spec for native evaluation, and threads the
+  selected EVM version through top-level raw-code path evidence. The production
+  validation gate now requires `Frontend.Object.noRawClzCall?` only before
+  Osaka, so Osaka-native CLZ is accepted instead of rejected as an unnormalized
+  raw call. Added a raw frontend smoke fixture that checks Cancun still
+  allocates the generated helper while Osaka keeps the native primitive call
+  and omits the helper. Validation passed: focused raw/clz/public/source
+  builds, full `lake build EvmCompiler.Verification`, and
+  `scripts/test_raw_solc_frontend_smoke.sh`.
+
 - 2026-07-05 22:51:34 PDT - proof - Extended the Solidus public surface to the
   verified unlinked-library pipeline. Added the frozen fail-closed entry
   `Solidus.compileUnlinked?` (`EvmCompiler/Solidus/Defs.lean`): compiles with

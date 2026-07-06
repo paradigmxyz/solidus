@@ -30,11 +30,10 @@ in `lakefile.lean`. The selected pin `3c5c44a62f4e7964bd1bc648caa708a111664c84`
 execution-side EIP-7702 delegated EOA code-image lookup, and a total
 Nat-indexed jumpdest scanner (`D_J_aux` with unfolding lemmas), which is what
 lets this repo prove jumpdest-scan membership for compiled label destinations.
-The raw Yul `clz` builtin remains
-supported by the existing generated-helper lowering and proof path; this
-compiler does not need to emit native `CLZ` for that coverage. EIP-7702
-transaction authorization-list processing remains outside this frame-level
-compiler theorem.
+The raw Yul `clz` builtin is supported by generated-helper lowering before
+Osaka and by native `CLZ` emission from Osaka onward, with both paths covered
+by the raw-source preservation proof. EIP-7702 transaction authorization-list
+processing remains outside this frame-level compiler theorem.
 
 Pectra/Fusaka precompile use follows the existing `ecrecover` style boundary:
 solc emits ordinary `CALL`/`STATICCALL`, and the compiler theorem preserves that
@@ -492,10 +491,12 @@ Next raw frontend layer:
   the helper-execution theorem's name premise. Retained
   nested function-definition statements are alpha-renamed to generated function
   names before their checked frontend no-op lowering. Raw production elaboration
-  now also fail-closes on any
+  now also fail-closes before Osaka on any
   frontend object that still contains an unlowered callee named exactly `clz`,
-  with decode and artifact wrapper theorems exposing
-  `Frontend.Object.noRawClzCall? = true`. It also fail-closes unless every
+  with decode and artifact wrapper theorems exposing the pre-Osaka
+  `Frontend.Object.noRawClzCall? = true` obligation. From Osaka onward, raw
+  `clz` elaborates to the native primitive call instead of the generated helper.
+  It also fail-closes unless every
   retained nested-function staging node has an identical callable entry in the
   same frontend object's function table, with decode and artifact wrapper
   theorems exposing `Frontend.Object.functionDefStubsRetained? = true`.
