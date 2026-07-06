@@ -74,11 +74,13 @@ lake-manifest.json
 #allow: EvmCompiler.Solidity.SolidusInstall
 #allow: EvmCompiler.Solidity.RawAstTotal
 #allow: EvmCompiler.Compiler.SolidusObservable
-#     SolidusUnlinked is proof-carrying (like the three above): it supplies the
-#     PROOFs of compile_correct_unlinked / compile_correct_unlinked_patch, not
-#     any statement-level definition. Its statements' cone is frozen; its proofs
-#     are not.
-#allow: EvmCompiler.Solidity.SolidusUnlinked
+#     (The unlinked surface — compile_correct_unlinked / _patch and the entry
+#     compileUnlinked? — was DEFERRED from the v1 freeze: it now lives in the
+#     NON-frozen modules EvmCompiler/CorrectnessUnlinked.lean and
+#     EvmCompiler/Solidity/SolidusUnlinked.lean, which frozen Correctness.lean
+#     no longer imports. So no #allow is needed for them, and the frozen
+#     statement set is exactly the two linked theorems compile_correct /
+#     compile_correct_creation. See CorrectnessUnlinked.lean for the rationale.)
 # (c) Compiler helpers imported by the SAFE base files. The frozen definitions
 #     in those base files (StepResult, Bytecode.ofList, the Yul/source
 #     interpreters, HaltKind, etc.) do not reference these modules' symbols.

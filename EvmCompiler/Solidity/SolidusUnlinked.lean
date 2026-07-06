@@ -6,8 +6,9 @@ import EvmCompiler.Yul.GasfulCrown
 /-!
 # Unlinked-library public surface — implementation bridge
 
-This module connects the frozen fail-closed unlinked entry
-`Solidus.compileUnlinked?` (`EvmCompiler/Solidus/Defs.lean`) to the verified
+This module is NON-frozen. It defines the fail-closed unlinked entry
+`Solidus.compileUnlinked?` (deferred from the v1 freeze — see
+`EvmCompiler/CorrectnessUnlinked.lean`) and connects it to the verified
 unlinked-library pipeline:
 
 * `compileUnlinked?_parts` decomposes a successful unlinked compilation into
@@ -35,6 +36,32 @@ namespace EvmCompiler
 namespace Solidus
 
 open EvmCompiler.Solidity
+
+/-- Fail-closed unlinked entry: compile with the library `linkersymbol`
+placeholders that the input's `settings.libraries` metadata leaves
+unresolved rewritten to `loadimmutable` markers, gated by the same
+fail-closed stack-headroom certificate as `compile?`.  Returns the unlinked
+deployed byte image together with its solc-compatible `linkReferences`: the
+20-byte address windows (`start + 12`, length `20`) inside each placeholder's
+32-byte push payload that a linker patches with real library addresses.  The
+certificate is checked on the unlinked image; the library windows sit inside
+PUSH immediate data, so a 20-byte address write there never changes any
+opcode's stack effect, and the correctness of a patched image is delivered
+separately by `CorrectnessUnlinked.compile_correct_unlinked` (patching
+addresses in reproduces, byte for byte, the verified value-compile of the
+original source with those addresses).
+
+DEFERRED from the v1 freeze: this entry lives here (non-frozen) rather than in
+frozen `Solidus/Defs.lean` because its correctness theorems irreducibly
+reference compiler-pipeline vocabulary. See `EvmCompiler/CorrectnessUnlinked.lean`. -/
+def compileUnlinked? (rawJson : String) (selection : Solidity.RawAst.Selection) :
+    Option (List UInt8 ×
+      List (Solidity.Frontend.Name ×
+        List Solidity.Frontend.ImmutableReference)) := do
+  let (artifact, refs) ←
+    Solidity.RawAst.compileArtifactUnlinkedFromRawSolcIrRefs? rawJson selection
+  let _ ← artifact.stackHeadroomCert?
+  pure (artifact.image.bytes, refs)
 
 /-- Decompose a successful `compileUnlinked?` run. -/
 theorem compileUnlinked?_parts

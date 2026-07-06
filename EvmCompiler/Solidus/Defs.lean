@@ -44,27 +44,14 @@ def compile? (rawJson : String) (selection : Solidity.RawAst.Selection) :
   let _ ← artifact.stackHeadroomCert?
   pure artifact.image.bytes
 
-/-- Fail-closed unlinked entry: compile with the library `linkersymbol`
-placeholders that the input's `settings.libraries` metadata leaves
-unresolved rewritten to `loadimmutable` markers, gated by the same
-fail-closed stack-headroom certificate as `compile?`.  Returns the unlinked
-deployed byte image together with its solc-compatible `linkReferences`: the
-20-byte address windows (`start + 12`, length `20`) inside each placeholder's
-32-byte push payload that a linker patches with real library addresses.  The
-certificate is checked on the unlinked image; the library windows sit inside
-PUSH immediate data, so a 20-byte address write there never changes any
-opcode's stack effect, and the correctness of a patched image is delivered
-separately by `Correctness.compile_correct_unlinked` (patching addresses in
-reproduces, byte for byte, the verified value-compile of the original source
-with those addresses). -/
-def compileUnlinked? (rawJson : String) (selection : Solidity.RawAst.Selection) :
-    Option (List UInt8 ×
-      List (Solidity.Frontend.Name ×
-        List Solidity.Frontend.ImmutableReference)) := do
-  let (artifact, refs) ←
-    Solidity.RawAst.compileArtifactUnlinkedFromRawSolcIrRefs? rawJson selection
-  let _ ← artifact.stackHeadroomCert?
-  pure (artifact.image.bytes, refs)
+/- NOTE: the fail-closed *unlinked* entry `compileUnlinked?` — and its two
+public correctness theorems — were DEFERRED from the v1 freeze. They now live
+in the non-frozen modules `EvmCompiler/Solidity/SolidusUnlinked.lean`
+(definition + decomposition proofs) and `EvmCompiler/CorrectnessUnlinked.lean`
+(theorem statements). See the header of `CorrectnessUnlinked.lean` for why:
+their statements irreducibly reference compiler-pipeline vocabulary that cannot
+be frozen without freezing optimizable passes. Only the linked `compile?`
+entry above is part of the frozen v1 spec vocabulary. -/
 
 /-- Source exceptions the compiled code forwards through the error channel.
 Halt-carrying exceptions (`.Revert`, `.YulHalt`) never take this path — they
