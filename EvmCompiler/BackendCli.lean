@@ -5,6 +5,7 @@ import EvmCompiler.Assembly.Compact
 import EvmCompiler.Functions.StackDiagnostics
 import EvmCompiler.Compiler.StackArtifact
 import EvmCompiler.Solidity.VerifiedStackObjectArtifact
+import EvmCompiler.Solidity.StackHeadroomEndToEnd
 
 namespace EvmCompiler.BackendCli
 
@@ -1166,8 +1167,16 @@ def runRaw (config : RawConfig) : IO Unit := do
           match unlinked?, program?,
               Solidity.RawAst.decodeLinkerSymbols? input config.selection with
           | some artifact, some program, some linkerSymbols =>
-              printImage config.mode artifact.image
-                (program.object.missingLinkerSymbolNames linkerSymbols)
+              -- Fail-closed: emit only theorem-covered bytes. The public
+              -- correctness theorem is conditioned on the stack-headroom
+              -- certificate; without it the image is not covered.
+              match artifact.stackHeadroomCert? with
+              | none =>
+                  throw (IO.userError
+                    "raw object-image rejected: no stack-headroom certificate")
+              | some _ =>
+                  printImage config.mode artifact.image
+                    (program.object.missingLinkerSymbolNames linkerSymbols)
           | _, _, _ =>
               throw
                 (IO.userError "raw object-image generation returned none")
@@ -1175,7 +1184,15 @@ def runRaw (config : RawConfig) : IO Unit := do
           pure ()
   | some artifact =>
       match config.mode with
-      | .rawImage | .rawSummary => printImage config.mode artifact.image
+      | .rawImage | .rawSummary =>
+          -- Fail-closed: emit only theorem-covered bytes. `Solidus.compile?`
+          -- succeeds only when this certificate is present, so the shipped
+          -- binary's success condition matches the public spec on this path.
+          match artifact.stackHeadroomCert? with
+          | none =>
+              throw (IO.userError
+                "raw object-image rejected: no stack-headroom certificate")
+          | some _ => printImage config.mode artifact.image
       | .rawCheck =>
           match program? with
           | none => throw (IO.userError "raw Standard JSON decode failed")

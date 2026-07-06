@@ -3,8 +3,9 @@
 Solidus is a formally verified Solidity/Yul → EVM bytecode compiler: a
 single Lean 4 theorem, `Solidus.compile_correct`, connects the source
 program's semantics to the emitted bytes on the pinned EvmYul interpreter.
-The challenge: **make the emitted bytecode smaller — as aggressively as you
-like — while the theorem still proves.**
+The challenge: **make the compiled contracts cheaper — deployment plus
+runtime gas, as aggressively as you like — while the theorem still
+proves.**
 
 Because the correctness claim is a machine-checked theorem over a frozen
 specification, there is no "did you break something" review step. If your
@@ -14,15 +15,24 @@ IR, any internal proof. The theorem is the only referee.
 
 ## The record
 
-- **Metric:** total deployed bytecode bytes across a private test suite
-  (real-world contracts plus synthetic stress tests, same distribution as
-  the public `examples/` corpus). One number.
+- **Metric:** total gas to **deploy and exercise** a private test suite:
+  each contract's deployment transaction plus a fixed set of private
+  transaction vectors executed against it, on a pinned executor. One
+  number. Deployment gas prices bytecode size at the chain's real rate
+  (200 gas/byte), so size-vs-runtime tradeoffs are priced by the metric
+  itself rather than by a rule; the vector mix (calls per deployment)
+  plays the role of solc's `--optimize-runs` and is fixed per season.
 - **Record threshold:** a submission takes the record if it improves on the
   current record by **≥ 0.1% (relative)**.
 - **Validity:** the compiler must successfully compile *every* contract in
-  the suite (fail-closed: no output, no score), within the per-contract
-  timeout and total wall-clock budget on the pinned CI hardware, with the
-  proof gate green.
+  the suite (fail-closed: no output, no score); every runtime image must
+  satisfy **EIP-170 deployability (≤ 24,576 bytes)** and every creation
+  image the EIP-3860 initcode cap (≤ 49,152 bytes); every vector
+  transaction must produce the same observable result as the reference
+  (the correctness theorem guarantees this for the source semantics — the
+  vector check is a redundant sanity gate, not the trust anchor); all
+  within the per-contract timeout and total wall-clock budget on the
+  pinned CI hardware, with the proof gate green.
 
 ## What is frozen
 
@@ -78,7 +88,9 @@ refreshed between seasons, never within one.
 - Your submission becomes part of the public lineage under this repo's
   license; later records will build on your code. That is the point.
 - The compiler must be deterministic: CI compiles the corpus twice and
-  requires byte-identical output.
+  requires byte-identical output. Gas is measured on a pinned executor
+  version named in the season config; measurements are deterministic given
+  the vectors, so record comparisons are exact.
 - Search/superoptimization inside the compiler is allowed within the time
   budget. What the proof guarantees, you don't have to justify.
 - No tampering with the harness, workflows, or frozen files (CI rejects

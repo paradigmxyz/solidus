@@ -234,7 +234,13 @@ theorem observable
               subst hRun
               cases hCompactRel with
               | @error targetError _ hEq =>
-                  refine ObservableDoneRel.error ?_
+                  refine ObservableDoneRel.error ?_ ?_
+                  · -- The error channel forwards only the five non-halt
+                    -- exceptions: each surviving `ErrorRel` case is one of them.
+                    rcases sourceFailure with ⟨exception, state⟩
+                    cases exception <;>
+                      simp [Yul.FunctionsInteractionPrimitive.ErrorRel,
+                        Solidus.ForwardedException] at hErr ⊢
                   intro hOOF
                   have hCfgOOF : cfgError = .OutOfFuel := by
                     have hTE : targetError = cfgError := hEq

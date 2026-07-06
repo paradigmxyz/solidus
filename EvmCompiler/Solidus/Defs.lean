@@ -44,14 +44,25 @@ def compile? (rawJson : String) (selection : Solidity.RawAst.Selection) :
   let _ ← artifact.stackHeadroomCert?
   pure artifact.image.bytes
 
+/-- Source exceptions the compiled code forwards through the error channel.
+Halt-carrying exceptions (`.Revert`, `.YulHalt`) never take this path — they
+are pinned by the `revert`/`halt` constructors of `ObservableDoneRel`. -/
+def ForwardedException : EvmYul.Yul.Exception → Prop
+  | .OutOfFuel | .InvalidArguments | .InvalidInstruction
+  | .InvalidMemoryAccess | .StaticModeViolation => True
+  | _ => False
+
 /-- Exception agreement for forwarded errors. On the EVM every non-revert
 exception is observationally identical — an exceptional frame halt — so the
-spec does not claim the exception's identity survives compilation (reverts
-are a separate `ObservableDoneRel` constructor and ARE pinned). The one
-semantically meaningful guarantee is directional: a structural out-of-fuel
-error on the compiled side can only arise from source fuel exhaustion —
-the compiler cannot manufacture fuel failures. The charged-run theorem
-(`RunRefinesOpenTotal`) independently excludes out-of-fuel there. -/
+spec does not claim the exception's identity survives compilation. Reverts and
+explicit halts are separate `ObservableDoneRel` constructors and ARE pinned;
+the `error` constructor's `ForwardedException` side condition provably excludes
+`.Revert`/`.YulHalt` from this channel, so the exclusion is enforced, not merely
+intended. The one semantically meaningful guarantee here is directional: a
+structural out-of-fuel error on the compiled side can only arise from source
+fuel exhaustion — the compiler cannot manufacture fuel failures. The
+charged-run theorem (`RunRefinesOpenTotal`) independently excludes out-of-fuel
+there. -/
 def ExceptionRel (source : EvmYul.Yul.Exception)
     (target : Assembly.EVMException) : Prop :=
   target = .OutOfFuel → source = .OutOfFuel
@@ -85,7 +96,11 @@ is unobservable; this mirrors the existing returnData-scratch exclusion
 rationale in `FinalStateObs`'s docstring). Explicit halts pin the halt kind
 (up to the source semantics' `.YulHalt` conflation of
 `stop`/`return`/`selfdestruct` — see the module docstring), reverts pin
-`revert` exactly, and forwarded errors are mapped by `ExceptionRel`. -/
+`revert` exactly, and forwarded errors are mapped by `ExceptionRel`. The
+`error` constructor's leading `ForwardedException` side condition provably
+excludes revert/halt exceptions from the error channel, so "reverts and halts
+are pinned by their own constructors" is enforced by the relation, not merely
+intended by convention. -/
 inductive ObservableDoneRel :
     Except Yul.InteractionSemantics.Failure Yul.InteractionSemantics.State →
       Assembly.Source.ExecutionOutcome → Prop where
@@ -118,17 +133,22 @@ inductive ObservableDoneRel :
         (.ok (.halted halt))
   | error {failure : Yul.InteractionSemantics.Failure}
       {exception : Assembly.EVMException} :
+      ForwardedException failure.exception →
       ExceptionRel failure.exception exception →
       ObservableDoneRel (.error failure) (.error exception)
 
 /-- The source-side initial state: `base` with the compiled image installed
 as the executing contract's code at the frame owner's account, entered with
-an empty variable store. The installed AST slot is existential: the imported
-Yul semantics stores a contract AST alongside the code image (re-entrant
-self-calls dispatch through it), and the compiler installs its own
-elaboration of the source there. Every observable field — the code image,
-the open world, the machine state, and the execution frame — is pinned by
-`installContractWithCodeImage` regardless of the AST choice. -/
+an empty variable store. The installed AST slot is existential, and it is
+semantically inert on the public spine: EVM-level calls — including re-entrant
+self-calls — are open-world requests (`callEval` performs no callee check, see
+`EvmCompiler/Yul/InteractionSemantics.lean:122-141`); internal Yul calls
+resolve from the decoded object's function scopes; and code-introspection
+builtins read the code-ERASED projection (`codeBytes`). The existential is a
+modeling artifact of the installation shape, not a semantic degree of freedom.
+Every observable field — the code image, the open world, the machine state,
+and the execution frame — is pinned by `installContractWithCodeImage`
+regardless of the AST choice. -/
 def InstalledSource (bytes : List UInt8) (base : EvmYul.SharedState .Yul)
     (state : Yul.InteractionSemantics.State) : Prop :=
   ∃ contract : Yul.AstContract,

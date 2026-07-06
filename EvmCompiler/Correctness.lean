@@ -55,9 +55,14 @@ interpreter's own jumpdest scan of the full installed image.
   exception constructor, so a finished source value pins the halt kind only
   up to that set; the output bytes — which are what distinguishes those
   kinds observably — are pinned exactly (`ObservableDoneRel`).
-* `InstalledSource` leaves the installed contract-AST slot existential; the
-  imported Yul semantics dispatches re-entrant self-calls through that slot.
-  Every observable field of the initial state is pinned.
+* `InstalledSource` leaves the installed contract-AST slot existential, and
+  that slot is semantically inert on the public spine: EVM-level calls
+  (including self-calls) are open-world requests (`callEval` performs no callee
+  check), internal Yul calls resolve from the decoded object's function scopes,
+  and code-introspection builtins read the code-erased projection
+  (`codeBytes`). The existential is a modeling artifact of the installation
+  shape, not a semantic degree of freedom. Every observable field of the
+  initial state is pinned.
 * Exception identity is not claimed for forwarded errors (all non-revert
   EVM exceptions are observationally identical exceptional halts; reverts
   are pinned by their own constructor) — see `ExceptionRel`.
@@ -67,6 +72,12 @@ interpreter's own jumpdest scan of the full installed image.
 * The structural fuel of the charged run is existential with the explicit
   lower bound `gasAvailable + 6`; the `RunRefinesOpenTotal` outcome excludes
   out-of-fuel, which is precisely the statement that the fuel did not bind.
+* For a source execution that diverges at every fuel (for a given calldata),
+  the `ForwardRel` truncation arm makes the source-refinement conjunct vacuous:
+  the theorem then constrains only crash-safety of the target, not its
+  behavior. Terminating executions — any input on which the source halts at
+  some fuel — receive the full guarantee. This is the standard finite-fuel
+  partial-correctness boundary.
 
 ## Freeze contract (Solidus Arena)
 
