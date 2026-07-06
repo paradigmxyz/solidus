@@ -511,15 +511,25 @@ theorem elaborate_preserves_clzAllocation
               cases rest with
               | nil =>
                   unfold Expr.elaborate at hRun
-                  exact
-                    PreservesClzAllocation.bind
-                      (elaborate_preserves_clzAllocation arg)
-                      (fun arg =>
-                        PreservesClzAllocation.bind
-                          ensureClzHelper_preserves_clzAllocation
-                          (fun helper => PreservesClzAllocation.pure
-                            (Frontend.Expr.call .user helper [arg])))
-                      hRun hValid
+                  simp [StateT.run_bind] at hRun
+                  cases hArg : (Expr.elaborate arg).run state with
+                  | error _ => simp [hArg] at hRun
+                  | ok result =>
+                      rcases result with ⟨frontArg, argState⟩
+                      have hArgExt :=
+                        elaborate_preserves_clzAllocation arg hArg hValid
+                      simp [hArg] at hRun
+                      cases hOsaka : (argState.evmVersion).atLeast? .osaka <;>
+                        simp [hOsaka] at hRun
+                      · have hHelperExt :=
+                          PreservesClzAllocation.bind
+                            ensureClzHelper_preserves_clzAllocation
+                            (fun helper => PreservesClzAllocation.pure
+                              (Frontend.Expr.call .user helper [frontArg]))
+                            hRun hArgExt.after_valid
+                        exact hArgExt.trans hHelperExt
+                      · cases hRun
+                        exact hArgExt
               | cons _ _ =>
                   unfold Expr.elaborate at hRun
                   exact PreservesClzAllocation.throw "clz expects one argument"

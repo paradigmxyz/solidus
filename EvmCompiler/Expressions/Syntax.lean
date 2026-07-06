@@ -15,7 +15,7 @@ def inputs : Structured.BasicOp → Nat
   | .lt | .gt | .slt | .sgt | .eq => 2
   | .and | .or | .xor | .byte | .shl | .shr | .sar => 2
   | .addmod | .mulmod => 3
-  | .iszero | .not => 1
+  | .iszero | .not | .clz => 1
   | .address | .origin | .caller | .callvalue | .calldatasize | .codesize => 0
   | .gasprice | .returndatasize => 0
   | .coinbase | .timestamp | .number | .prevrandao | .gaslimit | .chainid => 0
@@ -75,7 +75,7 @@ def outputs : Structured.BasicOp → Nat
   | .lt | .gt | .slt | .sgt | .eq => 1
   | .and | .or | .xor | .not | .byte | .shl | .shr | .sar => 1
   | .addmod | .mulmod => 1
-  | .iszero => 1
+  | .iszero | .clz => 1
   | .address | .origin | .caller | .callvalue | .calldatasize | .codesize => 1
   | .gasprice | .returndatasize => 1
   | .coinbase | .timestamp | .number | .prevrandao | .gaslimit | .chainid => 1

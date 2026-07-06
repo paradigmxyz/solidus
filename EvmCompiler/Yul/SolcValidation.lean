@@ -175,10 +175,11 @@ def primitiveAvailable? (profile : DialectProfile)
   | .StackMemFlow .TSTORE
   | .StackMemFlow .MCOPY =>
       profile.evmVersion.atLeast? .cancun
-  -- Raw solc `clz` calls are lowered to generated Yul before this layer; the
-  -- normalized core compiler does not accept native `CLZ` directly.
+  -- `clz` (EIP-7939) is a native opcode from Osaka onwards. Pre-Osaka, raw solc
+  -- `clz` calls are lowered to a generated software helper before this layer, so
+  -- native `CLZ` only appears (and is only accepted) when targeting Osaka+.
   | .CompBit .CLZ =>
-      false
+      profile.evmVersion.atLeast? .osaka
   | _ => true
 
 theorem primitiveAvailable_msize (profile : DialectProfile) :

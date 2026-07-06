@@ -230,6 +230,7 @@ def ofName? : Name → Option (EvmYul.Operation .Yul)
   | "shl" => some .SHL
   | "shr" => some .SHR
   | "sar" => some .SAR
+  | "clz" => some (.CompBit .CLZ)
   | "keccak256" => some .KECCAK256
   | "sha3" => some .KECCAK256
   | "address" => some .ADDRESS

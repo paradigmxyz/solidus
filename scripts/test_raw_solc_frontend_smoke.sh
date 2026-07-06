@@ -184,6 +184,14 @@ nested_clz = {
 }
 (outdir / "nested-clz.standard-output.json").write_text(json.dumps(nested_clz))
 
+native_clz = json.loads(json.dumps(nested_clz))
+native_clz["contracts"]["Fixture.sol"]["Fixture"]["metadata"] = json.dumps(
+    {"settings": {"evmVersion": "osaka"}}
+)
+(outdir / "nested-clz-osaka.standard-output.json").write_text(
+    json.dumps(native_clz)
+)
+
 bad_scope = json.loads(json.dumps(nested_clz))
 bad_scope["contracts"]["Fixture.sol"]["Fixture"]["irOptimizedAst"]["code"]["block"][
     "statements"
@@ -373,6 +381,49 @@ def hasFunctionStmtName (wanted : String) (stmts : List Frontend.Stmt) :
     Bool :=
   hasFunctionStmtNameFuel wanted 100000 stmts
 
+def hasDirectPrimitiveClzExpr : Frontend.Expr -> Bool
+  | .call .primitive name _ => name == "clz"
+  | _ => false
+
+def hasDirectPrimitiveClzStmtFuel : Nat -> List Frontend.Stmt -> Bool
+  | 0, _ => false
+  | _, [] => false
+  | fuel + 1, .letDecl _ (some expr) :: rest =>
+      hasDirectPrimitiveClzExpr expr ||
+        hasDirectPrimitiveClzStmtFuel fuel rest
+  | fuel + 1, .assign _ expr :: rest =>
+      hasDirectPrimitiveClzExpr expr ||
+        hasDirectPrimitiveClzStmtFuel fuel rest
+  | fuel + 1, .exprStmt expr :: rest =>
+      hasDirectPrimitiveClzExpr expr ||
+        hasDirectPrimitiveClzStmtFuel fuel rest
+  | fuel + 1, .functionDef _ _ _ body :: rest =>
+      hasDirectPrimitiveClzStmtFuel fuel body ||
+        hasDirectPrimitiveClzStmtFuel fuel rest
+  | fuel + 1, .block body :: rest =>
+      hasDirectPrimitiveClzStmtFuel fuel body ||
+        hasDirectPrimitiveClzStmtFuel fuel rest
+  | fuel + 1, .switch _ cases defaultBody :: rest =>
+      cases.any (fun item => hasDirectPrimitiveClzStmtFuel fuel item.snd) ||
+        hasDirectPrimitiveClzStmtFuel fuel defaultBody ||
+          hasDirectPrimitiveClzStmtFuel fuel rest
+  | fuel + 1, .forLoop pre _ post body :: rest =>
+      hasDirectPrimitiveClzStmtFuel fuel pre ||
+        hasDirectPrimitiveClzStmtFuel fuel post ||
+          hasDirectPrimitiveClzStmtFuel fuel body ||
+            hasDirectPrimitiveClzStmtFuel fuel rest
+  | fuel + 1, .ifThen _ body :: rest =>
+      hasDirectPrimitiveClzStmtFuel fuel body ||
+        hasDirectPrimitiveClzStmtFuel fuel rest
+  | fuel + 1, _ :: rest => hasDirectPrimitiveClzStmtFuel fuel rest
+
+def hasDirectPrimitiveClzStmt (stmts : List Frontend.Stmt) : Bool :=
+  hasDirectPrimitiveClzStmtFuel 100000 stmts
+
+def hasDirectPrimitiveClzObject (object : Frontend.Object) : Bool :=
+  hasDirectPrimitiveClzStmt object.dispatcher ||
+    object.functions.any (fun entry => hasDirectPrimitiveClzStmt entry.snd.body)
+
 def expectNestedClz : IO Unit := do
   let raw <- readRaw "nested-clz.standard-output.json"
   let selection : RawAst.Selection :=
@@ -397,6 +448,28 @@ def expectNestedClz : IO Unit := do
           if !(hasFunctionStmtName "__yul_gen_0_g" fn.body) then
             throw <| IO.userError "nested function definition was not alpha-renamed"
           IO.println "raw_solc_frontend_nested_clz=checked"
+
+def expectOsakaNativeClz : IO Unit := do
+  let raw <- readRaw "nested-clz-osaka.standard-output.json"
+  let selection : RawAst.Selection :=
+    { source? := some "Fixture.sol"
+      contract? := some "Fixture"
+      astOutput := "irOptimizedAst" }
+  match RawAst.decodeAndElaborateSolcIr? raw selection with
+  | none => throw <| IO.userError "osaka native clz raw decode failed"
+  | some program =>
+      let names := program.object.functions.map Prod.fst
+      if !(names.contains "f") then
+        throw <| IO.userError ("missing top-level f: " ++ reprStr names)
+      if !(names.contains "__yul_gen_0_g") then
+        throw <| IO.userError ("missing hoisted nested g: " ++ reprStr names)
+      if names.contains "__yul_gen_1_clz" then
+        throw <| IO.userError ("unexpected clz helper in Osaka: " ++ reprStr names)
+      if !(hasDirectPrimitiveClzObject program.object) then
+        throw <| IO.userError "missing native primitive clz call in Osaka frontend"
+      if Frontend.Object.noRawClzCall? program.object then
+        throw <| IO.userError "Osaka native clz was unexpectedly normalized away"
+      IO.println "raw_solc_frontend_osaka_native_clz=checked"
 
 def expectBadScopeRejected : IO Unit := do
   let raw <- readRaw "bad-scope.standard-output.json"
@@ -455,6 +528,7 @@ def main : IO Unit := do
   expectMalformedRejected
   expectMixedOrder
   expectNestedClz
+  expectOsakaNativeClz
   expectBadScopeRejected
   expectLinkerMetadata
   expectBadLinkerMetadataRejected

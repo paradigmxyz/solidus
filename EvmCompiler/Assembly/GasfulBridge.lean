@@ -3616,7 +3616,7 @@ theorem FrameLocalStep.openCompatible
 def PureStackPrimOp : PrimOp → Prop
   | .add | .mul | .sub | .div | .sdiv | .mod | .smod | .addmod | .mulmod
   | .exp | .signextend | .lt | .gt | .slt | .sgt | .eq | .iszero
-  | .and | .or | .xor | .not | .byte | .shl | .shr | .sar
+  | .and | .or | .xor | .not | .byte | .shl | .shr | .sar | .clz
   | .pop
   | .dup1 | .dup2 | .dup3 | .dup4 | .dup5 | .dup6 | .dup7 | .dup8
   | .dup9 | .dup10 | .dup11 | .dup12 | .dup13 | .dup14 | .dup15 | .dup16

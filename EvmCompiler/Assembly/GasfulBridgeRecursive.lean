@@ -550,28 +550,6 @@ theorem compact_instr_decoded_ne_push0
       subst decoded
       cases op <;> simp [PrimOp.toEVM]
 
-theorem compact_instr_decoded_ne_clz
-    {instr : Compact.Instr}
-    {decoded : EvmYul.Operation .EVM × Option (Word × Nat)}
-    (hValid : instr.Valid)
-    (hDecoded : instr.decoded? = some decoded) :
-    decoded.1 ≠ EvmYul.Operation.CLZ := by
-  cases instr with
-  | push width value =>
-      have hPositive : 0 < width := hValid.1
-      have hBound : width ≤ 32 := hValid.2.1
-      interval_cases width <;>
-        simp [Compact.Instr.decoded?, Compact.pushOp?] at hDecoded
-      all_goals (subst decoded; simp)
-  | jump | jumpi | jumpdest =>
-      simp [Compact.Instr.decoded?] at hDecoded
-      subst decoded
-      simp
-  | prim op =>
-      simp [Compact.Instr.decoded?] at hDecoded
-      subst decoded
-      cases op <;> simp [PrimOp.toEVM]
-
 /-- A concrete PC is either a compact instruction boundary or the verified
 end-of-code sentinel immediately before object payload bytes. -/
 def CompactLayoutPoint (program : Compact.Program) (pc : Word) : Prop :=
@@ -609,17 +587,14 @@ theorem frameCodeInvariant_of_layout
         hDecode.decodes located hMem
       have hInstrValid : located.instr.Valid :=
         (List.forall_iff_forall_mem.mp hValid) located hMem
-      refine ⟨hCode, decoded.1, decoded.2, ?_, ?_, ?_⟩
+      refine ⟨hCode, decoded.1, decoded.2, ?_, ?_⟩
       · simpa [hPc] using hBytesDecoded
       · exact compact_instr_decoded_ne_push0 hInstrValid hInstrDecoded
-      · exact compact_instr_decoded_ne_clz hInstrValid hInstrDecoded
   | inr hPc =>
       obtain ⟨decoded, hInstrDecoded, hBytesDecoded⟩ := hSentinel
-      refine ⟨hCode, decoded.1, decoded.2, ?_, ?_, ?_⟩
+      refine ⟨hCode, decoded.1, decoded.2, ?_, ?_⟩
       · simpa [hPc] using hBytesDecoded
       · exact compact_instr_decoded_ne_push0
-          (instr := .prim .invalid) trivial hInstrDecoded
-      · exact compact_instr_decoded_ne_clz
           (instr := .prim .invalid) trivial hInstrDecoded
 
 theorem executionException_beq_outOfFuel_iff
