@@ -15,7 +15,7 @@ abbrev AstStmt := EvmYul.Yul.Ast.Stmt
 abbrev AstFunctionDefinition := EvmYul.Yul.Ast.FunctionDefinition
 abbrev AstContract := EvmYul.Yul.Ast.YulContract
 
-/--
+/-!
 The kind of Yul call as it appears in solc's Yul AST.
 
 The compiler backend lowers primitive EVM/Yul operations and user functions
@@ -25,12 +25,7 @@ and only then enters core Yul lowering. Dialect builtins are preserved so the
 bridge can reject unsupported dialect surfaces explicitly instead of losing that
 source-shape information.
 -/
-inductive CallKind where
-  | primitive
-  | user
-  | objectBuiltin
-  | dialectBuiltin
-  deriving BEq, Inhabited, Repr
+-- `CallKind` (inductive) relocated to frozen `EvmCompiler.Solidus.Frontend`.
 
 namespace CallKind
 
@@ -107,26 +102,8 @@ structure Program where
   object : Object
   deriving Inhabited, Repr
 
-namespace StringLiteral
-
-def maxBytes : Nat :=
-  32
-
-def packBytes (bytes : List UInt8) : Nat :=
-  bytes.foldl (fun acc byte => acc * 256 + byte.toNat) 0
-
-def wordBytes? (bytes : List UInt8) : Option Word :=
-  if bytes.length <= maxBytes then
-    some
-      (EvmYul.UInt256.ofNat
-        (packBytes bytes * 256 ^ (maxBytes - bytes.length)))
-  else
-    none
-
-def word? (value : String) : Option Word :=
-  wordBytes? value.toUTF8.toList
-
-end StringLiteral
+-- `StringLiteral.maxBytes/packBytes/wordBytes?/word?` relocated to frozen
+-- `EvmCompiler.Solidus.Frontend`.
 
 namespace SwitchCaseValue
 
@@ -141,11 +118,8 @@ end SwitchCaseValue
 
 namespace Name
 
-def containsDot (name : Name) : Bool :=
-  name.toList.contains '.'
-
-def objectPathComponent? (name : Name) : Bool :=
-  !containsDot name
+-- `Name.containsDot` / `Name.objectPathComponent?` relocated to frozen
+-- `EvmCompiler.Solidus.Frontend`.
 
 def objectPath (pathPrefix name : Name) : Name :=
   pathPrefix ++ "." ++ name
@@ -165,17 +139,8 @@ layout theorem work.
 -/
 namespace ObjectLayout
 
-def findEntry? (layout : ObjectLayout) (name : Name) :
-    Option ObjectLayout.Entry :=
-  layout.entries.find? fun entry => entry.name == name
-
-def offset? (layout : ObjectLayout) (name : Name) : Option Word := do
-  let entry ← layout.findEntry? name
-  some entry.offset
-
-def size? (layout : ObjectLayout) (name : Name) : Option Word := do
-  let entry ← layout.findEntry? name
-  some entry.size
+-- `ObjectLayout.findEntry?` / `offset?` / `size?` relocated to frozen
+-- `EvmCompiler.Solidus.Frontend`.
 
 namespace Entry
 
@@ -322,15 +287,8 @@ end List
 
 end DataSection
 
-namespace ImmutableReference
-
-def patchLength : Nat :=
-  32
-
-def isPatchable (reference : ImmutableReference) : Bool :=
-  reference.length == patchLength
-
-end ImmutableReference
+-- `ImmutableReference.patchLength` / `isPatchable` relocated to frozen
+-- `EvmCompiler.Solidus.Frontend`.
 
 mutual
   def Expr.loweringFuel : Expr → Nat
@@ -522,70 +480,14 @@ def ofLayout (layout : ObjectLayout) : ObjectBuiltinContext :=
     dataOffsets := []
     linkerSymbols := [] }
 
-def findDataSize? (context : ObjectBuiltinContext) (name : Name) :
-    Option Word := do
-  let entry ← context.dataSizes.find? fun entry => entry.fst == name
-  some entry.snd
-
-def findDataOffset? (context : ObjectBuiltinContext) (name : Name) :
-    Option Word := do
-  let entry ← context.dataOffsets.find? fun entry => entry.fst == name
-  some entry.snd
-
-def findLinkerSymbol? (context : ObjectBuiltinContext) (name : Name) :
-    Option Word := do
-  let entry ← context.linkerSymbols.find? fun entry => entry.fst == name
-  some entry.snd
-
-def findImmutableValue? (context : ObjectBuiltinContext) (name : Name) :
-    Option Word := do
-  let entry ← context.immutableValues.find? fun entry => entry.fst == name
-  some entry.snd
-
-def collectImmutableReferences
-    (entries : List (Name × List ImmutableReference)) (name : Name) :
-    List ImmutableReference :=
-  entries.foldr
-    (fun entry refs =>
-      if entry.fst == name then
-        entry.snd ++ refs
-      else
-        refs)
-    []
-
-def findImmutableReferences? (context : ObjectBuiltinContext) (name : Name) :
-    Option (List ImmutableReference) :=
-  let refs := collectImmutableReferences context.immutableReferences name
-  match refs with
-  | [] => none
-  | _ :: _ => some refs
+-- `ObjectBuiltinContext.findDataSize?`, `findDataOffset?`, `findLinkerSymbol?`,
+-- `findImmutableValue?`, `collectImmutableReferences`, `findImmutableReferences?`,
+-- `findSelfSize?`, `size?`, `offset?` relocated to frozen
+-- `EvmCompiler.Solidus.Frontend`.
 
 def immutableReferencesFor (context : ObjectBuiltinContext) (name : Name) :
     List ImmutableReference :=
   collectImmutableReferences context.immutableReferences name
-
-def findSelfSize? (context : ObjectBuiltinContext) (name : Name) :
-    Option Word :=
-  match context.selfSize? with
-  | some (selfName, size) =>
-      if selfName == name && Name.objectPathComponent? selfName then
-        some size
-      else
-        none
-  | none => none
-
-def size? (context : ObjectBuiltinContext) (name : Name) : Option Word :=
-  match context.findDataSize? name with
-  | some size => some size
-  | none =>
-      match context.findSelfSize? name with
-      | some size => some size
-      | none => context.layout.size? name
-
-def offset? (context : ObjectBuiltinContext) (name : Name) : Option Word :=
-  match context.findDataOffset? name with
-  | some offset => some offset
-  | none => context.layout.offset? name
 
 def objectDataNames (context : ObjectBuiltinContext) : List Name :=
   context.layout.entries.map (fun entry => entry.name) ++
@@ -600,111 +502,12 @@ def objectDataNamesUnique? (context : ObjectBuiltinContext) : Bool :=
 
 end ObjectBuiltinContext
 
-namespace Primitive
-
-/--
-Primitive names recognized from solc's Yul AST.
-
-This is intentionally the broad Solidity/Yul import surface, not the old
-CALL-free structured subset.  The table includes CALL-family boundaries
-(`call`, `callcode`, `delegatecall`, `staticcall`), CREATE-family boundaries
-(`create`, `create2`), and account-code/state queries (`balance`,
-`extcodesize`, `extcodecopy`, `extcodehash`).  Yul object builtins such as
-`datasize`, `dataoffset`, `datacopy`, `loadimmutable`, `setimmutable`, and
-`memoryguard` are handled through `CallKind.objectBuiltin` and the computed
-object-image path rather than through this primitive table.
--/
-def ofName? : Name → Option (EvmYul.Operation .Yul)
-  | "stop" => some .STOP
-  | "add" => some .ADD
-  | "mul" => some .MUL
-  | "sub" => some .SUB
-  | "div" => some .DIV
-  | "sdiv" => some .SDIV
-  | "mod" => some .MOD
-  | "smod" => some .SMOD
-  | "addmod" => some .ADDMOD
-  | "mulmod" => some .MULMOD
-  | "exp" => some .EXP
-  | "signextend" => some .SIGNEXTEND
-  | "lt" => some .LT
-  | "gt" => some .GT
-  | "slt" => some .SLT
-  | "sgt" => some .SGT
-  | "eq" => some .EQ
-  | "iszero" => some .ISZERO
-  | "and" => some .AND
-  | "or" => some .OR
-  | "xor" => some .XOR
-  | "not" => some .NOT
-  | "byte" => some .BYTE
-  | "shl" => some .SHL
-  | "shr" => some .SHR
-  | "sar" => some .SAR
-  | "keccak256" => some .KECCAK256
-  | "sha3" => some .KECCAK256
-  | "address" => some .ADDRESS
-  | "balance" => some .BALANCE
-  | "origin" => some .ORIGIN
-  | "caller" => some .CALLER
-  | "callvalue" => some .CALLVALUE
-  | "calldataload" => some .CALLDATALOAD
-  | "calldatasize" => some .CALLDATASIZE
-  | "calldatacopy" => some .CALLDATACOPY
-  | "codesize" => some .CODESIZE
-  | "codecopy" => some .CODECOPY
-  | "gasprice" => some .GASPRICE
-  | "extcodesize" => some .EXTCODESIZE
-  | "extcodecopy" => some .EXTCODECOPY
-  | "returndatasize" => some .RETURNDATASIZE
-  | "returndatacopy" => some .RETURNDATACOPY
-  | "extcodehash" => some .EXTCODEHASH
-  | "blockhash" => some .BLOCKHASH
-  | "coinbase" => some .COINBASE
-  | "timestamp" => some .TIMESTAMP
-  | "number" => some .NUMBER
-  | "prevrandao" => some .PREVRANDAO
-  | "difficulty" => some .PREVRANDAO
-  | "gaslimit" => some .GASLIMIT
-  | "chainid" => some .CHAINID
-  | "selfbalance" => some .SELFBALANCE
-  | "basefee" => some .BASEFEE
-  | "blobhash" => some .BLOBHASH
-  | "blobbasefee" => some .BLOBBASEFEE
-  | "pop" => some .POP
-  | "mload" => some .MLOAD
-  | "mstore" => some .MSTORE
-  | "sload" => some .SLOAD
-  | "sstore" => some .SSTORE
-  | "mstore8" => some .MSTORE8
-  | "msize" => some .MSIZE
-  | "gas" => some .GAS
-  | "tload" => some .TLOAD
-  | "tstore" => some .TSTORE
-  | "mcopy" => some .MCOPY
-  | "log0" => some .LOG0
-  | "log1" => some .LOG1
-  | "log2" => some .LOG2
-  | "log3" => some .LOG3
-  | "log4" => some .LOG4
-  | "create" => some .CREATE
-  | "call" => some .CALL
-  | "callcode" => some .CALLCODE
-  | "return" => some .RETURN
-  | "delegatecall" => some .DELEGATECALL
-  | "create2" => some .CREATE2
-  | "staticcall" => some .STATICCALL
-  | "revert" => some .REVERT
-  | "invalid" => some .INVALID
-  | "selfdestruct" => some .SELFDESTRUCT
-  | _ => none
-
-end Primitive
+-- `Primitive.ofName?` relocated to frozen `EvmCompiler.Solidus.Frontend`.
 
 namespace Expr
 
-def objectBuiltinNameFromBytes (bytes : List UInt8) : Name :=
-  String.ofList (bytes.map (fun byte => Char.ofNat byte.toNat))
+-- `Expr.objectBuiltinNameFromBytes` relocated to frozen
+-- `EvmCompiler.Solidus.Frontend`.
 
 def objectBuiltinNameArg? : Expr → Option Name
   | .stringLit name => some name
