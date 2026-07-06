@@ -4605,6 +4605,9 @@ structure State where
   clzHelperName? : Option Name := none
   clzArgName? : Option Name := none
   clzReturnName? : Option Name := none
+  /-- Target EVM version. From Osaka (EIP-7939) `clz` is a native opcode, so the
+  frontend emits it directly; pre-Osaka it is lowered to the software helper. -/
+  evmVersion : Yul.SolcValidation.EvmVersion := .cancun
   deriving Inhabited, Repr
 
 abbrev ElabM := StateT State DecodeM
@@ -5905,8 +5908,14 @@ mutual
         match args with
         | [arg] =>
             let arg ← Expr.elaborate arg
-            let helper ← ensureClzHelper
-            pure (.call .user helper [arg])
+            let state ← get
+            if state.evmVersion.atLeast? .osaka then
+              -- Osaka onwards: `clz` is the native EIP-7939 opcode.
+              pure (.call .primitive "clz" [arg])
+            else
+              -- Pre-Osaka: lower to the generated software helper.
+              let helper ← ensureClzHelper
+              pure (.call .user helper [arg])
         | _ => throw "clz expects one argument"
     | .functionCall name args => do
         let args ← Expr.List.elaborate args
@@ -6203,6 +6212,12 @@ theorem PreservesHoisted.throw {α : Type} (message : String) :
     .ok (value, state') at hRun
   cases hRun
 
+theorem PreservesHoisted.get : PreservesHoisted (get : ElabM State) := by
+  intro state state' value entry hRun hEntry
+  simp [StateT.run_get] at hRun
+  obtain ⟨_, rfl⟩ := hRun
+  exact hEntry
+
 def PreservesFunctionScopes {α : Type} (action : ElabM α) : Prop :=
   ∀ {state state' : State} {value : α},
     action.run state = .ok (value, state') →
@@ -6255,6 +6270,13 @@ theorem PreservesFunctionScopes.throw {α : Type} (message : String) :
   change (Except.error message : DecodeM (α × State)) =
     .ok (value, state') at hRun
   cases hRun
+
+theorem PreservesFunctionScopes.get :
+    PreservesFunctionScopes (get : ElabM State) := by
+  intro state state' value hRun
+  simp [StateT.run_get] at hRun
+  obtain ⟨_, rfl⟩ := hRun
+  rfl
 
 theorem requireIdentifierVisible_preserves_hoistedFunction_mem
     (name : Name) (what : String) :
@@ -6877,15 +6899,21 @@ theorem elaborate_preserves_hoistedFunction_mem
               cases rest with
               | nil =>
                   unfold Expr.elaborate at hRun
-                  exact
+                  refine
                     PreservesHoisted.bind
                       (elaborate_preserves_hoistedFunction_mem arg)
                       (fun arg =>
-                        PreservesHoisted.bind
-                          ensureClzHelper_preserves_hoistedFunction_mem
-                          (fun helper => PreservesHoisted.pure
-                            (Frontend.Expr.call .user helper [arg])))
+                        PreservesHoisted.bind PreservesHoisted.get
+                          (fun s => ?_))
                       hRun hEntry
+                  cases hOsaka : s.evmVersion.atLeast? .osaka <;>
+                    simp only [hOsaka, Bool.false_eq_true, if_true, if_false]
+                  · exact PreservesHoisted.bind
+                      ensureClzHelper_preserves_hoistedFunction_mem
+                      (fun helper => PreservesHoisted.pure
+                        (Frontend.Expr.call .user helper [arg]))
+                  · exact PreservesHoisted.pure
+                      (Frontend.Expr.call .primitive "clz" [arg])
               | cons _ _ =>
                   unfold Expr.elaborate at hRun
                   exact PreservesHoisted.throw "clz expects one argument"
@@ -7008,15 +7036,21 @@ theorem elaborate_preserves_functionScopes
               cases rest with
               | nil =>
                   unfold Expr.elaborate at hRun
-                  exact
+                  refine
                     PreservesFunctionScopes.bind
                       (elaborate_preserves_functionScopes arg)
                       (fun arg =>
-                        PreservesFunctionScopes.bind
-                          ensureClzHelper_preserves_functionScopes
-                          (fun helper => PreservesFunctionScopes.pure
-                            (Frontend.Expr.call .user helper [arg])))
+                        PreservesFunctionScopes.bind PreservesFunctionScopes.get
+                          (fun s => ?_))
                       hRun
+                  cases hOsaka : s.evmVersion.atLeast? .osaka <;>
+                    simp only [hOsaka, Bool.false_eq_true, if_true, if_false]
+                  · exact PreservesFunctionScopes.bind
+                      ensureClzHelper_preserves_functionScopes
+                      (fun helper => PreservesFunctionScopes.pure
+                        (Frontend.Expr.call .user helper [arg]))
+                  · exact PreservesFunctionScopes.pure
+                      (Frontend.Expr.call .primitive "clz" [arg])
               | cons _ _ =>
                   unfold Expr.elaborate at hRun
                   exact PreservesFunctionScopes.throw "clz expects one argument"
@@ -7421,18 +7455,28 @@ theorem elaborate_source_user_call_occurrence
                       rcases ih hNameOk hLookup hScopes hHead with
                         ⟨args', hOccurrence⟩
                       simp [hHead] at hElab
-                      cases hHelper : ensureClzHelper.run headState with
-                      | error err =>
-                          simp [hHelper] at hElab
-                      | ok helperResult =>
-                          rcases helperResult with ⟨helper, helperState⟩
-                          simp [hHelper] at hElab
-                          rcases hElab with ⟨hFront, _hState⟩
-                          rw [← hFront]
-                          exact
-                            ⟨args',
-                              FrontendOccurrence.UserCall.arg (by simp)
-                                hOccurrence⟩
+                      cases hOsaka : headState.evmVersion.atLeast? .osaka <;>
+                        simp only [hOsaka, Bool.false_eq_true, if_true,
+                          if_false] at hElab
+                      · cases hHelper : ensureClzHelper.run headState with
+                        | error err =>
+                            simp [hHelper] at hElab
+                        | ok helperResult =>
+                            rcases helperResult with ⟨helper, helperState⟩
+                            simp [hHelper] at hElab
+                            rcases hElab with ⟨hFront, _hState⟩
+                            rw [← hFront]
+                            exact
+                              ⟨args',
+                                FrontendOccurrence.UserCall.arg (by simp)
+                                  hOccurrence⟩
+                      · simp only [StateT.run_pure, Except.ok.injEq,
+                          Prod.mk.injEq] at hElab
+                        obtain ⟨rfl, _hState⟩ := hElab
+                        exact
+                          ⟨args',
+                            FrontendOccurrence.UserCall.arg (by simp)
+                              hOccurrence⟩
               | cons second more =>
                   unfold EvmCompiler.Solidity.RawAst.Elab.throw at hElab
                   change (Except.error
@@ -7874,18 +7918,28 @@ theorem elaborate_resolved_source_user_call_occurrence
                       rcases ih hNameOk hResolve hHead with
                         ⟨args', hOccurrence⟩
                       simp [hHead] at hElab
-                      cases hHelper : ensureClzHelper.run headState with
-                      | error err =>
-                          simp [hHelper] at hElab
-                      | ok helperResult =>
-                          rcases helperResult with ⟨helper, helperState⟩
-                          simp [hHelper] at hElab
-                          rcases hElab with ⟨hFront, _hState⟩
-                          rw [← hFront]
-                          exact
-                            ⟨args',
-                              FrontendOccurrence.UserCall.arg (by simp)
-                                hOccurrence⟩
+                      cases hOsaka : headState.evmVersion.atLeast? .osaka <;>
+                        simp only [hOsaka, Bool.false_eq_true, if_true,
+                          if_false] at hElab
+                      · cases hHelper : ensureClzHelper.run headState with
+                        | error err =>
+                            simp [hHelper] at hElab
+                        | ok helperResult =>
+                            rcases helperResult with ⟨helper, helperState⟩
+                            simp [hHelper] at hElab
+                            rcases hElab with ⟨hFront, _hState⟩
+                            rw [← hFront]
+                            exact
+                              ⟨args',
+                                FrontendOccurrence.UserCall.arg (by simp)
+                                  hOccurrence⟩
+                      · simp only [StateT.run_pure, Except.ok.injEq,
+                          Prod.mk.injEq] at hElab
+                        obtain ⟨rfl, _hState⟩ := hElab
+                        exact
+                          ⟨args',
+                            FrontendOccurrence.UserCall.arg (by simp)
+                              hOccurrence⟩
               | cons second more =>
                   unfold EvmCompiler.Solidity.RawAst.Elab.throw at hElab
                   change (Except.error
@@ -16369,11 +16423,13 @@ theorem elaborateCodeAction_sourceLocalFunction_noShadow_function_entries
                               hOccurrence,
                               by simp [hEntryIdentifierPopped]⟩
 
-def elaborateCodeCore (stmts : List Raw.Stmt) :
+def elaborateCodeCore (stmts : List Raw.Stmt)
+    (evmVersion : Yul.SolcValidation.EvmVersion) :
     DecodeM (List Frontend.Stmt × State) :=
-  (elaborateCodeAction stmts).run {}
+  (elaborateCodeAction stmts).run { evmVersion := evmVersion }
 
 theorem elaborateCodeCore_sourceLocalFunction_entry
+    {evmVersion : Yul.SolcValidation.EvmVersion}
     {stmts : List Raw.Stmt}
     {state : State} {dispatcher : List Frontend.Stmt}
     {topName : Name} {topParams topReturns : List Name}
@@ -16386,13 +16442,14 @@ theorem elaborateCodeCore_sourceLocalFunction_entry
       Raw.Source.LocalFunction topBody
         name localParams localReturns localBody)
     (hCore :
-      elaborateCodeCore stmts = .ok (dispatcher, state)) :
+      elaborateCodeCore stmts evmVersion = .ok (dispatcher, state)) :
     ∃ generated localFn,
       (generated, localFn) ∈ state.hoistedFunctions := by
   unfold elaborateCodeCore at hCore
   exact elaborateCodeAction_sourceLocalFunction_entry hTop hLocal hCore
 
 theorem elaborateCodeCore_sourceLocalFunction_noShadow_function_entries
+    {evmVersion : Yul.SolcValidation.EvmVersion}
     {stmts : List Raw.Stmt}
     {state : State} {dispatcher : List Frontend.Stmt}
     {topName : Name} {topParams topReturns : List Name}
@@ -16406,7 +16463,7 @@ theorem elaborateCodeCore_sourceLocalFunction_noShadow_function_entries
         name localParams localReturns localBody)
     (hOccurs : Raw.Source.NoShadowStmtListCall topBody name args)
     (hCore :
-      elaborateCodeCore stmts = .ok (dispatcher, state)) :
+      elaborateCodeCore stmts evmVersion = .ok (dispatcher, state)) :
     ∃ generated localFn args' topFn,
       (topName, topFn) ∈ state.hoistedFunctions ∧
         FrontendOccurrence.StmtListUserCall topFn.body generated args' ∧
@@ -16452,28 +16509,30 @@ theorem finalFunctions_hoistedFunction_mem (state : State)
       cases state.clzReturnName? <;>
         simp [hReverse]
 
-def elaborateCode (stmts : List Raw.Stmt) :
+def elaborateCode (stmts : List Raw.Stmt)
+    (evmVersion : Yul.SolcValidation.EvmVersion) :
     DecodeM (List Frontend.Stmt × List (Name × Frontend.FunctionDef) ×
       Option Name × Option Name × Option Name) := do
-  let (dispatcher, state) ← elaborateCodeCore stmts
+  let (dispatcher, state) ← elaborateCodeCore stmts evmVersion
   let functions := finalFunctions state
   pure (dispatcher, functions, state.clzHelperName?, state.clzArgName?,
     state.clzReturnName?)
 
 theorem elaborateCode_parts
+    {evmVersion : Yul.SolcValidation.EvmVersion}
     {stmts : List Raw.Stmt} {dispatcher : List Frontend.Stmt}
     {functions : List (Name × Frontend.FunctionDef)}
     {helper? arg? ret? : Option Name}
     (hElab :
-      elaborateCode stmts = .ok (dispatcher, functions, helper?, arg?, ret?)) :
+      elaborateCode stmts evmVersion = .ok (dispatcher, functions, helper?, arg?, ret?)) :
     ∃ state,
-      elaborateCodeCore stmts = .ok (dispatcher, state) ∧
+      elaborateCodeCore stmts evmVersion = .ok (dispatcher, state) ∧
         functions = finalFunctions state ∧
           helper? = state.clzHelperName? ∧
             arg? = state.clzArgName? ∧
               ret? = state.clzReturnName? := by
   unfold elaborateCode at hElab
-  cases hRun : elaborateCodeCore stmts with
+  cases hRun : elaborateCodeCore stmts evmVersion with
   | error err =>
       simp [hRun] at hElab
   | ok result =>
@@ -16485,6 +16544,7 @@ theorem elaborateCode_parts
       simp [hDispatcher]
 
 theorem elaborateCode_sourceLocalFunction_entry
+    {evmVersion : Yul.SolcValidation.EvmVersion}
     {stmts : List Raw.Stmt} {dispatcher : List Frontend.Stmt}
     {functions : List (Name × Frontend.FunctionDef)}
     {helper? arg? ret? : Option Name}
@@ -16498,7 +16558,7 @@ theorem elaborateCode_sourceLocalFunction_entry
       Raw.Source.LocalFunction topBody
         name localParams localReturns localBody)
     (hElab :
-      elaborateCode stmts =
+      elaborateCode stmts evmVersion =
         .ok (dispatcher, functions, helper?, arg?, ret?)) :
     ∃ generated localFn,
       (generated, localFn) ∈ functions := by
@@ -16511,6 +16571,7 @@ theorem elaborateCode_sourceLocalFunction_entry
   exact ⟨generated, localFn, finalFunctions_hoistedFunction_mem state hEntry⟩
 
 theorem elaborateCode_sourceLocalFunction_noShadow_function_entries
+    {evmVersion : Yul.SolcValidation.EvmVersion}
     {stmts : List Raw.Stmt} {dispatcher : List Frontend.Stmt}
     {functions : List (Name × Frontend.FunctionDef)}
     {helper? arg? ret? : Option Name}
@@ -16525,7 +16586,7 @@ theorem elaborateCode_sourceLocalFunction_noShadow_function_entries
         name localParams localReturns localBody)
     (hOccurs : Raw.Source.NoShadowStmtListCall topBody name args)
     (hElab :
-      elaborateCode stmts =
+      elaborateCode stmts evmVersion =
         .ok (dispatcher, functions, helper?, arg?, ret?)) :
     ∃ generated localFn args' topFn,
       (topName, topFn) ∈ functions ∧
@@ -16546,11 +16607,12 @@ theorem elaborateCode_sourceLocalFunction_noShadow_function_entries
       finalFunctions_hoistedFunction_mem state hLocalEntry⟩
 
 theorem elaborateCode_clzExpansionOk
+    {evmVersion : Yul.SolcValidation.EvmVersion}
     {stmts : List Raw.Stmt} {dispatcher : List Frontend.Stmt}
     {functions : List (Name × Frontend.FunctionDef)}
     {helper? arg? ret? : Option Name}
     (hElab :
-      elaborateCode stmts = .ok (dispatcher, functions, helper?, arg?, ret?)) :
+      elaborateCode stmts evmVersion = .ok (dispatcher, functions, helper?, arg?, ret?)) :
     ClzExpansionOk functions helper? arg? ret? := by
   rcases elaborateCode_parts hElab with
     ⟨state, _hCore, hFunctions, hHelper, hArg, hRet⟩
@@ -16558,21 +16620,23 @@ theorem elaborateCode_clzExpansionOk
   exact finalFunctions_clzExpansionOk state
 
 theorem elaborateCode_clzHelper_mem
+    {evmVersion : Yul.SolcValidation.EvmVersion}
     {stmts : List Raw.Stmt} {dispatcher : List Frontend.Stmt}
     {functions : List (Name × Frontend.FunctionDef)}
     {helper arg ret : Name}
     (hElab :
-      elaborateCode stmts = .ok
+      elaborateCode stmts evmVersion = .ok
         (dispatcher, functions, some helper, some arg, some ret)) :
     (helper, clzHelperFunctionDef arg ret) ∈ functions := by
   exact elaborateCode_clzExpansionOk hElab
 
 theorem elaborateCode_clzHelper_shape
+    {evmVersion : Yul.SolcValidation.EvmVersion}
     {stmts : List Raw.Stmt} {dispatcher : List Frontend.Stmt}
     {functions : List (Name × Frontend.FunctionDef)}
     {helper arg ret : Name}
     (hElab :
-      elaborateCode stmts = .ok
+      elaborateCode stmts evmVersion = .ok
         (dispatcher, functions, some helper, some arg, some ret)) :
     ∃ fn,
       (helper, fn) ∈ functions ∧
@@ -16585,11 +16649,12 @@ theorem elaborateCode_clzHelper_shape
   · exact (clzHelperFunctionDef_shape arg ret).2
 
 theorem elaborateCode_clzHelper_spec
+    {evmVersion : Yul.SolcValidation.EvmVersion}
     {stmts : List Raw.Stmt} {dispatcher : List Frontend.Stmt}
     {functions : List (Name × Frontend.FunctionDef)}
     {helper arg ret : Name}
     (hElab :
-      elaborateCode stmts = .ok
+      elaborateCode stmts evmVersion = .ok
         (dispatcher, functions, some helper, some arg, some ret)) :
     ∃ fn,
       (helper, fn) ∈ functions ∧
@@ -16600,11 +16665,12 @@ theorem elaborateCode_clzHelper_spec
       clzHelperFunctionDef_spec arg ret⟩
 
 theorem elaborateCode_clzHelper_exec_ret_eq_run
+    {evmVersion : Yul.SolcValidation.EvmVersion}
     {stmts : List Raw.Stmt} {dispatcher : List Frontend.Stmt}
     {functions : List (Name × Frontend.FunctionDef)}
     {helper arg ret : Name}
     (hElab :
-      elaborateCode stmts = .ok
+      elaborateCode stmts evmVersion = .ok
         (dispatcher, functions, some helper, some arg, some ret))
     (hNames : arg ≠ ret) :
     ∃ fn,
@@ -16621,11 +16687,12 @@ theorem elaborateCode_clzHelper_exec_ret_eq_run
         initialRet⟩
 
 theorem elaborateCode_clzHelper_toYul?_some
+    {evmVersion : Yul.SolcValidation.EvmVersion}
     {stmts : List Raw.Stmt} {dispatcher : List Frontend.Stmt}
     {functions : List (Name × Frontend.FunctionDef)}
     {helper arg ret : Name}
     (hElab :
-      elaborateCode stmts = .ok
+      elaborateCode stmts evmVersion = .ok
         (dispatcher, functions, some helper, some arg, some ret)) :
     ∃ body,
       (helper, clzHelperFunctionDef arg ret) ∈ functions ∧
@@ -16635,15 +16702,16 @@ theorem elaborateCode_clzHelper_toYul?_some
   exact ⟨body, elaborateCode_clzHelper_mem hElab, hYul⟩
 
 theorem elaborateCode_hoistedFunction_mem
+    {evmVersion : Yul.SolcValidation.EvmVersion}
     {stmts : List Raw.Stmt}
     {dispatcher coreDispatcher : List Frontend.Stmt}
     {state : State}
     {functions : List (Name × Frontend.FunctionDef)}
     {helper? arg? ret? : Option Name}
     {entry : Name × Frontend.FunctionDef}
-    (hCore : elaborateCodeCore stmts = .ok (coreDispatcher, state))
+    (hCore : elaborateCodeCore stmts evmVersion = .ok (coreDispatcher, state))
     (hElab :
-      elaborateCode stmts = .ok (dispatcher, functions, helper?, arg?, ret?))
+      elaborateCode stmts evmVersion = .ok (dispatcher, functions, helper?, arg?, ret?))
     (hEntry : entry ∈ state.hoistedFunctions) :
     entry ∈ functions := by
   rcases elaborateCode_parts hElab with
@@ -16700,7 +16768,7 @@ mutual
         let dispatcherAndFunctions ←
           match obj.code? with
           | none => pure ([], [], none, none, none)
-          | some code => Elab.elaborateCode code
+          | some code => Elab.elaborateCode code evmVersion
         let (dispatcher, functions, _clzName?, _clzArg?, _clzRet?) :=
           dispatcherAndFunctions
         let (data, objects, items) ←
@@ -16741,7 +16809,7 @@ theorem Object.elaborateFuel?_parts
                   arg? = none ∧
                     ret? = none
         | some code =>
-            Elab.elaborateCode code =
+            Elab.elaborateCode code evmVersion =
               .ok (dispatcher, functions, helper?, arg?, ret?)) ∧
           Object.elaborateItemsFuel? itemFuel obj.subObjects evmVersion =
             .ok (data, objects, items) ∧
@@ -16775,7 +16843,7 @@ theorem Object.elaborateFuel?_parts
               · simp
               · exact hItems
       | some code =>
-          cases hCodeElab : Elab.elaborateCode code with
+          cases hCodeElab : Elab.elaborateCode code evmVersion with
           | error err =>
               simp [hCode, hCodeElab] at hElab
           | ok codeResult =>
@@ -16813,7 +16881,7 @@ theorem Object.elaborate?_parts
                   arg? = none ∧
                     ret? = none
         | some code =>
-            Elab.elaborateCode code =
+            Elab.elaborateCode code evmVersion =
               .ok (dispatcher, functions, helper?, arg?, ret?)) ∧
           Object.elaborateItemsFuel? itemFuel obj.subObjects evmVersion =
             .ok (data, objects, items) ∧
@@ -16893,7 +16961,7 @@ def Object.ClzExpansionOk (raw : Object)
   | none => True
   | some code =>
       ∃ (helper? arg? ret? : Option Name),
-        Elab.elaborateCode code =
+        Elab.elaborateCode code frontend.evmVersion =
           .ok (frontend.dispatcher, frontend.functions,
             helper?, arg?, ret?) ∧
           Elab.ClzExpansionOk frontend.functions helper? arg? ret?
@@ -16904,7 +16972,7 @@ def Object.ClzHelperSpecOk (raw : Object)
   | none => True
   | some code =>
       ∃ (helper? arg? ret? : Option Name),
-        Elab.elaborateCode code =
+        Elab.elaborateCode code frontend.evmVersion =
           .ok (frontend.dispatcher, frontend.functions,
             helper?, arg?, ret?) ∧
           match helper?, arg?, ret? with
@@ -16914,11 +16982,12 @@ def Object.ClzHelperSpecOk (raw : Object)
                   Elab.ClzHelperSpec fn arg ret
           | _, _, _ => True
 
-def Object.clzHelperNamesDistinct? (raw : Object) : Bool :=
+def Object.clzHelperNamesDistinct? (raw : Object)
+    (evmVersion : Yul.SolcValidation.EvmVersion) : Bool :=
   match raw.code? with
   | none => true
   | some code =>
-      match Elab.elaborateCode code with
+      match Elab.elaborateCode code evmVersion with
       | .ok (_dispatcher, _functions, some _helper, some arg, some ret) =>
           arg != ret
       | .ok _ => true
@@ -16926,14 +16995,15 @@ def Object.clzHelperNamesDistinct? (raw : Object) : Bool :=
 
 theorem Object.clzHelperNamesDistinct?_arg_ne
     {raw : Object} {code : List Raw.Stmt}
+    {evmVersion : Yul.SolcValidation.EvmVersion}
     {dispatcher : List Frontend.Stmt}
     {functions : List (Name × Frontend.FunctionDef)}
     {helper arg ret : Name}
     (hCode : raw.code? = some code)
     (hElab :
-      Elab.elaborateCode code =
+      Elab.elaborateCode code evmVersion =
         .ok (dispatcher, functions, some helper, some arg, some ret))
-    (hDistinct : Object.clzHelperNamesDistinct? raw = true) :
+    (hDistinct : Object.clzHelperNamesDistinct? raw evmVersion = true) :
     arg ≠ ret := by
   unfold Object.clzHelperNamesDistinct? at hDistinct
   simp [hCode, hElab] at hDistinct
@@ -16946,12 +17016,23 @@ def Object.HoistedFunctionsRetained (raw : Object)
   | some code =>
       ∃ (coreDispatcher : List Frontend.Stmt) (state : Elab.State)
           (helper? arg? ret? : Option Name),
-        Elab.elaborateCodeCore code = .ok (coreDispatcher, state) ∧
-          Elab.elaborateCode code =
+        Elab.elaborateCodeCore code frontend.evmVersion =
+            .ok (coreDispatcher, state) ∧
+          Elab.elaborateCode code frontend.evmVersion =
             .ok (frontend.dispatcher, frontend.functions,
               helper?, arg?, ret?) ∧
             ∀ entry, entry ∈ state.hoistedFunctions →
               entry ∈ frontend.functions
+
+theorem Object.elaborate?_evmVersion
+    {obj : Object} {evmVersion : Yul.SolcValidation.EvmVersion}
+    {frontend : Frontend.Object}
+    (hElab : Object.elaborate? obj evmVersion = .ok frontend) :
+    frontend.evmVersion = evmVersion := by
+  rcases Object.elaborate?_parts hElab with
+    ⟨_, _, _, _, _, _, _, _, _, _, _, _, hFrontend⟩
+  subst frontend
+  rfl
 
 theorem Object.elaborate?_clzExpansionOk
     {obj : Object} {evmVersion : Yul.SolcValidation.EvmVersion}
@@ -16967,7 +17048,7 @@ theorem Object.elaborate?_clzExpansionOk
       simp [Object.ClzExpansionOk, hRawCode]
   | some code =>
       have hCodeElab :
-          Elab.elaborateCode code =
+          Elab.elaborateCode code evmVersion =
             .ok (dispatcher, functions, helper?, arg?, ret?) := by
         simpa [hRawCode] using hCode
       unfold Object.ClzExpansionOk
@@ -16990,7 +17071,7 @@ theorem Object.elaborate?_clzHelperSpecOk
       simp [Object.ClzHelperSpecOk, hRawCode]
   | some code =>
       have hCodeElab :
-          Elab.elaborateCode code =
+          Elab.elaborateCode code evmVersion =
             .ok (dispatcher, functions, helper?, arg?, ret?) := by
         simpa [hRawCode] using hCode
       unfold Object.ClzHelperSpecOk
@@ -17013,7 +17094,7 @@ theorem Object.elaborate?_hoistedFunctionsRetained
       simp [Object.HoistedFunctionsRetained, hRawCode]
   | some code =>
       have hCodeElab :
-          Elab.elaborateCode code =
+          Elab.elaborateCode code evmVersion =
             .ok (dispatcher, functions, helper?, arg?, ret?) := by
         simpa [hRawCode] using hCode
       rcases Elab.elaborateCode_parts hCodeElab with
@@ -17061,7 +17142,7 @@ def Object.itemRefsPreserveOrder? (raw : Object)
 def Object.FrontendValidated (raw : Object)
     (frontend : Frontend.Object) : Prop :=
   Object.itemRefsPreserveOrder? raw frontend = true ∧
-    Object.clzHelperNamesDistinct? raw = true ∧
+    Object.clzHelperNamesDistinct? raw frontend.evmVersion = true ∧
       Frontend.Object.noRawClzCall? frontend = true ∧
       Frontend.Object.functionDefStubsRetained? frontend = true ∧
         Frontend.Object.userCallsResolved? frontend = true ∧
@@ -17074,7 +17155,7 @@ def Object.elaboratePreservingOrder? (obj : Object)
     DecodeM Frontend.Object := do
   let frontend ← obj.elaborate? evmVersion
   if Object.itemRefsPreserveOrder? obj frontend then
-    if Object.clzHelperNamesDistinct? obj then
+    if Object.clzHelperNamesDistinct? obj evmVersion then
       if Frontend.Object.noRawClzCall? frontend then
         if Frontend.Object.functionDefStubsRetained? frontend then
           if Frontend.Object.userCallsResolved? frontend then
@@ -17106,7 +17187,7 @@ theorem Object.elaboratePreservingOrder?_parts
       | false =>
           simp [hObject, hOrder] at hElab
       | true =>
-          cases hNames : Object.clzHelperNamesDistinct? obj with
+          cases hNames : Object.clzHelperNamesDistinct? obj evmVersion with
           | false =>
               simp [hObject, hOrder, hNames] at hElab
           | true =>
@@ -17137,7 +17218,7 @@ theorem Object.elaboratePreservingOrder?_clzHelperNamesDistinct
     {frontend : Frontend.Object}
     (hElab :
       Object.elaboratePreservingOrder? obj evmVersion = .ok frontend) :
-    Object.clzHelperNamesDistinct? obj = true := by
+    Object.clzHelperNamesDistinct? obj evmVersion = true := by
   unfold Object.elaboratePreservingOrder? at hElab
   cases hObject : Object.elaborate? obj evmVersion with
   | error err =>
@@ -17147,7 +17228,7 @@ theorem Object.elaboratePreservingOrder?_clzHelperNamesDistinct
       | false =>
           simp [hObject, hOrder] at hElab
       | true =>
-          cases hNames : Object.clzHelperNamesDistinct? obj with
+          cases hNames : Object.clzHelperNamesDistinct? obj evmVersion with
           | false =>
               simp [hObject, hOrder, hNames] at hElab
           | true =>
@@ -17168,7 +17249,7 @@ theorem Object.elaboratePreservingOrder?_noRawClzCall
       | false =>
           simp [hObject, hOrder] at hElab
       | true =>
-          cases hNames : Object.clzHelperNamesDistinct? obj with
+          cases hNames : Object.clzHelperNamesDistinct? obj evmVersion with
           | false =>
               simp [hObject, hOrder, hNames] at hElab
           | true =>
@@ -17208,7 +17289,7 @@ theorem Object.elaboratePreservingOrder?_functionDefStubsRetained
       | false =>
           simp [hObject, hOrder] at hElab
       | true =>
-          cases hNames : Object.clzHelperNamesDistinct? obj with
+          cases hNames : Object.clzHelperNamesDistinct? obj evmVersion with
           | false =>
               simp [hObject, hOrder, hNames] at hElab
           | true =>
@@ -17248,7 +17329,7 @@ theorem Object.elaboratePreservingOrder?_userCallsResolved
       | false =>
           simp [hObject, hOrder] at hElab
       | true =>
-          cases hNames : Object.clzHelperNamesDistinct? obj with
+          cases hNames : Object.clzHelperNamesDistinct? obj evmVersion with
           | false =>
               simp [hObject, hOrder, hNames] at hElab
           | true =>
@@ -17282,9 +17363,14 @@ theorem Object.elaboratePreservingOrder?_frontendValidated
       Object.FrontendValidated obj frontend := by
   rcases Object.elaboratePreservingOrder?_parts hElab with
     ⟨hObject, hOrder⟩
+  have hVer := Object.elaborate?_evmVersion hObject
+  have hNames :
+      Object.clzHelperNamesDistinct? obj frontend.evmVersion = true := by
+    rw [hVer]
+    exact Object.elaboratePreservingOrder?_clzHelperNamesDistinct hElab
   exact
     ⟨hObject, hOrder,
-      Object.elaboratePreservingOrder?_clzHelperNamesDistinct hElab,
+      hNames,
       Object.elaboratePreservingOrder?_noRawClzCall hElab,
       Object.elaboratePreservingOrder?_functionDefStubsRetained hElab,
       Object.elaboratePreservingOrder?_userCallsResolved hElab,
@@ -17301,7 +17387,7 @@ theorem Object.elaboratePreservingOrder?_hoistedFunction_ordered_entry
       Object.elaboratePreservingOrder? obj evmVersion = .ok frontend)
     (hCode : obj.code? = some code)
     (hCore :
-      Elab.elaborateCodeCore code = .ok (coreDispatcher, state))
+      Elab.elaborateCodeCore code evmVersion = .ok (coreDispatcher, state))
     (hHoisted : (name, fn) ∈ state.hoistedFunctions)
     (hConvert : frontend.toSolcYulOrderedProgram? = some ordered) :
     ∃ yulBody,
@@ -17310,12 +17396,14 @@ theorem Object.elaboratePreservingOrder?_hoistedFunction_ordered_entry
           EvmYul.Yul.Ast.FunctionDefinition.Def
             fn.params fn.returns yulBody) ∈ ordered.functionEntries := by
   have hObject := (Object.elaboratePreservingOrder?_parts hElab).1
+  have hVer := Object.elaborate?_evmVersion hObject
   have hRetained := Object.elaborate?_hoistedFunctionsRetained hObject
   unfold Object.HoistedFunctionsRetained at hRetained
   rw [hCode] at hRetained
   rcases hRetained with
     ⟨coreDispatcher', state', helper?, arg?, ret?,
       hCore', _hCodeElab, hKeep⟩
+  rw [hVer] at hCore'
   rw [hCore] at hCore'
   cases hCore'
   have hFrontendMem : (name, fn) ∈ frontend.functions :=
@@ -17391,7 +17479,7 @@ theorem Object.elaboratePreservingOrder?_clzHelper_exec_ret_eq_run
       Object.elaboratePreservingOrder? obj evmVersion = .ok frontend)
     (hCode : obj.code? = some code)
     (hCodeElab :
-      Elab.elaborateCode code =
+      Elab.elaborateCode code evmVersion =
         .ok (frontend.dispatcher, frontend.functions,
           some helper, some arg, some ret)) :
     ∃ fn,
@@ -17402,7 +17490,7 @@ theorem Object.elaboratePreservingOrder?_clzHelper_exec_ret_eq_run
               fn.body).map (fun state => state.ret) =
             some (Elab.ClzHelperModel.run value) := by
   have hDistinctBool :
-      Object.clzHelperNamesDistinct? obj = true :=
+      Object.clzHelperNamesDistinct? obj evmVersion = true :=
     Object.elaboratePreservingOrder?_clzHelperNamesDistinct hElab
   have hNames : arg ≠ ret :=
     Object.clzHelperNamesDistinct?_arg_ne hCode hCodeElab hDistinctBool
@@ -17417,7 +17505,7 @@ theorem Object.elaboratePreservingOrder?_clzHelperCall_eq_clzModel
       Object.elaboratePreservingOrder? obj evmVersion = .ok frontend)
     (hCode : obj.code? = some code)
     (hCodeElab :
-      Elab.elaborateCode code =
+      Elab.elaborateCode code evmVersion =
         .ok (frontend.dispatcher, frontend.functions,
           some helper, some arg, some ret))
     (hArg :
@@ -17444,7 +17532,7 @@ theorem Object.elaboratePreservingOrder?_clzHelperCall_eq_reference
       Object.elaboratePreservingOrder? obj evmVersion = .ok frontend)
     (hCode : obj.code? = some code)
     (hCodeElab :
-      Elab.elaborateCode code =
+      Elab.elaborateCode code evmVersion =
         .ok (frontend.dispatcher, frontend.functions,
           some helper, some arg, some ret))
     (hArg :
@@ -17739,7 +17827,7 @@ theorem decodeAndElaborateSolcIrJson_objectParts
                     arg? = none ∧
                       ret? = none
           | some code =>
-              Elab.elaborateCode code =
+              Elab.elaborateCode code selected.evmVersion =
                 .ok (dispatcher, functions, helper?, arg?, ret?)) ∧
             Raw.Object.elaborateItemsFuel? itemFuel selected.root.subObjects
               selected.evmVersion = .ok (data, objects, items) ∧
@@ -18044,7 +18132,7 @@ theorem decodeAndElaborateSolcIr?_objectParts
                       arg? = none ∧
                         ret? = none
             | some code =>
-                Elab.elaborateCode code =
+                Elab.elaborateCode code selected.evmVersion =
                   .ok (dispatcher, functions, helper?, arg?, ret?)) ∧
               Raw.Object.elaborateItemsFuel? itemFuel selected.root.subObjects
                 selected.evmVersion = .ok (data, objects, items) ∧
