@@ -159,6 +159,7 @@ this module is structured/procedure control over those primitive effects.
 inductive BasicOp where
   | add | mul | sub | div | sdiv | mod | smod | addmod | mulmod | exp | signextend
   | lt | gt | slt | sgt | eq | iszero | and | or | xor | not | byte | shl | shr | sar
+  | clz
   | address | balance | origin | caller | callvalue | calldataload | calldatasize
   | calldatacopy | codesize | codecopy | gasprice | extcodesize | extcodecopy
   | returndatasize | returndatacopy | extcodehash
@@ -206,6 +207,7 @@ def toPrimOp : BasicOp → Assembly.PrimOp
   | .shl => .shl
   | .shr => .shr
   | .sar => .sar
+  | .clz => .clz
   | .address => .address
   | .balance => .balance
   | .origin => .origin

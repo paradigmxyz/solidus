@@ -2026,3 +2026,42 @@ declarations below pin the adjacent preservation spine and its public endpoint.
 #print axioms EvmCompiler.Solidus.compile_correct_creation
 #print axioms EvmCompiler.Solidus.compile_correct_unlinked
 #print axioms EvmCompiler.Solidus.compile_correct_unlinked_patch
+
+/-!
+## Native `clz` (EIP-7939) support
+
+`clz` is a first-class native opcode through the whole compiler tower: it is
+admitted by `SolcValidation` from Osaka onwards (and rejected before), lowers
+`.CompBit .CLZ → Structured.BasicOp.clz → PrimOp.clz → EVM CLZ (0x1e)`, steps as
+the pure unary `EvmYul.UInt256.clz`, and round-trips through the gasful bytecode
+bridge (no CLZ exclusion premises remain). These `rfl`/`decide` demonstrations
+lock the wiring in place.
+-/
+
+-- EVM-version gating: native `clz` is accepted from Osaka onwards only.
+example :
+    EvmCompiler.Yul.SolcValidation.primitiveAvailable?
+      (EvmCompiler.Yul.SolcValidation.EvmVersion.osaka.dialectProfile)
+      (.CompBit .CLZ) = true := rfl
+example :
+    EvmCompiler.Yul.SolcValidation.primitiveAvailable?
+      (EvmCompiler.Yul.SolcValidation.EvmVersion.cancun.dialectProfile)
+      (.CompBit .CLZ) = false := rfl
+
+-- Opcode wiring: `.CompBit .CLZ → BasicOp.clz → PrimOp.clz → CLZ (0x1e)`.
+example :
+    EvmCompiler.Yul.Prim.toBasicOp? (.CompBit .CLZ) =
+      some EvmCompiler.Structured.BasicOp.clz := rfl
+example :
+    EvmCompiler.Structured.BasicOp.clz.toPrimOp =
+      EvmCompiler.Assembly.PrimOp.clz := rfl
+example :
+    EvmCompiler.Assembly.PrimOp.clz.toEVM = EvmYul.Operation.CLZ := rfl
+example :
+    EvmCompiler.Assembly.PrimOp.ofEVM? EvmYul.Operation.CLZ =
+      some EvmCompiler.Assembly.PrimOp.clz := rfl
+
+-- Semantics: `clz` steps as the pure unary `EvmYul.UInt256.clz`.
+example :
+    EvmCompiler.Assembly.PrimOp.clz.continuingStep? =
+      some (.un EvmYul.UInt256.clz) := rfl

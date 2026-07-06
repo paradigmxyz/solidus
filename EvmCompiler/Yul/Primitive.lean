@@ -31,7 +31,7 @@ def toBasicOp? : EvmYul.Operation .Yul → Option Structured.BasicOp
   | .CompBit .SHL => some .shl
   | .CompBit .SHR => some .shr
   | .CompBit .SAR => some .sar
-  | .CompBit .CLZ => none
+  | .CompBit .CLZ => some .clz
   | .Keccak .KECCAK256 => some .keccak256
   | .Env .ADDRESS => some .address
   | .Env .BALANCE => some .balance
@@ -94,7 +94,7 @@ def toBasicOp? : EvmYul.Operation .Yul → Option Structured.BasicOp
     toBasicOp? ((.StackMemFlow .MSIZE : EvmYul.Operation .Yul)) = none := rfl
 
 @[simp] theorem toBasicOp?_clz :
-    toBasicOp? ((.CompBit .CLZ : EvmYul.Operation .Yul)) = none := rfl
+    toBasicOp? ((.CompBit .CLZ : EvmYul.Operation .Yul)) = some .clz := rfl
 
 /--
 The CANONICAL supported primitive translation for the verified pipeline.

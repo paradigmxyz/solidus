@@ -87,6 +87,7 @@ inductive PrimOp where
   | stop
   | add | mul | sub | div | sdiv | mod | smod | addmod | mulmod | exp | signextend
   | lt | gt | slt | sgt | eq | iszero | and | or | xor | not | byte | shl | shr | sar
+  | clz
   | address | balance | origin | caller | callvalue | calldataload | calldatasize
   | calldatacopy | codesize | codecopy | gasprice | extcodesize | extcodecopy
   | returndatasize | returndatacopy | extcodehash
@@ -177,6 +178,7 @@ def toEVM : PrimOp → EVMOp
   | .shl => EvmYul.Operation.SHL
   | .shr => EvmYul.Operation.SHR
   | .sar => EvmYul.Operation.SAR
+  | .clz => EvmYul.Operation.CLZ
   | .address => EvmYul.Operation.ADDRESS
   | .balance => EvmYul.Operation.BALANCE
   | .origin => EvmYul.Operation.ORIGIN
@@ -297,6 +299,7 @@ def ofEVM? : EVMOp → Option PrimOp
   | .SHL => some .shl
   | .SHR => some .shr
   | .SAR => some .sar
+  | .CLZ => some .clz
   | .ADDRESS => some .address
   | .BALANCE => some .balance
   | .ORIGIN => some .origin

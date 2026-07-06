@@ -2673,6 +2673,7 @@ def continuingStep? : PrimOp → Option PrimStep
   | .shl => some (.bin (flip EvmYul.UInt256.shiftLeft))
   | .shr => some (.bin (flip EvmYul.UInt256.shiftRight))
   | .sar => some (.bin EvmYul.UInt256.sar)
+  | .clz => some (.un EvmYul.UInt256.clz)
   | .address =>
       some (.executionEnv
         (.ofNat ∘ Fin.val ∘ EvmYul.ExecutionEnv.codeOwner))

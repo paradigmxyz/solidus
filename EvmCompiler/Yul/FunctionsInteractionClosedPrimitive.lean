@@ -2159,6 +2159,7 @@ inductive PureUnary :
       EvmYul.Primop.Unary → Prop where
   | iszero : PureUnary (.CompBit .ISZERO) .iszero EvmYul.UInt256.isZero
   | not : PureUnary (.CompBit .NOT) .not EvmYul.UInt256.lnot
+  | clz : PureUnary (.CompBit .CLZ) .clz EvmYul.UInt256.clz
 
 namespace PureUnary
 
@@ -3793,6 +3794,8 @@ theorem closedSelected : ClosedSelected := by
           exact PureBinary.forward .sar hLength hRel
       | CLZ =>
           simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact PureUnary.forward .clz hLength hRel
   | Keccak primitive =>
       cases primitive with
       | KECCAK256 =>
