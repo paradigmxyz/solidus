@@ -4,6 +4,44 @@ This is append-only implementation history, so older entries intentionally
 describe gaps that have since closed or changed shape. Current gap status is
 authoritative only in `ROADMAP.md` and `PRODUCTION_ASSUMPTIONS.md`.
 
+- 2026-07-05 22:29:58 PDT - consolidation/freeze-relocation-campaign -
+  Relocated the statement-level definitional cone of the public theorems
+  (`EvmCompiler.Solidus.compile_correct` / `_creation`) out of mutable,
+  proof/compiler-dominated files into dedicated frozen spec modules under
+  `EvmCompiler/Solidus/`, closing the "redefine a statement symbol in mutable
+  land, keep clean hashes + clean axioms, vacuous theorem" attack for 6 of the
+  7 audited conflicts (C1-C5, C7). New frozen modules, all pure relocation
+  (unchanged names/namespaces/bodies; original files gain an import):
+  * `Solidus/Bridge.lean` (C1+C2) - `Assembly.GasfulBridge.OpenStateRel`,
+    `OpenSameData`, `eraseOpenWorldData`, `DoneRel`, `xiEntryState`,
+    `OutOfGasFrameSemantics` out of `Assembly/GasfulBridge.lean` (378 lemmas),
+    and `RunRefinesOpenTotal` out of `Yul/GasfulCrown.lean`. Closes the #1
+    (A1 CRITICAL) `DoneRel := fun _ _ => True` attack.
+  * `Solidus/Decode.lean` (C5) - `Selection`/`SelectedIr`/`ObjectSelector`/
+    `decodeSelectedIr` + the JSON decoder cone + the `Raw` source AST +
+    `walkObjects`, and the `Yul.SolcValidation.EvmVersion` enum, out of the
+    18.7k-line `Solidity/RawAst.lean` and `Yul/SolcValidation.lean`. The
+    elaborator stays mutable. Closes the A2 CRITICAL trivial-decoder attack.
+  * `Solidus/Frontend.lean` (C7) - `Solidity.Frontend.ObjectBuiltinContext`
+    plus its pure data deps (`Name`, `Word`, `ObjectLayout`,
+    `ObjectLayout.Entry`, `ImmutableReference`) out of the 4.7k-line frontend.
+  * `Solidus/SourceRun.lean` (C3+C4) -
+    `Raw.SourcePreservation.rawObjectRun` (+ its `State`/`Failure`/`Open`
+    abbrevs) out of the 15k-line `RawAstSourcePreservation.lean`, and
+    `Yul.FunctionsInteractionPrimitive.Truncated` (A3 HIGH) out of the
+    Yul-functions preservation file.
+  The four new `Solidus/*` spec modules are fully import-closed (zero closure
+  violations). C6 (`Assembly.Compact.InteractionSemantics.openRunNResult`) is
+  NOT relocated: its `Instr` type is shared with the mutable compaction pass;
+  it is the audit's MEDIUM item and is contained by the now-frozen `DoneRel`
+  anchor. Added `scripts/check_frozen_closure.py` and
+  `benchmarks/frozen_manifest.txt` (documents the frozen set + residual
+  `#allow` gaps where hash-frozen base/theorem files still import mutable
+  helpers their frozen definitions do not use, and the C6 gap). Verification:
+  `lake build EvmCompiler.Verification` green; both theorems
+  `[propext, Classical.choice, Quot.sound]`; `scripts/opt_harness.sh check` OK;
+  closure checker green; no orphan oleans.
+
 - 2026-06-24 06:01:18 PDT - theorem-boundary/raw-for-initializer-no-shadow -
   Strengthened `Raw.Source.NoShadowStmtCall` for `for` condition/post/body
   paths to require that the initializer statement list does not declare a

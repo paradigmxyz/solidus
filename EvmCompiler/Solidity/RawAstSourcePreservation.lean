@@ -4,6 +4,7 @@ import EvmCompiler.Solidity.RawAstClzAllocation
 import EvmCompiler.Solidity.RawAstSourceSemantics
 import EvmCompiler.Yul.EndToEnd
 import EvmCompiler.Yul.FunctionsInteractionPrimitive
+import EvmCompiler.Solidus.SourceRun
 
 /-!
 Semantic interface for preserving accepted raw solc Yul to ordered Yul.
@@ -19,10 +20,6 @@ namespace Solidity
 namespace RawAst
 namespace Raw
 namespace SourcePreservation
-
-abbrev State := Yul.InteractionSemantics.State
-abbrev Failure := Yul.InteractionSemantics.Failure
-abbrev Open (α : Type) := Yul.InteractionSemantics.Open α
 
 theorem classifyCall_objectBuiltin_mem
     {name : Name}
@@ -631,11 +628,6 @@ theorem forward_refl {α : Type}
       exact .done rfl
   | request query resume ih =>
       exact .request ih
-
-def rawObjectRun (fuel : Nat) (context : Frontend.ObjectBuiltinContext)
-    (object : Raw.Object) (state : State) : Open State :=
-  Raw.SourceSemantics.execObjectCode fuel
-    (Raw.SourceSemantics.contextForObject context) object state
 
 def orderedRun (fuel : Nat) (ordered : Yul.OrderedProgram)
     (state : State) : Open State :=

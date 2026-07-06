@@ -1,6 +1,7 @@
 import EvmCompiler.Yul.GasfulEndToEnd
 import EvmCompiler.Solidity.StackHeadroomEndToEnd
 import EvmCompiler.Solidity.JumpTargetEndToEnd
+import EvmCompiler.Solidus.Bridge
 
 /-!
 # Gasful crown endpoint
@@ -35,33 +36,6 @@ suffix.
 namespace EvmCompiler
 namespace Assembly
 namespace GasfulBridge
-
-/-- Bridge outcomes with every escape constructor removed. The charged run
-either reaches a related terminal leaf, collapses an exceptional frame
-together with the open run (and the charged label is provably none of
-`OutOfFuel`, `StackOverflow`, `BadJumpDestination`), or halts out-of-gas with
-the committal frame-boundary semantics (`Ξ` exceptional halt, `Θ` checkpoint
-rollback with zero returned gas, failure flag, empty output). -/
-inductive RunRefinesOpenTotal
-    (gasful : Except EVMException (EvmYul.EVM.ExecutionResult EVMState))
-    (openRun : Simulation.Interaction EVMException StepResult) :
-    Simulation.Interaction.Transcript → Prop where
-  | completed {transcript openDone} :
-      Simulation.Interaction.Executes openRun transcript openDone →
-      DoneRel gasful openDone →
-      RunRefinesOpenTotal gasful openRun transcript
-  | exceptionalFrame {transcript gasErr openErr} :
-      gasErr ≠ EvmYul.EVM.ExecutionException.OutOfFuel →
-      gasErr ≠ EvmYul.EVM.ExecutionException.StackOverflow →
-      gasErr ≠ EvmYul.EVM.ExecutionException.BadJumpDestination →
-      openErr ≠ EvmYul.EVM.ExecutionException.OutOfFuel →
-      gasful = .error gasErr →
-      Simulation.Interaction.Executes openRun transcript (.error openErr) →
-      RunRefinesOpenTotal gasful openRun transcript
-  | outOfGas {transcript} :
-      OutOfGasFrameSemantics gasful →
-      Simulation.Interaction.Follows openRun transcript →
-      RunRefinesOpenTotal gasful openRun transcript
 
 /-- Every total bridge outcome is in particular a committal outcome. -/
 theorem RunRefinesOpenTotal.toRunRefinesOpenCommittal

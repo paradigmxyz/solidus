@@ -4,13 +4,12 @@ import EvmCompiler.Objects.Layout
 import EvmCompiler.Compiler.StackArtifact
 import EvmCompiler.Assembly.Bytecode
 import EvmCompiler.Assembly.Compact
+import EvmCompiler.Solidus.Frontend
 
 namespace EvmCompiler
 namespace Solidity
 namespace Frontend
 
-abbrev Name := String
-abbrev Word := EvmYul.UInt256
 abbrev AstExpr := EvmYul.Yul.Ast.Expr
 abbrev AstStmt := EvmYul.Yul.Ast.Stmt
 abbrev AstFunctionDefinition := EvmYul.Yul.Ast.FunctionDefinition
@@ -153,8 +152,9 @@ def objectPath (pathPrefix name : Name) : Name :=
 
 end Name
 
-/--
-A visible layout witness for Yul object/data pseudo-builtins.
+/-!
+A visible layout witness for Yul object/data pseudo-builtins (type relocated to
+`EvmCompiler.Solidus.Frontend`).
 
 Resolving through this structure only replaces `datasize("name")` and
 `dataoffset("name")` with literals before entering the current backend
@@ -163,16 +163,6 @@ object/data layout and appends payload bytes; this witness remains for
 explicit-layout debugging, compatibility code-only conversions, and checked
 layout theorem work.
 -/
-structure ObjectLayout.Entry where
-  name : Name
-  offset : Word
-  size : Word
-  deriving Inhabited, Repr
-
-structure ObjectLayout where
-  entries : List ObjectLayout.Entry
-  deriving Inhabited, Repr
-
 namespace ObjectLayout
 
 def findEntry? (layout : ObjectLayout) (name : Name) :
@@ -331,11 +321,6 @@ theorem toObjects_namedOffsetEntriesFromNat
 end List
 
 end DataSection
-
-structure ImmutableReference where
-  start : Nat
-  length : Nat
-  deriving Inhabited, Repr
 
 namespace ImmutableReference
 
@@ -518,9 +503,9 @@ def concat (chunks : List (List UInt8)) : List UInt8 :=
 
 end Bytecode
 
-/--
+/-!
 Resolution context for object pseudo-builtins at the Solidity front-end
-boundary.
+boundary (type relocated to `EvmCompiler.Solidus.Frontend`).
 
 Offsets for named local data sections can be computed from typed byte payloads
 once the object-layer base address is supplied.  Other offsets still come from
@@ -529,18 +514,6 @@ Sizes for named local data sections are computed from the typed byte payloads
 imported from solc, so `datasize("dataName")` no longer needs an external size
 witness for those sections.
 -/
-structure ObjectBuiltinContext where
-  layout : ObjectLayout
-  dataSizes : List (Name × Word)
-  dataOffsets : List (Name × Word)
-  linkerSymbols : List (Name × Word)
-  immutableValues : List (Name × Word) := []
-  immutableReferences : List (Name × List ImmutableReference) := []
-  selfSize? : Option (Name × Word) := none
-  memoryContract : MemoryContract.Contract :=
-    MemoryContract.unrestricted
-  deriving Inhabited, Repr
-
 namespace ObjectBuiltinContext
 
 def ofLayout (layout : ObjectLayout) : ObjectBuiltinContext :=

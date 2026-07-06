@@ -1,4 +1,5 @@
 import EvmCompiler.Yul.Compiler
+import EvmCompiler.Solidus.Decode
 
 namespace EvmCompiler
 namespace Yul
@@ -26,19 +27,6 @@ structure Signature where
 def sig (inputs outputs : Nat) : Signature :=
   { inputs := inputs, outputs := outputs }
 
-inductive EvmVersion where
-  | frontier
-  | homestead
-  | byzantium
-  | constantinople
-  | istanbul
-  | london
-  | paris
-  | shanghai
-  | cancun
-  | prague
-  | osaka
-  deriving DecidableEq, Inhabited, Repr
 
 namespace EvmVersion
 

@@ -1,4 +1,5 @@
 import EvmCompiler.Yul.FunctionsInteractionRelation
+import EvmCompiler.Solidus.SourceRun
 
 namespace EvmCompiler
 namespace Yul
@@ -15,14 +16,6 @@ def ErrorRel (source : Yul.InteractionSemantics.Failure)
   | .InvalidMemoryAccess, .InvalidMemoryAccess => True
   | .StaticModeViolation, .StaticModeViolation => True
   | _, _ => False
-
-/-- Structural source-fuel exhaustion for which finite source semantics makes
-no target-suffix claim. Validation and scoped preservation derive malformed
-source exclusions before this public compiler relation. -/
-def Truncated (failure : Yul.InteractionSemantics.Failure) : Prop :=
-  match failure.exception with
-  | .OutOfFuel => True
-  | _ => False
 
 theorem truncated_iff_outOfFuel
     {failure : Yul.InteractionSemantics.Failure} :

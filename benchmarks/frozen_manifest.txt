@@ -1,0 +1,98 @@
+# Solidus Arena — frozen file manifest
+#
+# These repo files are hash-frozen: CI/scoring refuses any submission whose
+# copies differ from the canonical hashes. Together they close the definitional
+# cone of the public theorems `EvmCompiler.Solidus.compile_correct` /
+# `compile_correct_creation` (EvmCompiler/Correctness.lean) so that a contest
+# adversary who freely rewrites the compiler and its proofs cannot make the
+# theorem vacuous while keeping these hashes unchanged.
+#
+# Checked by scripts/check_frozen_closure.py: every frozen .lean file may import
+# only another frozen file, a trusted-external package (EvmYul / Lean / Std /
+# Batteries / Mathlib / other pinned lake deps), or a module explicitly listed
+# in an `#allow:` directive below (the documented residual gaps).
+
+# ---------------------------------------------------------------------------
+# Relocated statement-spec modules (freeze cone; fully import-closed).
+# These now HOLD the statement-level symbols that used to live in mutable,
+# proof/compiler-dominated files (conflicts C1-C5, C7 of the audit).
+# ---------------------------------------------------------------------------
+EvmCompiler/Solidus/Bridge.lean        # C1+C2: OpenStateRel/OpenSameData/DoneRel/OutOfGasFrameSemantics/RunRefinesOpenTotal
+EvmCompiler/Solidus/Decode.lean        # C5: Selection/SelectedIr/decodeSelectedIr + Raw AST + decoder cone + EvmVersion
+EvmCompiler/Solidus/Frontend.lean      # C7: ObjectBuiltinContext (+ Name/Word/ObjectLayout/ImmutableReference)
+EvmCompiler/Solidus/SourceRun.lean     # C3+C4: rawObjectRun + Truncated
+EvmCompiler/Solidus/Defs.lean          # public vocabulary (compile?/InstalledSource/ObservableDoneRel/...)
+EvmCompiler/Correctness.lean           # the two public theorem statements
+
+# ---------------------------------------------------------------------------
+# Semantic-base files (SAFE): pure spec/semantics referenced at statement level.
+# Hash-frozen so their text (the referenced definitions) cannot change. Their
+# own imports of mutable compiler helpers are recorded as #allow gaps below.
+# ---------------------------------------------------------------------------
+EvmCompiler/Assembly/StateRelation.lean       # EVMState, eraseControl/eraseGas
+EvmCompiler/Assembly/Syntax.lean              # HaltKind, instruction syntax
+EvmCompiler/Assembly/Semantics.lean           # StepResult, Halt, HaltKind.output, EVMException, runNResultWith
+EvmCompiler/Assembly/Bytecode.lean            # Bytecode.ofList
+EvmCompiler/Simulation/OpenWorld.lean         # OpenWorld/OpenAccount projections
+EvmCompiler/Simulation/Interaction.lean       # ForwardRel, Transcript, Executes, Follows
+EvmCompiler/Yul/Syntax.lean                   # AstContract
+EvmCompiler/Yul/Installation.lean             # installContractWithCodeImage
+EvmCompiler/Yul/InteractionSemantics.lean     # State, Failure, Yul interaction interpreter
+EvmCompiler/Solidity/RawAstSourceSemantics.lean  # execObjectCode/contextForObject/eval (trusted source interpreter)
+EvmCompiler/Core/MemoryContract.lean          # MemoryContract.Contract
+
+# ---------------------------------------------------------------------------
+# Toolchain / dependency pins (frozen by hash; no Lean imports).
+# ---------------------------------------------------------------------------
+lean-toolchain
+lake-manifest.json
+
+# ===========================================================================
+# Trusted-external packages (pinned by lake-manifest.json hash).
+# ===========================================================================
+#trusted: EvmYul
+
+# ===========================================================================
+# Residual gaps (#allow): hash-frozen files that still import a mutable module.
+# In each case the frozen file's *relocated/referenced definitions* do NOT use
+# a symbol from the allowed module; the import is present for other (mutable)
+# material in the same base file. Closing these fully requires refactoring the
+# base files to be import-closed (a follow-up beyond pure relocation), or a
+# definition-level (rather than import-level) closure analysis.
+# ---------------------------------------------------------------------------
+# (a) Mutable-by-design compiler entry points: the theorem quantifies over
+#     their OUTPUT (the emitted bytes / discarded certificate), so trivializing
+#     them only changes which bytes are produced; the theorem must still hold.
+#allow: EvmCompiler.Solidity.RawAstPublic
+#allow: EvmCompiler.Solidity.StackHeadroomEndToEnd
+# (b) Proof-carrying imports of the theorem file: these supply the PROOF of the
+#     frozen statement, not any statement-level definition. An adversary may
+#     rewrite them, but the frozen statement must still re-elaborate with clean
+#     axioms.
+#allow: EvmCompiler.Solidity.SolidusInstall
+#allow: EvmCompiler.Solidity.RawAstTotal
+#allow: EvmCompiler.Compiler.SolidusObservable
+# (c) Compiler helpers imported by the SAFE base files. The frozen definitions
+#     in those base files (StepResult, Bytecode.ofList, the Yul/source
+#     interpreters, HaltKind, etc.) do not reference these modules' symbols.
+#allow: EvmCompiler.Assembly.PrimSemantics
+#allow: EvmCompiler.Assembly.Preservation
+#allow: EvmCompiler.Assembly.InteractionPreservation
+#allow: EvmCompiler.Yul.EffectSemantics
+#allow: EvmCompiler.Yul.Primitive
+#allow: EvmCompiler.Yul.VarStoreRestriction
+#allow: EvmCompiler.Objects.Syntax
+#allow: EvmCompiler.Solidity.RawAst
+
+# ===========================================================================
+# KNOWN UNFROZEN STATEMENT SYMBOL (conflict C6, NOT yet relocated):
+#   Assembly.Compact.InteractionSemantics.openRunNResult / openStepResult
+#   still live in the mutable EvmCompiler/Assembly/Compact.lean (5.4k lines),
+#   whose `Instr` type is shared with the mutable compaction pass. This is the
+#   audit's MEDIUM-severity item, contained by the now-frozen DoneRel anchor
+#   (C1/A1): on any funded, valid run the RunRefinesOpenTotal.completed arm
+#   forces openRunNResult's done value to equal EVM.X via the frozen DoneRel.
+#   Relocating it requires splitting the shared `Instr` type + instruction
+#   dispatch out from under the compaction pass; deferred. Compact.lean is
+#   therefore intentionally NOT in the frozen set above.
+# ===========================================================================
