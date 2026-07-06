@@ -27,9 +27,18 @@ Contest metric (total gas)
   the deployment-transaction cost priced arithmetically (yellow paper,
   ``deploy_gas_model = "computed"``); ``exec_gas`` is the summed cost of a fixed
   ordered set of execution vectors replayed on a pinned Foundry executor.
-  EIP-170 (runtime <= 24576) and EIP-3860 (creation <= 49152) are hard validity
-  caps: violations are reported prominently and flagged, never excluded.  The
-  gas machinery lives in ``scripts/opt_gas_runner.py``.
+  Deployment gas prices code size at the chain's real rate (200 gas/byte), so
+  size-vs-runtime tradeoffs are priced by the metric itself.  EIP-170 (runtime
+  <= 24576) and EIP-3860 (creation <= 49152) are NO LONGER validity caps: they
+  are reported informationally only (a ``>24576`` FYI flag + byte counts), never
+  a gate.  The gas machinery lives in ``scripts/opt_gas_runner.py``.
+
+Solc-parity sentinel
+--------------------
+  Every run also compiles each contract with plain solc (same via-ir + Yul
+  optimizer settings) and records ``solc_runtime_bytes`` and the per-contract
+  ratio ``ours/solc``.  A ratio regression is the early-warning signal that a
+  benchmark-configuration or codegen change went the wrong way.
 
 Exit codes
 ----------
@@ -39,11 +48,10 @@ Exit codes
   11  axiom-footprint failure     (check)
   20  a corpus contract failed to compile (bench)
   30  total-gas regression with --fail-on-regression (bench)
-  40  an EIP-170/EIP-3860 cap was violated, with --enforce-caps (bench)
 
-Cap violations are report-only by default (listed + flagged, exit 0) so the
-optimization loop keeps producing comparable numbers; pass --enforce-caps to
-make them a hard gate (arena CI opts in at launch).
+(Exit 40 / EIP-170/EIP-3860 cap enforcement was removed: deployment-size caps
+are no longer validity conditions.  ``--enforce-caps`` is retained as a
+deprecated no-op.)
 """
 
 from __future__ import annotations
@@ -92,7 +100,6 @@ EXIT_BUILD_FAIL = 10
 EXIT_AXIOM_FAIL = 11
 EXIT_COMPILE_FAIL = 20
 EXIT_REGRESSION = 30
-EXIT_CAP_VIOLATION = 40
 
 
 # --------------------------------------------------------------------------
@@ -211,6 +218,13 @@ def compile_source(rel_path: str, env: Dict[str, str]) -> Dict[str, Any]:
         "language": "Solidity",
         "sources": {name: {"content": src_path.read_text()}},
         "settings": {
+            # Match the production corpus scripts EXACTLY (via-ir + Yul
+            # optimizer, details.yul not runs): this is the configuration the
+            # whole `optimizedRawSolcIr*` proof spine was built for.  The
+            # solc_lean wrapper additionally force-sets viaIR, but we set both
+            # explicitly here so the benchmark input is unambiguous.
+            "viaIR": True,
+            "optimizer": {"enabled": True, "details": {"yul": True}},
             "outputSelection": {
                 "*": {"*": [
                     "evm.bytecode.object",
@@ -276,12 +290,65 @@ def compile_source(rel_path: str, env: Dict[str, str]) -> Dict[str, Any]:
             "reason": None}
 
 
+def solc_reference_sizes(rel_path: str, env: Dict[str, str]) -> Dict[str, int]:
+    """Compile one source with plain (real) solc under the SAME settings our
+    path feeds it (via-ir + Yul optimizer) and return
+    {"Source.sol:Contract": solc_runtime_bytes}.
+
+    This is the permanent solc-parity sentinel: comparing our runtime bytes to
+    solc's own backend on the identical input makes a settings-level
+    misconfiguration (e.g. feeding the backend unoptimized Yul) impossible to
+    miss.  Size only, no gas — kept cheap.  Returns {} on any solc failure so a
+    parity hiccup never fails the run."""
+    src_path = REPO_ROOT / rel_path
+    if not src_path.exists():
+        return {}
+    name = src_path.name
+    solc = env.get("SOLC_LEAN_REAL_SOLC", default_solc())
+    standard_input = {
+        "language": "Solidity",
+        "sources": {name: {"content": src_path.read_text()}},
+        "settings": {
+            "viaIR": True,
+            "optimizer": {"enabled": True, "details": {"yul": True}},
+            "outputSelection": {
+                "*": {"*": ["evm.deployedBytecode.object"]}
+            },
+        },
+    }
+    try:
+        proc = subprocess.run(
+            [solc, "--standard-json"], input=json.dumps(standard_input),
+            capture_output=True, text=True, env=env, cwd=str(REPO_ROOT))
+    except (FileNotFoundError, OSError):
+        return {}
+    if proc.returncode != 0:
+        return {}
+    try:
+        output = json.loads(proc.stdout or "")
+    except json.JSONDecodeError:
+        return {}
+    sizes: Dict[str, int] = {}
+    for source_name, contracts in (output.get("contracts") or {}).items():
+        if not isinstance(contracts, dict):
+            continue
+        for contract_name, cdata in contracts.items():
+            if not isinstance(cdata, dict):
+                continue
+            evm = cdata.get("evm") or {}
+            obj = (evm.get("deployedBytecode") or {}).get("object")
+            if isinstance(obj, str) and obj != "":
+                sizes[f"{source_name}:{contract_name}"] = len(obj) // 2
+    return sizes
+
+
 def measure_corpus(env: Dict[str, str]) -> Dict[str, Any]:
     corpus = read_corpus()
     contracts: List[Dict[str, Any]] = []
     excluded: List[Dict[str, str]] = []
     failures: List[str] = []
     empty_sources: List[str] = []
+    solc_sizes: Dict[str, int] = {}  # parity sentinel: solc's own runtime bytes
     started = time.monotonic()
     for rel in corpus:
         sys.stderr.write(f"[compile] {rel} ... ")
@@ -297,9 +364,18 @@ def measure_corpus(env: Dict[str, str]) -> Dict[str, Any]:
             sys.stderr.write("no deployable contracts\n")
             continue
         contracts.extend(result["contracts"])
+        # Parity sentinel: solc's own runtime bytes on the identical input.
+        solc_sizes.update(solc_reference_sizes(rel, env))
         names = ", ".join(c["name"].split(":")[-1] for c in result["contracts"])
         sys.stderr.write(f"ok [{names}] {result['compile_ms']}ms\n")
     compile_wall_ms = int((time.monotonic() - started) * 1000)
+
+    # Attach the per-contract solc-parity ratio (ours / solc runtime bytes).
+    for c in contracts:
+        solc_rt = solc_sizes.get(c["name"])
+        c["solc_runtime_bytes"] = solc_rt
+        c["solc_ratio"] = (round(c["runtime_bytes"] / solc_rt, 3)
+                           if solc_rt else None)
 
     # Gas leg: price each compiled contract's deployment + execution vectors.
     forge = env.get("FORGE", default_forge())
@@ -365,6 +441,13 @@ def measure_corpus(env: Dict[str, str]) -> Dict[str, Any]:
         "total_deploy_gas": sum(c["deploy_gas"] for c in contracts),
         "total_exec_gas": sum(c["exec_gas"] for c in contracts),
         "total_gas": sum(c["total_gas"] for c in contracts),
+        # Parity totals: only over contracts solc also produced (fair ratio).
+        "total_solc_runtime_bytes": sum(
+            c["solc_runtime_bytes"] for c in contracts
+            if c.get("solc_runtime_bytes")),
+        "parity_runtime_bytes": sum(
+            c["runtime_bytes"] for c in contracts
+            if c.get("solc_runtime_bytes")),
     }
 
 
@@ -372,9 +455,15 @@ def build_record(env: Dict[str, str], measured: Dict[str, Any]) -> Dict[str, Any
     contract_keys = (
         "name", "runtime_bytes", "creation_bytes",
         "deploy_gas", "exec_gas", "total_gas", "cap_ok",
-        "eip170_ok", "eip3860_ok", "vectors", "vector_source", "compile_ms")
+        "eip170_ok", "eip3860_ok", "solc_runtime_bytes", "solc_ratio",
+        "vectors", "vector_source", "compile_ms")
     return {
         "schema_version": SCHEMA_VERSION,
+        # Marks the compiler input configuration.  "optimized-yul" = solc
+        # via-ir + Yul optimizer (the configuration the proof spine targets);
+        # any baseline lacking this field predates the settings fix (D-C) and
+        # its numbers are unopt-epoch garbage — do not compare across epochs.
+        "input_epoch": "optimized-yul",
         "commit": git_commit(),
         "date": datetime.datetime.now(datetime.timezone.utc)
                 .strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -402,6 +491,12 @@ def build_record(env: Dict[str, str], measured: Dict[str, Any]) -> Dict[str, Any
         "total_deploy_gas": measured["total_deploy_gas"],
         "total_exec_gas": measured["total_exec_gas"],
         "total_gas": measured["total_gas"],
+        "total_solc_runtime_bytes": measured["total_solc_runtime_bytes"],
+        "parity_runtime_bytes": measured["parity_runtime_bytes"],
+        "solc_parity_ratio": (
+            round(measured["parity_runtime_bytes"]
+                  / measured["total_solc_runtime_bytes"], 3)
+            if measured["total_solc_runtime_bytes"] else None),
         "wall_ms": measured["wall_ms"],
         "compile_wall_ms": measured.get("compile_wall_ms"),
         "gas_wall_ms": measured.get("gas_wall_ms"),
@@ -435,9 +530,10 @@ def cmd_baseline(args: argparse.Namespace) -> int:
               f"failed to compile and are recorded under \"excluded\".",
               file=sys.stderr)
     if measured["cap_violations"]:
-        print(f"\nWARNING: {len(measured['cap_violations'])} contract(s) "
-              f"violate an EIP-170/EIP-3860 cap (recorded under "
-              f"\"cap_violations\").", file=sys.stderr)
+        print(f"\nFYI: {len(measured['cap_violations'])} contract(s) exceed "
+              f"the historical EIP-170/EIP-3860 size (recorded under "
+              f"\"cap_violations\"); informational only, not a validity gate.",
+              file=sys.stderr)
     return EXIT_OK
 
 
@@ -463,18 +559,18 @@ def cmd_bench(args: argparse.Namespace) -> int:
               f"to compile: {', '.join(measured['failures'])}", file=sys.stderr)
         return EXIT_COMPILE_FAIL
 
+    if getattr(args, "enforce_caps", False):
+        print("\nnote: --enforce-caps is a deprecated no-op — EIP-170/EIP-3860 "
+              "deployment-size caps are no longer validity conditions "
+              "(deployment gas prices size at 200 gas/byte).", file=sys.stderr)
+
     if measured["cap_violations"]:
         names = ", ".join(v["name"] for v in measured["cap_violations"])
-        # Report-only by default so the optimization loop keeps producing
-        # comparable numbers; --enforce-caps turns it into a hard gate (arena
-        # CI opts in at launch).
-        if args.enforce_caps:
-            print(f"\nERROR: {len(measured['cap_violations'])} EIP-170/EIP-3860 "
-                  f"cap violation(s) [--enforce-caps]: {names}", file=sys.stderr)
-            return EXIT_CAP_VIOLATION
-        print(f"\nWARNING: {len(measured['cap_violations'])} EIP-170/EIP-3860 "
-              f"cap violation(s) (report-only; pass --enforce-caps to gate): "
-              f"{names}", file=sys.stderr)
+        # Informational only (a >24576 FYI): oversized contracts pay real
+        # measured CREATE gas via the metric, they are not disqualified.
+        print(f"\nFYI: {len(measured['cap_violations'])} contract(s) exceed "
+              f"the historical EIP-170/EIP-3860 size ({names}); informational "
+              f"only, priced by deploy gas.", file=sys.stderr)
 
     if args.fail_on_regression and baseline is not None:
         dg = record["total_gas"] - baseline.get("total_gas", 0)
@@ -509,17 +605,23 @@ def print_summary(title: str, record: Dict[str, Any],
     have_base = baseline is not None
     # Gas-first table.  A leading marker flags cap violations prominently.
     header = (f"{'':<2}{'contract':<42}{'total_gas':>12}{'deploy':>11}"
-              f"{'exec':>10}{'runtime':>8}{'creat':>8}")
+              f"{'exec':>10}{'runtime':>8}{'creat':>8}{'solcRT':>8}{'ratio':>7}")
     if have_base:
         header += f"{'Δtotal':>11}"
     print("\n" + header)
     print("-" * len(header))
     for c in record["contracts"]:
-        cap = c.get("cap_ok", True)
-        mark = "  " if cap else "!!"
+        # ">24576" is now an informational FYI flag only, not a validity gate.
+        over = c["runtime_bytes"] > GAS.EIP170_RUNTIME_CAP
+        mark = ">>" if over else "  "
+        solc_rt = c.get("solc_runtime_bytes")
+        ratio = c.get("solc_ratio")
+        solc_s = str(solc_rt) if solc_rt else "-"
+        ratio_s = f"{ratio:.2f}" if ratio else "-"
         row = (f"{mark:<2}{c['name']:<42}{c.get('total_gas',0):>12}"
                f"{c.get('deploy_gas',0):>11}{c.get('exec_gas',0):>10}"
-               f"{c['runtime_bytes']:>8}{c['creation_bytes']:>8}")
+               f"{c['runtime_bytes']:>8}{c['creation_bytes']:>8}"
+               f"{solc_s:>8}{ratio_s:>7}")
         if have_base:
             b = base_map.get(c["name"])
             if b is None or "total_gas" not in b:
@@ -534,11 +636,21 @@ def print_summary(title: str, record: Dict[str, Any],
     te = record.get("total_exec_gas", 0)
     tr = record["total_runtime_bytes"]
     tc = record["total_creation_bytes"]
+    tsolc = record.get("total_solc_runtime_bytes") or 0
+    overall_ratio = record.get("solc_parity_ratio")
+    tsolc_s = str(tsolc) if tsolc else "-"
+    oratio_s = f"{overall_ratio:.2f}" if overall_ratio else "-"
     total_row = (f"{'':<2}{'TOTAL':<42}{tg:>12}{td:>11}{te:>10}"
-                 f"{tr:>8}{tc:>8}")
+                 f"{tr:>8}{tc:>8}{tsolc_s:>8}{oratio_s:>7}")
     if have_base:
         total_row += f"{tg - baseline.get('total_gas', 0):>+11}"
     print(total_row)
+    if overall_ratio is not None:
+        print(f"{'':<2}{'solc-parity (ours/solc runtime bytes)':<42}"
+              f"{'':>12}{'':>11}{'':>10}{'':>8}{'':>8}"
+              f"{'':>8}{overall_ratio:>7.2f}  "
+              f"(over {record.get('parity_runtime_bytes',0)} vs "
+              f"{tsolc} solc bytes)")
     if have_base:
         btg = baseline.get("total_gas", 0) or 1
         pg = 100.0 * (tg - baseline.get("total_gas", 0)) / btg
@@ -550,21 +662,21 @@ def print_summary(title: str, record: Dict[str, Any],
             print(f"\nMISSING vs baseline (compile regressions): "
                   f"{', '.join(missing)}")
 
-    # Cap-violation call-out (a key deliverable — always listed, never hidden).
+    # Size FYI call-out (informational: not a validity gate).  A ">>" marker in
+    # the table flags a runtime image over the historical EIP-170 size.
     violations = record.get("cap_violations", [])
     if violations:
-        print(f"\n!! EIP-170/EIP-3860 CAP VIOLATIONS ({len(violations)}) "
-              f"[runtime cap {GAS.EIP170_RUNTIME_CAP}, "
-              f"creation cap {GAS.EIP3860_CREATION_CAP}]:")
+        print(f"\nFYI: {len(violations)} contract(s) over the historical "
+              f"EIP-170/EIP-3860 size [runtime {GAS.EIP170_RUNTIME_CAP}, "
+              f"creation {GAS.EIP3860_CREATION_CAP}] — informational, priced "
+              f"by deploy gas, NOT disqualified:")
         for v in violations:
             flags = []
             if not v["eip170_ok"]:
-                flags.append(f"EIP-170 runtime={v['runtime_bytes']}")
+                flags.append(f"runtime={v['runtime_bytes']}")
             if not v["eip3860_ok"]:
-                flags.append(f"EIP-3860 creation={v['creation_bytes']}")
+                flags.append(f"creation={v['creation_bytes']}")
             print(f"   {v['name']}: {'; '.join(flags)}")
-    else:
-        print("\nEIP-170/EIP-3860: all contracts within caps.")
 
 
 # --------------------------------------------------------------------------
@@ -682,8 +794,8 @@ def main(argv: List[str]) -> int:
         p.add_argument("--fail-on-regression", action="store_true",
                        help="(bench/full) nonzero exit if total gas grew")
         p.add_argument("--enforce-caps", action="store_true",
-                       help="(bench/full) exit 40 if any EIP-170/EIP-3860 cap "
-                            "is violated; default is report-only (exit 0)")
+                       help="DEPRECATED no-op: EIP-170/EIP-3860 deployment-size "
+                            "caps are no longer validity conditions")
     args = parser.parse_args(argv)
     dispatch = {
         "baseline": cmd_baseline,

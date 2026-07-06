@@ -9,6 +9,11 @@
 #   examples/UsesRemapping.sol          remapped import sample-lib/ScaleLib.sol not resolved in single-file mode
 #   examples/Object.yul                 raw Yul source, not a Solidity Standard-JSON input
 #   examples/vendor/ScaleLib.sol        library dependency of UsesRemapping, not a standalone entry
+#   examples/ResourceObserverBox.sol    inline-assembly msize(): solc itself rejects msize when the
+#                                       Yul optimizer is active (the benchmark's production settings,
+#                                       viaIR + optimizer.details.yul), so the source is uncompilable
+#                                       for ANY backend under contest settings; see
+#                                       scripts/test_semantic_surface_backend.sh which asserts this
 #
 examples/AbiBox.sol
 examples/AbiControlSurfaceBox.sol
@@ -49,7 +54,6 @@ examples/PayableVault.sol
 examples/PostCancunPrecompileBoundary.sol
 examples/ProxyLifecycleSurfaceBox.sol
 examples/ReentrantTryCatchSurfaceBox.sol
-examples/ResourceObserverBox.sol
 examples/RevertReason.sol
 examples/SelfDestructBox.sol
 examples/SemanticSurfaceBox.sol

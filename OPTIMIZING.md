@@ -15,10 +15,12 @@ The contest scores **total gas**, not bytecode size. For every corpus contract:
 total_gas = deploy_gas + exec_gas
 ```
 
-* **`deploy_gas`** — the cost of the **deployment transaction**, priced
-  arithmetically from the yellow paper (`deploy_gas_model = "computed"`) so it
-  is defined even for contracts that violate EIP-170 and could never actually
-  deploy on-chain. Deployment prices bytecode **size** at 200 gas/byte:
+* **`deploy_gas`** — the cost of the **deployment transaction**. In the public
+  harness it is priced arithmetically from the yellow paper
+  (`deploy_gas_model = "computed"`); the private runner measures the real
+  `CREATE` gas (constructor execution included). Either way deployment prices
+  bytecode **size** at 200 gas/byte, so an oversized contract is penalised by
+  the metric — there is no separate size cap:
 
   ```
   deploy_gas = 21000                       (G_transaction)
@@ -39,22 +41,42 @@ Because deployment is 200 gas/byte of code, **shrinking bytecode still helps** �
 it is now one term of the score rather than the whole score. Cheaper hot-path
 execution is the other lever.
 
-### Deployability caps (hard validity constraints)
+### Deployability sizes (informational only — no cap)
 
-Two size caps are **hard validity constraints**, reported prominently and
-flagged, but **never excluded** from the corpus or the totals:
+EIP-170/EIP-3860 deployment-size limits are **no longer validity conditions.**
+Deployment gas already prices code size at the chain's real rate (200 gas/byte),
+so a size-vs-runtime tradeoff is priced by the metric itself rather than gated by
+a rule. The historical sizes are still reported, informationally:
 
-| cap | limit | field |
+| size | threshold | field |
 |-----|-------|-------|
-| EIP-170  | runtime image  ≤ 24576 bytes | `eip170_ok` |
-| EIP-3860 | creation image ≤ 49152 bytes | `eip3860_ok` |
+| EIP-170  | runtime image  > 24576 bytes | `eip170_ok` |
+| EIP-3860 | creation image > 49152 bytes | `eip3860_ok` |
 
-A contract over a cap gets `cap_ok = false`, is listed under `cap_violations`,
-and is marked `!!` in the table. The cap check is **report-only by default**:
-`bench` still exits `0` so the optimization loop keeps producing comparable
-numbers while oversized contracts are ground down. Pass **`--enforce-caps`** to
-turn it into a hard gate (exit `40`); arena CI opts in at launch. Compile
-failures always fail hard regardless.
+A contract over a threshold gets `cap_ok = false`, is listed under
+`cap_violations`, and is marked `>>` in the table — all purely informational.
+`bench` always exits `0` on oversized contracts; only compile failures (and, with
+`--fail-on-regression`, a gas regression) fail the run. **`--enforce-caps` is a
+deprecated no-op** kept for backward compatibility.
+
+Oversized contracts pay **real measured CREATE gas**: the gas runner raises
+forge's in-harness `code_size_limit` (from which foundry derives the EIP-3860
+initcode limit) far above any real contract, so every contract — including
+>24576-byte runtimes — deploys through the real `CREATE` path with its
+constructor executed and immutables set. The `>24576` flag is a deployability
+FYI, nothing more.
+
+### Solc-parity sentinel
+
+Every `baseline`/`bench` also compiles each contract with plain solc under the
+**same** via-ir + Yul-optimizer settings and records `solc_runtime_bytes` plus
+the per-contract ratio `solc_ratio = ours / solc`. The table shows a `solcRT`
+column and a `ratio` column, and the totals row carries the overall
+ours/solc runtime-byte ratio. Treat a ratio regression as a failure even when
+absolute gas improves: it is the early-warning signal that a benchmark-config or
+codegen change went the wrong way (a misconfigured benchmark once fed the backend
+unoptimized Yul and inflated every number several-fold — a differential ratio
+would have caught it immediately).
 
 ## What it does
 
@@ -80,17 +102,18 @@ same EVM engine the repo's differential execution-compare gates use
 (`scripts/compare_contract_call_bytecode.py`). For each contract it renders a
 throwaway Forge test that:
 
-* installs the compiled image — a real `CREATE` from the creation bytecode when
-  that both fits the caps and deploys cleanly (so constructor state and
-  immutables are honoured), otherwise `vm.etch` of the runtime image (which also
-  lets us execute, and therefore price, contracts whose runtime exceeds
-  EIP-170);
+* installs the compiled image — a real `CREATE` from the creation bytecode (so
+  constructor state and immutables are honoured). The rendered `foundry.toml`
+  raises `code_size_limit` far above any real contract, so even a >24576-byte
+  runtime deploys through `CREATE`; `vm.etch` of the runtime image is only the
+  fallback for a genuinely reverting constructor;
 * replays each vector with `vm.prank(sender)` + a low-level `CALL`, measuring
   raw call gas via `gasleft()` deltas;
 * writes the per-vector `used,ok` rows out via `vm.writeFile`.
 
 The executor pin is recorded in the output JSON under `executor`
-(`forge_version`, `evm_version`, both gas models, both caps). The pinned
+(`forge_version`, `evm_version`, both gas models, the historical size
+thresholds). The pinned
 versions are **forge 1.5.1-stable** at **evm_version `cancun`**, **solc 0.8.26**.
 Determinism: the same compiled input yields the same totals; verify with a
 double `bench`.
@@ -108,12 +131,12 @@ scripts/opt_harness.sh full  [--fail-on-regression] # check, then bench
 |------------|--------------|
 | `baseline` | Compile the corpus, measure gas, and write the reference to `benchmarks/opt_baseline.json`. Your gas deltas are measured against this file. The prior size-only baseline is preserved once as `benchmarks/opt_baseline_size_only.json`. |
 | `check`    | `lake build EvmCompiler.Verification`, then run `#print axioms` on the pinned public theorems and reject any axiom outside the allowed set. This is what tells you the compiler is still correct. |
-| `bench`    | Compile the corpus, measure gas, diff against the baseline, print a table, and write `benchmarks/opt_last_run.json`. Exits nonzero if any corpus contract fails to compile. Cap violations are reported but do not fail the run unless `--enforce-caps` is given. |
+| `bench`    | Compile the corpus, measure gas, diff against the baseline, print a table, and write `benchmarks/opt_last_run.json`. Exits nonzero if any corpus contract fails to compile. Oversized contracts are reported informationally and never fail the run. |
 | `full`     | `check` then `bench`. |
 
 `--fail-on-regression` (on `bench`/`full`) makes the run exit nonzero if total
-**gas** grew relative to the baseline. `--enforce-caps` (on `bench`/`full`)
-makes an EIP-170/EIP-3860 violation exit `40` (default: report-only).
+**gas** grew relative to the baseline. `--enforce-caps` is a **deprecated no-op**
+(EIP-170/EIP-3860 sizes are no longer validity conditions).
 
 **A gas number only counts once `check` passes.** A compiler that emits cheaper
 bytecode but no longer proves correct has no score. Use `bench` on its own for
@@ -130,21 +153,22 @@ commit 1a2b3c4d5e6f  2026-07-06T02:41:08Z  solc 0.8.26+commit.8a97fa7a...
 executor: foundry-forge-test forge Version: 1.5.1-stable  evm=cancun  deploy=computed
 contracts: 57   wall time: 365.0s (compile 340s + gas 25s)
 
-  contract                                   total_gas    deploy    exec runtime  creat
----------------------------------------------------------------------------------------
-!!DynamicStorageSurfaceBox.sol:Dynamic...      9594394   9301560  292834   42848  42943
-  Simple.sol:Simple                             360907    336560   24347    1310   1405
----------------------------------------------------------------------------------------
-  TOTAL                                       10028893   9711712  317181   44247  44530
-  % total_gas vs baseline                                                        -0.01%
+  contract                                   total_gas    deploy    exec runtime  creat  solcRT  ratio
+------------------------------------------------------------------------------------------------------
+  DynamicStorageSurfaceBox.sol:Dynamic...      3620500   3170600  449900   15853  16012    4231   3.75
+  Simple.sol:Simple                             360907    336560   24347    1310   1405     620   2.11
+------------------------------------------------------------------------------------------------------
+  TOTAL                                        3981407   3507160  474247   17163  17417    4851   3.54
 
-!! EIP-170/EIP-3860 CAP VIOLATIONS (1) [runtime cap 24576, creation cap 49152]:
-   DynamicStorageSurfaceBox.sol:DynamicStorageSurfaceBox: EIP-170 runtime=42848
+  solc-parity (ours/solc runtime bytes)                                                             3.54
 
 wrote benchmarks/opt_last_run.json
 ```
 
-A leading `!!` marks a cap violation. A negative `Δtotal` is cheaper gas. A
+A leading `>>` marks a contract over the historical 24,576-byte EIP-170 size
+(informational only). The `solcRT`/`ratio` columns show solc's own runtime bytes
+on the identical input and the `ours/solc` ratio. A negative `Δtotal` is cheaper
+gas. A
 `new` marker means a contract appeared that was not in the baseline; a
 `MISSING vs baseline` line means a contract that used to compile no longer does.
 
@@ -158,11 +182,10 @@ A leading `!!` marks a cap violation. A negative `Δtotal` is cheaper gas. A
 | `11` | axiom-footprint gate failed (`check`) |
 | `20` | a corpus contract failed to compile (`bench`) |
 | `30` | total-gas regression (`bench --fail-on-regression`) |
-| `40` | an EIP-170/EIP-3860 cap was violated (`bench --enforce-caps` only) |
 
-Cap enforcement (when opted in with `--enforce-caps`) takes precedence over the
-regression check; a compile failure takes precedence over both. Without
-`--enforce-caps`, violations are report-only and `bench` still exits `0`.
+Exit `40` (EIP-170/EIP-3860 cap enforcement) was **removed**: deployment-size
+caps are no longer validity conditions. A compile failure takes precedence over
+a gas regression; oversized contracts never fail the run.
 
 ## The axiom gate
 
@@ -201,8 +224,8 @@ Each corpus contract has an ordered transaction list at
   taken from an existing differential execution-compare test),
   `auto-abi-zeroargs` (minimal honest vectors built from the contract's ABI —
   each external function called once with zero-valued arguments), or `empty`.
-* `deploy.constructor_args` / `deploy.value` seed the real `CREATE` when the
-  image fits the caps.
+* `deploy.constructor_args` / `deploy.value` seed the real `CREATE` (which every
+  contract now takes, regardless of size).
 * Each vector is `{calldata, value, sender}`; `sender` is applied with
   `vm.prank`.
 * An interface-only or internal-only unit records `"vectors": []` with an
@@ -241,10 +264,13 @@ Run-record schema (v2):
     "eip170_runtime_cap": 24576,
     "eip3860_creation_cap": 49152
   },
+  "input_epoch": "optimized-yul",
+  "solc_parity_ratio": 3.54,
   "contracts": [
     {"name": "Simple.sol:Simple", "runtime_bytes": 1310, "creation_bytes": 1405,
      "deploy_gas": 336560, "exec_gas": 24347, "total_gas": 360907,
      "cap_ok": true, "eip170_ok": true, "eip3860_ok": true,
+     "solc_runtime_bytes": 620, "solc_ratio": 2.11,
      "vectors": 1, "vector_source": "derived-from-test:...", "compile_ms": 6100}
   ],
   "excluded": [{"source": "...", "reason": "..."}],

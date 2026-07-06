@@ -24,17 +24,22 @@ where
     transaction intrinsic (21000 + calldata cost of the vector) is added so the
     number is a faithful EOA->contract transaction cost.
 
-Deployability caps (hard validity constraints, reported but never excluded):
+Deployability sizes (informational only — NO LONGER validity caps):
 
-  * EIP-170  : runtime image  <= 24576 bytes
-  * EIP-3860 : creation image <= 49152 bytes
+  * EIP-170  : runtime image  > 24576 bytes  -> reported with a >24576 FYI flag
+  * EIP-3860 : creation image > 49152 bytes  -> reported informationally
+
+Deployment gas prices code size at 200 gas/byte, so oversized contracts are
+penalised by the metric, not disqualified.
 
 The executor is Foundry ``forge test`` (same engine the repo's differential
 execution-compare gates use: ``scripts/compare_contract_call_bytecode.py``).
-The runtime image is injected with ``vm.etch`` (or a real ``CREATE`` when the
-creation image both fits the caps and deploys cleanly, so constructor state and
-immutables are honoured); ``etch`` also lets us execute — and therefore price —
-contracts whose runtime exceeds EIP-170.
+The rendered ``foundry.toml`` RAISES forge's ``code_size_limit`` (and hence the
+derived initcode limit) far above any real contract, so EVERY contract —
+including >24576-byte runtimes — takes the REAL ``CREATE`` path from its
+creation bytecode (constructor state + immutables honoured) and is priced with
+measured deploy gas.  ``vm.etch`` remains ONLY as the fallback for a genuinely
+reverting constructor.
 
 This module is imported by ``scripts/opt_harness.py`` and also exposes two CLI
 subcommands:
@@ -61,9 +66,17 @@ SCRIPTS = REPO_ROOT / "scripts"
 BENCH_DIR = REPO_ROOT / "benchmarks"
 VECTORS_DIR = BENCH_DIR / "vectors"
 
-# Deployability caps.
+# Historical deployability sizes — reported informationally only (a >24576
+# FYI flag), NO LONGER validity caps.  Deployment gas prices code size at
+# 200 gas/byte, so an oversized contract is penalised by the metric, not a rule.
 EIP170_RUNTIME_CAP = 24576
 EIP3860_CREATION_CAP = 49152
+
+# In-harness forge runtime code-size limit (foundry derives the EIP-3860
+# initcode limit as 2x this).  Raised well above any real contract so oversized
+# runtimes still take the REAL CREATE path and are priced with measured deploy
+# gas rather than falling back to the etch + arithmetic formula.
+CODE_SIZE_LIMIT = 0x40000000  # 1 GiB
 
 # Yellow-paper gas constants.
 G_TRANSACTION = 21000
@@ -250,6 +263,13 @@ def run_forge_gas(forge: str, solc: str, runtime_hex: str, creation_hex: str,
         'out = "out"',
         'cache_path = "cache"',
         f'evm_version = "{FORGE_EVM_VERSION}"',
+        # Raise forge's EIP-170 runtime code-size limit (foundry derives the
+        # EIP-3860 initcode limit as 2x this) so that ALL contracts — including
+        # >24576-byte runtimes — go through the REAL CREATE path and are priced
+        # with measured deploy gas + constructor execution.  Deployment-size
+        # caps are no longer validity conditions; the >24576 flag is
+        # informational and oversized contracts pay real 200 gas/byte via CREATE.
+        f"code_size_limit = {CODE_SIZE_LIMIT}",
         'fs_permissions = [{ access = "read-write", path = "./" }]',
         "",
     ]))

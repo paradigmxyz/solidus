@@ -25,14 +25,17 @@ IR, any internal proof. The theorem is the only referee.
 - **Record threshold:** a submission takes the record if it improves on the
   current record by **≥ 0.1% (relative)**.
 - **Validity:** the compiler must successfully compile *every* contract in
-  the suite (fail-closed: no output, no score); every runtime image must
-  satisfy **EIP-170 deployability (≤ 24,576 bytes)** and every creation
-  image the EIP-3860 initcode cap (≤ 49,152 bytes); every vector
+  the suite (fail-closed: no output, no score); every vector
   transaction must produce the same observable result as the reference
   (the correctness theorem guarantees this for the source semantics — the
   vector check is a redundant sanity gate, not the trust anchor); all
   within the per-contract timeout and total wall-clock budget on the
-  pinned CI hardware, with the proof gate green.
+  pinned CI hardware, with the proof gate green. There is **no separate
+  deployment-size cap**: EIP-170/EIP-3860 are no longer validity
+  conditions — deployment gas already prices code size at the chain's real
+  rate (200 gas/byte), so an oversized contract is penalised by the metric,
+  not disqualified by a rule. Runtime byte counts and a `>24576` flag are
+  still reported, informationally.
 
 ## What is frozen
 
