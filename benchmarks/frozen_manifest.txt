@@ -37,6 +37,7 @@ EvmCompiler/Simulation/OpenWorld.lean         # OpenWorld/OpenAccount projection
 EvmCompiler/Simulation/Interaction.lean       # ForwardRel, Transcript, Executes, Follows
 EvmCompiler/Yul/Syntax.lean                   # AstContract
 EvmCompiler/Yul/Installation.lean             # installContractWithCodeImage
+EvmCompiler/Yul/EffectSemantics.lean          # effect/state/primitive source model (StateModel/PrimitiveSemantics/Source.Canonical.exec); pure: imports only Yul/Syntax (frozen) + EvmYul
 EvmCompiler/Yul/InteractionSemantics.lean     # State, Failure, Yul interaction interpreter
 EvmCompiler/Solidity/RawAstSourceSemantics.lean  # execObjectCode/contextForObject/eval (trusted source interpreter)
 EvmCompiler/Core/MemoryContract.lean          # MemoryContract.Contract
@@ -83,7 +84,6 @@ lake-manifest.json
 #allow: EvmCompiler.Assembly.PrimSemantics
 #allow: EvmCompiler.Assembly.Preservation
 #allow: EvmCompiler.Assembly.InteractionPreservation
-#allow: EvmCompiler.Yul.EffectSemantics
 #allow: EvmCompiler.Yul.Primitive
 #allow: EvmCompiler.Yul.VarStoreRestriction
 #allow: EvmCompiler.Objects.Syntax

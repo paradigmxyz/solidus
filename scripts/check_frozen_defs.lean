@@ -84,6 +84,7 @@ def frozenManifestModules : List Name :=
   , `EvmCompiler.Simulation.OpenWorld
   , `EvmCompiler.Simulation.Interaction
   , `EvmCompiler.Yul.Syntax
+  , `EvmCompiler.Yul.EffectSemantics
   , `EvmCompiler.Yul.Installation
   , `EvmCompiler.Yul.InteractionSemantics
   , `EvmCompiler.Solidity.RawAstSourceSemantics

@@ -1,10 +1,14 @@
 import EvmCompiler.Objects.Syntax
+import EvmCompiler.Assembly.Syntax
 import EvmYul.Yul.Ast
 
 namespace EvmCompiler
 namespace Yul
 
-abbrev Word := Objects.Word
+-- `Word` is rebased directly onto the frozen `Assembly.Word` (both are the
+-- `EvmYul.UInt256` abbrev; the old `Objects.Word` alias chained through mutable
+-- files, letting `Objects.Word` escape the freeze cone). Definitionally identical.
+abbrev Word := Assembly.Word
 abbrev EVMState := Objects.EVMState
 abbrev EVMException := Objects.EVMException
 abbrev Name := Objects.Name
