@@ -1,354 +1,857 @@
 {
-  "commit": "c2ea1b17feddd07050df3a7ea686b698b12d6e68",
-  "date": "2026-07-06T02:47:20Z",
+  "schema_version": 2,
+  "commit": "ad08900b966cd1aec84771f4454eda21de3916f7",
+  "date": "2026-07-06T04:42:21Z",
   "solc_version": "0.8.26+commit.8a97fa7a.Darwin.appleclang",
+  "executor": {
+    "engine": "foundry-forge-test",
+    "forge_version": "forge Version: 1.5.1-stable",
+    "evm_version": "cancun",
+    "deploy_gas_model": "computed",
+    "deploy_gas_formula": "21000 + 32000 + calldata_cost(creation,4/16) + 2*ceil(len(creation)/32) + 200*runtime_bytes",
+    "exec_gas_model": "measured-callgas+intrinsic (30M block-budget per call)",
+    "gas_budget_per_call": 30000000,
+    "eip170_runtime_cap": 24576,
+    "eip3860_creation_cap": 49152
+  },
   "contracts": [
     {
       "name": "AbiBox.sol:AbiBox",
       "runtime_bytes": 9866,
       "creation_bytes": 9961,
-      "compile_ms": 6660
+      "deploy_gas": 2182540,
+      "exec_gas": 144315,
+      "total_gas": 2326855,
+      "cap_ok": true,
+      "eip170_ok": true,
+      "eip3860_ok": true,
+      "vectors": 5,
+      "vector_source": "derived-from-test:scripts/test_solidity_contract_call_compare.sh",
+      "compile_ms": 6167
     },
     {
       "name": "AbiControlSurfaceBox.sol:AbiControlSurfaceBox",
-      "runtime_bytes": 14656,
-      "creation_bytes": 14816,
-      "compile_ms": 6475
+      "runtime_bytes": 14630,
+      "creation_bytes": 14790,
+      "deploy_gas": 3211502,
+      "exec_gas": 187262,
+      "total_gas": 3398764,
+      "cap_ok": true,
+      "eip170_ok": true,
+      "eip3860_ok": true,
+      "vectors": 5,
+      "vector_source": "hand-written:exercises control-surface entry points incl. the loop-form recursive()",
+      "compile_ms": 6504
     },
     {
       "name": "AdvancedTypeSurfaceBox.sol:AdvancedTypeSurfaceBox",
       "runtime_bytes": 26287,
       "creation_bytes": 26382,
-      "compile_ms": 12610
+      "deploy_gas": 5725906,
+      "exec_gas": 247254,
+      "total_gas": 5973160,
+      "cap_ok": false,
+      "eip170_ok": false,
+      "eip3860_ok": true,
+      "vectors": 8,
+      "vector_source": "auto-abi-zeroargs",
+      "compile_ms": 12088
     },
     {
       "name": "AdvancedTypeSurfaceBox.sol:PriceMath",
       "runtime_bytes": 89,
       "creation_bytes": 182,
-      "compile_ms": 12610
+      "deploy_gas": 73580,
+      "exec_gas": 0,
+      "total_gas": 73580,
+      "cap_ok": true,
+      "eip170_ok": true,
+      "eip3860_ok": true,
+      "vectors": 0,
+      "vector_source": "empty",
+      "compile_ms": 12088
     },
     {
       "name": "AdversarialStackPressure.sol:AdversarialStackPressure",
       "runtime_bytes": 9025,
       "creation_bytes": 9120,
-      "compile_ms": 6180
+      "deploy_gas": 2000758,
+      "exec_gas": 162011,
+      "total_gas": 2162769,
+      "cap_ok": true,
+      "eip170_ok": true,
+      "eip3860_ok": true,
+      "vectors": 1,
+      "vector_source": "derived-from-test:scripts/test_solidity_execution_coverage_compare.sh",
+      "compile_ms": 6140
     },
     {
       "name": "ArithmeticBox.sol:ArithmeticBox",
       "runtime_bytes": 3801,
       "creation_bytes": 3896,
-      "compile_ms": 6065
+      "deploy_gas": 874040,
+      "exec_gas": 247430,
+      "total_gas": 1121470,
+      "cap_ok": true,
+      "eip170_ok": true,
+      "eip3860_ok": true,
+      "vectors": 10,
+      "vector_source": "derived-from-test:scripts/test_solidity_contract_call_compare.sh",
+      "compile_ms": 6045
     },
     {
       "name": "ArrayBox.sol:ArrayBox",
       "runtime_bytes": 2603,
       "creation_bytes": 2698,
-      "compile_ms": 6043
+      "deploy_gas": 615510,
+      "exec_gas": 101018,
+      "total_gas": 716528,
+      "cap_ok": true,
+      "eip170_ok": true,
+      "eip3860_ok": true,
+      "vectors": 4,
+      "vector_source": "derived-from-test:scripts/test_solidity_contract_call_compare.sh",
+      "compile_ms": 6007
     },
     {
       "name": "BitwiseBox.sol:BitwiseBox",
       "runtime_bytes": 6599,
       "creation_bytes": 6694,
-      "compile_ms": 6314
+      "deploy_gas": 1478068,
+      "exec_gas": 87639,
+      "total_gas": 1565707,
+      "cap_ok": true,
+      "eip170_ok": true,
+      "eip3860_ok": true,
+      "vectors": 3,
+      "vector_source": "derived-from-test:scripts/test_solidity_contract_call_compare.sh",
+      "compile_ms": 6028
     },
     {
       "name": "BytesBox.sol:BytesBox",
       "runtime_bytes": 2066,
       "creation_bytes": 2161,
-      "compile_ms": 6222
+      "deploy_gas": 499664,
+      "exec_gas": 26007,
+      "total_gas": 525671,
+      "cap_ok": true,
+      "eip170_ok": true,
+      "eip3860_ok": true,
+      "vectors": 1,
+      "vector_source": "derived-from-test:scripts/test_solidity_contract_call_compare.sh",
+      "compile_ms": 5995
     },
     {
       "name": "CancunOpcodeSurface.sol:CancunOpcodeSurface",
       "runtime_bytes": 1697,
       "creation_bytes": 1792,
-      "compile_ms": 6197
+      "deploy_gas": 419984,
+      "exec_gas": 71591,
+      "total_gas": 491575,
+      "cap_ok": true,
+      "eip170_ok": true,
+      "eip3860_ok": true,
+      "vectors": 3,
+      "vector_source": "derived-from-test:scripts/test_solidity_execution_coverage_compare.sh",
+      "compile_ms": 5926
     },
     {
       "name": "ConstructorAbiBox.sol:ConstructorAbiBox",
       "runtime_bytes": 5349,
       "creation_bytes": 8833,
-      "compile_ms": 6625
+      "deploy_gas": 1259510,
+      "exec_gas": 88076,
+      "total_gas": 1347586,
+      "cap_ok": true,
+      "eip170_ok": true,
+      "eip3860_ok": true,
+      "vectors": 3,
+      "vector_source": "derived-from-test:scripts/test_solidity_contract_call_compare.sh",
+      "compile_ms": 6087
     },
     {
       "name": "ConstructorCounter.sol:ConstructorCounter",
       "runtime_bytes": 2168,
       "creation_bytes": 3398,
-      "compile_ms": 6366
+      "deploy_gas": 538926,
+      "exec_gas": 71200,
+      "total_gas": 610126,
+      "cap_ok": true,
+      "eip170_ok": true,
+      "eip3860_ok": true,
+      "vectors": 3,
+      "vector_source": "derived-from-test:scripts/test_solidity_contract_call_compare.sh",
+      "compile_ms": 6030
     },
     {
       "name": "Counter.sol:Counter",
       "runtime_bytes": 2672,
       "creation_bytes": 2767,
-      "compile_ms": 6253
+      "deploy_gas": 630142,
+      "exec_gas": 141743,
+      "total_gas": 771885,
+      "cap_ok": true,
+      "eip170_ok": true,
+      "eip3860_ok": true,
+      "vectors": 5,
+      "vector_source": "derived-from-test:scripts/test_solidity_contract_call_compare.sh",
+      "compile_ms": 5976
     },
     {
       "name": "CreateLifecycleSurfaceBox.sol:CreateLifecycleChild",
       "runtime_bytes": 843,
       "creation_bytes": 2894,
-      "compile_ms": 12478
+      "deploy_gas": 266334,
+      "exec_gas": 24891,
+      "total_gas": 291225,
+      "cap_ok": true,
+      "eip170_ok": true,
+      "eip3860_ok": true,
+      "vectors": 1,
+      "vector_source": "auto-abi-zeroargs",
+      "compile_ms": 12356
     },
     {
       "name": "CreateLifecycleSurfaceBox.sol:CreateLifecycleSurfaceBox",
       "runtime_bytes": 25751,
       "creation_bytes": 25846,
-      "compile_ms": 12478
+      "deploy_gas": 5612220,
+      "exec_gas": 29953627,
+      "total_gas": 35565847,
+      "cap_ok": false,
+      "eip170_ok": false,
+      "eip3860_ok": true,
+      "vectors": 4,
+      "vector_source": "auto-abi-zeroargs",
+      "compile_ms": 12356
     },
     {
       "name": "DynamicStorageSurfaceBox.sol:DynamicStorageSurfaceBox",
       "runtime_bytes": 42848,
       "creation_bytes": 42943,
-      "compile_ms": 6790
+      "deploy_gas": 9301560,
+      "exec_gas": 292842,
+      "total_gas": 9594402,
+      "cap_ok": false,
+      "eip170_ok": false,
+      "eip3860_ok": true,
+      "vectors": 8,
+      "vector_source": "auto-abi-zeroargs",
+      "compile_ms": 6941
     },
     {
       "name": "EffectOrderingSurfaceBox.sol:EffectOrderingSurfaceBox",
       "runtime_bytes": 4487,
       "creation_bytes": 4582,
-      "compile_ms": 6136
+      "deploy_gas": 1022140,
+      "exec_gas": 91353,
+      "total_gas": 1113493,
+      "cap_ok": true,
+      "eip170_ok": true,
+      "eip3860_ok": true,
+      "vectors": 2,
+      "vector_source": "auto-abi-zeroargs",
+      "compile_ms": 6095
     },
     {
       "name": "EnumBytesBox.sol:EnumBytesBox",
       "runtime_bytes": 7987,
       "creation_bytes": 9642,
-      "compile_ms": 6231
+      "deploy_gas": 1800944,
+      "exec_gas": 258000,
+      "total_gas": 2058944,
+      "cap_ok": true,
+      "eip170_ok": true,
+      "eip3860_ok": true,
+      "vectors": 9,
+      "vector_source": "derived-from-test:scripts/test_solidity_contract_call_compare.sh",
+      "compile_ms": 6148
     },
     {
       "name": "EnvBox.sol:EnvBox",
       "runtime_bytes": 5123,
       "creation_bytes": 5218,
-      "compile_ms": 6210
+      "deploy_gas": 1159424,
+      "exec_gas": 156033,
+      "total_gas": 1315457,
+      "cap_ok": true,
+      "eip170_ok": true,
+      "eip3860_ok": true,
+      "vectors": 6,
+      "vector_source": "derived-from-test:scripts/test_solidity_contract_call_compare.sh",
+      "compile_ms": 5957
     },
     {
       "name": "ErrorPanicBox.sol:ErrorPanicBox",
       "runtime_bytes": 6566,
       "creation_bytes": 7796,
-      "compile_ms": 6244
+      "deploy_gas": 1487236,
+      "exec_gas": 280240,
+      "total_gas": 1767476,
+      "cap_ok": true,
+      "eip170_ok": true,
+      "eip3860_ok": true,
+      "vectors": 11,
+      "vector_source": "derived-from-test:scripts/test_solidity_contract_call_compare.sh",
+      "compile_ms": 6358
     },
     {
       "name": "EventCounter.sol:EventCounter",
       "runtime_bytes": 2853,
       "creation_bytes": 2948,
-      "compile_ms": 6030
+      "deploy_gas": 669322,
+      "exec_gas": 149061,
+      "total_gas": 818383,
+      "cap_ok": true,
+      "eip170_ok": true,
+      "eip3860_ok": true,
+      "vectors": 5,
+      "vector_source": "derived-from-test:scripts/test_solidity_contract_call_compare.sh",
+      "compile_ms": 6326
     },
     {
       "name": "EventMatrix.sol:EventMatrix",
       "runtime_bytes": 4344,
       "creation_bytes": 4439,
-      "compile_ms": 6050
+      "deploy_gas": 990870,
+      "exec_gas": 48443,
+      "total_gas": 1039313,
+      "cap_ok": true,
+      "eip170_ok": true,
+      "eip3860_ok": true,
+      "vectors": 1,
+      "vector_source": "derived-from-test:scripts/test_solidity_contract_call_compare.sh",
+      "compile_ms": 6298
     },
     {
       "name": "ExternalCallBox.sol:ExternalCallBox",
       "runtime_bytes": 9330,
       "creation_bytes": 9425,
-      "compile_ms": 6421
+      "deploy_gas": 2066922,
+      "exec_gas": 29703198,
+      "total_gas": 31770120,
+      "cap_ok": true,
+      "eip170_ok": true,
+      "eip3860_ok": true,
+      "vectors": 6,
+      "vector_source": "derived-from-test:scripts/test_solidity_execution_coverage_compare.sh",
+      "compile_ms": 6199
     },
     {
       "name": "ExternalMathLib.sol:ExternalMathBox",
       "runtime_bytes": 4972,
       "creation_bytes": 5067,
-      "compile_ms": 12501
+      "deploy_gas": 1125778,
+      "exec_gas": 52144,
+      "total_gas": 1177922,
+      "cap_ok": true,
+      "eip170_ok": true,
+      "eip3860_ok": true,
+      "vectors": 2,
+      "vector_source": "auto-abi-zeroargs",
+      "compile_ms": 12366
     },
     {
       "name": "ExternalMathLib.sol:ExternalMathLib",
       "runtime_bytes": 2472,
       "creation_bytes": 2567,
-      "compile_ms": 12501
+      "deploy_gas": 587194,
+      "exec_gas": 52281,
+      "total_gas": 639475,
+      "cap_ok": true,
+      "eip170_ok": true,
+      "eip3860_ok": true,
+      "vectors": 2,
+      "vector_source": "auto-abi-zeroargs",
+      "compile_ms": 12366
     },
     {
       "name": "FactoryBox.sol:ChildBox",
       "runtime_bytes": 1772,
       "creation_bytes": 3153,
-      "compile_ms": 12654
+      "deploy_gas": 456006,
+      "exec_gas": 49160,
+      "total_gas": 505166,
+      "cap_ok": true,
+      "eip170_ok": true,
+      "eip3860_ok": true,
+      "vectors": 2,
+      "vector_source": "auto-abi-zeroargs",
+      "compile_ms": 12493
     },
     {
       "name": "FactoryBox.sol:FactoryBox",
       "runtime_bytes": 12892,
       "creation_bytes": 12987,
-      "compile_ms": 12654
+      "deploy_gas": 2835012,
+      "exec_gas": 1435372,
+      "total_gas": 4270384,
+      "cap_ok": true,
+      "eip170_ok": true,
+      "eip3860_ok": true,
+      "vectors": 6,
+      "vector_source": "derived-from-test:scripts/test_solidity_execution_coverage_compare.sh",
+      "compile_ms": 12493
     },
     {
       "name": "FallbackBox.sol:FallbackBox",
       "runtime_bytes": 5717,
       "creation_bytes": 5812,
-      "compile_ms": 6311
+      "deploy_gas": 1287344,
+      "exec_gas": 208729,
+      "total_gas": 1496073,
+      "cap_ok": true,
+      "eip170_ok": true,
+      "eip3860_ok": true,
+      "vectors": 6,
+      "vector_source": "derived-from-test:scripts/test_solidity_contract_call_compare.sh",
+      "compile_ms": 6097
     },
     {
       "name": "ForkNeutralBox.sol:ForkNeutralBox",
       "runtime_bytes": 1569,
       "creation_bytes": 1664,
-      "compile_ms": 6242
+      "deploy_gas": 392472,
+      "exec_gas": 76566,
+      "total_gas": 469038,
+      "cap_ok": true,
+      "eip170_ok": true,
+      "eip3860_ok": true,
+      "vectors": 3,
+      "vector_source": "derived-from-test:scripts/test_solidity_execution_coverage_compare.sh",
+      "compile_ms": 6107
     },
     {
       "name": "ImmutableBox.sol:ImmutableBox",
       "runtime_bytes": 1431,
       "creation_bytes": 2252,
-      "compile_ms": 6331
+      "deploy_gas": 373082,
+      "exec_gas": 45970,
+      "total_gas": 419052,
+      "cap_ok": true,
+      "eip170_ok": true,
+      "eip3860_ok": true,
+      "vectors": 2,
+      "vector_source": "derived-from-test:scripts/test_solidity_contract_call_compare.sh",
+      "compile_ms": 5998
     },
     {
       "name": "InlineAssemblyBox.sol:InlineAssemblyBox",
       "runtime_bytes": 5878,
       "creation_bytes": 5973,
-      "compile_ms": 6213
+      "deploy_gas": 1321938,
+      "exec_gas": 267444,
+      "total_gas": 1589382,
+      "cap_ok": true,
+      "eip170_ok": true,
+      "eip3860_ok": true,
+      "vectors": 10,
+      "vector_source": "derived-from-test:scripts/test_solidity_contract_call_compare.sh",
+      "compile_ms": 6176
     },
     {
       "name": "InterfaceCase.sol:Impl",
       "runtime_bytes": 1803,
       "creation_bytes": 1898,
-      "compile_ms": 6175
+      "deploy_gas": 442852,
+      "exec_gas": 95782,
+      "total_gas": 538634,
+      "cap_ok": true,
+      "eip170_ok": true,
+      "eip3860_ok": true,
+      "vectors": 4,
+      "vector_source": "derived-from-test:scripts/test_solidity_contract_call_compare.sh",
+      "compile_ms": 6020
     },
     {
       "name": "LoopBox.sol:LoopBox",
       "runtime_bytes": 5547,
       "creation_bytes": 5642,
-      "compile_ms": 6101
+      "deploy_gas": 1250842,
+      "exec_gas": 179442,
+      "total_gas": 1430284,
+      "cap_ok": true,
+      "eip170_ok": true,
+      "eip3860_ok": true,
+      "vectors": 4,
+      "vector_source": "derived-from-test:scripts/test_solidity_contract_call_compare.sh",
+      "compile_ms": 6234
     },
     {
       "name": "MappingCounter.sol:MappingCounter",
       "runtime_bytes": 3791,
       "creation_bytes": 3886,
-      "compile_ms": 6317
+      "deploy_gas": 871580,
+      "exec_gas": 155455,
+      "total_gas": 1027035,
+      "cap_ok": true,
+      "eip170_ok": true,
+      "eip3860_ok": true,
+      "vectors": 5,
+      "vector_source": "derived-from-test:scripts/test_solidity_contract_call_compare.sh",
+      "compile_ms": 6140
     },
     {
       "name": "MathLib.sol:MathLib",
       "runtime_bytes": 89,
       "creation_bytes": 182,
-      "compile_ms": 6178
+      "deploy_gas": 73592,
+      "exec_gas": 0,
+      "total_gas": 73592,
+      "cap_ok": true,
+      "eip170_ok": true,
+      "eip3860_ok": true,
+      "vectors": 0,
+      "vector_source": "empty",
+      "compile_ms": 5991
     },
     {
       "name": "MiniToken.sol:MiniToken",
       "runtime_bytes": 10368,
       "creation_bytes": 12716,
-      "compile_ms": 6315
+      "deploy_gas": 2325428,
+      "exec_gas": 409847,
+      "total_gas": 2735275,
+      "cap_ok": true,
+      "eip170_ok": true,
+      "eip3860_ok": true,
+      "vectors": 14,
+      "vector_source": "derived-from-test:scripts/test_solidity_contract_call_compare.sh",
+      "compile_ms": 6437
     },
     {
       "name": "ModifierBox.sol:ModifierBase",
       "runtime_bytes": 1310,
       "creation_bytes": 2540,
-      "compile_ms": 12221
+      "deploy_gas": 354012,
+      "exec_gas": 24336,
+      "total_gas": 378348,
+      "cap_ok": true,
+      "eip170_ok": true,
+      "eip3860_ok": true,
+      "vectors": 1,
+      "vector_source": "auto-abi-zeroargs",
+      "compile_ms": 12290
     },
     {
       "name": "ModifierBox.sol:ModifierBox",
       "runtime_bytes": 5646,
       "creation_bytes": 6918,
-      "compile_ms": 12221
+      "deploy_gas": 1289542,
+      "exec_gas": 239228,
+      "total_gas": 1528770,
+      "cap_ok": true,
+      "eip170_ok": true,
+      "eip3860_ok": true,
+      "vectors": 7,
+      "vector_source": "derived-from-test:scripts/test_solidity_contract_call_compare.sh",
+      "compile_ms": 12290
     },
     {
       "name": "Opcode44Surface.sol:Opcode44Surface",
       "runtime_bytes": 659,
       "creation_bytes": 754,
-      "compile_ms": 6178
+      "deploy_gas": 196216,
+      "exec_gas": 22345,
+      "total_gas": 218561,
+      "cap_ok": true,
+      "eip170_ok": true,
+      "eip3860_ok": true,
+      "vectors": 1,
+      "vector_source": "derived-from-test:scripts/test_solidity_execution_coverage_compare.sh",
+      "compile_ms": 6001
     },
     {
       "name": "PackedStorageBox.sol:PackedStorageBox",
       "runtime_bytes": 38969,
       "creation_bytes": 39064,
-      "compile_ms": 6772
+      "deploy_gas": 8465602,
+      "exec_gas": 453552,
+      "total_gas": 8919154,
+      "cap_ok": false,
+      "eip170_ok": false,
+      "eip3860_ok": true,
+      "vectors": 8,
+      "vector_source": "derived-from-test:scripts/test_solidity_execution_coverage_compare.sh",
+      "compile_ms": 6705
     },
     {
       "name": "PayableVault.sol:PayableVault",
       "runtime_bytes": 1989,
       "creation_bytes": 2935,
-      "compile_ms": 6251
+      "deploy_gas": 495928,
+      "exec_gas": 73687,
+      "total_gas": 569615,
+      "cap_ok": true,
+      "eip170_ok": true,
+      "eip3860_ok": true,
+      "vectors": 3,
+      "vector_source": "derived-from-test:scripts/test_solidity_contract_call_compare.sh",
+      "compile_ms": 6059
     },
     {
       "name": "PostCancunPrecompileBoundary.sol:PostCancunPrecompileBoundary",
       "runtime_bytes": 10491,
       "creation_bytes": 10586,
-      "compile_ms": 6323
+      "deploy_gas": 2317518,
+      "exec_gas": 165891,
+      "total_gas": 2483409,
+      "cap_ok": true,
+      "eip170_ok": true,
+      "eip3860_ok": true,
+      "vectors": 5,
+      "vector_source": "derived-from-test:scripts/test_solidity_execution_coverage_compare.sh",
+      "compile_ms": 6254
     },
     {
       "name": "ProxyLifecycleSurfaceBox.sol:ProxyLifecycleLogicV1",
       "runtime_bytes": 6542,
       "creation_bytes": 6637,
-      "compile_ms": 18841
+      "deploy_gas": 1465116,
+      "exec_gas": 151885,
+      "total_gas": 1617001,
+      "cap_ok": true,
+      "eip170_ok": true,
+      "eip3860_ok": true,
+      "vectors": 5,
+      "vector_source": "auto-abi-zeroargs",
+      "compile_ms": 18567
     },
     {
       "name": "ProxyLifecycleSurfaceBox.sol:ProxyLifecycleLogicV2",
       "runtime_bytes": 6976,
       "creation_bytes": 7071,
-      "compile_ms": 18841
+      "deploy_gas": 1558694,
+      "exec_gas": 174951,
+      "total_gas": 1733645,
+      "cap_ok": true,
+      "eip170_ok": true,
+      "eip3860_ok": true,
+      "vectors": 5,
+      "vector_source": "auto-abi-zeroargs",
+      "compile_ms": 18567
     },
     {
       "name": "ProxyLifecycleSurfaceBox.sol:ProxyLifecycleSurfaceBox",
       "runtime_bytes": 10003,
       "creation_bytes": 18350,
-      "compile_ms": 18841
+      "deploy_gas": 2339564,
+      "exec_gas": 1485532,
+      "total_gas": 3825096,
+      "cap_ok": true,
+      "eip170_ok": true,
+      "eip3860_ok": true,
+      "vectors": 2,
+      "vector_source": "auto-abi-zeroargs",
+      "compile_ms": 18567
     },
     {
       "name": "ReentrantTryCatchSurfaceBox.sol:ReentrantTryCatchSurfaceBox",
       "runtime_bytes": 14073,
       "creation_bytes": 14168,
-      "compile_ms": 6453
+      "deploy_gas": 3090446,
+      "exec_gas": 139428,
+      "total_gas": 3229874,
+      "cap_ok": true,
+      "eip170_ok": true,
+      "eip3860_ok": true,
+      "vectors": 3,
+      "vector_source": "auto-abi-zeroargs",
+      "compile_ms": 6371
     },
     {
       "name": "ResourceObserverBox.sol:ResourceObserverBox",
       "runtime_bytes": 659,
       "creation_bytes": 778,
-      "compile_ms": 6168
+      "deploy_gas": 196590,
+      "exec_gas": 21749,
+      "total_gas": 218339,
+      "cap_ok": true,
+      "eip170_ok": true,
+      "eip3860_ok": true,
+      "vectors": 1,
+      "vector_source": "derived-from-test:scripts/test_solidity_contract_call_compare.sh",
+      "compile_ms": 6207
     },
     {
       "name": "RevertReason.sol:RevertReason",
       "runtime_bytes": 2309,
       "creation_bytes": 2404,
-      "compile_ms": 6106
+      "deploy_gas": 551664,
+      "exec_gas": 72038,
+      "total_gas": 623702,
+      "cap_ok": true,
+      "eip170_ok": true,
+      "eip3860_ok": true,
+      "vectors": 3,
+      "vector_source": "derived-from-test:scripts/test_solidity_contract_call_compare.sh",
+      "compile_ms": 5990
     },
     {
       "name": "SelfDestructBox.sol:SelfDestructBox",
       "runtime_bytes": 3026,
       "creation_bytes": 3083,
-      "compile_ms": 6218
+      "deploy_gas": 705874,
+      "exec_gas": 173471,
+      "total_gas": 879345,
+      "cap_ok": true,
+      "eip170_ok": true,
+      "eip3860_ok": true,
+      "vectors": 7,
+      "vector_source": "derived-from-test:scripts/test_solidity_execution_coverage_compare.sh",
+      "compile_ms": 5949
     },
     {
       "name": "SemanticSurfaceBox.sol:SemanticSurfaceBox",
       "runtime_bytes": 22552,
       "creation_bytes": 22647,
-      "compile_ms": 6467
+      "deploy_gas": 4922008,
+      "exec_gas": 197675,
+      "total_gas": 5119683,
+      "cap_ok": true,
+      "eip170_ok": true,
+      "eip3860_ok": true,
+      "vectors": 6,
+      "vector_source": "hand-written:safe pure/view surface (avoids create/selfdestruct/arbitrary-call auto vectors that hit degenerate paths)",
+      "compile_ms": 6409
     },
     {
       "name": "Simple.sol:Simple",
       "runtime_bytes": 1310,
       "creation_bytes": 1405,
-      "compile_ms": 6057
+      "deploy_gas": 336560,
+      "exec_gas": 24348,
+      "total_gas": 360908,
+      "cap_ok": true,
+      "eip170_ok": true,
+      "eip3860_ok": true,
+      "vectors": 1,
+      "vector_source": "derived-from-test:scripts/test_solidity_contract_call_compare.sh",
+      "compile_ms": 6152
     },
     {
       "name": "StorageArrayBox.sol:StorageArrayBox",
       "runtime_bytes": 11086,
       "creation_bytes": 11181,
-      "compile_ms": 6296
+      "deploy_gas": 2445500,
+      "exec_gas": 601371,
+      "total_gas": 3046871,
+      "cap_ok": true,
+      "eip170_ok": true,
+      "eip3860_ok": true,
+      "vectors": 14,
+      "vector_source": "derived-from-test:scripts/test_solidity_contract_call_compare.sh",
+      "compile_ms": 6159
     },
     {
       "name": "StorageStructBox.sol:StorageStructBox",
       "runtime_bytes": 22659,
       "creation_bytes": 22754,
-      "compile_ms": 6563
+      "deploy_gas": 4945464,
+      "exec_gas": 585462,
+      "total_gas": 5530926,
+      "cap_ok": true,
+      "eip170_ok": true,
+      "eip3860_ok": true,
+      "vectors": 11,
+      "vector_source": "derived-from-test:scripts/test_solidity_contract_call_compare.sh",
+      "compile_ms": 6472
     },
     {
       "name": "StringBox.sol:StringBox",
       "runtime_bytes": 3336,
       "creation_bytes": 3431,
-      "compile_ms": 6174
+      "deploy_gas": 773164,
+      "exec_gas": 74819,
+      "total_gas": 847983,
+      "cap_ok": true,
+      "eip170_ok": true,
+      "eip3860_ok": true,
+      "vectors": 3,
+      "vector_source": "derived-from-test:scripts/test_solidity_contract_call_compare.sh",
+      "compile_ms": 6076
     },
     {
       "name": "StructBox.sol:StructBox",
       "runtime_bytes": 8074,
       "creation_bytes": 8169,
-      "compile_ms": 6122
+      "deploy_gas": 1796316,
+      "exec_gas": 131558,
+      "total_gas": 1927874,
+      "cap_ok": true,
+      "eip170_ok": true,
+      "eip3860_ok": true,
+      "vectors": 4,
+      "vector_source": "derived-from-test:scripts/test_solidity_contract_call_compare.sh",
+      "compile_ms": 6151
     },
     {
       "name": "TryCatchBox.sol:TryCatchBox",
       "runtime_bytes": 6498,
       "creation_bytes": 6593,
-      "compile_ms": 12072
+      "deploy_gas": 1455910,
+      "exec_gas": 93296,
+      "total_gas": 1549206,
+      "cap_ok": true,
+      "eip170_ok": true,
+      "eip3860_ok": true,
+      "vectors": 3,
+      "vector_source": "derived-from-test:scripts/test_solidity_execution_coverage_compare.sh",
+      "compile_ms": 14050
     },
     {
       "name": "TryCatchBox.sol:TryCatchTarget",
       "runtime_bytes": 2457,
       "creation_bytes": 2552,
-      "compile_ms": 12072
+      "deploy_gas": 583640,
+      "exec_gas": 102480,
+      "total_gas": 686120,
+      "cap_ok": true,
+      "eip170_ok": true,
+      "eip3860_ok": true,
+      "vectors": 4,
+      "vector_source": "derived-from-test:scripts/test_solidity_execution_coverage_compare.sh",
+      "compile_ms": 14050
     }
   ],
   "excluded": [],
   "empty_sources": [],
-  "total_runtime_bytes": 435935,
-  "total_creation_bytes": 466252,
-  "wall_ms": 357294
+  "cap_violations": [
+    {
+      "name": "AdvancedTypeSurfaceBox.sol:AdvancedTypeSurfaceBox",
+      "runtime_bytes": 26287,
+      "creation_bytes": 26382,
+      "eip170_ok": false,
+      "eip3860_ok": true
+    },
+    {
+      "name": "CreateLifecycleSurfaceBox.sol:CreateLifecycleSurfaceBox",
+      "runtime_bytes": 25751,
+      "creation_bytes": 25846,
+      "eip170_ok": false,
+      "eip3860_ok": true
+    },
+    {
+      "name": "DynamicStorageSurfaceBox.sol:DynamicStorageSurfaceBox",
+      "runtime_bytes": 42848,
+      "creation_bytes": 42943,
+      "eip170_ok": false,
+      "eip3860_ok": true
+    },
+    {
+      "name": "PackedStorageBox.sol:PackedStorageBox",
+      "runtime_bytes": 38969,
+      "creation_bytes": 39064,
+      "eip170_ok": false,
+      "eip3860_ok": true
+    }
+  ],
+  "total_runtime_bytes": 435909,
+  "total_creation_bytes": 466226,
+  "total_deploy_gas": 97515550,
+  "total_exec_gas": 70570528,
+  "total_gas": 168086078,
+  "wall_ms": 386180,
+  "compile_wall_ms": 353664,
+  "gas_wall_ms": 32516
 }

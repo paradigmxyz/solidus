@@ -1,0 +1,10 @@
+{
+  "contract": "MathLib.sol:MathLib",
+  "source": "empty",
+  "deploy": {
+    "constructor_args": "0x",
+    "value": 0
+  },
+  "vectors": [],
+  "empty_reason": "no external/public functions (library with only internal linkage or interface); deployment gas only"
+}

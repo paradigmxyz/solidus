@@ -1,0 +1,46 @@
+{
+  "contract": "SelfDestructBox.sol:SelfDestructBox",
+  "source": "derived-from-test:scripts/test_solidity_execution_coverage_compare.sh",
+  "deploy": {
+    "constructor_args": "0x",
+    "value": 3
+  },
+  "vectors": [
+    {
+      "calldata": "0x2f411093",
+      "value": 0,
+      "sender": "0x00000000000000000000000000000000000010a0"
+    },
+    {
+      "calldata": "0x9e6371ba000000000000000000000000000000000000000000000000000000000000beef",
+      "value": 0,
+      "sender": "0x00000000000000000000000000000000000010a0"
+    },
+    {
+      "calldata": "0x",
+      "value": 2,
+      "sender": "0x00000000000000000000000000000000000010a0"
+    },
+    {
+      "calldata": "0x2f411093",
+      "value": 0,
+      "sender": "0x00000000000000000000000000000000000010a0"
+    },
+    {
+      "calldata": "0x370419e5",
+      "value": 5,
+      "sender": "0x00000000000000000000000000000000000010a0"
+    },
+    {
+      "calldata": "0x9e6371ba000000000000000000000000000000000000000000000000000000000000beef",
+      "value": 0,
+      "sender": "0x00000000000000000000000000000000000010a0"
+    },
+    {
+      "calldata": "0x2f411093",
+      "value": 0,
+      "sender": "0x00000000000000000000000000000000000010a0"
+    }
+  ],
+  "empty_reason": null
+}

@@ -1,0 +1,26 @@
+{
+  "contract": "ConstructorCounter.sol:ConstructorCounter",
+  "source": "derived-from-test:scripts/test_solidity_contract_call_compare.sh",
+  "deploy": {
+    "constructor_args": "0x0000000000000000000000000000000000000000000000000000000000000007",
+    "value": 0
+  },
+  "vectors": [
+    {
+      "calldata": "0x3fa4f245",
+      "value": 0,
+      "sender": "0x00000000000000000000000000000000000010a0"
+    },
+    {
+      "calldata": "0x1003e2d20000000000000000000000000000000000000000000000000000000000000023",
+      "value": 0,
+      "sender": "0x00000000000000000000000000000000000010a0"
+    },
+    {
+      "calldata": "0x3fa4f245",
+      "value": 0,
+      "sender": "0x00000000000000000000000000000000000010a0"
+    }
+  ],
+  "empty_reason": null
+}

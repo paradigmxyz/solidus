@@ -1,0 +1,26 @@
+{
+  "contract": "PayableVault.sol:PayableVault",
+  "source": "derived-from-test:scripts/test_solidity_contract_call_compare.sh",
+  "deploy": {
+    "constructor_args": "0x",
+    "value": 3
+  },
+  "vectors": [
+    {
+      "calldata": "0x2ddbd13a",
+      "value": 0,
+      "sender": "0x00000000000000000000000000000000000010a0"
+    },
+    {
+      "calldata": "0xd0e30db0",
+      "value": 5,
+      "sender": "0x00000000000000000000000000000000000010a0"
+    },
+    {
+      "calldata": "0x2ddbd13a",
+      "value": 0,
+      "sender": "0x00000000000000000000000000000000000010a0"
+    }
+  ],
+  "empty_reason": null
+}

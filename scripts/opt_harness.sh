@@ -10,7 +10,8 @@
 #   scripts/opt_harness.sh full  [--fail-on-regression]   check then bench
 #
 # Exit codes: 0 pass; 2 usage; 10 build-fail; 11 axiom-fail;
-#             20 compile-fail; 30 size-regression.
+#             20 compile-fail; 30 gas-regression;
+#             40 EIP-170/EIP-3860 cap (only with --enforce-caps; report-only by default).
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -20,6 +21,7 @@ cd "$ROOT"
 export PATH="$HOME/.elan/bin:$HOME/.local/bin:$HOME/.foundry/bin:$PATH"
 export SOLC="${SOLC:-$HOME/.local/bin/solc}"
 export LAKE="${LAKE:-$(command -v lake || echo lake)}"
+export FORGE="${FORGE:-$HOME/.foundry/bin/forge}"
 
 # Prefer a real CPython over any hanging sandbox venv shim.
 PYTHON_BIN="${PYTHON:-python3}"

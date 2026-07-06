@@ -21,6 +21,16 @@ Subcommands
             proof_artifacts/stack_backend_production_smoke.lean.
   full      check, then bench (the grinder inner loop).
 
+Contest metric (total gas)
+--------------------------
+  Each contract scores  total_gas = deploy_gas + exec_gas.  ``deploy_gas`` is
+  the deployment-transaction cost priced arithmetically (yellow paper,
+  ``deploy_gas_model = "computed"``); ``exec_gas`` is the summed cost of a fixed
+  ordered set of execution vectors replayed on a pinned Foundry executor.
+  EIP-170 (runtime <= 24576) and EIP-3860 (creation <= 49152) are hard validity
+  caps: violations are reported prominently and flagged, never excluded.  The
+  gas machinery lives in ``scripts/opt_gas_runner.py``.
+
 Exit codes
 ----------
   0   pass
@@ -28,15 +38,22 @@ Exit codes
   10  correctness build failure (check)
   11  axiom-footprint failure     (check)
   20  a corpus contract failed to compile (bench)
-  30  size regression with --fail-on-regression (bench)
+  30  total-gas regression with --fail-on-regression (bench)
+  40  an EIP-170/EIP-3860 cap was violated, with --enforce-caps (bench)
+
+Cap violations are report-only by default (listed + flagged, exit 0) so the
+optimization loop keeps producing comparable numbers; pass --enforce-caps to
+make them a hard gate (arena CI opts in at launch).
 """
 
 from __future__ import annotations
 
 import argparse
 import datetime
+import importlib.util
 import json
 import os
+import shutil
 import subprocess
 import sys
 import time
@@ -48,7 +65,21 @@ SCRIPTS = REPO_ROOT / "scripts"
 BENCH_DIR = REPO_ROOT / "benchmarks"
 CORPUS_MANIFEST = BENCH_DIR / "corpus.txt"
 BASELINE_JSON = BENCH_DIR / "opt_baseline.json"
+BASELINE_SIZE_ONLY_JSON = BENCH_DIR / "opt_baseline_size_only.json"
 LAST_RUN_JSON = BENCH_DIR / "opt_last_run.json"
+
+SCHEMA_VERSION = 2  # v1: size-only.  v2: adds gas (deploy + exec vectors).
+
+
+def _load_gas_runner() -> Any:
+    spec = importlib.util.spec_from_file_location(
+        "opt_gas_runner", SCRIPTS / "opt_gas_runner.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+GAS = _load_gas_runner()
 
 SMOKE_LEAN = REPO_ROOT / "proof_artifacts" / "stack_backend_production_smoke.lean"
 PROOF_ROOT_MODULE = "EvmCompiler.Verification"
@@ -61,6 +92,7 @@ EXIT_BUILD_FAIL = 10
 EXIT_AXIOM_FAIL = 11
 EXIT_COMPILE_FAIL = 20
 EXIT_REGRESSION = 30
+EXIT_CAP_VIOLATION = 40
 
 
 # --------------------------------------------------------------------------
@@ -77,16 +109,23 @@ def default_lake() -> str:
     return str(local) if local.exists() else "lake"
 
 
+def default_forge() -> str:
+    local = Path.home() / ".foundry" / "bin" / "forge"
+    return str(local) if local.exists() else "forge"
+
+
 def tool_env() -> Dict[str, str]:
     """Environment for subprocesses: pin solc/lake and disable the optional
     jsonschema output validation (the harness parses the JSON directly)."""
     env = dict(os.environ)
     solc = env.get("SOLC", default_solc())
     lake = env.get("LAKE", default_lake())
+    forge = env.get("FORGE", default_forge())
     env.setdefault("SOLC_LEAN_REAL_SOLC", solc)
     env.setdefault("SOLC_LEAN_LAKE", lake)
     env["LAKE"] = lake
     env["SOLC"] = solc
+    env["FORGE"] = forge
     env["SOLC_LEAN_VALIDATE_OUTPUT"] = "0"
     # Make the pinned tools reachable on PATH too.
     extra = os.pathsep.join(
@@ -109,6 +148,21 @@ def solc_version(env: Dict[str, str]) -> str:
         if line.startswith("Version:"):
             return line[len("Version:"):].strip()
     return out.strip().splitlines()[-1] if out.strip() else "unknown"
+
+
+def forge_version(env: Dict[str, str]) -> str:
+    forge = env.get("FORGE", default_forge())
+    try:
+        out = subprocess.run(
+            [forge, "--version"], capture_output=True, text=True, env=env
+        ).stdout
+    except FileNotFoundError:
+        return "unknown"
+    for line in out.splitlines():
+        line = line.strip()
+        if line.lower().startswith("forge"):
+            return line
+    return out.strip().splitlines()[0] if out.strip() else "unknown"
 
 
 def git_commit() -> str:
@@ -206,10 +260,15 @@ def compile_source(rel_path: str, env: Dict[str, str]) -> Dict[str, Any]:
             if not isinstance(ec, dict):
                 continue
             sizes = ec.get("sizes") or {}
+            evm = cdata.get("evm") or {}
+            creation_hex = (evm.get("bytecode") or {}).get("object") or ""
+            runtime_hex = (evm.get("deployedBytecode") or {}).get("object") or ""
             contracts_out.append({
                 "name": f"{source_name}:{contract_name}",
                 "runtime_bytes": int(sizes.get("runtimeBytes", 0)),
                 "creation_bytes": int(sizes.get("creationBytes", 0)),
+                "creation_hex": creation_hex,
+                "runtime_hex": runtime_hex,
                 "compile_ms": compile_ms,
             })
     contracts_out.sort(key=lambda c: c["name"])
@@ -240,35 +299,112 @@ def measure_corpus(env: Dict[str, str]) -> Dict[str, Any]:
         contracts.extend(result["contracts"])
         names = ", ".join(c["name"].split(":")[-1] for c in result["contracts"])
         sys.stderr.write(f"ok [{names}] {result['compile_ms']}ms\n")
-    wall_ms = int((time.monotonic() - started) * 1000)
+    compile_wall_ms = int((time.monotonic() - started) * 1000)
+
+    # Gas leg: price each compiled contract's deployment + execution vectors.
+    forge = env.get("FORGE", default_forge())
+    solc = env.get("SOLC", default_solc())
+    gas_started = time.monotonic()
+    cap_violations: List[Dict[str, Any]] = []
+    for c in contracts:
+        vspec = GAS.load_vectors(c["name"])
+        sys.stderr.write(f"[gas] {c['name']} ({vspec.get('vectors') and len(vspec['vectors']) or 0} vec) ... ")
+        sys.stderr.flush()
+        try:
+            gas = GAS.measure_contract(
+                forge, solc, c["name"],
+                c["creation_hex"], c["runtime_hex"],
+                c["runtime_bytes"], c["creation_bytes"], vspec)
+        except Exception as exc:  # measurement failure is not a compile failure
+            sys.stderr.write(f"GAS-ERROR ({exc})\n")
+            gas = {
+                "deploy_gas": GAS.compute_deploy_gas(
+                    c["creation_hex"], c["runtime_bytes"]),
+                "deploy_gas_model": GAS.DEPLOY_GAS_MODEL,
+                "exec_gas": 0, "exec_gas_model": GAS.EXEC_GAS_MODEL,
+                "cap_ok": GAS.cap_ok(c["runtime_bytes"], c["creation_bytes"]),
+                "eip170_ok": c["runtime_bytes"] <= GAS.EIP170_RUNTIME_CAP,
+                "eip3860_ok": c["creation_bytes"] <= GAS.EIP3860_CREATION_CAP,
+                "vectors": 0, "vector_source": vspec.get("source", "none"),
+                "per_vector": [], "gas_error": str(exc)[:200],
+            }
+            gas["total_gas"] = gas["deploy_gas"] + gas["exec_gas"]
+        # Fold gas fields into the contract record (drop bulky per-vector +
+        # raw hex from the summary record).
+        for k in ("deploy_gas", "deploy_gas_model", "exec_gas",
+                  "exec_gas_model", "total_gas", "cap_ok", "eip170_ok",
+                  "eip3860_ok", "vectors", "vector_source"):
+            c[k] = gas[k]
+        if gas.get("gas_error"):
+            c["gas_error"] = gas["gas_error"]
+        c.pop("creation_hex", None)
+        c.pop("runtime_hex", None)
+        if not gas["cap_ok"]:
+            cap_violations.append({
+                "name": c["name"], "runtime_bytes": c["runtime_bytes"],
+                "creation_bytes": c["creation_bytes"],
+                "eip170_ok": gas["eip170_ok"], "eip3860_ok": gas["eip3860_ok"],
+            })
+        flag = "" if gas["cap_ok"] else "  !!CAP"
+        sys.stderr.write(f"total={gas['total_gas']}{flag}\n")
+    gas_wall_ms = int((time.monotonic() - gas_started) * 1000)
+    wall_ms = compile_wall_ms + gas_wall_ms
+
     contracts.sort(key=lambda c: c["name"])
     return {
         "contracts": contracts,
         "excluded": excluded,
         "failures": failures,
         "empty_sources": empty_sources,
+        "cap_violations": cap_violations,
         "wall_ms": wall_ms,
+        "compile_wall_ms": compile_wall_ms,
+        "gas_wall_ms": gas_wall_ms,
         "total_runtime_bytes": sum(c["runtime_bytes"] for c in contracts),
         "total_creation_bytes": sum(c["creation_bytes"] for c in contracts),
+        "total_deploy_gas": sum(c["deploy_gas"] for c in contracts),
+        "total_exec_gas": sum(c["exec_gas"] for c in contracts),
+        "total_gas": sum(c["total_gas"] for c in contracts),
     }
 
 
 def build_record(env: Dict[str, str], measured: Dict[str, Any]) -> Dict[str, Any]:
+    contract_keys = (
+        "name", "runtime_bytes", "creation_bytes",
+        "deploy_gas", "exec_gas", "total_gas", "cap_ok",
+        "eip170_ok", "eip3860_ok", "vectors", "vector_source", "compile_ms")
     return {
+        "schema_version": SCHEMA_VERSION,
         "commit": git_commit(),
         "date": datetime.datetime.now(datetime.timezone.utc)
                 .strftime("%Y-%m-%dT%H:%M:%SZ"),
         "solc_version": solc_version(env),
+        "executor": {
+            "engine": "foundry-forge-test",
+            "forge_version": forge_version(env),
+            "evm_version": GAS.FORGE_EVM_VERSION,
+            "deploy_gas_model": GAS.DEPLOY_GAS_MODEL,
+            "deploy_gas_formula": GAS.DEPLOY_GAS_FORMULA,
+            "exec_gas_model": GAS.EXEC_GAS_MODEL,
+            "gas_budget_per_call": GAS.GAS_BUDGET_PER_CALL,
+            "eip170_runtime_cap": GAS.EIP170_RUNTIME_CAP,
+            "eip3860_creation_cap": GAS.EIP3860_CREATION_CAP,
+        },
         "contracts": [
-            {k: c[k] for k in
-             ("name", "runtime_bytes", "creation_bytes", "compile_ms")}
+            {k: c.get(k) for k in contract_keys}
             for c in measured["contracts"]
         ],
         "excluded": measured["excluded"],
         "empty_sources": measured["empty_sources"],
+        "cap_violations": measured["cap_violations"],
         "total_runtime_bytes": measured["total_runtime_bytes"],
         "total_creation_bytes": measured["total_creation_bytes"],
+        "total_deploy_gas": measured["total_deploy_gas"],
+        "total_exec_gas": measured["total_exec_gas"],
+        "total_gas": measured["total_gas"],
         "wall_ms": measured["wall_ms"],
+        "compile_wall_ms": measured.get("compile_wall_ms"),
+        "gas_wall_ms": measured.get("gas_wall_ms"),
     }
 
 
@@ -281,6 +417,16 @@ def cmd_baseline(args: argparse.Namespace) -> int:
     measured = measure_corpus(env)
     record = build_record(env, measured)
     BENCH_DIR.mkdir(parents=True, exist_ok=True)
+    # Preserve the pre-gas (size-only, schema v1) baseline for history, once.
+    if BASELINE_JSON.exists() and not BASELINE_SIZE_ONLY_JSON.exists():
+        try:
+            prev = json.loads(BASELINE_JSON.read_text())
+            if prev.get("schema_version", 1) < SCHEMA_VERSION:
+                shutil.copyfile(BASELINE_JSON, BASELINE_SIZE_ONLY_JSON)
+                print(f"kept prior size-only baseline as "
+                      f"{BASELINE_SIZE_ONLY_JSON.relative_to(REPO_ROOT)}")
+        except json.JSONDecodeError:
+            pass
     BASELINE_JSON.write_text(json.dumps(record, indent=2) + "\n")
     print_summary("BASELINE", record, baseline=None)
     print(f"\nwrote {BASELINE_JSON.relative_to(REPO_ROOT)}")
@@ -288,6 +434,10 @@ def cmd_baseline(args: argparse.Namespace) -> int:
         print(f"\nWARNING: {len(measured['failures'])} corpus source(s) "
               f"failed to compile and are recorded under \"excluded\".",
               file=sys.stderr)
+    if measured["cap_violations"]:
+        print(f"\nWARNING: {len(measured['cap_violations'])} contract(s) "
+              f"violate an EIP-170/EIP-3860 cap (recorded under "
+              f"\"cap_violations\").", file=sys.stderr)
     return EXIT_OK
 
 
@@ -313,12 +463,24 @@ def cmd_bench(args: argparse.Namespace) -> int:
               f"to compile: {', '.join(measured['failures'])}", file=sys.stderr)
         return EXIT_COMPILE_FAIL
 
+    if measured["cap_violations"]:
+        names = ", ".join(v["name"] for v in measured["cap_violations"])
+        # Report-only by default so the optimization loop keeps producing
+        # comparable numbers; --enforce-caps turns it into a hard gate (arena
+        # CI opts in at launch).
+        if args.enforce_caps:
+            print(f"\nERROR: {len(measured['cap_violations'])} EIP-170/EIP-3860 "
+                  f"cap violation(s) [--enforce-caps]: {names}", file=sys.stderr)
+            return EXIT_CAP_VIOLATION
+        print(f"\nWARNING: {len(measured['cap_violations'])} EIP-170/EIP-3860 "
+              f"cap violation(s) (report-only; pass --enforce-caps to gate): "
+              f"{names}", file=sys.stderr)
+
     if args.fail_on_regression and baseline is not None:
-        dr = record["total_runtime_bytes"] - baseline.get("total_runtime_bytes", 0)
-        dc = record["total_creation_bytes"] - baseline.get("total_creation_bytes", 0)
-        if dr > 0 or dc > 0:
-            print(f"\nERROR: size regression (runtime {dr:+d}, "
-                  f"creation {dc:+d})", file=sys.stderr)
+        dg = record["total_gas"] - baseline.get("total_gas", 0)
+        if dg > 0:
+            print(f"\nERROR: total-gas regression ({dg:+d} gas vs baseline)",
+                  file=sys.stderr)
             return EXIT_REGRESSION
     return EXIT_OK
 
@@ -332,50 +494,77 @@ def print_summary(title: str, record: Dict[str, Any],
     print(f"\n=== {title} ===")
     print(f"commit {record['commit'][:12]}  {record['date']}  "
           f"solc {record['solc_version']}")
+    ex = record.get("executor", {})
+    print(f"executor: {ex.get('engine','?')} "
+          f"{ex.get('forge_version','?')}  evm={ex.get('evm_version','?')}  "
+          f"deploy={ex.get('deploy_gas_model','?')}")
     print(f"contracts: {len(record['contracts'])}   "
-          f"corpus wall time: {record['wall_ms']/1000:.1f}s")
+          f"wall time: {record['wall_ms']/1000:.1f}s "
+          f"(compile {record.get('compile_wall_ms',0)/1000:.0f}s + "
+          f"gas {record.get('gas_wall_ms',0)/1000:.0f}s)")
     if record.get("excluded"):
         print(f"excluded sources: {len(record['excluded'])}   "
               f"empty sources: {len(record.get('empty_sources', []))}")
 
     have_base = baseline is not None
-    header = f"{'contract':<44}{'runtime':>9}{'creation':>10}"
+    # Gas-first table.  A leading marker flags cap violations prominently.
+    header = (f"{'':<2}{'contract':<42}{'total_gas':>12}{'deploy':>11}"
+              f"{'exec':>10}{'runtime':>8}{'creat':>8}")
     if have_base:
-        header += f"{'Δrun':>8}{'Δcre':>8}"
+        header += f"{'Δtotal':>11}"
     print("\n" + header)
     print("-" * len(header))
     for c in record["contracts"]:
-        row = f"{c['name']:<44}{c['runtime_bytes']:>9}{c['creation_bytes']:>10}"
+        cap = c.get("cap_ok", True)
+        mark = "  " if cap else "!!"
+        row = (f"{mark:<2}{c['name']:<42}{c.get('total_gas',0):>12}"
+               f"{c.get('deploy_gas',0):>11}{c.get('exec_gas',0):>10}"
+               f"{c['runtime_bytes']:>8}{c['creation_bytes']:>8}")
         if have_base:
             b = base_map.get(c["name"])
-            if b is None:
-                row += f"{'new':>8}{'new':>8}"
+            if b is None or "total_gas" not in b:
+                row += f"{'new':>11}"
             else:
-                dr = c["runtime_bytes"] - b["runtime_bytes"]
-                dc = c["creation_bytes"] - b["creation_bytes"]
-                row += f"{dr:>+8}{dc:>+8}"
+                dg = c.get("total_gas", 0) - b.get("total_gas", 0)
+                row += f"{dg:>+11}"
         print(row)
     print("-" * len(header))
+    tg = record.get("total_gas", 0)
+    td = record.get("total_deploy_gas", 0)
+    te = record.get("total_exec_gas", 0)
     tr = record["total_runtime_bytes"]
     tc = record["total_creation_bytes"]
-    total_row = f"{'TOTAL':<44}{tr:>9}{tc:>10}"
+    total_row = (f"{'':<2}{'TOTAL':<42}{tg:>12}{td:>11}{te:>10}"
+                 f"{tr:>8}{tc:>8}")
     if have_base:
-        bdr = tr - baseline.get("total_runtime_bytes", 0)
-        bdc = tc - baseline.get("total_creation_bytes", 0)
-        total_row += f"{bdr:>+8}{bdc:>+8}"
+        total_row += f"{tg - baseline.get('total_gas', 0):>+11}"
     print(total_row)
     if have_base:
-        btr = baseline.get("total_runtime_bytes", 0) or 1
-        btc = baseline.get("total_creation_bytes", 0) or 1
-        pr = 100.0 * (tr - baseline.get("total_runtime_bytes", 0)) / btr
-        pc = 100.0 * (tc - baseline.get("total_creation_bytes", 0)) / btc
-        print(f"{'% vs baseline':<44}{'':>9}{'':>10}{pr:>+7.2f}%{pc:>+7.2f}%")
-        # Contracts present in baseline but missing now = compile regressions.
+        btg = baseline.get("total_gas", 0) or 1
+        pg = 100.0 * (tg - baseline.get("total_gas", 0)) / btg
+        print(f"{'':<2}{'% total_gas vs baseline':<42}{'':>12}{'':>11}"
+              f"{'':>10}{'':>8}{'':>8}{pg:>+10.2f}%")
         missing = [n for n in base_map
                    if n not in {c['name'] for c in record['contracts']}]
         if missing:
             print(f"\nMISSING vs baseline (compile regressions): "
                   f"{', '.join(missing)}")
+
+    # Cap-violation call-out (a key deliverable — always listed, never hidden).
+    violations = record.get("cap_violations", [])
+    if violations:
+        print(f"\n!! EIP-170/EIP-3860 CAP VIOLATIONS ({len(violations)}) "
+              f"[runtime cap {GAS.EIP170_RUNTIME_CAP}, "
+              f"creation cap {GAS.EIP3860_CREATION_CAP}]:")
+        for v in violations:
+            flags = []
+            if not v["eip170_ok"]:
+                flags.append(f"EIP-170 runtime={v['runtime_bytes']}")
+            if not v["eip3860_ok"]:
+                flags.append(f"EIP-3860 creation={v['creation_bytes']}")
+            print(f"   {v['name']}: {'; '.join(flags)}")
+    else:
+        print("\nEIP-170/EIP-3860: all contracts within caps.")
 
 
 # --------------------------------------------------------------------------
@@ -491,7 +680,10 @@ def main(argv: List[str]) -> int:
     for name in ("baseline", "bench", "check", "full"):
         p = sub.add_parser(name)
         p.add_argument("--fail-on-regression", action="store_true",
-                       help="(bench/full) nonzero exit if total bytecode grew")
+                       help="(bench/full) nonzero exit if total gas grew")
+        p.add_argument("--enforce-caps", action="store_true",
+                       help="(bench/full) exit 40 if any EIP-170/EIP-3860 cap "
+                            "is violated; default is report-only (exit 0)")
     args = parser.parse_args(argv)
     dispatch = {
         "baseline": cmd_baseline,

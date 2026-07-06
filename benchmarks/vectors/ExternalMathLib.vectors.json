@@ -1,0 +1,23 @@
+{
+  "contract": "ExternalMathLib.sol:ExternalMathLib",
+  "source": "auto-abi-zeroargs",
+  "deploy": {
+    "constructor_args": "0x",
+    "value": 0
+  },
+  "vectors": [
+    {
+      "calldata": "0xce4cbe4b00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "value": 0,
+      "sender": "0x00000000000000000000000000000000000010a0",
+      "note": "mixed(uint256,uint256)"
+    },
+    {
+      "calldata": "0x2b526dc70000000000000000000000000000000000000000000000000000000000000000",
+      "value": 0,
+      "sender": "0x00000000000000000000000000000000000010a0",
+      "note": "scaled(uint256)"
+    }
+  ],
+  "empty_reason": null
+}

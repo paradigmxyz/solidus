@@ -1,0 +1,17 @@
+{
+  "contract": "CreateLifecycleSurfaceBox.sol:CreateLifecycleChild",
+  "source": "auto-abi-zeroargs",
+  "deploy": {
+    "constructor_args": "0x",
+    "value": 0
+  },
+  "vectors": [
+    {
+      "calldata": "0xe582dd31",
+      "value": 0,
+      "sender": "0x00000000000000000000000000000000000010a0",
+      "note": "stored()"
+    }
+  ],
+  "empty_reason": null
+}

@@ -1,0 +1,35 @@
+{
+  "contract": "CreateLifecycleSurfaceBox.sol:CreateLifecycleSurfaceBox",
+  "source": "auto-abi-zeroargs",
+  "deploy": {
+    "constructor_args": "0x",
+    "value": 0
+  },
+  "vectors": [
+    {
+      "calldata": "0x1410fe8800000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "value": 0,
+      "sender": "0x00000000000000000000000000000000000010a0",
+      "note": "create2Collision(uint256,bytes32)"
+    },
+    {
+      "calldata": "0x191b2cf50000000000000000000000000000000000000000000000000000000000000000",
+      "value": 0,
+      "sender": "0x00000000000000000000000000000000000010a0",
+      "note": "createFailure(uint256)"
+    },
+    {
+      "calldata": "0x14e560a60000000000000000000000000000000000000000000000000000000000000000",
+      "value": 0,
+      "sender": "0x00000000000000000000000000000000000010a0",
+      "note": "createSuccess(uint256)"
+    },
+    {
+      "calldata": "0x6356a41e",
+      "value": 0,
+      "sender": "0x00000000000000000000000000000000000010a0",
+      "note": "parentBalance()"
+    }
+  ],
+  "empty_reason": null
+}
