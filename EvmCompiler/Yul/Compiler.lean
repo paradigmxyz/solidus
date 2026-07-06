@@ -40,9 +40,21 @@ namespace Fresh
 
 structure State where
   used : List Name
+  /-- Monotonic lower bound on the next candidate temp index.  Every name
+  already handed out has index `< nextIdx`, so `fresh?` never rescans the
+  low indices.  Kept purely as a performance hint: freshness is still gated
+  by the `used` membership check below, so this field is not trusted for
+  soundness. -/
+  nextIdx : Nat := 0
+  /-- Cached `used.length`, maintained as an invariant by `initial`/`fresh?`
+  so `fresh?` need not recompute the list length on every call.  Only used
+  to size the search fuel; not referenced by any downstream proof. -/
+  size : Nat := 0
 
 def initial (used : List Name) : State where
   used := used
+  nextIdx := 0
+  size := used.length
 
 def tempPrefix : String :=
   "__evm_compiler_tmp_"
@@ -50,18 +62,21 @@ def tempPrefix : String :=
 def tempName (idx : Nat) : Name :=
   tempPrefix ++ toString idx
 
-def freshAux (used : List Name) : Nat → Nat → Option Name
+def freshAux (used : List Name) : Nat → Nat → Option (Nat × Name)
   | _idx, 0 => none
   | idx, fuel + 1 =>
       let candidate := tempName idx
       if used.contains candidate then
         freshAux used (idx + 1) fuel
       else
-        some candidate
+        some (idx, candidate)
 
 def fresh? (state : State) : Option (Name × State) := do
-  let name ← freshAux state.used 0 (state.used.length + 1)
-  some (name, { used := name :: state.used })
+  let (idx, name) ← freshAux state.used state.nextIdx (state.size + 1)
+  some (name,
+    { used := name :: state.used
+      nextIdx := idx + 1
+      size := state.size + 1 })
 
 def Extends (before after : State) : Prop :=
   ∀ name, name ∈ before.used → name ∈ after.used
@@ -80,8 +95,8 @@ theorem Extends.trans
   exact hSecond name (hFirst name hMem)
 
 theorem freshAux_not_mem
-    {used : List Name} {idx fuel : Nat} {name : Name}
-    (hFresh : freshAux used idx fuel = some name) :
+    {used : List Name} {idx fuel resultIdx : Nat} {name : Name}
+    (hFresh : freshAux used idx fuel = some (resultIdx, name)) :
     name ∉ used := by
   induction fuel generalizing idx with
   | zero =>
@@ -92,8 +107,8 @@ theorem freshAux_not_mem
       · rename_i hContains
         exact ih hFresh
       · rename_i hContains
-        injection hFresh with hName
-        rw [← hName]
+        simp only [Option.some.injEq, Prod.mk.injEq] at hFresh
+        obtain ⟨_hIdx, rfl⟩ := hFresh
         simpa using hContains
 
 theorem fresh?_components
@@ -102,10 +117,11 @@ theorem fresh?_components
     state'.used = name :: state.used ∧ name ∉ state.used := by
   unfold fresh? at hFresh
   cases hAux :
-      freshAux state.used 0 (state.used.length + 1) with
+      freshAux state.used state.nextIdx (state.size + 1) with
   | none =>
       simp [hAux] at hFresh
-  | some freshName =>
+  | some pair =>
+      obtain ⟨idx, freshName⟩ := pair
       simp [hAux] at hFresh
       rcases hFresh with ⟨rfl, rfl⟩
       exact ⟨rfl, freshAux_not_mem hAux⟩
