@@ -307,6 +307,46 @@ Everything else — every compiler pass, every IR, every internal proof — is f
 game. Internal proofs are implementation detail: restructure, split, merge, or
 rewrite them however you like, as long as `check` stays green.
 
+### Freeze-closure checks (import-level and definition-level)
+
+Two checkers guard the freeze cone against an adversary who keeps the frozen
+file hashes but redefines something the frozen statements depend on:
+
+- `scripts/check_frozen_closure.py benchmarks/frozen_manifest.txt` — IMPORT-level
+  closure: every frozen `.lean` may only `import` another frozen file, a pinned
+  package, or an explicitly `#allow`-ed module. Fast, but blind to *which*
+  symbols of an allowed import are actually used; the `#allow:` residuals are
+  documented promises that the frozen definitions do not touch those modules'
+  symbols.
+
+- `lake env lean --run scripts/check_frozen_defs.lean` — DEFINITION-level
+  closure, which verifies those promises. It walks the actual definitional cone
+  from the two public theorem statements (types only — proofs are mutable) and
+  from every declaration in the relocated spec modules (`Solidus.Defs`,
+  `.Bridge`, `.SourceRun`, `.Decode`, `.Frontend`, `Correctness`), following
+  used-constant references through type *and* value of frozen definitions. It
+  PASSES only if every reached constant lives in a frozen-manifest module, an
+  `EvmYul.*` module (pinned, treated as terminal), or Lean core. The walk stops
+  at an explicit allowlist — the deliberately-mutable `compile?`/`compileUnlinked?`
+  entry family (the compiler entries plus the artifact/certificate/image-bytes
+  projections the theorems quantify *over*, not over their contents); see the
+  allowlist comments in the script for the per-constant justification. On failure
+  it prints each escaping constant, its origin module, and the immediate frozen
+  parent that referenced it, then exits nonzero. Requires a built
+  `EvmCompiler.Correctness` (`lake build EvmCompiler.Correctness`); runtime is
+  ~20s once built. This check reads the environment as built, so it reflects the
+  current (possibly uncommitted) sources.
+
+  Status: as of this writing the definition-level check FAILS with 29 escaping
+  constants — genuine semantic dependencies of frozen statements that still live
+  in mutable modules (`Yul.EffectSemantics`, `Solidity.Frontend`,
+  `Objects.Syntax`, `Solidity.RawAst`) plus the documented C6 gap
+  (`Assembly.Compact.InteractionSemantics.openRunNResult` in the theorem
+  statement). These are exactly the `#allow` (c) residuals the import-level
+  checker cannot see; closing them requires relocating those symbols into frozen
+  modules, not extending the allowlist (the allowlist is only for the
+  `compile?`-entry family).
+
 ## Timing
 
 `bench` compiles the whole corpus (solc plus two backend invocations per
