@@ -83,6 +83,18 @@ them, delete them, replace them, as long as the frozen theorems still prove.
 One private scoring per PR per green public CI. The private suite is
 refreshed between seasons, never within one.
 
+## Language coverage note
+
+**Unbounded recursion is not supported, by design.** A function whose
+recursion depth depends on runtime input has no static bound on its
+operand-stack requirement, and the correctness theorem excludes stack
+overflow from the compiled code's possible behaviors — so no
+stack-headroom certificate can exist and `Solidus.compile?` fail-closes.
+This is a consequence of the guarantee, not a bug: the reference compiler
+accepts such code and emits bytecode that can stack-overflow at runtime on
+deep inputs — a behavior the source semantics never sanctioned. Solidus
+refuses to emit code it cannot prove safe. Write recursive logic as loops.
+
 ## Rules of engagement
 
 - Your submission becomes part of the public lineage under this repo's

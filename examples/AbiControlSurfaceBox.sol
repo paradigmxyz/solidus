@@ -25,9 +25,17 @@ contract AbiControlSurfaceBox {
         _;
     }
 
+    // Factorial via a loop. The original recursive formulation is rejected
+    // fail-closed by the compiler: input-dependent recursion depth admits no
+    // static operand-stack bound, and the correctness theorem excludes stack
+    // overflow from compiled behavior. Same results and revert set
+    // (overflow at 58! either way); only the shape changed.
     function recursive(uint256 value) public pure returns (uint256) {
-        if (value == 0) return 1;
-        return value * recursive(value - 1);
+        uint256 result = 1;
+        for (uint256 i = 1; i <= value; ++i) {
+            result *= i;
+        }
+        return result;
     }
 
     function control(uint256[] calldata values)
