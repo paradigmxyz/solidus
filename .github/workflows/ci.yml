@@ -276,6 +276,20 @@ jobs:
           set -euo pipefail
           ./scripts/opt_harness.sh check
 
+      # ---- (b2) DEFINITION-LEVEL FROZEN-CLOSURE GATE ------------------------
+      #      Stronger than the import-level check_frozen_closure.py (job 1):
+      #      walks the actual definitional cone of the two frozen public
+      #      theorems (compile_correct / compile_correct_creation) and every
+      #      frozen spec-module declaration, and FAILS (nonzero exit) if any
+      #      reached constant lives in a mutable module outside the documented
+      #      accepted-residuals list (openRunNResult, proved contained by
+      #      EvmCompiler/Solidus/OpenRunContainment.lean). Needs the oleans the
+      #      proof gate just built, so it is sequenced right after it.
+      - name: Frozen definition-closure check
+        run: |
+          set -euo pipefail
+          lake env lean --run scripts/check_frozen_defs.lean
+
       # ---- solc pin for the determinism compile (proof gate does not need it).
       - name: Install pinned solc (${{ env.SOLC_VERSION }})
         run: |

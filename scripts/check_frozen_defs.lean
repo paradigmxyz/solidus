@@ -43,15 +43,20 @@ open Lean
 namespace CheckFrozenDefs
 
 /-- Roots whose full definitional cone (type only, for theorems) is checked.
-The FOUR public theorem statements. Every other root is also discovered by
-scanning the spec modules below (all four live in `Correctness`, so they are
+The TWO frozen public theorem statements. Every other root is also discovered
+by scanning the spec modules below (both live in `Correctness`, so they are
 covered by `declsInSpecModules` too; they are listed explicitly here so the
-root set is legible and robust to a module move). -/
+root set is legible and robust to a module move).
+
+NOTE: the unlinked theorems (`compile_correct_unlinked` /
+`compile_correct_unlinked_patch`) and their entry `compileUnlinked?` were
+DEFERRED from the v1 freeze — they live in the non-frozen modules
+`EvmCompiler/CorrectnessUnlinked.lean` and
+`EvmCompiler/Solidity/SolidusUnlinked.lean`, which frozen `Correctness.lean`
+no longer imports. They are therefore deliberately NOT roots here. -/
 def rootTheorems : List Name :=
   [ ``EvmCompiler.Solidus.compile_correct
-  , ``EvmCompiler.Solidus.compile_correct_creation
-  , ``EvmCompiler.Solidus.compile_correct_unlinked
-  , ``EvmCompiler.Solidus.compile_correct_unlinked_patch ]
+  , ``EvmCompiler.Solidus.compile_correct_creation ]
 
 /-- Frozen "spec" modules: every declaration in these is a root. These are the
 relocated statement-vocabulary modules created by the freeze relocation. -/
@@ -121,11 +126,12 @@ compile?-entry family that escapes is reported as a finding, never silently
 added. -/
 def allowlist : List Name :=
   [ -- `compile?`  : linked compile entry (raw solc Standard-JSON -> artifact).
+    -- (The unlinked entry `compileUnlinked?` and its
+    -- `compileArtifactUnlinkedFromRawSolcIrRefs?` were deferred out of the
+    -- frozen cone, so no allowlist entry is needed for them any more.)
     `EvmCompiler.Solidity.RawAst.compileArtifactFromRawSolcIr?
-    -- `compileUnlinked?` : unlinked compile entry (artifact + link references).
-  , `EvmCompiler.Solidity.RawAst.compileArtifactUnlinkedFromRawSolcIrRefs?
-    -- The mutable artifact TYPE returned by the two entries above. It appears
-    -- only inside the entry bodies as the carrier of the quantified-over output.
+    -- The mutable artifact TYPE returned by the entry above. It appears
+    -- only inside the entry body as the carrier of the quantified-over output.
   , `EvmCompiler.Solidity.Frontend.Program.Artifact
     -- Fail-closed stack-headroom certificate gate `artifact.stackHeadroomCert?`:
     -- the theorem quantifies over the certificate being PRESENT (its `some`-ness
@@ -139,6 +145,45 @@ def allowlist : List Name :=
     -- frozen semantics.
   , `EvmCompiler.Solidity.Frontend.VerifiedStackObjectArtifact.image
   , `EvmCompiler.Solidity.Frontend.ObjectImage.bytes ]
+
+/-- An accepted residual: a statement-level constant deliberately left in a
+mutable module, each PROVED CONTAINED by a frozen theorem. The checker reports
+these DISTINCTLY and does NOT fail on them. Any escape NOT on this list (and not
+allowlisted / trusted / frozen) is a hard failure. -/
+structure AcceptedResidual where
+  constant : Name
+  citation : String
+
+/-- ACCEPTED RESIDUALS — the sole def-level residual of the v1 freeze.
+
+`openRunNResult` is the open bytecode interpreter that appears directly in the
+statement of `compile_correct` / `compile_correct_creation`. Its file
+(`EvmCompiler/Assembly/Compact.lean`) shares its `Instr` type + dispatch with
+the mutable compaction pass, so it cannot be freeze-wholed without freezing an
+optimizable pass. Instead its containment is PROVED in the frozen module
+`EvmCompiler/Solidus/OpenRunContainment.lean`, quantified over an ARBITRARY
+value in `openRunNResult`'s result position (so every adversarial redefinition
+is a corollary):
+
+  * `openRun_triangulated` — any `openRun` satisfying both frozen conjuncts
+    executes to a leaf `DoneRel`-related to the pinned `EVM.X` and
+    `ObservableDoneRel`-related to the source run;
+  * `doneRel_not_running` / `observableDoneRel_not_running` /
+    `openRun_no_running_leaf` — neither frozen relation accepts a `.running`
+    target, so the trivial-interpreter attack makes the theorem UNPROVABLE
+    rather than vacuously true;
+  * `runRefinesOpenTotal_inversion` — the non-agreement arms require genuine
+    `EVM.X` faults the adversary cannot manufacture on a funded valid run.
+
+Axiom footprint of those theorems: [propext, Classical.choice, Quot.sound]. -/
+def acceptedResiduals : List AcceptedResidual :=
+  [ { constant := ``EvmCompiler.Assembly.Compact.InteractionSemantics.openRunNResult
+    , citation :=
+        "proved contained by EvmCompiler/Solidus/OpenRunContainment.lean "
+          ++ "(openRun_triangulated et al.)" } ]
+
+def isAcceptedResidual (n : Name) : Bool :=
+  acceptedResiduals.any (·.constant == n)
 
 /-- A recorded boundary crossing: an escaped constant, its origin module, and
 the immediate frozen parent that referenced it. -/
@@ -225,23 +270,45 @@ def run : IO Unit := do
       seen := seen.insert e.constant
       uniq := uniq.push e
 
-  if uniq.isEmpty then
-    IO.println "[check_frozen_defs] PASS — every reached constant is frozen / EvmYul / core."
+  -- Partition escapes into deliberately-accepted residuals (proved contained)
+  -- and genuine (unaccepted) escapes.
+  let accepted := uniq.filter (fun e => isAcceptedResidual e.constant)
+  let unaccepted := uniq.filter (fun e => !isAcceptedResidual e.constant)
+
+  -- Always report the accepted residuals distinctly.
+  if !accepted.isEmpty then
+    IO.println s!"[check_frozen_defs] accepted (proved contained): {accepted.size} residual(s):"
+    for e in accepted do
+      let cite := (acceptedResiduals.find? (·.constant == e.constant)).map (·.citation)
+      IO.println s!"    - {e.constant}   [module {e.module}; referenced by {e.parent}]"
+      match cite with
+      | some c => IO.println s!"        {c}"
+      | none   => pure ()
+
+  -- Guard: every accepted residual that is actually declared must be reachable,
+  -- otherwise the accepted-list is stale and silently masks nothing (report,
+  -- do not fail — a stale entry is harmless but worth surfacing).
+  for r in acceptedResiduals do
+    if !(accepted.any (·.constant == r.constant)) then
+      IO.println s!"[check_frozen_defs] note: accepted residual {r.constant} was not reached (list may be stale)"
+
+  if unaccepted.isEmpty then
+    IO.println "[check_frozen_defs] PASS — every reached constant is frozen / EvmYul / core / an accepted (proved-contained) residual."
     return
 
-  -- Group by module.
+  -- Group the UNACCEPTED escapes by module.
   let mut byModule : Std.HashMap Name (Array Escape) := {}
-  for e in uniq do
+  for e in unaccepted do
     byModule := byModule.insert e.module ((byModule.getD e.module #[]).push e)
 
-  IO.eprintln s!"[check_frozen_defs] FAIL — {uniq.size} constant(s) escape the frozen set:\n"
+  IO.eprintln s!"[check_frozen_defs] FAIL — {unaccepted.size} unaccepted constant(s) escape the frozen set:\n"
   for (m, es) in byModule.toList do
     IO.eprintln s!"  module {m}  ({es.size} constant(s)):"
     for e in es do
       IO.eprintln s!"    - {e.constant}   [referenced by {e.parent}]"
     IO.eprintln ""
   -- Nonzero exit for CI.
-  throw (IO.userError s!"frozen definition-closure violated: {uniq.size} escaping constant(s)")
+  throw (IO.userError s!"frozen definition-closure violated: {unaccepted.size} unaccepted escaping constant(s)")
 
 end CheckFrozenDefs
 
