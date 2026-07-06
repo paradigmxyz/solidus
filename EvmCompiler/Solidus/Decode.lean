@@ -622,6 +622,74 @@ def decodeSelectedIr (json : Lean.Json) (selection : Selection) :
             .error "raw frontend selection requires evmVersion metadata"
   pure { source, contract, evmVersion, root := selected }
 
+/-!
+## Source-semantics helpers relocated from the mutable `Solidity/RawAst.lean`
+
+`CallClass.classifyCall` and `Elab.ClzHelperModel.reference` are referenced by
+the frozen source interpreter (`Solidity.RawAst.Raw.SourceSemantics`) that
+`compile_correct` runs. They are pure functions over the frozen frontend spec
+types + EvmYul, relocated here (the mutable `Solidity/RawAst.lean` imports this
+module) so their meaning is hash-frozen. Names and the full
+`Solidity.RawAst.*` namespaces are preserved.
+-/
+
+namespace CallClass
+
+def objectBuiltins : List Name :=
+  ["datasize", "dataoffset", "datacopy", "setimmutable", "loadimmutable",
+    "linkersymbol", "memoryguard"]
+
+def fixedUnsupportedDialectBuiltins : List Name :=
+  ["pc", "jump", "jumpi", "jumpdest", "dataloadn", "auxdataloadn",
+    "eofcreate", "returncontract", "rjump", "rjumpi", "callf", "retf",
+    "jumpf"]
+
+def decimalSuffixInRange? (pref name : String) (lo hi : Nat) : Bool :=
+  if name.startsWith pref then
+    match (name.drop pref.length).toString.toNat? with
+    | some n => lo ≤ n && n ≤ hi
+    | none => false
+  else
+    false
+
+def unsupportedDialectBuiltin? (name : Name) : Bool :=
+  fixedUnsupportedDialectBuiltins.contains name ||
+    decimalSuffixInRange? "push" name 0 32 ||
+    decimalSuffixInRange? "dup" name 1 16 ||
+    decimalSuffixInRange? "swap" name 1 16 ||
+    name.startsWith "verbatim"
+
+def classifyCall (name : Name) : Frontend.CallKind :=
+  match Frontend.Primitive.ofName? name with
+  | some _ => .primitive
+  | none =>
+      if objectBuiltins.contains name then
+        .objectBuiltin
+      else if unsupportedDialectBuiltin? name then
+        .dialectBuiltin
+      else
+        .user
+
+end CallClass
+
+namespace Elab
+namespace ClzHelperModel
+
+def zero : Word :=
+  EvmYul.UInt256.ofNat 0
+
+def word (value : Nat) : Word :=
+  EvmYul.UInt256.ofNat value
+
+def reference (value : Word) : Word :=
+  if value == zero then
+    word 256
+  else
+    word (255 - (EvmYul.UInt256.log2 value).toNat)
+
+end ClzHelperModel
+end Elab
+
 end RawAst
 end Solidity
 end EvmCompiler
