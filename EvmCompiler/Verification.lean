@@ -31,6 +31,7 @@ import EvmCompiler.Yul.GasfulEndToEnd
 import EvmCompiler.Yul.GasfulCrown
 import EvmCompiler.Correctness
 import EvmCompiler.CorrectnessUnlinked
+import EvmCompiler.Solidus.OpenRunContainment
 
 /-!
 Production verification root for the optimized-solc-Yul stack-only backend.

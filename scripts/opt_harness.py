@@ -92,6 +92,7 @@ GAS = _load_gas_runner()
 SMOKE_LEAN = REPO_ROOT / "proof_artifacts" / "stack_backend_production_smoke.lean"
 PROOF_ROOT_MODULE = "EvmCompiler.Verification"
 EXPECTED_AXIOMS = "[propext, Classical.choice, Quot.sound]"
+ALLOWED_AXIOMS = frozenset({"propext", "Classical.choice", "Quot.sound"})
 
 # Exit codes.
 EXIT_OK = 0
@@ -702,6 +703,21 @@ def _collapse_axiom_reports(text: str) -> List[str]:
     return [ln for ln in logical if "depends on axioms" in ln]
 
 
+def _report_axioms_allowed(report: str) -> bool:
+    """True iff every axiom in a collapsed `... depends on axioms: [a, b]`
+    report line is in ALLOWED_AXIOMS (the freeze contract says "contained in",
+    so a strict subset — e.g. a lemma not using Classical.choice — is fine;
+    sorryAx / Lean.ofReduceBool / anything else is not). A malformed line
+    (no bracketed list) is treated as a violation, never silently accepted."""
+    marker = "depends on axioms: ["
+    idx = report.find(marker)
+    if idx < 0 or not report.rstrip().endswith("]"):
+        return False
+    inner = report[idx + len(marker):report.rstrip().rfind("]")]
+    axioms = [a.strip() for a in inner.split(",") if a.strip()]
+    return all(a in ALLOWED_AXIOMS for a in axioms)
+
+
 def cmd_check(args: argparse.Namespace) -> int:
     env = tool_env()
     lake = env["LAKE"]
@@ -743,8 +759,7 @@ def cmd_check(args: argparse.Namespace) -> int:
         _write_check(result)
         print("check: no axiom reports produced", file=sys.stderr)
         return EXIT_AXIOM_FAIL
-    expected_suffix = f"depends on axioms: {EXPECTED_AXIOMS}"
-    unexpected = [r for r in reports if not r.endswith(expected_suffix)]
+    unexpected = [r for r in reports if not _report_axioms_allowed(r)]
     result["axiom_reports_checked"] = len(reports)
     result["unexpected_axioms"] = unexpected
     if unexpected:
@@ -758,7 +773,7 @@ def cmd_check(args: argparse.Namespace) -> int:
     result["axiom_ok"] = True
     _write_check(result)
     print(f"check: OK  ({len(reports)} public theorems, "
-          f"axioms = {EXPECTED_AXIOMS})")
+          f"axioms contained in {EXPECTED_AXIOMS})")
     return EXIT_OK
 
 

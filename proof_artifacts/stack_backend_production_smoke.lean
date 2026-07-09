@@ -69,3 +69,39 @@ import EvmCompiler.Verification
 #print axioms EvmCompiler.Yul.EndToEnd.optimizedSolcYulToGasfulRawBytecodeFinishedTotal
 #print axioms EvmCompiler.Yul.EndToEnd.optimizedSolcYulToGasfulRawBytecodeTerminalTotal
 #print axioms EvmCompiler.Yul.EndToEnd.optimizedSolcYulToGasfulRawBytecodeTotalWithCodeSuffix
+
+-- Freeze-contract crown theorems (EvmCompiler/Correctness.lean §Freeze contract):
+-- these are the statements CI promises to `#print axioms`-check. Auditing them
+-- here closes the gap where their proof-assembly cone was only ever printed by
+-- EvmCompiler.Verification (whose stdout CI discards).
+#check EvmCompiler.Solidus.compile_correct
+#check EvmCompiler.Solidus.compile_correct_creation
+
+#print axioms EvmCompiler.Solidus.compile_correct
+#print axioms EvmCompiler.Solidus.compile_correct_creation
+
+-- C6 triangulation containment (EvmCompiler/Solidus/OpenRunContainment.lean):
+-- guards that the non-frozen `openRunNResult` in Assembly/Compact.lean cannot be
+-- repurposed to make the frozen statements vacuous. Audited so the containment
+-- argument is held to the same axiom budget as the crowns it defends.
+#check EvmCompiler.Solidus.OpenRunContainment.doneRel_not_running
+#check EvmCompiler.Solidus.OpenRunContainment.observableDoneRel_not_running
+#check EvmCompiler.Solidus.OpenRunContainment.executes_unique
+#check EvmCompiler.Solidus.OpenRunContainment.runRefinesOpenTotal_inversion
+#check EvmCompiler.Solidus.OpenRunContainment.openRun_ok_agrees
+#check EvmCompiler.Solidus.OpenRunContainment.openRun_success_pinned
+#check EvmCompiler.Solidus.OpenRunContainment.openRun_revert_pinned
+#check EvmCompiler.Solidus.OpenRunContainment.openRun_no_running_leaf
+#check EvmCompiler.Solidus.OpenRunContainment.source_terminates_forces_open
+#check EvmCompiler.Solidus.OpenRunContainment.openRun_triangulated
+
+#print axioms EvmCompiler.Solidus.OpenRunContainment.doneRel_not_running
+#print axioms EvmCompiler.Solidus.OpenRunContainment.observableDoneRel_not_running
+#print axioms EvmCompiler.Solidus.OpenRunContainment.executes_unique
+#print axioms EvmCompiler.Solidus.OpenRunContainment.runRefinesOpenTotal_inversion
+#print axioms EvmCompiler.Solidus.OpenRunContainment.openRun_ok_agrees
+#print axioms EvmCompiler.Solidus.OpenRunContainment.openRun_success_pinned
+#print axioms EvmCompiler.Solidus.OpenRunContainment.openRun_revert_pinned
+#print axioms EvmCompiler.Solidus.OpenRunContainment.openRun_no_running_leaf
+#print axioms EvmCompiler.Solidus.OpenRunContainment.source_terminates_forces_open
+#print axioms EvmCompiler.Solidus.OpenRunContainment.openRun_triangulated
