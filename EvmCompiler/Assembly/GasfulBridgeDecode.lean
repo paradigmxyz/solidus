@@ -16,9 +16,9 @@ theorem decode_arg_eq
       else
         some
           (EvmYul.uInt256OfByteArray
-            (bytes.extract' (EvmYul.UInt256.ofNat pc).toNat.succ
-              ((EvmYul.UInt256.ofNat pc).toNat.succ +
-                EvmYul.EVM.argOnNBytesOfInstr op)),
+            (EvmYul.EVM.codeBytesWithRightPadding bytes
+              (EvmYul.UInt256.ofNat pc).toNat.succ
+              (EvmYul.EVM.argOnNBytesOfInstr op)),
             EvmYul.EVM.argOnNBytesOfInstr op) := by
   unfold EvmYul.EVM.decode at hDecode
   rcases Option.bind_eq_some_iff.mp hDecode with ⟨parsed, hParsed, hResult⟩
@@ -128,6 +128,16 @@ theorem ByteArray.extract'_size_le (bytes : ByteArray) (start stop : Nat) :
         stop - start
     exact List.length_take_le _ _
 
+theorem codeBytesWithRightPadding_size (bytes : ByteArray) (start len : Nat) :
+    (EvmYul.EVM.codeBytesWithRightPadding bytes start len).size = len := by
+  let read := bytes.extract' start (start + len)
+  have hRead : read.size ≤ len := by
+    have hSize := ByteArray.extract'_size_le bytes start (start + len)
+    simpa [read] using hSize
+  change (read.data ++ Array.replicate (len - read.size) 0).size = len
+  simp
+  omega
+
 theorem fromBytes'_lt_pow_256 (bytes : List UInt8) :
     EvmYul.fromBytes' bytes < 256 ^ bytes.length := by
   induction bytes with
@@ -178,21 +188,18 @@ theorem compact_push_decodeAt_of_evm_decode
   simp [hWidthNe] at hArg
   have hValue :
       value = EvmYul.uInt256OfByteArray
-        (bytes.extract' (EvmYul.UInt256.ofNat pc).toNat.succ
-          ((EvmYul.UInt256.ofNat pc).toNat.succ + width)) :=
+        (EvmYul.EVM.codeBytesWithRightPadding bytes
+          (EvmYul.UInt256.ofNat pc).toNat.succ width) :=
     hArg
-  have hExtractSize :
-      (bytes.extract' (EvmYul.UInt256.ofNat pc).toNat.succ
-        ((EvmYul.UInt256.ofNat pc).toNat.succ + width)).size ≤ width := by
-    have hSize := ByteArray.extract'_size_le bytes
-      (EvmYul.UInt256.ofNat pc).toNat.succ
-      ((EvmYul.UInt256.ofNat pc).toNat.succ + width)
-    simpa using hSize
+  have hPaddedSize :
+      (EvmYul.EVM.codeBytesWithRightPadding bytes
+        (EvmYul.UInt256.ofNat pc).toNat.succ width).size ≤ width := by
+    rw [codeBytesWithRightPadding_size]
   have hFits : Compact.FitsWidth width value.toNat := by
     refine ⟨hBounds.1, hBounds.2, ?_⟩
     rw [hValue]
     exact uInt256OfByteArray_toNat_lt_pow_256 _ width
-      hExtractSize hBounds.2
+      hPaddedSize hBounds.2
   exact ⟨hFits, ⟨(evmOp, some (value, width)), by
     simp [Compact.Instr.decoded?, hOp], hDecode⟩⟩
 

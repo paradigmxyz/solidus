@@ -294,6 +294,31 @@ theorem uint256Of_extract_push32_payload (value : Word) :
   rw [Nat.mod_eq_of_lt (uint256_toNat_lt_256_pow_32 value)]
   exact uint256_ofNat_toNat value
 
+theorem codeBytesWithRightPadding_eq_extract_of_size
+    {bytes : ByteArray} {start len : Nat}
+    (hSize : (bytes.extract' start (start + len)).size = len) :
+    EvmYul.EVM.codeBytesWithRightPadding bytes start len =
+      bytes.extract' start (start + len) := by
+  unfold EvmYul.EVM.codeBytesWithRightPadding
+  simp [hSize]
+
+theorem uint256Of_codeBytesWithRightPadding_push32_payload (value : Word) :
+    EvmYul.uInt256OfByteArray
+        (EvmYul.EVM.codeBytesWithRightPadding
+          (ofList
+            (EvmYul.EVM.serializeInstr EvmYul.Operation.PUSH32 ::
+              encodeWord32 value)) 1 32) =
+      value := by
+  rw [codeBytesWithRightPadding_eq_extract_of_size]
+  · exact uint256Of_extract_push32_payload value
+  · have hPayload := extract_push32_payload value
+    change
+      ((ofList
+          (EvmYul.EVM.serializeInstr EvmYul.Operation.PUSH32 ::
+            encodeWord32 value)).extract' 1 (1 + 32)).data.size = 32
+    have hLen := congrArg List.length hPayload
+    simpa [encodeWord32_length] using hLen
+
 theorem ofList_get?_zero (byte : UInt8) (rest : List UInt8) :
     (ofList (byte :: rest)).get? 0 = some byte := by
   simp [ofList, ByteArray.get?, ByteArray.get, ByteArray.size, List.size_toArray]
@@ -309,48 +334,14 @@ theorem decode_push32_encode (value : Word) :
         (EvmYul.UInt256.ofNat 0) =
       some (EvmYul.Operation.PUSH32, some (value, 32)) := by
   unfold EvmYul.EVM.decode encodeInstr
-  change
-    (do
-      let instr ←
-        (ofList
-            (EvmYul.EVM.serializeInstr EvmYul.Operation.PUSH32 ::
-              encodeWord32 value)).get? 0 >>= EvmYul.EVM.parseInstr
-      let argWidth := EvmYul.EVM.argOnNBytesOfInstr instr
-      some
-        (instr,
-          if argWidth == 0 then none
-          else
-            some
-              (EvmYul.uInt256OfByteArray
-                  ((ofList
-                      (EvmYul.EVM.serializeInstr EvmYul.Operation.PUSH32 ::
-                        encodeWord32 value)).extract' 1 (1 + argWidth)),
-                argWidth))) =
-      some (EvmYul.Operation.PUSH32, some (value, 32))
+  have hPc0 : (EvmYul.UInt256.ofNat 0).toNat = 0 := rfl
+  rw [hPc0]
   rw [ofList_get?_zero]
-  change
-    (do
-      let instr ←
-        EvmYul.EVM.parseInstr (EvmYul.EVM.serializeInstr EvmYul.Operation.PUSH32)
-      let argWidth := EvmYul.EVM.argOnNBytesOfInstr instr
-      some
-        (instr,
-          if argWidth == 0 then none
-          else
-            some
-              (EvmYul.uInt256OfByteArray
-                  ((ofList
-                      (EvmYul.EVM.serializeInstr EvmYul.Operation.PUSH32 ::
-                        encodeWord32 value)).extract' 1 (1 + argWidth)),
-                argWidth))) =
-      some (EvmYul.Operation.PUSH32, some (value, 32))
-  have hParse :
-      EvmYul.EVM.parseInstr (EvmYul.EVM.serializeInstr EvmYul.Operation.PUSH32) =
-        some EvmYul.Operation.PUSH32 := by
-    rfl
-  rw [hParse]
-  simp [EvmYul.EVM.argOnNBytesOfInstr]
-  exact uint256Of_extract_push32_payload value
+  rw [show
+    (some (EvmYul.EVM.serializeInstr EvmYul.Operation.PUSH32) >>=
+      EvmYul.EVM.parseInstr) = some EvmYul.Operation.PUSH32 by rfl]
+  simp [EvmYul.EVM.argOnNBytesOfInstr,
+    uint256Of_codeBytesWithRightPadding_push32_payload]
 
 theorem extract_push32_payload_after_prefix
     (pre suffix : List UInt8) (value : Word)
@@ -384,6 +375,34 @@ theorem uint256Of_extract_push32_payload_after_prefix
   rw [Nat.mod_eq_of_lt (uint256_toNat_lt_256_pow_32 value)]
   exact uint256_ofNat_toNat value
 
+theorem uint256Of_codeBytesWithRightPadding_push32_payload_after_prefix
+    (pre suffix : List UInt8) (value : Word)
+    (hStart : pre.length + 1 < 18446744073709551616)
+    (hEnd : pre.length + 33 < 18446744073709551616) :
+    EvmYul.uInt256OfByteArray
+        (EvmYul.EVM.codeBytesWithRightPadding
+          (ofList
+            (pre ++
+              (EvmYul.EVM.serializeInstr EvmYul.Operation.PUSH32 ::
+                encodeWord32 value) ++
+              suffix)) (pre.length + 1) 32) =
+      value := by
+  rw [codeBytesWithRightPadding_eq_extract_of_size]
+  · simpa [Nat.add_assoc] using
+      uint256Of_extract_push32_payload_after_prefix pre suffix value hStart hEnd
+  · have hPayload :=
+      extract_push32_payload_after_prefix pre suffix value hStart hEnd
+    have hSizeRaw :
+        ((ofList
+            (pre ++
+              (EvmYul.EVM.serializeInstr EvmYul.Operation.PUSH32 ::
+                encodeWord32 value) ++
+              suffix)).extract' (pre.length + 1) (pre.length + 33)).data.size =
+          32 := by
+      have hLen := congrArg List.length hPayload
+      simpa [encodeWord32_length] using hLen
+    simpa [Nat.add_assoc] using hSizeRaw
+
 set_option maxHeartbeats 800000 in
 theorem decode_push32_at_prefix (pre suffix : List UInt8) (value : Word)
     (hPc : (EvmYul.UInt256.ofNat pre.length).toNat = pre.length)
@@ -395,58 +414,14 @@ theorem decode_push32_at_prefix (pre suffix : List UInt8) (value : Word)
       some (EvmYul.Operation.PUSH32, some (value, 32)) := by
   unfold EvmYul.EVM.decode encodeInstr
   rw [hPc]
-  change
-    (do
-      let instr ←
-        (ofList
-          (pre ++
-            (EvmYul.EVM.serializeInstr EvmYul.Operation.PUSH32 ::
-              encodeWord32 value) ++
-            suffix)).get? pre.length >>= EvmYul.EVM.parseInstr
-      let argWidth := EvmYul.EVM.argOnNBytesOfInstr instr
-      some
-        (instr,
-          if argWidth == 0 then none
-          else
-            some
-              (EvmYul.uInt256OfByteArray
-                  ((ofList
-                    (pre ++
-                      (EvmYul.EVM.serializeInstr EvmYul.Operation.PUSH32 ::
-                        encodeWord32 value) ++
-                      suffix)).extract' (pre.length + 1)
-                    (pre.length + 1 + argWidth)),
-                argWidth))) =
-      some (EvmYul.Operation.PUSH32, some (value, 32))
   rw [ofList_get?_append_cons_append]
-  change
-    (do
-      let instr ←
-        EvmYul.EVM.parseInstr (EvmYul.EVM.serializeInstr EvmYul.Operation.PUSH32)
-      let argWidth := EvmYul.EVM.argOnNBytesOfInstr instr
-      some
-        (instr,
-          if argWidth == 0 then none
-          else
-            some
-              (EvmYul.uInt256OfByteArray
-                  ((ofList
-                    (pre ++
-                      (EvmYul.EVM.serializeInstr EvmYul.Operation.PUSH32 ::
-                        encodeWord32 value) ++
-                      suffix)).extract' (pre.length + 1)
-                    (pre.length + 1 + argWidth)),
-                argWidth))) =
-      some (EvmYul.Operation.PUSH32, some (value, 32))
-  have hParse :
-      EvmYul.EVM.parseInstr (EvmYul.EVM.serializeInstr EvmYul.Operation.PUSH32) =
-        some EvmYul.Operation.PUSH32 := by
-    rfl
-  rw [hParse]
+  rw [show
+    (some (EvmYul.EVM.serializeInstr EvmYul.Operation.PUSH32) >>=
+      EvmYul.EVM.parseInstr) = some EvmYul.Operation.PUSH32 by rfl]
   simp [EvmYul.EVM.argOnNBytesOfInstr]
-  have hPayload :=
-    uint256Of_extract_push32_payload_after_prefix pre suffix value hStart hEnd
-  simpa [Nat.add_assoc] using hPayload
+  simpa [List.cons_append, List.append_assoc] using
+    uint256Of_codeBytesWithRightPadding_push32_payload_after_prefix
+      pre suffix value hStart hEnd
 
 theorem decode_single_byte_at_prefix (pre suffix : List UInt8)
     (op : EvmYul.Operation EvmYul.OperationType.EVM)
@@ -460,41 +435,8 @@ theorem decode_single_byte_at_prefix (pre suffix : List UInt8)
       some (op, none) := by
   unfold EvmYul.EVM.decode
   rw [hPc]
-  change
-    (do
-      let instr ←
-        (ofList (pre ++ [EvmYul.EVM.serializeInstr op] ++ suffix)).get?
-            pre.length >>= EvmYul.EVM.parseInstr
-      let argWidth := EvmYul.EVM.argOnNBytesOfInstr instr
-      some
-        (instr,
-          if argWidth == 0 then none
-          else
-            some
-              (EvmYul.uInt256OfByteArray
-                  ((ofList
-                      (pre ++ [EvmYul.EVM.serializeInstr op] ++ suffix)).extract'
-                    (pre.length + 1) (pre.length + 1 + argWidth)),
-                argWidth))) =
-      some (op, none)
   rw [ofList_get?_append_cons_append]
-  change
-    (do
-      let instr ← EvmYul.EVM.parseInstr (EvmYul.EVM.serializeInstr op)
-      let argWidth := EvmYul.EVM.argOnNBytesOfInstr instr
-      some
-        (instr,
-          if argWidth == 0 then none
-          else
-            some
-              (EvmYul.uInt256OfByteArray
-                  ((ofList
-                      (pre ++ [EvmYul.EVM.serializeInstr op] ++ suffix)).extract'
-                    (pre.length + 1) (pre.length + 1 + argWidth)),
-                argWidth))) =
-      some (op, none)
-  rw [hParse]
-  simp [hArgWidth]
+  simp [hParse, hArgWidth]
 
 set_option maxHeartbeats 1200000 in
 theorem decode_encodeInstr_at_prefix (pre suffix : List UInt8) (instr : TargetInstr)

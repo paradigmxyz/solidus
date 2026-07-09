@@ -1064,6 +1064,27 @@ theorem uint256OfExtractPushPayloadAfterPrefix
   rw [Nat.mod_eq_of_lt hFits.2.2]
   exact Bytecode.uint256_ofNat_toNat value
 
+theorem uint256OfCodeBytesWithRightPaddingPushPayloadAfterPrefix
+    (pre suffix : List UInt8) (width : Nat) (value : Word)
+    (hFits : FitsWidth width value.toNat)
+    (hStart : pre.length + 1 < 18446744073709551616)
+    (hEnd : pre.length + width + 1 < 18446744073709551616) :
+    EvmYul.uInt256OfByteArray
+        (EvmYul.EVM.codeBytesWithRightPadding
+          (Bytecode.ofList (pre ++ encodePush width value ++ suffix))
+          (pre.length + 1) width) = value := by
+  rw [Bytecode.codeBytesWithRightPadding_eq_extract_of_size]
+  · simpa [Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using
+      uint256OfExtractPushPayloadAfterPrefix
+        pre suffix width value hFits hStart hEnd
+  · have hPayload := extractPushPayloadAfterPrefix pre suffix width value hStart hEnd
+    have hSizeRaw :
+        ((Bytecode.ofList (pre ++ encodePush width value ++ suffix)).extract'
+          (pre.length + 1) (pre.length + width + 1)).data.size = width := by
+      have hLen := congrArg List.length hPayload
+      simpa [Bytecode.toBytesLE_length] using hLen
+    simpa [Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using hSizeRaw
+
 set_option maxHeartbeats 1200000 in
 theorem decodePushAtPrefix
     (pre suffix : List UInt8) (width : Nat) (value : Word) (op : EVMOp)
@@ -1093,7 +1114,7 @@ theorem decodePushAtPrefix
   · exact Nat.ne_of_gt hFits.1
   · rw [hSerialize]
     simpa [encodePush, Nat.add_assoc, Nat.add_comm] using
-      uint256OfExtractPushPayloadAfterPrefix
+      uint256OfCodeBytesWithRightPaddingPushPayloadAfterPrefix
         pre suffix width value hFits hStart hEnd
 
 def encodeInstr : Instr -> List UInt8
