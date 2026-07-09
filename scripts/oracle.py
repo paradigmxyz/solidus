@@ -62,7 +62,7 @@ DEFAULT_ARCHITECTURE_FILES = [
     "PROGRESS_LOG.md",
     "EvmCompiler/Solidity/RawAstPublic.lean",
     "EvmCompiler/Verification.lean",
-    "EvmCompiler/Simulation/Outcome.lean",
+    "../evm-interaction/EvmCompiler/Simulation/Outcome.lean",
     "EvmCompiler/Locals/Allocation.lean",
     "EvmCompiler/TypedCfg/Preservation.lean",
     "EvmCompiler/Yul/ObserverOracle.lean",

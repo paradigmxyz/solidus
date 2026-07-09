@@ -1,8 +1,10 @@
 import Lake
 open Lake DSL
 
+require «evm-interaction» from "../evm-interaction"
+
 require evmyul from git
-  "https://github.com/danrobinson/EVMYulLean.git" @ "b908ec317a7bc9d70ee3704329a46db16d833009"
+  "https://github.com/danrobinson/EVMYulLean.git" @ "b08573c65e33feb5331abe2b7c1d76be89bb8eff"
 
 package «evm-compiler» {
   moreLeanArgs := #[

@@ -106,7 +106,7 @@ def rootComponent (n : Name) : String :=
 lake-manifest.json (EvmYul and the dependency toolchain) or Lean core. Constants
 in these modules are terminal and never walked. -/
 def trustedRoots : List String :=
-  [ "EvmYul", "Init", "Lean", "Std", "Batteries", "Mathlib", "Qq", "Aesop",
+  [ "EvmYul", "EvmInteraction", "Init", "Lean", "Std", "Batteries", "Mathlib", "Qq", "Aesop",
     "Cli", "ImportGraph", "LeanSearchClient", "Plausible", "ProofWidgets" ]
 
 /-- ALLOWLIST — the deliberately-mutable compiler entry family.

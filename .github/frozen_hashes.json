@@ -22,7 +22,7 @@
   "provisional": false,
   "algorithm": "sha256",
   "generated_utc": "2026-07-09T15:11:51Z",
-  "generated_note": "final pinned freeze incl. enforcement layer; re-pinned after the audited EvmYul b908ec3 repin + CLZ frontend merge",
+  "generated_note": "final pinned freeze incl. enforcement layer; re-pinned after the audited EvmYul b908ec3 repin + CLZ frontend merge | 2026-07-09 freeze rev: Simulation alphabet single-sourced from pinned evm-interaction package (byte-identical); evmyul pin b08573c (pure keccak256). Private scoring runner copy must be updated to match.",
   "files": {
     "EvmCompiler/Assembly/Bytecode.lean": "d830f446048ddba7f22f6bc5bbcb9e378c7605394b6c30bace2bb8630e97c92b",
     "EvmCompiler/Assembly/Semantics.lean": "ab368028e41caacf1d80428f4d7e490895d35e61c84fdcc9d7bb84fc4751adf9",
@@ -30,8 +30,6 @@
     "EvmCompiler/Assembly/Syntax.lean": "ea91b65f8752ce6308b02736f81c20c6fd599bedd2c24345f3b121e6a9585f0f",
     "EvmCompiler/Core/MemoryContract.lean": "b124fac343e3496e85b02df56ad72ccf5f8045628fc66f6d743208d096bff9e7",
     "EvmCompiler/Correctness.lean": "8d2893feba7c5afaaa572834f9e7e6f0ec96fafcaf364e4ff6da446e9e7aea64",
-    "EvmCompiler/Simulation/Interaction.lean": "5808ba8c74bf240b409a4a502e6c89b60b6ef55cef129d48c498c2ee138a682c",
-    "EvmCompiler/Simulation/OpenWorld.lean": "a496a185b978826d07a53c76018aea8bbb917ce0f05009ef7cfa00c0cec1e99d",
     "EvmCompiler/Solidity/RawAstSourceSemantics.lean": "adb34f3a17a65a259e2a56c78bc1ff5a74e4028857e9b91fc2a1aed0348e3a0a",
     "EvmCompiler/Solidus/Bridge.lean": "9fb471f11279c47be139b55378cd449ba16a0f40a0d6503f5f94f993f10641e0",
     "EvmCompiler/Solidus/Decode.lean": "8a18bdb3cc9935e8f35205a077c14bcea98836889f9ddb6626ded2d4b38196a3",
@@ -43,12 +41,12 @@
     "EvmCompiler/Yul/Installation.lean": "05f8011ff39516cc468c2d3c5d7996cb24b661007ff4a6dc1cd366040379a549",
     "EvmCompiler/Yul/InteractionSemantics.lean": "b60860a162eea73e8e3c691cd4e35ae41a9ad3f05b85851b6561aed9de837c83",
     "EvmCompiler/Yul/Syntax.lean": "04e65d388b17bab74ca0bae59773791356aa447b6811926888ac139973e9a5b6",
-    "benchmarks/frozen_manifest.txt": "f6c1b112e22ec5786cc497b35ae8728f6195b6235f7ad220389dbcb8138d4f6e",
-    "lake-manifest.json": "f449245d23d7d0c8eb263bd660b86de4239c0001bb65f921daf7c2f11af873f2",
+    "benchmarks/frozen_manifest.txt": "40e57075b7f30993430e9795a3cbf9cf9ca7c8702751ef1ce5f98ec7869ff9d9",
+    "lake-manifest.json": "63124a3764429ca1ffae8b40d5fac5d8e1b516e0f5c1496849a3a98865d0f5b1",
     "lean-toolchain": "db7bb24b756d745bbde83fe92718b51bd3625dae3701ba0f598d0eedcd3f3028",
     "proof_artifacts/stack_backend_production_smoke.lean": "12423a49d3bf6a1ebb3a9ffdb65548553139fe60a25ee0a88c0dc9a5d0933f73",
     "scripts/check_frozen_closure.py": "02728b6ed39e29952257ee1fef53f8b6f8217fe1c89d148ed32a01301c66faa6",
-    "scripts/check_frozen_defs.lean": "eda4e89a2f82e517907b6a01e733d8233fc0d0a5bc6ac471d3778902ea36633f",
+    "scripts/check_frozen_defs.lean": "2a9803dd0beb9d6eb702d37319e9d88cd52c10334a99dbe088537017f09c0747",
     "scripts/opt_harness.py": "5fd08f845ddc0099e61d189afa1995b335339a4c4349d8a3b3138724a9fbd0bc",
     "scripts/opt_harness.sh": "e52e7411ac9e665b62e4a73a85d41820f8c12e851bc63a5dd7950f74b9abcbce"
   }

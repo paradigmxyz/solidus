@@ -34,8 +34,12 @@ EvmCompiler/Assembly/StateRelation.lean       # EVMState, eraseControl/eraseGas
 EvmCompiler/Assembly/Syntax.lean              # HaltKind, instruction syntax
 EvmCompiler/Assembly/Semantics.lean           # StepResult, Halt, HaltKind.output, EVMException, runNResultWith
 EvmCompiler/Assembly/Bytecode.lean            # Bytecode.ofList
-EvmCompiler/Simulation/OpenWorld.lean         # OpenWorld/OpenAccount projections
-EvmCompiler/Simulation/Interaction.lean       # ForwardRel, Transcript, Executes, Follows
+# The Simulation alphabet (Interaction/OpenWorld/Outcome) is single-sourced
+# from the pinned evm-interaction package (path dep, byte-identical
+# extraction); the modules keep their names and are trusted like EvmYul:
+#allow: EvmCompiler.Simulation.Interaction
+#allow: EvmCompiler.Simulation.OpenWorld
+#allow: EvmCompiler.Simulation.Outcome
 EvmCompiler/Yul/Syntax.lean                   # AstContract
 EvmCompiler/Yul/Installation.lean             # installContractWithCodeImage
 EvmCompiler/Yul/EffectSemantics.lean          # effect/state/primitive source model (StateModel/PrimitiveSemantics/Source.Canonical.exec); pure: imports only Yul/Syntax (frozen) + EvmYul
