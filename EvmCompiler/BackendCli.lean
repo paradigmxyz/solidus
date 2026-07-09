@@ -6,6 +6,7 @@ import EvmCompiler.Functions.StackDiagnostics
 import EvmCompiler.Compiler.StackArtifact
 import EvmCompiler.Solidity.VerifiedStackObjectArtifact
 import EvmCompiler.Solidity.StackHeadroomEndToEnd
+import EvmCompiler.Solidus.Defs
 
 namespace EvmCompiler.BackendCli
 
@@ -122,11 +123,18 @@ def parseCommand? (args : List String) : Option Command :=
       | some config => some (.bridge config)
       | none => none
 
-def printImage (mode : Mode)
+/-- Emit an object image, but take the emitted `bytecode` bytes from an
+explicit `bytes` argument (the reference/immutable metadata still comes from
+`image`). This lets the raw path ship exactly the byte list returned by the
+frozen public entry `Solidus.compile?` while reusing the image's link and
+immutable reference tables (which are definitionally the same bytes on the
+certified linked path). -/
+def printImageBytes (mode : Mode)
+    (bytes : List UInt8)
     (image : Solidity.Frontend.ObjectImage)
     (unlinkedLibraryNames : List Solidity.Frontend.Name := []) : IO Unit := do
   match mode with
-  | .image | .rawImage => IO.println ("bytecode=0x" ++ bytesHex image.bytes)
+  | .image | .rawImage => IO.println ("bytecode=0x" ++ bytesHex bytes)
   | .summary | .rawSummary | .check | .rawCheck | .stackAnalysis
   | .stackDiagnostics => pure ()
   for entry in image.immutableReferences do
@@ -141,7 +149,66 @@ def printImage (mode : Mode)
         ("linkref\t" ++ entry.fst ++ "\t" ++
           toString reference.start ++ "\t" ++
           toString reference.length)
-  IO.println ("bytecode_bytes=" ++ toString image.bytes.length)
+  IO.println ("bytecode_bytes=" ++ toString bytes.length)
+
+def printImage (mode : Mode)
+    (image : Solidity.Frontend.ObjectImage)
+    (unlinkedLibraryNames : List Solidity.Frontend.Name := []) : IO Unit :=
+  printImageBytes mode image.bytes image unlinkedLibraryNames
+
+/-- EIP-170 runtime code size cap (bytes). -/
+def eip170RuntimeCap : Nat := 24576
+
+/-- EIP-3860 initcode size cap (bytes). -/
+def eip3860InitcodeCap : Nat := 49152
+
+/-- Whether the environment requests the oversize opt-out. Mirrors the
+`env_flag_default` truthiness used by the Python harness glue. -/
+def allowOversizeFromEnv : IO Bool := do
+  match ← IO.getEnv "EVM_COMPILER_ALLOW_OVERSIZE" with
+  | none => pure false
+  | some raw =>
+      let v := raw.trim
+      pure !(v == "" || v == "0" || v == "false" || v == "False"
+        || v == "FALSE" || v == "no" || v == "off" || v == "OFF")
+
+/-- Fail-closed deployability guard on the emitted image. This is a
+product-level check, NOT a theorem-covered property: the public correctness
+theorem (`Solidus.compile_correct`) says nothing about EIP-170/EIP-3860
+admission. Runtime images larger than the EIP-170 cap and creation initcode
+larger than the EIP-3860 cap cannot be deployed on mainnet, so the CLI refuses
+to emit them unless the caller opts out (`EVM_COMPILER_ALLOW_OVERSIZE`). Named
+objects carry no creation/runtime classification, so no cap is applied to
+them. -/
+def checkImageSizeCap (selector : Solidity.RawAst.ObjectSelector)
+    (byteLen : Nat) (allowOversize : Bool) : IO Unit := do
+  let spec? : Option (Nat × String × String × Bool) :=
+    match selector with
+    | .runtime => some (eip170RuntimeCap, "runtime code", "EIP-170", false)
+    | .creation => some (eip3860InitcodeCap, "creation initcode", "EIP-3860", true)
+    | .named _ => none
+  match spec? with
+  | none => pure ()
+  | some (cap, what, eip, isCreation) =>
+      if byteLen > cap then
+        let over := byteLen - cap
+        let core :=
+          "compiled " ++ what ++ " is " ++ toString byteLen ++
+            " bytes, exceeding the " ++ eip ++ " cap of " ++ toString cap ++
+            " bytes by " ++ toString over ++ " bytes"
+        let detail :=
+          if isCreation then
+            core ++ " (the " ++ eip ++ " cap applies to the full initcode " ++
+              "INCLUDING the constructor arguments appended by the deployer at " ++
+              "deploy time, so there are 0 bytes of headroom remaining)"
+          else core
+        if allowOversize then
+          IO.eprintln ("warning: " ++ detail ++
+            "; emitting anyway because EVM_COMPILER_ALLOW_OVERSIZE is set")
+        else
+          throw (IO.userError ("error: " ++ detail ++
+            "; the image is not deployable — set EVM_COMPILER_ALLOW_OVERSIZE=1 " ++
+            "to emit it anyway"))
 
 def resolveForSolcValidation?
     (object : Solidity.Frontend.Object)
@@ -1123,7 +1190,16 @@ def run (config : Config) : IO Unit := do
       | .rawImage | .rawSummary | .rawCheck => pure ()
   | some artifact =>
       match config.mode with
-      | .image | .summary => printImage config.mode artifact.image
+      | .image | .summary =>
+          -- Fail-closed: emit only theorem-covered bytes. The public
+          -- correctness theorem is conditioned on the stack-headroom
+          -- certificate; without it the image is not covered. This mirrors
+          -- the raw path and `Solidus.compile?`'s own success condition.
+          match artifact.stackHeadroomCert? with
+          | none =>
+              throw (IO.userError
+                "object-image rejected: no stack-headroom certificate")
+          | some _ => printImage config.mode artifact.image
       | .check =>
           let solcOk :=
             match resolveForSolcValidation? program.object artifact.computed with
@@ -1134,6 +1210,7 @@ def run (config : Config) : IO Unit := do
       | .rawImage | .rawSummary | .rawCheck => pure ()
 
 def runRaw (config : RawConfig) : IO Unit := do
+  let allowOversize ← allowOversizeFromEnv
   let decodeStart ← IO.monoMsNow
   let input ← IO.FS.readFile config.rawPath
   let program? :=
@@ -1175,6 +1252,8 @@ def runRaw (config : RawConfig) : IO Unit := do
                   throw (IO.userError
                     "raw object-image rejected: no stack-headroom certificate")
               | some _ =>
+                  checkImageSizeCap config.selection.objectSelector
+                    artifact.image.bytes.length allowOversize
                   printImage config.mode artifact.image
                     (program.object.missingLinkerSymbolNames linkerSymbols)
           | _, _, _ =>
@@ -1185,14 +1264,22 @@ def runRaw (config : RawConfig) : IO Unit := do
   | some artifact =>
       match config.mode with
       | .rawImage | .rawSummary =>
-          -- Fail-closed: emit only theorem-covered bytes. `Solidus.compile?`
-          -- succeeds only when this certificate is present, so the shipped
-          -- binary's success condition matches the public spec on this path.
-          match artifact.stackHeadroomCert? with
+          -- Ship the frozen public entry's bytes verbatim. `Solidus.compile?`
+          -- IS the value the correctness theorem quantifies over: it runs the
+          -- same `compileArtifactFromRawSolcIr?` pipeline, gates success on the
+          -- stack-headroom certificate, and returns `artifact.image.bytes`.
+          -- Emitting its result (rather than re-reading `artifact.image`
+          -- directly) makes the shipped bytes definitionally the theorem's
+          -- bytes. The decoded `artifact` is reused only for the (byte-
+          -- identical) link/immutable reference metadata.
+          match Solidus.compile? input config.selection with
           | none =>
               throw (IO.userError
                 "raw object-image rejected: no stack-headroom certificate")
-          | some _ => printImage config.mode artifact.image
+          | some bytes =>
+              checkImageSizeCap config.selection.objectSelector
+                bytes.length allowOversize
+              printImageBytes config.mode bytes artifact.image
       | .rawCheck =>
           match program? with
           | none => throw (IO.userError "raw Standard JSON decode failed")

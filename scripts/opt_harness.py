@@ -135,6 +135,12 @@ def tool_env() -> Dict[str, str]:
     env["SOLC"] = solc
     env["FORGE"] = forge
     env["SOLC_LEAN_VALIDATE_OUTPUT"] = "0"
+    # The benchmark harness deliberately compiles and deploys oversized
+    # contracts (it raises forge's code_size_limit, see opt_gas_runner.py), so
+    # opt out of the backend's fail-closed EIP-170/EIP-3860 deployability guard.
+    # The guard is a product-level backstop, not a correctness property; the
+    # harness measures sizes itself (see cap_ok in benchmarks/opt_baseline.json).
+    env.setdefault("EVM_COMPILER_ALLOW_OVERSIZE", "1")
     # Make the pinned tools reachable on PATH too.
     extra = os.pathsep.join(
         [str(Path.home() / ".elan" / "bin"), str(Path.home() / ".local" / "bin")]

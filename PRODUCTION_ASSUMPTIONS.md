@@ -383,7 +383,17 @@ EVM frame semantics:
   refund settlement, transaction-final transient-storage clearing, and final
   `SELFDESTRUCT` processing;
 - source maps, ABI/metadata compatibility, deployment-size optimization, and
-  EIP-170/EIP-3860 admission checks;
+  EIP-170/EIP-3860 admission checks. The *theorem* still says nothing about
+  admission: `Solidus.compile_correct` covers frame execution of whatever image
+  is produced, over-cap or not. As a product-level guard only, the backend CLI
+  (`EvmCompiler/BackendCli.lean`, a non-frozen layer) now applies a fail-closed
+  size check when emitting an image — a `runtime` selector is rejected above the
+  24576-byte EIP-170 cap and a `creation` selector above the 49152-byte
+  EIP-3860 initcode cap (the creation cap covers the full initcode including
+  constructor arguments appended by the deployer). The check is a deployability
+  backstop, not a compiler-correctness claim, and can be opted out of with
+  `EVM_COMPILER_ALLOW_OVERSIZE=1` (used by the Arena benchmark harness, which
+  deliberately deploys oversized contracts);
 - compiler totality, acceptance of every valid Yul program, support for every
   fork or dialect, and optimization quality;
 - verification of solc's upstream Solidity-to-Yul transformation when Yul is
