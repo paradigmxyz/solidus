@@ -90,16 +90,23 @@ jobs:
       # -----------------------------------------------------------------------
       # (a) FROZEN-FILE HASH CHECK
       #
-      #   Hash every file listed in benchmarks/frozen_manifest.txt and compare
-      #   against the pinned hashes in .github/frozen_hashes.json.
+      #   Hash every file listed in benchmarks/frozen_manifest.txt PLUS every
+      #   additional path pinned in .github/frozen_hashes.json (the union), and
+      #   compare against the pinned hashes. The extra JSON-only pins freeze the
+      #   ENFORCEMENT LAYER itself (checker scripts, harness, the manifest, the
+      #   axiom smoke file) — those are not part of the Lean import-closure cone,
+      #   so they live only in the JSON, not the manifest.
       #
-      #   PROVISIONAL MODE: until the maintainer finalizes the freeze, that JSON
-      #   carries "provisional": true. In provisional mode a mismatch is a loud
-      #   WARNING (annotation), not a failure — so ordinary development PRs are
-      #   not blocked before the freeze is pinned, and so this workflow is
-      #   landable today while Lean files are still moving. Once the maintainer
-      #   flips "provisional" to false (after freezing the tree and repinning
-      #   the hashes), a mismatch becomes a HARD FAILURE pointing at CHALLENGE.md.
+      #   ROOT OF TRUST: frozen_hashes.json cannot pin itself (nor this workflow
+      #   file) — anyone who can rewrite the pin file can rewrite the pins. The
+      #   private scoring runner holds the canonical copy of frozen_hashes.json
+      #   and is the root of trust for it; this CI gate is the public mirror.
+      #
+      #   PROVISIONAL MODE (historical): while the JSON carried
+      #   "provisional": true, a mismatch was a loud WARNING (annotation), not a
+      #   failure, so development PRs were not blocked before the freeze was
+      #   pinned. The freeze is now finalized ("provisional": false): a mismatch
+      #   is a HARD FAILURE pointing at CHALLENGE.md.
       # -----------------------------------------------------------------------
       - name: Frozen-file hash check
         run: |
@@ -136,6 +143,12 @@ jobs:
           pinned_files = pinned.get("files", {})
 
           files = frozen_files(manifest)
+          # The pin file freezes MORE than the manifest: the enforcement layer
+          # (checker scripts, opt harness, the manifest itself, the axiom smoke
+          # file) is pinned only in frozen_hashes.json. Check the union so every
+          # pinned path is verified. Note frozen_hashes.json cannot self-pin;
+          # the private scoring runner is the root of trust for its content.
+          files += [p for p in pinned_files if p not in files]
           mismatches, missing_from_pin, missing_on_disk = [], [], []
           for rel in files:
               if not os.path.exists(rel):

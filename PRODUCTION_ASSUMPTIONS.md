@@ -207,9 +207,10 @@ checked dialect profile. Unknown future names fail closed.
 
 Closed native frame execution is governed by the EVMYulLean commit selected in
 `lakefile.lean`. This compiler repo currently pins
-`3c5c44a62f4e7964bd1bc648caa708a111664c84` (branch `djtotal`), which includes
-native `CLZ`, execution-side EIP-7702 delegated-code lookup, Fusaka MODEXP
-gas/size rules, and a total Nat-indexed jumpdest scanner `D_J_aux`
+`b908ec317a7bc9d70ee3704329a46db16d833009` (branch `pin-fixes-on-djtotal`),
+which includes native `CLZ`, execution-side EIP-7702 delegated-code lookup,
+Fusaka MODEXP gas/size rules (plus wide-base MODEXP and PUSH-payload
+right-padding decode fixes), and a total Nat-indexed jumpdest scanner `D_J_aux`
 (`termination_by c.size - n`) with unfolding lemmas
 (`D_J_aux_out_of_bounds`/`D_J_aux_step`/`D_J_def`); `D_J`'s signature and
 values are unchanged, but the scanner is no longer opaque, which is what lets

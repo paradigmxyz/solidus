@@ -25,9 +25,10 @@ metadata also accepts the family aliases Pectra for Prague and Fusaka for
 Osaka.
 
 Post-Cancun native EVM semantics are bounded by the EVMYulLean commit selected
-in `lakefile.lean`. The selected pin `3c5c44a62f4e7964bd1bc648caa708a111664c84`
-(branch `djtotal`) covers Fusaka opcode `CLZ`, Fusaka MODEXP gas/size changes,
-execution-side EIP-7702 delegated EOA code-image lookup, and a total
+in `lakefile.lean`. The selected pin `b908ec317a7bc9d70ee3704329a46db16d833009`
+(branch `pin-fixes-on-djtotal`) covers Fusaka opcode `CLZ`, Fusaka MODEXP
+gas/size changes (including wide-base MODEXP and PUSH-payload right-padding
+decode fixes), execution-side EIP-7702 delegated EOA code-image lookup, and a total
 Nat-indexed jumpdest scanner (`D_J_aux` with unfolding lemmas), which is what
 lets this repo prove jumpdest-scan membership for compiled label destinations.
 The raw Yul `clz` builtin is supported by generated-helper lowering before
