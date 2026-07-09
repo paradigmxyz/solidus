@@ -90,6 +90,7 @@ full_log="$OUTDIR/full-solc.log"
 lean_log="$OUTDIR/solc-lean.log"
 full_results="$OUTDIR/full-solc.results"
 lean_results="$OUTDIR/solc-lean.results"
+gas_report="$OUTDIR/gas-report.txt"
 
 full_args=(
   test
@@ -122,28 +123,41 @@ SOLC_LEAN_LAKE_CWD="$ROOT" \
 lean_status=$?
 set -e
 
-"$PYTHON_BIN" - "$full_log" "$lean_log" "$full_results" "$lean_results" <<'PY'
+"$PYTHON_BIN" - "$full_log" "$lean_log" "$full_results" "$lean_results" "$gas_report" <<'PY'
 import re
 import sys
 from pathlib import Path
 
 ansi = re.compile(r"\x1b\[[0-9;]*m")
 test_line = re.compile(r"^\[(PASS|FAIL|SKIP)\]\s+(.+)$")
+gas_suffix = re.compile(r"\s+\(gas:\s*(\d+)\)$")
 summary = re.compile(
     r"^Ran\s+\d+\s+test suites?.*:\s+(\d+)\s+tests?\s+passed,\s+"
     r"(\d+)\s+failed,\s+(\d+)\s+skipped"
 )
 
 
-def normalize(path: Path) -> list[str]:
+def normalize(path: Path) -> tuple[list[str], dict[str, int]]:
+    """Return (parity lines, per-test gas).
+
+    The parity lines are gas-STRIPPED on purpose: pass/fail parity between the
+    two backends is what gates the build, and the two backends legitimately
+    emit different gas. The gas map is captured separately so gas can be
+    reported side by side without ever affecting the parity diff or exit code.
+    """
     result_lines: list[str] = []
     summary_lines: list[str] = []
+    gas: dict[str, int] = {}
     for raw in path.read_text(errors="replace").splitlines():
         line = ansi.sub("", raw).strip()
         match = test_line.match(line)
         if match:
-            test_name = re.sub(r"\s+\(gas:\s*\d+\)$", "", match.group(2))
+            name_with_gas = match.group(2)
+            gas_match = gas_suffix.search(name_with_gas)
+            test_name = gas_suffix.sub("", name_with_gas)
             result_lines.append(f"{match.group(1)} {test_name}")
+            if gas_match:
+                gas[test_name] = int(gas_match.group(1))
             continue
         match = summary.match(line)
         if match:
@@ -160,12 +174,38 @@ def normalize(path: Path) -> list[str]:
         normalized.append(summary_lines[-1])
     if not normalized:
         normalized.append("NO_FORGE_TEST_RESULTS_FOUND")
-    return normalized
+    return normalized, gas
 
 
-full_log, lean_log, full_results, lean_results = map(Path, sys.argv[1:])
-full_results.write_text("\n".join(normalize(full_log)) + "\n")
-lean_results.write_text("\n".join(normalize(lean_log)) + "\n")
+full_log, lean_log, full_results, lean_results, gas_report = map(
+    Path, sys.argv[1:]
+)
+full_norm, full_gas = normalize(full_log)
+lean_norm, lean_gas = normalize(lean_log)
+full_results.write_text("\n".join(full_norm) + "\n")
+lean_results.write_text("\n".join(lean_norm) + "\n")
+
+# Gas-visibility channel: record solc vs Lean execution gas per test, side by
+# side. This is INFORMATIONAL only — divergent gas never fails the build (the
+# two backends differ by design); the parity diff above is the gate.
+report: list[str] = []
+for name in sorted(set(full_gas) | set(lean_gas)):
+    s = full_gas.get(name)
+    l = lean_gas.get(name)
+    if s is not None and l is not None:
+        delta = l - s
+        pct = (delta / s * 100.0) if s else 0.0
+        report.append(
+            f"forge_compare_gas={name} solc={s} lean={l} "
+            f"delta={delta:+d} ({pct:+.2f}%)"
+        )
+    else:
+        report.append(
+            f"forge_compare_gas={name} "
+            f"solc={'NA' if s is None else s} "
+            f"lean={'NA' if l is None else l}"
+        )
+gas_report.write_text(("\n".join(report) + "\n") if report else "")
 PY
 
 if [[ "$full_status" -ne "$lean_status" ]]; then
@@ -206,6 +246,15 @@ if ! diff -u "$full_results" "$lean_results" >"$OUTDIR/result-diff.txt"; then
   echo "result_diff=$OUTDIR/result-diff.txt"
   cat "$OUTDIR/result-diff.txt"
   exit 1
+fi
+
+# Parity holds (same PASS/FAIL/SKIP set). Surface the gas both backends spent,
+# side by side. This is observability only: gas divergence is expected and does
+# NOT change the exit status below.
+if [[ -s "$gas_report" ]]; then
+  echo "--- gas comparison (solc vs lean; informational, non-failing) ---"
+  cat "$gas_report"
+  echo "gas_report=$gas_report"
 fi
 
 if [[ "$full_status" -ne 0 ]]; then

@@ -216,11 +216,20 @@ jobs:
   #                    cheaply. The private runner does the full-corpus double
   #                    bench.)
   #
-  #   Both steps reuse ONE Lean build (check builds the EvmCompiler lib; the
-  #   determinism step's `lake build evm-compiler-backend` is then incremental).
+  #   (e) execution differential: build one solc-compiled and one Lean-compiled
+  #                    image of the same sources, run BOTH through forge in the
+  #                    EVM, and require identical pass/fail parity. Hard-fails on
+  #                    divergence. Gas is recorded and reported side by side but
+  #                    never fails the build (the two backends legitimately
+  #                    differ in gas). Reuses the backend exe + pinned solc this
+  #                    job already built/installed; only Foundry is added.
+  #
+  #   All steps reuse ONE Lean build (check builds the EvmCompiler lib; the
+  #   determinism step's `lake build evm-compiler-backend` is then incremental,
+  #   and the execution differential reuses that same exe).
   # ---------------------------------------------------------------------------
   proof-and-determinism:
-    name: proof gate + determinism
+    name: proof gate + determinism + execution differential
     needs: frozen-and-closure
     runs-on: ubuntu-latest
     # Cold builds pull the Mathlib cache and elaborate the proof root
@@ -380,3 +389,39 @@ jobs:
               sys.exit(1)
           print("\nAll sentinels compiled deterministically.")
           PY
+
+      # ---- Foundry for the execution differential (step (e)).
+      #      Foundry is intentionally NOT installed for the cheap determinism
+      #      leg above; it is needed only here, to run compiled images in the
+      #      EVM. Foundry download is an already-permitted network dependency.
+      - name: Install Foundry (${{ env.FOUNDRY_VERSION }})
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: ${{ env.FOUNDRY_VERSION }}
+
+      # ---- (e) EXECUTION DIFFERENTIAL --------------------------------------
+      #      Two small, deterministic, self-contained forge projects. Each is
+      #      compiled TWICE — once with the pinned real solc, once through the
+      #      verified Lean raw path (scripts/solc_lean_standard_json.py) — and
+      #      the SAME forge tests are executed against both images in the EVM.
+      #      scripts/compare_forge_solc_lean.sh diffs the PASS/FAIL/SKIP parity
+      #      and exits nonzero (hard fail) on any divergence, printing the diff.
+      #      Gas is recorded and printed side by side (solc vs lean) but is
+      #      informational only — it never changes the exit status.
+      #
+      #      Reuses the backend exe built above and the pinned solc (SOLC_BIN);
+      #      no Lean rebuild. Corpus is deliberately tiny (an arithmetic pure
+      #      function + a via-IR/optimizer loop) to stay well under the CI time
+      #      budget while still exercising real in-EVM execution.
+      - name: Execution differential (solc-built vs Lean-built, forge)
+        env:
+          SOLC: ${{ env.SOLC_BIN }}
+          SOLC_LEAN_REAL_SOLC: ${{ env.SOLC_BIN }}
+          SOLC_LEAN_VALIDATE_OUTPUT: "0"
+        run: |
+          set -euo pipefail
+          export LAKE="$(command -v lake)"
+          export FORGE="$(command -v forge)"
+          "${FORGE}" --version | head -n 1
+          ./scripts/test_solidity_forge_compare.sh
+          ./scripts/test_solidity_forge_compare_optimized.sh
