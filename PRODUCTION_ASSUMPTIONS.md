@@ -409,6 +409,53 @@ EVM frame semantics:
 `True` fields. They are not used to discharge or inflate the raw, canonical, or
 gasful end-to-end theorems.
 
+### Compiled fast-path implementations (`@[csimp]` vs `@[implemented_by]`)
+
+Several spec-level functions have a linear "Fast" twin so the shipped
+`evm-compiler-backend` binary avoids the quadratic list-append / `flatMap`
+behavior of the reference definitions. Each such swap is a compile-time
+substitution the kernel/`#print axioms` audit does not otherwise see, so it
+belongs in the trusted-computing base *unless* the substitution is a proved
+equality.
+
+Sixteen of these sites are now **kernel-checked via `@[csimp]`**: the reference
+definition is compiled through its `Fast` twin only because a proof obligation
+`f = fFast` has been discharged (each `@[csimp] theorem …_eq_fast`), so the
+fast code the binary runs is exactly the code the theorems reason about. These
+are:
+
+- `Assembly.Program.labels` (`EvmCompiler/Assembly/Accepted.lean`);
+- `Assembly.Program.labelTableFrom`, `Assembly.Program.allTargetsResolve`
+  (`EvmCompiler/Assembly/Assembler.lean`);
+- `Assembly.Compact.Program.codeByteLength`,
+  `Assembly.Compact.Program.wellFormed?`,
+  `Assembly.Compact.emitBlocksFrom?`, `Assembly.Compact.emitBlocks?`,
+  `Assembly.Compact.blocksCode`, `Assembly.Compact.elideFallthroughJumps`,
+  `Assembly.Compact.referencedLabels`,
+  `Assembly.Compact.pruneUnreferencedLabels`, `Assembly.Compact.prepare`,
+  `Assembly.Compact.alignPreparationFrom?`,
+  `Assembly.Compact.alignPreparation?` (`EvmCompiler/Assembly/Compact.lean`);
+- `Locals.ProcList.toExpressions?` (`EvmCompiler/Locals/Compiler.lean`);
+- `Solidity.Frontend.findOccurrences` (`EvmCompiler/Solidity/Frontend.lean`).
+
+Two sites retain the bare `@[implemented_by]` attribute **only because their
+declaring module is frozen** for Solidus Arena and cannot be edited:
+
+- `Assembly.Bytecode.encodeTarget`
+  (`EvmCompiler/Assembly/Bytecode.lean:53`, `@[implemented_by encodeTargetFast]`);
+- `Assembly.Bytecode.codeByteLength`
+  (`EvmCompiler/Assembly/Bytecode.lean:74`, `@[implemented_by codeByteLengthFast]`).
+
+For both, the equivalence is nonetheless kernel-checked: the non-frozen
+`@[csimp] theorem Bytecode.encodeTarget_eq_fast` and
+`Bytecode.codeByteLength_eq_fast` in `EvmCompiler/Assembly/Compact.lean` prove
+`encodeTarget = encodeTargetFast` and `codeByteLength = codeByteLengthFast`
+outright. The remaining trust residue is therefore narrow: the frozen
+attribute lines themselves are unaudited, but the fast implementations they
+name are proved equal to the reference definitions, so no unverified behavior
+can reach the binary through them. No fast-path swap in the backend is left
+without a discharged equality.
+
 ## Release Evidence
 
 Tests are evidence of implementation coverage, not substitutes for theorem

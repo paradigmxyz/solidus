@@ -1867,7 +1867,6 @@ def toExpressionsFast? (procs : List Proc) :
     Option (List Expressions.Proc) :=
   toExpressionsRev? procs []
 
-@[implemented_by toExpressionsFast?]
 def toExpressions? : List Proc → Option (List Expressions.Proc)
   | [] => some []
   | proc :: rest => do
@@ -1892,6 +1891,10 @@ private theorem toExpressionsRev?_eq :
 theorem toExpressionsFast?_eq (procs : List Proc) :
     toExpressionsFast? procs = toExpressions? procs := by
   simp [toExpressionsFast?, toExpressionsRev?_eq]
+
+@[csimp] theorem toExpressions?_eq_fast :
+    @toExpressions? = @toExpressionsFast? := by
+  funext procs; exact (toExpressionsFast?_eq procs).symm
 
 theorem toExpressions?_member_components :
     ∀ {procs : List Proc} {lower : List Expressions.Proc} {proc : Proc},

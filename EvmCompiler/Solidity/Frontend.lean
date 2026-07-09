@@ -1624,7 +1624,6 @@ def findOccurrencesFast (needle bytes : List UInt8) : List Nat :=
   | _ :: _ =>
       findOccurrencesCursorAux needle bytes 0 (bytes.length + 1) []
 
-@[implemented_by findOccurrencesFast]
 def findOccurrences (needle bytes : List UInt8) : List Nat :=
   match needle with
   | [] => []
@@ -1662,6 +1661,10 @@ theorem findOccurrencesFast_eq
       apply findOccurrencesCursorAux_eq
       · simp
       · rfl
+
+@[csimp] theorem findOccurrences_eq_fast :
+    @findOccurrences = @findOccurrencesFast := by
+  funext needle bytes; exact (findOccurrencesFast_eq needle bytes).symm
 
 def zeroWord32 : List UInt8 :=
   Assembly.Bytecode.encodeWord32 (EvmYul.UInt256.ofNat 0)

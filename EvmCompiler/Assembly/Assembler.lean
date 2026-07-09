@@ -166,7 +166,6 @@ def labelTableFromRev : Program → Nat → LabelTable → LabelTable
 def labelTableFromFast (program : Program) (pc : Nat) : LabelTable :=
   (labelTableFromRev program pc []).reverse
 
-@[implemented_by labelTableFromFast]
 def labelTableFrom : Program → Nat → LabelTable
   | [], _ => []
   | instr :: rest, pc =>
@@ -265,6 +264,10 @@ theorem labelTableFromFast_eq
     (program : Program) (pc : Nat) :
     labelTableFromFast program pc = labelTableFrom program pc := by
   simp [labelTableFromFast, labelTableFromRev_eq]
+
+@[csimp] theorem labelTableFrom_eq_fast :
+    @labelTableFrom = @labelTableFromFast := by
+  funext program pc; exact (labelTableFromFast_eq program pc).symm
 
 theorem lookupLabel?_labelTableFrom_eq_labelPcFrom
     (program : Program) (pc : Nat) (target : Label) :
@@ -671,7 +674,6 @@ def allTargetsResolveFast (program : Program) : Bool :=
     instr.targets.all fun target =>
       (index.get? target).isSome
 
-@[implemented_by allTargetsResolveFast]
 def allTargetsResolve (program : Program) : Bool :=
   program.all fun instr =>
     instr.targets.all fun target =>
@@ -681,6 +683,10 @@ theorem allTargetsResolveFast_eq_allTargetsResolve (program : Program) :
     allTargetsResolveFast program = allTargetsResolve program := by
   simp only [allTargetsResolveFast, allTargetsResolve,
     buildLabelIndex_get?]
+
+@[csimp] theorem allTargetsResolve_eq_fast :
+    @allTargetsResolve = @allTargetsResolveFast := by
+  funext program; exact (allTargetsResolveFast_eq_allTargetsResolve program).symm
 
 end Program
 

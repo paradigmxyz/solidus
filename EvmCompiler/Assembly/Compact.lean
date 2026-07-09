@@ -191,7 +191,6 @@ namespace Program
 def codeByteLengthFast (code : List Located) : Nat :=
   code.foldl (fun total located => total + located.instr.byteSize) 0
 
-@[implemented_by codeByteLengthFast]
 def codeByteLength : List Located -> Nat
   | [] => 0
   | located :: rest => located.instr.byteSize + codeByteLength rest
@@ -209,6 +208,10 @@ private theorem foldl_byteSize_eq (code : List Located) (total : Nat) :
 theorem codeByteLengthFast_eq (code : List Located) :
     codeByteLengthFast code = codeByteLength code := by
   simp [codeByteLengthFast, foldl_byteSize_eq]
+
+@[csimp] theorem codeByteLength_eq_fast :
+    @codeByteLength = @codeByteLengthFast := by
+  funext code; exact (codeByteLengthFast_eq code).symm
 
 theorem codeByteLength_append (left right : List Located) :
     codeByteLength (left ++ right) =
@@ -271,7 +274,6 @@ def wellFormedFast? (program : Program) : Bool :=
     decide (Program.codeByteLengthFast program.code < 18446744073709551616) &&
       program.pcIndependent?
 
-@[implemented_by wellFormedFast?]
 def wellFormed? (program : Program) : Bool :=
   program.valid? && layoutFrom? program.code 0 &&
     decide (Program.codeByteLength program.code < 18446744073709551616) &&
@@ -281,6 +283,10 @@ theorem wellFormedFast?_eq (program : Program) :
     wellFormedFast? program = wellFormed? program := by
   simp [wellFormedFast?, wellFormed?, layoutFromFast?_eq,
     codeByteLengthFast_eq]
+
+@[csimp] theorem wellFormed?_eq_fast :
+    @wellFormed? = @wellFormedFast? := by
+  funext program; exact (wellFormedFast?_eq program).symm
 
 theorem layoutFrom_of_check :
     ∀ {code : List Located} {pc : Nat},
@@ -527,7 +533,6 @@ def emitBlocksFromFast? (pinnedPushPcs : List Nat) (branchWidth : Nat)
   emitBlocksFromRev? pinnedPushPcs branchWidth table source
     sourcePc compactPc []
 
-@[implemented_by emitBlocksFromFast?]
 def emitBlocksFrom? (pinnedPushPcs : List Nat) (branchWidth : Nat)
     (table : LabelTable) :
     Assembly.Program -> Nat -> Nat -> Option (List SourceBlock)
@@ -550,7 +555,6 @@ def emitBlocksFast? (pinnedPushPcs : List Nat) (source : Assembly.Program)
     (branchWidth : Nat) (table : LabelTable) : Option (List SourceBlock) :=
   emitBlocksFromFast? pinnedPushPcs branchWidth table source 0 0
 
-@[implemented_by emitBlocksFast?]
 def emitBlocks? (pinnedPushPcs : List Nat) (source : Assembly.Program)
     (branchWidth : Nat)
     (table : LabelTable) : Option (List SourceBlock) :=
@@ -604,6 +608,17 @@ theorem emitBlocksFast_eq
       emitBlocks? pinnedPushPcs source branchWidth table := by
   simp [emitBlocksFast?, emitBlocks?, emitBlocksFromFast_eq]
 
+@[csimp] theorem emitBlocksFrom?_eq_fast :
+    @emitBlocksFrom? = @emitBlocksFromFast? := by
+  funext pinnedPushPcs branchWidth table source sourcePc compactPc
+  exact (emitBlocksFromFast_eq pinnedPushPcs branchWidth table source
+    sourcePc compactPc).symm
+
+@[csimp] theorem emitBlocks?_eq_fast :
+    @emitBlocks? = @emitBlocksFast? := by
+  funext pinnedPushPcs source branchWidth table
+  exact (emitBlocksFast_eq pinnedPushPcs source branchWidth table).symm
+
 def blocksCodeRev : List SourceBlock → List Located → List Located
   | [], acc => acc.reverse
   | block :: rest, acc =>
@@ -612,7 +627,6 @@ def blocksCodeRev : List SourceBlock → List Located → List Located
 def blocksCodeFast (blocks : List SourceBlock) : List Located :=
   blocksCodeRev blocks []
 
-@[implemented_by blocksCodeFast]
 def blocksCode (blocks : List SourceBlock) : List Located :=
   blocks.flatMap SourceBlock.code
 
@@ -628,6 +642,10 @@ private theorem blocksCodeRev_eq (blocks : List SourceBlock)
 theorem blocksCodeFast_eq (blocks : List SourceBlock) :
     blocksCodeFast blocks = blocksCode blocks := by
   simp [blocksCodeFast, blocksCodeRev_eq]
+
+@[csimp] theorem blocksCode_eq_fast :
+    @blocksCode = @blocksCodeFast := by
+  funext blocks; exact (blocksCodeFast_eq blocks).symm
 
 def locatedListEq? : List Located → List Located → Bool
   | [], [] => true
@@ -1389,7 +1407,6 @@ def elideFallthroughJumpsFast (source : Assembly.Program) :
     Assembly.Program :=
   elideFallthroughJumpsRev source []
 
-@[implemented_by elideFallthroughJumpsFast]
 def elideFallthroughJumps : Assembly.Program -> Assembly.Program
   | .jump target :: .label next :: rest =>
       if target = next then
@@ -1414,7 +1431,6 @@ def referencedLabelsRev : Assembly.Program → List Label → List Label
 def referencedLabelsFast (source : Assembly.Program) : List Label :=
   referencedLabelsRev source []
 
-@[implemented_by referencedLabelsFast]
 def referencedLabels (source : Assembly.Program) : List Label :=
   source.flatMap Assembly.Instr.targets
 
@@ -1437,7 +1453,6 @@ def pruneUnreferencedLabelsFast (targets : List Label)
     (source : Assembly.Program) : Assembly.Program :=
   pruneUnreferencedLabelsRev (referencedLabelSet targets) source []
 
-@[implemented_by pruneUnreferencedLabelsFast]
 def pruneUnreferencedLabels (targets : List Label) :
     Assembly.Program -> Assembly.Program
   | [] => []
@@ -1452,7 +1467,6 @@ def prepareFast (source : Assembly.Program) : Assembly.Program :=
   let elided := elideFallthroughJumpsFast source
   pruneUnreferencedLabelsFast (referencedLabelsFast elided) elided
 
-@[implemented_by prepareFast]
 def prepare (source : Assembly.Program) : Assembly.Program :=
   let elided := elideFallthroughJumps source
   pruneUnreferencedLabels (referencedLabels elided) elided
@@ -1495,6 +1509,10 @@ theorem elideFallthroughJumpsFast_eq (source : Assembly.Program) :
     elideFallthroughJumpsFast source = elideFallthroughJumps source := by
   simp [elideFallthroughJumpsFast, elideFallthroughJumpsRev_eq]
 
+@[csimp] theorem elideFallthroughJumps_eq_fast :
+    @elideFallthroughJumps = @elideFallthroughJumpsFast := by
+  funext source; exact (elideFallthroughJumpsFast_eq source).symm
+
 private theorem referencedLabelsRev_eq (source : Assembly.Program)
     (acc : List Label) :
     referencedLabelsRev source acc =
@@ -1509,6 +1527,10 @@ private theorem referencedLabelsRev_eq (source : Assembly.Program)
 theorem referencedLabelsFast_eq (source : Assembly.Program) :
     referencedLabelsFast source = referencedLabels source := by
   simp [referencedLabelsFast, referencedLabelsRev_eq]
+
+@[csimp] theorem referencedLabels_eq_fast :
+    @referencedLabels = @referencedLabelsFast := by
+  funext source; exact (referencedLabelsFast_eq source).symm
 
 private theorem hashSetContains_foldl_insert
     (items : List Label) (labels : Std.HashSet Label) (label : Label) :
@@ -1571,10 +1593,18 @@ theorem pruneUnreferencedLabelsFast_eq
     (referencedLabelSet_contains targets)]
   simp
 
+@[csimp] theorem pruneUnreferencedLabels_eq_fast :
+    @pruneUnreferencedLabels = @pruneUnreferencedLabelsFast := by
+  funext targets source; exact (pruneUnreferencedLabelsFast_eq targets source).symm
+
 theorem prepareFast_eq (source : Assembly.Program) :
     prepareFast source = prepare source := by
   simp [prepareFast, prepare, elideFallthroughJumpsFast_eq,
     referencedLabelsFast_eq, pruneUnreferencedLabelsFast_eq]
+
+@[csimp] theorem prepare_eq_fast :
+    @prepare = @prepareFast := by
+  funext source; exact (prepareFast_eq source).symm
 
 /-- Find physical Assembly push sites whose values differ between two
 shape-identical programs. Pinning precisely these PCs gives both programs the
@@ -1642,7 +1672,6 @@ def alignPreparationFromFast? (source prepared : Assembly.Program)
     (sourcePc preparedPc : Nat) : Option (List PreparationBlock) :=
   alignPreparationFromRev? source prepared sourcePc preparedPc []
 
-@[implemented_by alignPreparationFromFast?]
 def alignPreparationFrom? : Assembly.Program -> Assembly.Program ->
     Nat -> Nat -> Option (List PreparationBlock)
   | [], [], _, _ => some []
@@ -1679,7 +1708,6 @@ def alignPreparationFast? (source prepared : Assembly.Program) :
     Option (List PreparationBlock) :=
   alignPreparationFromFast? source prepared 0 0
 
-@[implemented_by alignPreparationFast?]
 def alignPreparation? (source prepared : Assembly.Program) :
     Option (List PreparationBlock) :=
   alignPreparationFrom? source prepared 0 0
@@ -1729,6 +1757,15 @@ theorem alignPreparationFast_eq (source prepared : Assembly.Program) :
     alignPreparationFast? source prepared =
       alignPreparation? source prepared := by
   simp [alignPreparationFast?, alignPreparation?, alignPreparationFromFast_eq]
+
+@[csimp] theorem alignPreparationFrom?_eq_fast :
+    @alignPreparationFrom? = @alignPreparationFromFast? := by
+  funext source prepared sourcePc preparedPc
+  exact (alignPreparationFromFast_eq source prepared sourcePc preparedPc).symm
+
+@[csimp] theorem alignPreparation?_eq_fast :
+    @alignPreparation? = @alignPreparationFast? := by
+  funext source prepared; exact (alignPreparationFast_eq source prepared).symm
 
 def PreparationBoundaryPair (blocks : List PreparationBlock)
     (sourceEnd preparedEnd sourcePc preparedPc : Nat) : Prop :=
@@ -5414,6 +5451,20 @@ theorem compile?_source_openRunNResult_finished_rel
   exact runtimeOutcomeRel_trans hTargetMiddle hMiddleSource
 
 end InteractionSemantics
+
+/-- Kernel-checked compiler replacement for the frozen `Bytecode.encodeTarget`.
+The frozen `Bytecode.lean` module still carries the `@[implemented_by]`
+attribute; this `@[csimp]` lemma discharges the equivalence as a real proof
+obligation without editing the frozen file. -/
+@[csimp] theorem Bytecode.encodeTarget_eq_fast :
+    @Bytecode.encodeTarget = @Bytecode.encodeTargetFast := by
+  funext target; exact (Bytecode.encodeTargetFast_eq target).symm
+
+/-- Kernel-checked compiler replacement for the frozen
+`Bytecode.codeByteLength`. See `Bytecode.encodeTarget_eq_fast`. -/
+@[csimp] theorem Bytecode.codeByteLength_eq_fast :
+    @Bytecode.codeByteLength = @Bytecode.codeByteLengthFast := by
+  funext code; exact (Bytecode.codeByteLengthFast_eq code).symm
 
 end Compact
 end Assembly

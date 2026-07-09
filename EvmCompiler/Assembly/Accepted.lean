@@ -62,7 +62,6 @@ def labelsRev : Program → List Label → List Label
 def labelsFast (program : Program) : List Label :=
   (labelsRev program []).reverse
 
-@[implemented_by labelsFast]
 def labels : Program → List Label
   | [] => []
   | .label name :: rest => name :: labels rest
@@ -80,6 +79,9 @@ theorem labelsRev_eq (program : Program) (acc : List Label) :
 theorem labelsFast_eq_labels (program : Program) :
     labelsFast program = program.labels := by
   simp [labelsFast, labelsRev_eq]
+
+@[csimp] theorem labels_eq_fast : @labels = @labelsFast := by
+  funext program; exact (labelsFast_eq_labels program).symm
 
 theorem labels_append (left right : Program) :
     labels (left ++ right) = labels left ++ labels right := by
