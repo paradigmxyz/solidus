@@ -2178,11 +2178,12 @@ mutual
               ImmutableReference.List.patchStmts? references base' value'
             some (.block stmts)
         | none =>
-            if Expr.containsUserCall? base' ||
-                Expr.containsUserCall? value' then
-              none
-            else
-              some (.block [])
+            -- Fail-closed: a `setimmutable` whose name resolves to no immutable
+            -- reference is rejected at compile time, mirroring the trusted
+            -- source semantics (which fails with `.InvalidArguments`). This
+            -- keeps the exact-equality preservation: the miss case is never
+            -- accepted, so the source-side failure is unreachable.
+            none
     | .exprStmt expr => do
         let expr' ← expr.resolveObjectBuiltinsIn? context
         some (.exprStmt expr')

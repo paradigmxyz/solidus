@@ -568,7 +568,7 @@ mutual
             [base, nameArg, value]) =>
             match objectBuiltinNameArg? nameArg >>=
                 ctx.objectBuiltins.findImmutableReferences? with
-            | none => execBlock fuel' ctx [] state
+            | none => fail state .InvalidArguments
             | some references =>
                 match patchSetImmutableStmts? references base value with
                 | none => fail state .InvalidArguments
@@ -1131,7 +1131,7 @@ theorem expressionStatement_succ
       | .functionCall "setimmutable" [base, nameArg, value] =>
           match objectBuiltinNameArg? nameArg >>=
               ctx.objectBuiltins.findImmutableReferences? with
-          | none => execBlock fuel ctx [] state
+          | none => fail state .InvalidArguments
           | some references =>
               match patchSetImmutableStmts? references base value with
               | none => fail state .InvalidArguments
