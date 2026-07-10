@@ -141,8 +141,10 @@ Successful artifact construction internally derives all of the following:
   substitution, and the exact final image.
 
 None of these appears as a premise of the canonical public theorem. The
-architecture gate rejects regressions that reintroduce initial-state, scratch
-safety, generated-context, certificate, or oracle premises. It also fails when
+architecture gate (`scripts/check_architecture.sh`, run via `scripts/verify.sh`
+rather than the public CI workflow) rejects regressions that reintroduce
+initial-state, scratch safety, generated-context, certificate, or oracle
+premises. It also fails when
 any built `.lake` object lacks a matching source module, so deleted Lean API
 cannot silently keep resolving from orphaned build artifacts after a refactor.
 
@@ -207,7 +209,7 @@ checked dialect profile. Unknown future names fail closed.
 
 Closed native frame execution is governed by the EVMYulLean commit selected in
 `lakefile.lean`. This compiler repo currently pins
-`b908ec317a7bc9d70ee3704329a46db16d833009` (branch `pin-fixes-on-djtotal`),
+`b08573c65e33feb5331abe2b7c1d76be89bb8eff` (branch `djtotal`),
 which includes native `CLZ`, execution-side EIP-7702 delegated-code lookup,
 Fusaka MODEXP gas/size rules (plus wide-base MODEXP and PUSH-payload
 right-padding decode fixes), and a total Nat-indexed jumpdest scanner `D_J_aux`
@@ -215,7 +217,10 @@ right-padding decode fixes), and a total Nat-indexed jumpdest scanner `D_J_aux`
 (`D_J_aux_out_of_bounds`/`D_J_aux_step`/`D_J_def`); `D_J`'s signature and
 values are unchanged, but the scanner is no longer opaque, which is what lets
 this repo prove jumpdest-scan membership instead of gating on the runtime
-`jumpdestCorrect?` check. The raw solc `clz` builtin is supported through the
+`jumpdestCorrect?` check. The pin also makes `keccak256` a pure total Lean
+implementation as the logical meaning of `KEC` (`EvmYul/SpongeHash`), with
+the native FFI hash retained only as an `@[extern]` execution fast path, so
+keccak is no longer an opaque FFI-trusted value in the model. The raw solc `clz` builtin is supported through the
 verified generated-helper lowering before Osaka and through native opcode
 emission from Osaka onward. EIP-7702 transaction authorization-list processing
 remains outside this frame-level compiler theorem.
@@ -475,9 +480,12 @@ structured `irOptimizedAst`; the raw compiler rejects its missing AST. Safe and
 EntryPoint are compile gates; only cases for which solc emits a reference image
 are counted as differential execution tests. The kernel proof gate replays
 `#print axioms` for the primary raw and gasful theorems and the canonical
-`Yul.EndToEnd` theorems — including the gasful Total crown endpoints and the
-immutable/library patch theorems — and fails unless every report is exactly
-`propext`, `Classical.choice`, and `Quot.sound`.
+`Yul.EndToEnd` theorems — including the gasful Total crown endpoints, the
+immutable/library patch theorems, the frozen `Solidus.compile_correct` and
+`compile_correct_creation` crowns, the `OpenRunContainment` triangulation
+lemmas, and the bad-jump/stack-overflow pruning endpoints — and fails unless
+every report is contained in `propext`, `Classical.choice`, and `Quot.sound`
+(a strict subset passes; any axiom beyond that set fails).
 The supported-version matrix also compiles honest London and Cancun fixtures
 and rejects Cancun-only `MCOPY`/transient-storage syntax relabeled as London.
 It separately compiles London `difficulty()` and Paris `prevrandao()`, then

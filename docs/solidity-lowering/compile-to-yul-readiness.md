@@ -841,4 +841,4 @@ immutables, gas/initCode alignment, elaboration correctness) is deferred, per th
 roadmap's "no new speculative interfaces" — the current phase only needs to leave
 the source semantics clean, and it is close.
 
-*Deliverable written (uncommitted) at `docs/compile-to-yul-readiness.md`.*
+*Deliverable now lives at `docs/solidity-lowering/compile-to-yul-readiness.md`.*

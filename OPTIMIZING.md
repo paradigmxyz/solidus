@@ -151,7 +151,7 @@ $ scripts/opt_harness.sh bench
 === BENCH ===
 commit 1a2b3c4d5e6f  2026-07-06T02:41:08Z  solc 0.8.26+commit.8a97fa7a...
 executor: foundry-forge-test forge Version: 1.5.1-stable  evm=cancun  deploy=computed
-contracts: 57   wall time: 365.0s (compile 340s + gas 25s)
+contracts: 48   wall time: 365.0s (compile 340s + gas 25s)
 
   contract                                   total_gas    deploy    exec runtime  creat  solcRT  ratio
 ------------------------------------------------------------------------------------------------------
@@ -363,15 +363,15 @@ file hashes but redefines something the frozen statements depend on:
   ~20s once built. This check reads the environment as built, so it reflects the
   current (possibly uncommitted) sources.
 
-  Status: as of this writing the definition-level check FAILS with 29 escaping
-  constants — genuine semantic dependencies of frozen statements that still live
-  in mutable modules (`Yul.EffectSemantics`, `Solidity.Frontend`,
-  `Objects.Syntax`, `Solidity.RawAst`) plus the documented C6 gap
-  (`Assembly.Compact.InteractionSemantics.openRunNResult` in the theorem
-  statement). These are exactly the `#allow` (c) residuals the import-level
-  checker cannot see; closing them requires relocating those symbols into frozen
-  modules, not extending the allowlist (the allowlist is only for the
-  `compile?`-entry family).
+  Status: the definition-level check PASSES. The 29 escaping constants that
+  failed earlier snapshots were relocated into frozen modules during the freeze
+  finalization; the single remaining residual,
+  `Assembly.Compact.InteractionSemantics.openRunNResult` (referenced by the
+  `Solidus.compile_correct` statement), is accepted because its containment is
+  proved outright in `EvmCompiler/Solidus/OpenRunContainment.lean`
+  (`openRun_triangulated` et al.). The checker reports it as an accepted
+  proved-contained residual, not an allowlist entry (the allowlist is only for
+  the `compile?`-entry family).
 
 ## Timing
 

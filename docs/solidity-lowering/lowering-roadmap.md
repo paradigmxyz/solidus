@@ -4,9 +4,10 @@ Status: roadmap, 2026-07-09 (moved from the source repo; planning now lives
 here in `evm-compiler/docs/solidity-lowering/`). **Naming**: "solidity-lean"
 is the source-semantics project (`../solidity-lean`, formerly
 solid-core-spine); "the backend" is this repo's existing verified Yul→EVM
-tower (Solidus). This repo pins solidity-lean as its topmost source language
-the same way it pins EVMYulLean for the EVM/Yul semantics; solidity-lean
-itself contains no compiler code.
+tower (Solidus). The plan is for this repo to pin solidity-lean as its
+topmost source language the same way it pins EVMYulLean for the EVM/Yul
+semantics (the `lakefile.lean` require is Stage 1 work, not yet added);
+solidity-lean itself contains no compiler code.
 
 Executes the plan converged in `compile-to-yul-readiness.md` (§3 tower),
 `memory-layer-design.md` (Sm/Sx design, both in this folder), and the

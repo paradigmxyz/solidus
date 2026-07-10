@@ -25,12 +25,19 @@ metadata also accepts the family aliases Pectra for Prague and Fusaka for
 Osaka.
 
 Post-Cancun native EVM semantics are bounded by the EVMYulLean commit selected
-in `lakefile.lean`. The selected pin `b908ec317a7bc9d70ee3704329a46db16d833009`
-(branch `pin-fixes-on-djtotal`) covers Fusaka opcode `CLZ`, Fusaka MODEXP
+in `lakefile.lean`. The selected pin `b08573c65e33feb5331abe2b7c1d76be89bb8eff`
+(branch `djtotal`) covers Fusaka opcode `CLZ`, Fusaka MODEXP
 gas/size changes (including wide-base MODEXP and PUSH-payload right-padding
-decode fixes), execution-side EIP-7702 delegated EOA code-image lookup, and a total
+decode fixes), execution-side EIP-7702 delegated EOA code-image lookup, a total
 Nat-indexed jumpdest scanner (`D_J_aux` with unfolding lemmas), which is what
-lets this repo prove jumpdest-scan membership for compiled label destinations.
+lets this repo prove jumpdest-scan membership for compiled label destinations,
+and a pure total Lean Keccak-256 implementation as the logical meaning of
+`keccak256` (the FFI implementation is an `@[extern]` `def` over it).
+The Simulation interaction alphabet (`Simulation.Interaction.*`,
+`OpenWorld`, `Outcome`) is sourced from the sibling `evm-interaction`
+package required in `lakefile.lean` and re-exported through
+`EvmCompiler/Simulation/`; it is the single shared alphabet between this
+repo and the EVMYulLean pin.
 The raw Yul `clz` builtin is supported by generated-helper lowering before
 Osaka and by native `CLZ` emission from Osaka onward, with both paths covered
 by the raw-source preservation proof. EIP-7702 transaction authorization-list
