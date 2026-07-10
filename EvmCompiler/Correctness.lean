@@ -88,7 +88,7 @@ from the canonical hashes, and the scoring runner independently re-checks
 the hashes from configuration outside the submission's reach. The theorems
 must elaborate against the submitted compiler with axioms contained in
 `{propext, Classical.choice, Quot.sound}` (checked by `#print axioms` in
-CI, which also rules out `sorry` and `native_decide`).
+CI, which also rules out proof holes and `native_decide`).
 -/
 
 namespace EvmCompiler
