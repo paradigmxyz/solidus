@@ -3,12 +3,15 @@
   "packagesDir": ".lake/packages",
   "packages": [
     {
-      "type": "path",
+      "url": "https://github.com/danrobinson/evm-interaction.git",
+      "type": "git",
+      "subDir": null,
       "scope": "",
+      "rev": "c939817c55f966dab97e1ba8df05ceca1fdfbdb2",
       "name": "\u00abevm-interaction\u00bb",
       "manifestFile": "lake-manifest.json",
+      "inputRev": "c939817c55f966dab97e1ba8df05ceca1fdfbdb2",
       "inherited": false,
-      "dir": "../evm-interaction",
       "configFile": "lakefile.lean"
     },
     {
