@@ -87,7 +87,12 @@ behavior-preservation validated by the corpus.
     the same pattern as the EVMYulLean pin. The backend's theorems
     (`compile_correct`, `ForwardRel.trans`) are then ordinary imports.
     Nothing in `benchmarks/frozen_manifest.txt` changes.
-1.2 **Alphabet single-sourcing (hard prerequisite).** Both sides currently
+1.2 **Alphabet single-sourcing — DONE (2026-07-09/10).** Resolved ahead of
+    schedule: evm-interaction module paths renamed to `EvmInteraction.*`
+    (namespaces unchanged), this repo consumes it as a git-pinned dependency
+    (`danrobinson/evm-interaction @ c939817`) with re-export stubs at
+    `EvmCompiler/Simulation/*`; freeze artifacts and canonical hashes
+    repinned. Original prerequisite text (for the record): Both sides currently
     declare the module `EvmCompiler.Simulation.*` — this repo owns the
     frozen originals; solidity-lean re-exports the byte-identical
     `../evm-interaction` extraction. Lake cannot load both: adding the
@@ -96,7 +101,12 @@ behavior-preservation validated by the corpus.
     the switch already anticipated by the extraction plan, gated on the
     next challenge freeze rev. Sequence Stage 1 to land at (or just after)
     that rev; nothing else in this roadmap can build before it.
-1.3 **Primitive unification (keccak).** Words are already shared
+1.3 **Primitive unification (keccak) — DONE (2026-07-09).** The permanent
+    plan landed: `keccak256` is a pure total `def` in
+    `danrobinson/EVMYulLean @ b08573c` behind `@[extern]`; solidity-lean
+    re-exports it (repo-owned impl deleted); all repos share one keccak
+    definitionally — no `hKec` hypothesis needed anywhere. Original plan
+    text (for the record): Words are already shared
     definitionally (`EvmYul.UInt256`-lifted ops on both sides). Keccak is
     not: EVMYulLean's `ffi.keccak256` is `opaque @[extern]` (nothing is
     provable about it), so solidity-lean keeps a repo-owned pure Keccak-256
