@@ -308,12 +308,26 @@ jobs:
           set -euo pipefail
           lake build evm-compiler-backend
 
+      # ---- Python deps for output validation. The determinism step below runs
+      #      the wrapper with SOLC_LEAN_VALIDATE_OUTPUT=1, which schema-checks
+      #      each Standard JSON output via scripts/validate_bridge_json.py. That
+      #      validator imports `jsonschema` (declared in pyproject.toml); the
+      #      base runner does not ship it, so install it here.
+      - name: Install Python validation deps (jsonschema)
+        run: |
+          set -euo pipefail
+          python3 -m pip install --user "jsonschema>=4.23,<5"
+
       # ---- (c) DETERMINISM: double-compile 3 sentinels, require identical bytes.
       - name: Determinism check (double raw-image, 3 sentinels)
         env:
           # Point the solc driver at the pinned real solc + this checkout's lake.
           SOLC_LEAN_REAL_SOLC: ${{ env.SOLC_BIN }}
-          SOLC_LEAN_VALIDATE_OUTPUT: "0"
+          # Validate every Standard JSON output against the public JSON Schemas
+          # (scripts/*.schema.json) via scripts/validate_bridge_json.py. This is
+          # cheap relative to the double raw-image compile and catches
+          # output-shape regressions in CI. Requires jsonschema (installed above).
+          SOLC_LEAN_VALIDATE_OUTPUT: "1"
         run: |
           set -euo pipefail
           export SOLC_LEAN_LAKE="$(command -v lake)"

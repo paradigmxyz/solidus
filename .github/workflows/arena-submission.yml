@@ -105,10 +105,14 @@ jobs:
           echo "Declared base record: ${RECORD}"
 
           # 2) Does that tag exist yet?
+          #    Before Season 1's first record tag there is legitimately nothing
+          #    to check. Skip LOUDLY (a single prominent ::notice::, with title)
+          #    so the bypass is visible in the checks UI, and make explicit that
+          #    this arm disappears — becoming a hard gate — the moment any
+          #    record tag exists. The enforced path (step 3) engages
+          #    automatically then, with no further edit to this workflow.
           if ! git rev-parse -q --verify "refs/tags/${RECORD}" >/dev/null; then
-            echo "::notice::Tag '${RECORD}' does not exist yet — skipping the"
-            echo "::notice::ancestry check. (No records tagged at launch; this"
-            echo "::notice::becomes a hard check once record tags exist.)"
+            echo "::notice title=based-on ancestry check SKIPPED::No record tags exist yet (tag '${RECORD}' not found); the based-on ancestry check is SKIPPED. This becomes a hard gate automatically once the first record tag is pushed."
             exit 0
           fi
 

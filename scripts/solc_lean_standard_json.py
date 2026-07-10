@@ -11,6 +11,11 @@ Standard JSON output including `irOptimizedAst`, and the in-Lean raw decoder
 (`evm-compiler-backend raw-image`, backed by
 `Solidity.RawAst.compileArtifactFromRawSolcIr?`) compiles each contract
 directly from that output.  No Python-side Yul translation is involved.
+
+Because the verified Lean path compiles solc's via-IR output only, this wrapper
+always forces `settings.viaIR = true` on the incoming Standard JSON.  If the
+caller did not already request via-IR, a one-line notice is emitted to stderr
+disclosing the override (stdout carries only the solc-shaped JSON output).
 """
 
 from __future__ import annotations
@@ -96,13 +101,24 @@ def requested_output_names(compiler_input: Any) -> set:
 
 
 def augment_standard_json_input(compiler_input: Any) -> Any:
-    """Force viaIR and add the outputs the Lean raw decoder consumes."""
+    """Force viaIR and add the outputs the Lean raw decoder consumes.
+
+    Emits a one-line stderr notice when viaIR was not already truthy, so the
+    override is disclosed to the caller rather than applied silently.  Only
+    stderr is used; stdout is reserved for the JSON output callers parse.
+    """
     augmented = copy.deepcopy(compiler_input)
     if not isinstance(augmented, dict):
         return augmented
     settings = augmented.setdefault("settings", {})
     if not isinstance(settings, dict):
         return augmented
+    if not settings.get("viaIR"):
+        print(
+            "notice: settings.viaIR forced to true — the verified Lean path "
+            "compiles solc's via-IR output only",
+            file=sys.stderr,
+        )
     settings["viaIR"] = True
     selection = settings.setdefault("outputSelection", {})
     if not isinstance(selection, dict):
