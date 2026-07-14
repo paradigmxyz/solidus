@@ -1,8 +1,53 @@
-# Verified Yul-to-EVM compiler
+# Solidus
 
-This repository contains a Lean implementation and preservation proof for the
-solc Yul-to-EVM bytecode pipeline, plus Python and Forge-based integration
-tests.
+Solidus is a work-in-progress compiler from Solidity to the EVM, implemented
+and formally verified in [Lean 4](https://lean-lang.org/).
+
+> **⚠️ Pre-alpha.** Solidus is a research project, not production software. Do
+> not use it to compile contracts that hold real value. The formal verification
+> has known and (likely) unknown gaps — part of the point of opening this
+> project up is to pressure-test them.
+
+## What is here today
+
+The **backend** of Solidus — from Yul (the intermediate representation used by
+the Solidity compiler) down to EVM bytecode — is essentially complete and
+formally verified. A single Lean theorem, `Solidus.compile_correct`, connects
+the source program's semantics to the emitted bytes on a pinned EVM
+interpreter. The repository also contains a proposed formal semantics for Yul.
+
+The **frontend** (Solidity → Yul) does not exist yet. Today the supported
+pipeline takes the `irOptimizedAst` Yul object emitted by a pinned `solc` and
+compiles it to bytecode, with a machine-checked preservation proof from
+compile success alone. Finalizing a frozen Solidity source semantics and
+building a verified frontend against it is the next phase of the project.
+
+Because the correctness claim is a machine-checked theorem over a frozen
+specification, contributions do not need a "did you break something" review
+step: if the compiler builds, the axiom audit is clean, and the frozen spec
+still elaborates, a rewrite is correct by construction. That is what makes
+aggressive, trustless optimization — including by untrusted automated
+contributors — possible. See [`CHALLENGE.md`](CHALLENGE.md) for the
+optimization challenge built on this property.
+
+## How it was built
+
+Solidus is an automated-research project: no human read or wrote a line of its
+code. It was built over roughly ten weeks of aggregate agent time across many
+parallel threads, primarily with OpenAI's Codex, with Harmonic's Aristotle
+used for some of the hardest proofs and Claude used for some of the final
+steps. Humans supplied the spec judgment and some of the higher-level proof
+architecture.
+
+## Trust boundary and proof status
+
+- [`PRODUCTION_ASSUMPTIONS.md`](PRODUCTION_ASSUMPTIONS.md) — the authoritative
+  trust and theorem boundary, including a "Which theorem should I rely on?"
+  guide.
+- [`ROADMAP.md`](ROADMAP.md) — current proof scope and remaining gaps.
+- [`CHALLENGE.md`](CHALLENGE.md) — the Solidus optimization challenge: make
+  compiled contracts cheaper while the theorem still proves.
+- [`CONTRIBUTING.md`](CONTRIBUTING.md) — how to contribute.
 
 ## Install on macOS or Linux
 
@@ -23,8 +68,8 @@ System prerequisites:
 Then run:
 
 ```sh
-git clone <repository-url> evm-compiler
-cd evm-compiler
+git clone https://github.com/paradigmxyz/solidus.git
+cd solidus
 ./scripts/setup.sh
 ```
 
@@ -73,7 +118,4 @@ No manual virtual-environment activation or `pip install` is needed. Use
 script that imports project Python dependencies.
 
 Detailed bridge and diagnostic command documentation lives in
-[`scripts/README.md`](scripts/README.md). The authoritative trust and theorem
-boundary — including a "Which theorem should I rely on?" guide — is
-[`PRODUCTION_ASSUMPTIONS.md`](PRODUCTION_ASSUMPTIONS.md); current proof scope
-and remaining gaps are tracked in [`ROADMAP.md`](ROADMAP.md).
+[`scripts/README.md`](scripts/README.md).
