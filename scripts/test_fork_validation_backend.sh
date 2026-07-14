@@ -41,7 +41,7 @@ compile_bridge() {
 check_pass() {
   local bridge="$1"
   local report="$2"
-  "$LAKE_BIN" exe evm-compiler-backend check "$bridge" > "$report"
+  "$LAKE_BIN" exe solidus-backend check "$bridge" > "$report"
   grep -qx 'lean_backend_check=pass' "$report"
   grep -qx 'first_none=none' "$report"
 }
@@ -67,7 +67,7 @@ check_rejected() {
   local bridge="$1"
   local report="$2"
   "$PYTHON_BIN" "$ROOT/scripts/validate_bridge_json.py" --quiet "$bridge"
-  "$LAKE_BIN" exe evm-compiler-backend check "$bridge" > "$report"
+  "$LAKE_BIN" exe solidus-backend check "$bridge" > "$report"
   grep -qx 'lean_backend_check=fail' "$report"
   grep -qx 'first_none=object_image' "$report"
 }

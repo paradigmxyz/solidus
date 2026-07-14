@@ -9223,7 +9223,7 @@ class SolidityToYulLeanTests(unittest.TestCase):
                 [
                     solc_lean_wrapper.default_lake(),
                     "exe",
-                    "evm-compiler-backend",
+                    "solidus-backend",
                     "raw-image",
                 ],
             )

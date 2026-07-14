@@ -229,7 +229,7 @@ run_raw_summary() {
   local raw_json="$OUTDIR/aave-pool-$version.standard-output.json"
   local report="$OUTDIR/aave-pool-$version-$selector.raw-summary.txt"
 
-  "$LAKE_BIN" exe evm-compiler-backend raw-summary \
+  "$LAKE_BIN" exe solidus-backend raw-summary \
     "$raw_json" "$AAVE_SOURCE" "$AAVE_CONTRACT" "$selector" > "$report"
 
   local bytes

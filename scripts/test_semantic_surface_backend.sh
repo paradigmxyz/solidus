@@ -45,10 +45,10 @@ compile_object() {
 
   "$PYTHON_BIN" "$ROOT/scripts/validate_bridge_json.py" --quiet "$bridge"
   if [[ "$kind" == "runtime" ]]; then
-    "$LAKE_BIN" exe evm-compiler-backend stack-diagnostics "$bridge" \
+    "$LAKE_BIN" exe solidus-backend stack-diagnostics "$bridge" \
       > "$diagnostics"
   else
-    "$LAKE_BIN" exe evm-compiler-backend image "$bridge" > "$diagnostics"
+    "$LAKE_BIN" exe solidus-backend image "$bridge" > "$diagnostics"
   fi
 }
 

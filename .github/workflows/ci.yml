@@ -238,7 +238,7 @@ jobs:
   #                    job already built/installed; only Foundry is added.
   #
   #   All steps reuse ONE Lean build (check builds the EvmCompiler lib; the
-  #   determinism step's `lake build evm-compiler-backend` is then incremental,
+  #   determinism step's `lake build solidus-backend` is then incremental,
   #   and the execution differential reuses that same exe).
   # ---------------------------------------------------------------------------
   proof-and-determinism:
@@ -328,7 +328,7 @@ jobs:
       - name: Build backend exe
         run: |
           set -euo pipefail
-          lake build evm-compiler-backend
+          lake build solidus-backend
 
       # ---- Python deps for output validation. The determinism step below runs
       #      the wrapper with SOLC_LEAN_VALIDATE_OUTPUT=1, which schema-checks

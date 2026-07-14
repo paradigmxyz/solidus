@@ -8,7 +8,7 @@ solc so tools can still probe `--version`, `--help`, and similar metadata.
 
 Bytecode is produced by the supported verified route: the real solc emits
 Standard JSON output including `irOptimizedAst`, and the in-Lean raw decoder
-(`evm-compiler-backend raw-image`, backed by
+(`solidus-backend raw-image`, backed by
 `Solidity.RawAst.compileArtifactFromRawSolcIr?`) compiles each contract
 directly from that output.  No Python-side Yul translation is involved.
 
@@ -179,12 +179,12 @@ def run_raw_backend(
     Dict[str, List[Dict[str, int]]],
     Dict[str, List[Dict[str, int]]],
 ]:
-    """Run `evm-compiler-backend raw-image`; parse bytecode, immutable
+    """Run `solidus-backend raw-image`; parse bytecode, immutable
     references, and (for unlinked libraries) solc-shaped link references."""
     command = [
         lake,
         "exe",
-        "evm-compiler-backend",
+        "solidus-backend",
         "raw-image",
         str(raw_output_path),
         source_name,

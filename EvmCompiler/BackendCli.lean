@@ -1293,10 +1293,10 @@ def runRaw (config : RawConfig) : IO Unit := do
           pure ()
 
 def usage : String :=
-  "usage: evm-compiler-backend " ++
+  "usage: solidus-backend " ++
     "(image|summary|check|stack-analysis|stack-diagnostics) " ++
     "BRIDGE_JSON [NAME=DECIMAL ...]\n" ++
-    "   or: evm-compiler-backend " ++
+    "   or: solidus-backend " ++
     "(raw-image|raw-summary|raw-check) " ++
     "RAW_STANDARD_JSON SOURCE CONTRACT (creation|runtime|OBJECT_NAME)"
 

@@ -91,12 +91,12 @@ print(f"adversarial_mload_calls={calls['mload']}")
 PY
 
 for selector in creation runtime; do
-  "$LAKE_BIN" exe evm-compiler-backend summary \
+  "$LAKE_BIN" exe solidus-backend summary \
     "$OUTDIR/adversarial.$selector.bridge.json" \
     >"$OUTDIR/adversarial.$selector.backend.txt"
 done
 
-"$LAKE_BIN" exe evm-compiler-backend stack-diagnostics "$RUNTIME_BRIDGE" \
+"$LAKE_BIN" exe solidus-backend stack-diagnostics "$RUNTIME_BRIDGE" \
   >"$OUTDIR/adversarial.runtime.diagnostics.txt"
 
 "$PYTHON_BIN" - \
@@ -275,7 +275,7 @@ for entry in manifest.get("entries", []):
     if bridge.get("frontend") != {"producer": "solc", "ast": "irOptimizedAst", "evmVersion": "cancun"}:
         raise SystemExit(f"{contract}/{selector}: frontend provenance drift")
     completed = subprocess.run(
-        [lake, "exe", "evm-compiler-backend", "summary", str(path)],
+        [lake, "exe", "solidus-backend", "summary", str(path)],
         cwd=root,
         text=True,
         stdout=subprocess.PIPE,

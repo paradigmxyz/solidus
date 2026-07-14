@@ -1,5 +1,5 @@
 [project]
-name = "evm-compiler-tools"
+name = "solidus-tools"
 version = "0.1.0"
 description = "Python tooling for the verified Yul-to-EVM compiler"
 requires-python = ">=3.12,<3.13"

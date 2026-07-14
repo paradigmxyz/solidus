@@ -217,7 +217,7 @@ PY
 for version in 0.8.17 0.8.26 0.8.35; do
   version_key="${version//./_}"
   report="$OUTDIR/permit2-$version.raw-check.txt"
-  if "$LAKE_BIN" exe evm-compiler-backend raw-check \
+  if "$LAKE_BIN" exe solidus-backend raw-check \
       "$OUTDIR/permit2-$version.standard-output.json" \
       "$PERMIT2_SOURCE" "$PERMIT2_CONTRACT" runtime > "$report" 2>&1; then
     printf 'Permit2 solc %s rejection JSON unexpectedly decoded\n' "$version" >&2

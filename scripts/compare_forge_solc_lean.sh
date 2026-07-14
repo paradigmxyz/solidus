@@ -29,7 +29,7 @@ Runs the same Forge test selection twice:
   2. solc-lean via scripts/solc_lean_standard_json.py
 
 The solc-lean run produces bytecode through the verified in-Lean raw path
-(solc Standard JSON output decoded by \`evm-compiler-backend raw-image\`).
+(solc Standard JSON output decoded by \`solidus-backend raw-image\`).
 
 Environment:
   SOLC      Real solc executable. Default: solc

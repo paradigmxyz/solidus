@@ -211,7 +211,7 @@ run_raw_summary() {
   local raw_json="$OUTDIR/poolmanager-0.8.26.standard-output.json"
   local report="$OUTDIR/poolmanager-0.8.26-$selector.raw-summary.txt"
 
-  "$LAKE_BIN" exe evm-compiler-backend raw-summary \
+  "$LAKE_BIN" exe solidus-backend raw-summary \
     "$raw_json" "$POOLMANAGER_SOURCE" "$POOLMANAGER_CONTRACT" "$selector" \
     > "$report"
 

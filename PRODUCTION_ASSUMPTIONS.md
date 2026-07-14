@@ -418,7 +418,7 @@ gasful end-to-end theorems.
 ### Compiled fast-path implementations (`@[csimp]` vs `@[implemented_by]`)
 
 Several spec-level functions have a linear "Fast" twin so the shipped
-`evm-compiler-backend` binary avoids the quadratic list-append / `flatMap`
+`solidus-backend` binary avoids the quadratic list-append / `flatMap`
 behavior of the reference definitions. Each such swap is a compile-time
 substitution the kernel/`#print axioms` audit does not otherwise see, so it
 belongs in the trusted-computing base *unless* the substitution is a proved

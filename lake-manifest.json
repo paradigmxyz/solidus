@@ -135,6 +135,6 @@
       "configFile": "lakefile.toml"
     }
   ],
-  "name": "\u00abevm-compiler\u00bb",
+  "name": "\u00absolidus\u00bb",
   "lakeDir": ".lake"
 }

@@ -94,9 +94,9 @@ RAW_AFTER="$OUTDIR/raw-after.txt"
 BRIDGE_BEFORE="$OUTDIR/bridge-before.txt"
 BRIDGE_AFTER="$OUTDIR/bridge-after.txt"
 
-"$LAKE_BIN" exe evm-compiler-backend raw-summary \
+"$LAKE_BIN" exe solidus-backend raw-summary \
   "$RAW_JSON" Simple.sol Simple runtime > "$RAW_BEFORE"
-"$LAKE_BIN" exe evm-compiler-backend summary \
+"$LAKE_BIN" exe solidus-backend summary \
   "$BRIDGE_JSON" > "$BRIDGE_BEFORE"
 
 raw_before_bytes="$(sed -n 's/^bytecode_bytes=//p' "$RAW_BEFORE")"
@@ -112,13 +112,13 @@ if [[ "$raw_before_bytes" != "$bridge_before_bytes" ]]; then
 fi
 
 printf '{ "frontend": "mutated normalized bridge" }\n' > "$BRIDGE_JSON"
-if "$LAKE_BIN" exe evm-compiler-backend summary "$BRIDGE_JSON" \
+if "$LAKE_BIN" exe solidus-backend summary "$BRIDGE_JSON" \
     > "$BRIDGE_AFTER" 2>&1; then
   echo "mutated normalized bridge unexpectedly compiled" >&2
   exit 1
 fi
 
-"$LAKE_BIN" exe evm-compiler-backend raw-summary \
+"$LAKE_BIN" exe solidus-backend raw-summary \
   "$RAW_JSON" Simple.sol Simple runtime > "$RAW_AFTER"
 raw_after_bytes="$(sed -n 's/^bytecode_bytes=//p' "$RAW_AFTER")"
 if [[ "$raw_after_bytes" != "$raw_before_bytes" ]]; then

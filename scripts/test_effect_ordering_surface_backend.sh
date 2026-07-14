@@ -36,7 +36,7 @@ EXECUTION_COMPARE="$OUTDIR/effect-ordering.execution.compare.txt"
 
 "$PYTHON_BIN" "$ROOT/scripts/validate_bridge_json.py" \
   --quiet "$RUNTIME_BRIDGE"
-"$LAKE_BIN" exe evm-compiler-backend stack-diagnostics \
+"$LAKE_BIN" exe solidus-backend stack-diagnostics \
   "$RUNTIME_BRIDGE" > "$RUNTIME_DIAGNOSTICS"
 
 "$PYTHON_BIN" "$ROOT/scripts/solidity_to_yul_lean.py" \
@@ -48,7 +48,7 @@ EXECUTION_COMPARE="$OUTDIR/effect-ordering.execution.compare.txt"
   --optimized \
   --format bridge-json \
   --output "$OUTDIR/effect-ordering.creation.bridge.json"
-"$LAKE_BIN" exe evm-compiler-backend image \
+"$LAKE_BIN" exe solidus-backend image \
   "$OUTDIR/effect-ordering.creation.bridge.json" > "$CREATION_IMAGE"
 
 "$PYTHON_BIN" "$ROOT/scripts/compare_contract_call_bytecode.py" \

@@ -7,7 +7,7 @@ require «evm-interaction» from git
 require evmyul from git
   "https://github.com/danrobinson/EVMYulLean.git" @ "b08573c65e33feb5331abe2b7c1d76be89bb8eff"
 
-package «evm-compiler» {
+package «solidus» {
   moreLeanArgs := #[
     "-DautoImplicit=false",
     "-Dlinter.all=false",
@@ -37,5 +37,5 @@ package «evm-compiler» {
 @[default_target]
 lean_lib «EvmCompiler»
 
-lean_exe «evm-compiler-backend» where
+lean_exe «solidus-backend» where
   root := `EvmCompiler.BackendCli

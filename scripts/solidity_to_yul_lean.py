@@ -6448,7 +6448,7 @@ def run_lake_native_object_image(
     command = [
         lake,
         "exe",
-        "evm-compiler-backend",
+        "solidus-backend",
         "image",
         str(json_path),
     ]
@@ -6492,7 +6492,7 @@ def run_lake_native_backend_check(
     command = [
         lake,
         "exe",
-        "evm-compiler-backend",
+        "solidus-backend",
         "check",
         str(json_path),
     ]
@@ -7735,7 +7735,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
             "formats bytecode, bytecode-artifact, forge-artifact, and "
             "standard-json-output refuse to run; use the verified raw path "
             "(scripts/solc_lean_standard_json.py or `lake exe "
-            "evm-compiler-backend raw-image`) to produce artifacts."
+            "solidus-backend raw-image`) to produce artifacts."
         ),
     )
     parser.add_argument("--no-via-ir", dest="via_ir", action="store_false")
@@ -8555,7 +8555,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 "(or set EVM_COMPILER_UNVERIFIED_DIAGNOSTIC=1) to run it as "
                 "a diagnostic, or produce artifacts through the verified raw "
                 "path instead: scripts/solc_lean_standard_json.py or `lake "
-                "exe evm-compiler-backend raw-image` on solc Standard JSON "
+                "exe solidus-backend raw-image` on solc Standard JSON "
                 "output"
             )
         if args.optimizer_runs is not None:

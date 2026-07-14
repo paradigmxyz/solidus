@@ -84,7 +84,7 @@ The harness has two jobs:
 
 1. **Measure gas.** It compiles a corpus of Solidity sources through the only
    supported entry, the raw solc Standard JSON path
-   (`scripts/solc_lean_standard_json.py` → `evm-compiler-backend raw-image`),
+   (`scripts/solc_lean_standard_json.py` → `solidus-backend raw-image`),
    then computes each contract's `deploy_gas` and measures its `exec_gas` on the
    pinned executor. It reports per-contract and total gas plus the underlying
    runtime/creation byte sizes and the cap flags.

@@ -79,7 +79,7 @@ AAVE_BACKEND="$OUTDIR/aave-pool-runtime.backend.txt"
 "$PYTHON_BIN" "$ROOT/scripts/validate_bridge_json.py" \
   --quiet "$PERMIT2_BRIDGE"
 
-"$LAKE_BIN" exe evm-compiler-backend stack-diagnostics \
+"$LAKE_BIN" exe solidus-backend stack-diagnostics \
   "$PERMIT2_BRIDGE" > "$PERMIT2_BACKEND"
 
 (
@@ -100,7 +100,7 @@ AAVE_BACKEND="$OUTDIR/aave-pool-runtime.backend.txt"
 "$PYTHON_BIN" "$ROOT/scripts/validate_bridge_json.py" \
   --quiet "$AAVE_BRIDGE"
 
-"$LAKE_BIN" exe evm-compiler-backend stack-diagnostics "$AAVE_BRIDGE" \
+"$LAKE_BIN" exe solidus-backend stack-diagnostics "$AAVE_BRIDGE" \
   contracts/protocol/libraries/logic/BorrowLogic.sol:BorrowLogic=97433442488726861213578988847752201310395502865 \
   contracts/protocol/libraries/logic/BridgeLogic.sol:BridgeLogic=194866884977453722427157977695504402620791005730 \
   contracts/protocol/libraries/logic/EModeLogic.sol:EModeLogic=292300327466180583640736966543256603931186508595 \

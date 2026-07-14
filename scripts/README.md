@@ -153,7 +153,7 @@ handing it to the verified Lean backend, so they refuse to run without the
 explicit `--unverified-diagnostic` flag (or
 `EVM_COMPILER_UNVERIFIED_DIAGNOSTIC=1`).  Supported artifact production goes
 through the verified raw path instead: `scripts/solc_lean_standard_json.py`
-or `lake exe evm-compiler-backend raw-image` on solc Standard JSON output.
+or `lake exe solidus-backend raw-image` on solc Standard JSON output.
 
 You can also hand the bridge solc's native Standard JSON input directly.  The
 bridge augments `settings.outputSelection` with the Yul representation it
@@ -496,7 +496,7 @@ interfaces, and records whether each checked object came from solc `irAst` or
 `irOptimizedAst`.
 Use `--format lean-backend-check` when decode succeeds but executable bytecode
 generation returns `none`.  It runs through the cached native
-`evm-compiler-backend` executable over the same normalized bridge JSON and
+`solidus-backend` executable over the same normalized bridge JSON and
 reports whether `solc_validation` or `object_image` first failed, without
 treating an expected fail-closed backend rejection as malformed bridge input.
 The more detailed legacy stage trace remains a failure-only diagnostic for
@@ -541,7 +541,7 @@ object-image path.
 For executable MVP testing, `--format bytecode` emits backend bytecode hex
 by normalizing solc's Yul JSON AST in Python, writing the normalized bridge
 JSON to a temporary sidecar file, and invoking the native
-`evm-compiler-backend` executable, which compiles the verified
+`solidus-backend` executable, which compiles the verified
 `compileVerifiedStackObjectArtifact?` pipeline. Lake keeps that executable current, avoiding
 the much slower Lean IR interpreter used by `lean --run`. The same
 path can start from a cached bridge file with `--input-format bridge-json`, so
@@ -609,7 +609,7 @@ solc-compatible wrapper backed by the verified raw path.  It delegates probes
 such as `--version` to the real solc.  For `--standard-json`, it augments the
 request with `irOptimizedAst` output selection, runs the real solc, and then
 compiles every deployable contract straight from solc's Standard JSON output
-with `lake exe evm-compiler-backend raw-image`
+with `lake exe solidus-backend raw-image`
 (`Solidity.RawAst.compileArtifactFromRawSolcIr?`), replacing
 `evm.bytecode.object` and `evm.deployedBytecode.object` (plus
 `immutableReferences`) with Lean-produced bytecode.  No Python-side Yul

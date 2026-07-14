@@ -437,7 +437,7 @@ Next raw frontend layer:
   Permit2 remains fail-closed legacy coverage because solc 0.8.17 emits no
   structured `irOptimizedAst`. The complete fourteen-suite corpus and
   adversarial frontend fixtures are included in the aggregate gate.
-- [x] Add a raw-bridge transition path: `evm-compiler-backend raw-*` consumes
+- [x] Add a raw-bridge transition path: `solidus-backend raw-*` consumes
   raw solc Standard JSON directly through `RawAstPublic`, and the transition
   smoke proves normalized-bridge mutations cannot affect raw input compilation.
 - [x] Add local preservation/validation theorems for raw elaboration,

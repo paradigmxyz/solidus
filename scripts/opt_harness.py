@@ -3,7 +3,7 @@
 
 Measures emitted bytecode sizes across a corpus of Solidity contracts compiled
 through the *only* supported entry: the raw solc Standard JSON path
-(`scripts/solc_lean_standard_json.py` -> `evm-compiler-backend raw-image`).
+(`scripts/solc_lean_standard_json.py` -> `solidus-backend raw-image`).
 It also runs the correctness gate (proof-root build + axiom footprint check).
 
 This is measurement + gating tooling only.  It never edits the compiler.

@@ -374,7 +374,7 @@ run_raw_summary() {
   local raw_json="$OUTDIR/$label-$version.standard-output.json"
   local report="$OUTDIR/$label-$version-$selector.raw-summary.txt"
 
-  "$LAKE_BIN" exe evm-compiler-backend raw-summary \
+  "$LAKE_BIN" exe solidus-backend raw-summary \
     "$raw_json" "$source" "$contract" "$selector" > "$report"
 
   local bytes
