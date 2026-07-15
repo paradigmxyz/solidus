@@ -1484,12 +1484,45 @@ theorem resolveObjectBuiltinsIn?_occurrence
                                                 context.findImmutableReferences?
                                                   immutableName with
                                             | none =>
-                                                -- Fail-closed frontend: a
-                                                -- `setimmutable` whose name has
-                                                -- no references does not resolve,
-                                                -- so `hResolve` is contradictory.
                                                 simp [hName, hBase, hValue,
                                                   hRefs] at hResolve
+                                                rcases hResolve with
+                                                  ⟨hNoCalls, rfl⟩
+                                                cases hExpr with
+                                                | arg hMem hArg =>
+                                                    simp at hMem
+                                                    rcases hMem with
+                                                      hBaseMem |
+                                                      hNameMem |
+                                                      hValueMem
+                                                    · subst_vars
+                                                      rcases
+                                                          UserCall.resolveObjectBuiltinsIn?_occurrence
+                                                            hBase hArg with
+                                                        ⟨args', hArgs,
+                                                          hBase'⟩
+                                                      have hContains :=
+                                                        UserCall.containsUserCall?_eq_true
+                                                          hBase'
+                                                      rw [hNoCalls.1] at hContains
+                                                      contradiction
+                                                    · subst_vars
+                                                      have hNone :=
+                                                        UserCall.objectBuiltinNameArg?_none
+                                                          hArg
+                                                      rw [hName] at hNone
+                                                      simp at hNone
+                                                    · subst_vars
+                                                      rcases
+                                                          UserCall.resolveObjectBuiltinsIn?_occurrence
+                                                            hValue hArg with
+                                                        ⟨args', hArgs,
+                                                          hValue'⟩
+                                                      have hContains :=
+                                                        UserCall.containsUserCall?_eq_true
+                                                          hValue'
+                                                      rw [hNoCalls.2] at hContains
+                                                      contradiction
                                             | some references =>
                                                 cases hPatch :
                                                     Frontend.ImmutableReference.List.patchStmts?

@@ -210,6 +210,28 @@ def checkImageSizeCap (selector : Solidity.RawAst.ObjectSelector)
             "; the image is not deployable — set EVM_COMPILER_ALLOW_OVERSIZE=1 " ++
             "to emit it anyway"))
 
+/-- Fail-closed immutable-coverage guard for creation-object compiles: a
+`loadimmutable` name with no `setimmutable` site anywhere in the object tree
+means the deployed runtime would keep zero marker bytes where an immutable
+value was expected — the signature of a set/load name mismatch in the input.
+Runtime and named-object compiles are exempt (their `setimmutable` sites
+legitimately live in the enclosing creation object), as are unlinked-library
+exports (which enter as `linkersymbol`, not `loadimmutable`). -/
+def checkImmutableLoadCoverage (selector : Solidity.RawAst.ObjectSelector)
+    (object : Solidity.Frontend.Object) : IO Unit := do
+  match selector with
+  | .runtime | .named _ => pure ()
+  | .creation =>
+      match Solidity.Frontend.Object.uncoveredLoadImmutableNames object with
+      | [] => pure ()
+      | uncovered =>
+          throw (IO.userError
+            ("error: creation object reads immutable name(s) that no " ++
+              "setimmutable site ever writes: " ++
+              String.intercalate ", " uncovered ++
+              "; refusing to emit an image whose runtime would retain " ++
+              "unpatched zero marker bytes"))
+
 def resolveForSolcValidation?
     (object : Solidity.Frontend.Object)
     (computed : Solidity.Frontend.Object.ObjectComputedObjectData) :
@@ -1252,6 +1274,8 @@ def runRaw (config : RawConfig) : IO Unit := do
                   throw (IO.userError
                     "raw object-image rejected: no stack-headroom certificate")
               | some _ =>
+                  checkImmutableLoadCoverage config.selection.objectSelector
+                    program.object
                   checkImageSizeCap config.selection.objectSelector
                     artifact.image.bytes.length allowOversize
                   printImage config.mode artifact.image
@@ -1277,6 +1301,9 @@ def runRaw (config : RawConfig) : IO Unit := do
               throw (IO.userError
                 "raw object-image rejected: no stack-headroom certificate")
           | some bytes =>
+              if let some program := program? then
+                checkImmutableLoadCoverage config.selection.objectSelector
+                  program.object
               checkImageSizeCap config.selection.objectSelector
                 bytes.length allowOversize
               printImageBytes config.mode bytes artifact.image

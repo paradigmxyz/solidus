@@ -622,6 +622,24 @@ mutual
 end
 
 mutual
+  def Expr.setImmutableNames : Expr → List Name
+    | .lit _ => []
+    | .stringLit _ => []
+    | .bytesLit _ => []
+    | .var _ => []
+    | .call .objectBuiltin "setimmutable" [_base, nameArg, _value] =>
+        match Expr.objectBuiltinNameArg? nameArg with
+        | some name => [name]
+        | none => []
+    | .call _ _ args => Expr.List.setImmutableNames args
+
+  def Expr.List.setImmutableNames : List Expr → List Name
+    | [] => []
+    | expr :: rest =>
+        Expr.setImmutableNames expr ++ Expr.List.setImmutableNames rest
+end
+
+mutual
   def Expr.linkerSymbolNames : Expr → List Name
     | .lit _ => []
     | .stringLit _ => []
@@ -721,6 +739,42 @@ mutual
     | (_value, body) :: rest =>
         Stmt.List.loadImmutableNames body ++
           Stmt.CaseList.loadImmutableNames rest
+end
+
+mutual
+  def Stmt.setImmutableNames : Stmt → List Name
+    | .block stmts => Stmt.List.setImmutableNames stmts
+    | .letDecl _ none => []
+    | .letDecl _ (some value) => value.setImmutableNames
+    | .assign _ value => value.setImmutableNames
+    | .exprStmt expr => expr.setImmutableNames
+    | .functionDef _ _ _ body => Stmt.List.setImmutableNames body
+    | .switch scrutinee cases default =>
+        scrutinee.setImmutableNames ++
+          Stmt.CaseList.setImmutableNames cases ++
+          Stmt.List.setImmutableNames default
+    | .forLoop pre condition post body =>
+        condition.setImmutableNames ++
+          Stmt.List.setImmutableNames pre ++
+          Stmt.List.setImmutableNames post ++
+          Stmt.List.setImmutableNames body
+    | .ifThen condition body =>
+        condition.setImmutableNames ++ Stmt.List.setImmutableNames body
+    | .break => []
+    | .continue => []
+    | .leave => []
+
+  def Stmt.List.setImmutableNames : List Stmt → List Name
+    | [] => []
+    | stmt :: rest =>
+        Stmt.setImmutableNames stmt ++ Stmt.List.setImmutableNames rest
+
+  def Stmt.CaseList.setImmutableNames :
+      List (SwitchCaseValue × List Stmt) → List Name
+    | [] => []
+    | (_value, body) :: rest =>
+        Stmt.List.setImmutableNames body ++
+          Stmt.CaseList.setImmutableNames rest
 end
 
 mutual
@@ -1160,6 +1214,9 @@ namespace FunctionDef
 def loadImmutableNames (fn : FunctionDef) : List Name :=
   Stmt.List.loadImmutableNames fn.body
 
+def setImmutableNames (fn : FunctionDef) : List Name :=
+  Stmt.List.setImmutableNames fn.body
+
 def linkerSymbolNames (fn : FunctionDef) : List Name :=
   Stmt.List.linkerSymbolNames fn.body
 
@@ -1186,6 +1243,11 @@ def loadImmutableNames : List (Name × FunctionDef) → List Name
   | [] => []
   | (_name, fn) :: rest =>
       fn.loadImmutableNames ++ loadImmutableNames rest
+
+def setImmutableNames : List (Name × FunctionDef) → List Name
+  | [] => []
+  | (_name, fn) :: rest =>
+      fn.setImmutableNames ++ setImmutableNames rest
 
 def linkerSymbolNames : List (Name × FunctionDef) → List Name
   | [] => []
@@ -1333,6 +1395,41 @@ mutual
     all_goals simp_wf
     all_goals omega
 end
+
+mutual
+  /-- `setimmutable` names appearing anywhere in the object tree. -/
+  def allSetImmutableNames (object : Object) : List Name :=
+    NameList.unique
+      (Stmt.List.setImmutableNames object.dispatcher ++
+        FunctionDef.List.setImmutableNames object.functions ++
+        Object.List.allSetImmutableNames object.objects)
+  termination_by sizeOf object
+  decreasing_by
+    simp_wf
+    cases object
+    simp_wf
+    omega
+
+  def List.allSetImmutableNames : List Object → List Name
+    | [] => []
+    | object :: rest =>
+        Object.allSetImmutableNames object ++
+          List.allSetImmutableNames rest
+  termination_by objects => sizeOf objects
+  decreasing_by
+    all_goals simp_wf
+    all_goals omega
+end
+
+/-- Immutable-coverage guard for creation-object compiles: every
+`loadimmutable` name appearing anywhere in the object tree must have a
+`setimmutable` site somewhere in the tree.  A load whose name is never set
+would keep its zero marker bytes in the deployed runtime — legal for a
+standalone runtime compile or an unlinked-library export, but inside a
+creation object it is evidence of a set/load name mismatch. -/
+def uncoveredLoadImmutableNames (object : Object) : List Name :=
+  let sets := object.allSetImmutableNames
+  object.allLoadImmutableNames.filter (fun name => !(sets.contains name))
 
 mutual
   /-- Rewrite unresolved `linkersymbol` occurrences into `loadimmutable`
@@ -2178,12 +2275,11 @@ mutual
               ImmutableReference.List.patchStmts? references base' value'
             some (.block stmts)
         | none =>
-            -- Fail-closed: a `setimmutable` whose name resolves to no immutable
-            -- reference is rejected at compile time, mirroring the trusted
-            -- source semantics (which fails with `.InvalidArguments`). This
-            -- keeps the exact-equality preservation: the miss case is never
-            -- accepted, so the source-side failure is unreachable.
-            none
+            if Expr.containsUserCall? base' ||
+                Expr.containsUserCall? value' then
+              none
+            else
+              some (.block [])
     | .exprStmt expr => do
         let expr' ← expr.resolveObjectBuiltinsIn? context
         some (.exprStmt expr')

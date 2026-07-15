@@ -4,6 +4,30 @@ This is append-only implementation history, so older entries intentionally
 describe gaps that have since closed or changed shape. Current gap status is
 authoritative only in `ROADMAP.md` and `PRODUCTION_ASSUMPTIONS.md`.
 
+- 2026-07-14 - fix/library-setimmutable-regression - reverted the 5576b086
+  fail-closed `setimmutable` unknown-name change: it made the frozen source
+  kernel stricter than solc itself (a `setimmutable` whose name has zero
+  `loadimmutable` sites is a defined no-op — solc writes to each of the
+  immutable's offsets in the runtime code, and zero offsets means zero
+  writes), and since every library's creation code carries an unconditional
+  `setimmutable(_, "library_deploy_address", address())` while the optimizer
+  can strip all matching runtime loads, ALL libraries stopped compiling
+  through the raw path (found by the 2026-07-14 opt-harness bench: MathLib,
+  ExternalMathLib, AdvancedTypeSurfaceBox/PriceMath). The kernel no-op and
+  the resolver's guarded empty-block miss branch are restored (frozen hash
+  re-pinned to the pre-5576b086 value). The typo hazard the fail-closed
+  change actually wanted to catch — a set/load NAME MISMATCH leaving zero
+  marker bytes in deployed runtime code — is now caught in the correct
+  direction: a new CLI guard (`checkImmutableLoadCoverage`, defense-in-depth
+  next to the EIP-170/3860 guard) rejects creation-object compiles whose
+  object tree contains a `loadimmutable` name that no `setimmutable` site
+  writes, backed by new `Frontend` collectors (`Object.allSetImmutableNames`,
+  `Object.uncoveredLoadImmutableNames`). Runtime/named-object compiles and
+  unlinked-library exports (which enter as `linkersymbol`) are exempt. New
+  regression test `scripts/test_library_backend_smoke.sh` compiles all three
+  library shapes (internal-only, external-function, contract+library source)
+  creation+runtime through the raw path and asserts the coverage guard
+  rejects a mangled `setimmutable` name on ImmutableBox.
 - 2026-07-06 13:25:58 PDT - feature/raw-osaka-native-clz - completed the
   raw-solc frontend CLZ follow-up on branch `clz-native-osaka`: raw `clz(x)`
   elaboration now preserves the existing generated-helper path before Osaka

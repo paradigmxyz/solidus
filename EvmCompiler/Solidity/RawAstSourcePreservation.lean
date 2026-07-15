@@ -1694,19 +1694,23 @@ theorem setimmutable_parts
         (.exprStmt
           (.call .objectBuiltin "setimmutable" [base, nameArg, value]))
         ordered) :
-    ∃ immutableName references resolvedBase resolvedValue frontPatch
-        orderedBase orderedValue,
+    (∃ immutableName,
       Frontend.Expr.objectBuiltinNameArg? nameArg = some immutableName ∧
-        context.findImmutableReferences? immutableName = some references ∧
-        references ≠ [] ∧
-        Frontend.ImmutableReference.List.patchStmts?
-          references resolvedBase resolvedValue = some frontPatch ∧
-        ordered =
-          .Block
-            (orderedImmutablePatchStmts
-              references orderedBase orderedValue) ∧
-        Nonempty (ExprNormalized context base orderedBase) ∧
-        Nonempty (ExprNormalized context value orderedValue) := by
+        context.findImmutableReferences? immutableName = none ∧
+        ordered = .Block []) ∨
+      ∃ immutableName references resolvedBase resolvedValue frontPatch
+          orderedBase orderedValue,
+        Frontend.Expr.objectBuiltinNameArg? nameArg = some immutableName ∧
+          context.findImmutableReferences? immutableName = some references ∧
+          references ≠ [] ∧
+          Frontend.ImmutableReference.List.patchStmts?
+            references resolvedBase resolvedValue = some frontPatch ∧
+          ordered =
+            .Block
+              (orderedImmutablePatchStmts
+                references orderedBase orderedValue) ∧
+          Nonempty (ExprNormalized context base orderedBase) ∧
+          Nonempty (ExprNormalized context value orderedValue) := by
   rcases hNormalized with ⟨resolved, hResolve, hToYul⟩
   unfold Frontend.Stmt.resolveObjectBuiltinsIn? at hResolve
   cases hName : Frontend.Expr.objectBuiltinNameArg? nameArg with
@@ -1721,10 +1725,15 @@ theorem setimmutable_parts
               cases hRefs :
                   context.findImmutableReferences? immutableName with
               | none =>
-                  -- Fail-closed frontend: `resolveObjectBuiltinsIn?` returns
-                  -- `none` when the immutable name has no references, so this
-                  -- statement was never accepted — `hResolve` is contradictory.
                   simp [hName, hBaseResolve, hValueResolve, hRefs] at hResolve
+                  rcases hResolve with ⟨_hNoCalls, rfl⟩
+                  have hOrdered : ordered = .Block [] := by
+                    simpa [Frontend.Stmt.toYul?,
+                      Frontend.Stmt.List.toYul?] using hToYul.symm
+                  exact
+                    Or.inl
+                      ⟨immutableName, by simpa using hName, hRefs,
+                        hOrdered⟩
               | some references =>
                   cases hPatch :
                       Frontend.ImmutableReference.List.patchStmts?
@@ -1762,6 +1771,7 @@ theorem setimmutable_parts
                             ⟨orderedBase, orderedValue,
                               hBaseToYul, hValueToYul, hOrderedPatch⟩
                           exact
+                            Or.inr
                               ⟨immutableName, references, resolvedBase,
                                 resolvedValue, frontPatch,
                                 orderedBase, orderedValue,
@@ -11624,6 +11634,29 @@ theorem stmtRunForward_setimmutable_succ
   simp [hName, hRefs, hPatch]
   exact hBlock
 
+theorem stmtRunForward_setimmutable_none_succ
+    {fuel orderedFuel : Nat}
+    {context : Raw.SourceSemantics.Context}
+    {rawBase rawNameArg rawValue : Raw.Expr}
+    {immutableName : Name}
+    {contract : Frontend.AstContract} {state : State}
+    (hName :
+      Raw.SourceSemantics.objectBuiltinNameArg? rawNameArg =
+        some immutableName)
+    (hRefs :
+      context.objectBuiltins.findImmutableReferences? immutableName = none)
+    (hBlock :
+      BlockCodeRunForward fuel orderedFuel
+        context [] [] contract state) :
+    StmtRunForward (fuel + 1) orderedFuel context
+      (.expressionStatement
+        (.functionCall "setimmutable" [rawBase, rawNameArg, rawValue]))
+      (.Block []) contract state := by
+  unfold StmtRunForward
+  rw [Raw.SourceSemantics.Exec.expressionStatement_succ]
+  simp [hName, hRefs]
+  exact hBlock
+
 theorem scopedStmtRunForward_setimmutable_of_path_below
     {fuel slack : Nat}
     {builtinContext : Frontend.ObjectBuiltinContext}
@@ -11690,110 +11723,140 @@ theorem scopedStmtRunForward_setimmutable_of_path_below
                       rcases exprList_elaborate_three_parts hArgs with
                         ⟨baseState, nameState,
                           hBaseElab, hNameElab, hValueElab⟩
-                      -- Fail-closed frontend: `setimmutable` with a missing
-                      -- immutable name is rejected during resolution, so the
-                      -- normalized statement is always the nonempty patch block.
                       rcases StmtNormalized.setimmutable_parts hNormalized with
+                        hEmpty | hNonempty
+                      · rcases hEmpty with
+                          ⟨immutableName, hFrontName, hFrontRefs, rfl⟩
+                        have hRawName :=
+                          rawObjectBuiltinNameArg_of_elaboration
+                            hNameElab hFrontName
+                        have hRawRefs :
+                            rawContext.objectBuiltins.findImmutableReferences?
+                                immutableName = none := by
+                          rw [ObjectBuiltinContextsAgree.findImmutableReferences?_eq
+                            hContext.objectBuiltins]
+                          exact hFrontRefs
+                        have hBlock :
+                            BlockCodeRunForward fuel (fuel + (slack + 1))
+                              rawContext [] [] contract state :=
+                          blockCodeRunForward_nil
+                            (fuel := fuel) (slack := slack + 1)
+                            (context := rawContext) (contract := contract)
+                            (state := state)
+                        apply scopedStmtRunForward_of_exact
+                        have hStmt :=
+                          stmtRunForward_setimmutable_none_succ
+                            (fuel := fuel)
+                            (orderedFuel := fuel + (slack + 1))
+                            (context := rawContext) (rawBase := rawBase)
+                            (rawNameArg := rawNameArg)
+                            (rawValue := rawValue)
+                            (immutableName := immutableName)
+                            (contract := contract) (state := state)
+                            hRawName hRawRefs hBlock
+                        simpa [Nat.add_assoc, Nat.add_comm,
+                          Nat.add_left_comm] using hStmt
+                      · rcases hNonempty with
                           ⟨immutableName, references,
                             resolvedBase, resolvedValue, frontPatch,
                             orderedBase, orderedValue,
                             hFrontName, hFrontRefs, hNonempty,
                             hFrontPatch, rfl,
                             ⟨hBaseNormalized⟩, ⟨hValueNormalized⟩⟩
-                      have hRawName :=
-                        rawObjectBuiltinNameArg_of_elaboration
-                          hNameElab hFrontName
-                      have hRawRefs :
-                          rawContext.objectBuiltins.findImmutableReferences?
-                              immutableName =
-                            some references := by
-                        rw [ObjectBuiltinContextsAgree.findImmutableReferences?_eq
-                          hContext.objectBuiltins]
-                        exact hFrontRefs
-                      rcases
-                          rawImmutablePatchStmts_exists_of_frontend
+                        have hRawName :=
+                          rawObjectBuiltinNameArg_of_elaboration
+                            hNameElab hFrontName
+                        have hRawRefs :
+                            rawContext.objectBuiltins.findImmutableReferences?
+                                immutableName =
+                              some references := by
+                          rw [ObjectBuiltinContextsAgree.findImmutableReferences?_eq
+                            hContext.objectBuiltins]
+                          exact hFrontRefs
+                        rcases
+                            rawImmutablePatchStmts_exists_of_frontend
+                              (rawBase := rawBase) (rawValue := rawValue)
+                              hFrontPatch with
+                          ⟨rawPatch, hRawPatch⟩
+                        have hBaseExt :=
+                          Elab.Expr.elaborate_preserves_clzAllocation rawBase
+                            hBaseElab hPath.entryValid
+                        have hNameExt :=
+                          Elab.Expr.elaborate_preserves_clzAllocation rawNameArg
+                            hNameElab hBaseExt.after_valid
+                        have hValueExt :=
+                          Elab.Expr.elaborate_preserves_clzAllocation rawValue
+                            hValueElab hNameExt.after_valid
+                        have hBasePath :
+                            ClzCompilationPath contract elabState baseState :=
+                          hPath.prefixPath
+                            (Elab.ClzAllocationExtends.trans
+                              hNameExt hValueExt)
+                        have hValuePath :
+                            ClzCompilationPath contract
+                              nameState exprState :=
+                          hPath.suffixPath
+                            (Elab.ClzAllocationExtends.trans
+                              hBaseExt hNameExt)
+                        have hBaseScopes :
+                            baseState.functionScopes =
+                              elabState.functionScopes :=
+                          Elab.Expr.elaborate_preserves_functionScopes
+                            rawBase hBaseElab
+                        have hNameScopes :
+                            nameState.functionScopes =
+                              baseState.functionScopes :=
+                          Elab.Expr.elaborate_preserves_functionScopes
+                            rawNameArg hNameElab
+                        have hValueContext :
+                            PathCompiledContext builtinContext contract
+                              rawContext nameState.functionScopes := by
+                          simpa [hNameScopes, hBaseScopes] using hContext
+                        have hBlock :
+                            BlockCodeRunForward fuel (fuel + (slack + 1))
+                              rawContext rawPatch
+                              (orderedImmutablePatchStmts
+                                references orderedBase orderedValue)
+                              contract state :=
+                          blockCodeRunForward_immutablePatches
+                            (fuel := fuel) (slack := slack + 1)
+                            (context := rawContext) (references := references)
                             (rawBase := rawBase) (rawValue := rawValue)
-                            hFrontPatch with
-                        ⟨rawPatch, hRawPatch⟩
-                      have hBaseExt :=
-                        Elab.Expr.elaborate_preserves_clzAllocation rawBase
-                          hBaseElab hPath.entryValid
-                      have hNameExt :=
-                        Elab.Expr.elaborate_preserves_clzAllocation rawNameArg
-                          hNameElab hBaseExt.after_valid
-                      have hValueExt :=
-                        Elab.Expr.elaborate_preserves_clzAllocation rawValue
-                          hValueElab hNameExt.after_valid
-                      have hBasePath :
-                          ClzCompilationPath contract elabState baseState :=
-                        hPath.prefixPath
-                          (Elab.ClzAllocationExtends.trans
-                            hNameExt hValueExt)
-                      have hValuePath :
-                          ClzCompilationPath contract
-                            nameState exprState :=
-                        hPath.suffixPath
-                          (Elab.ClzAllocationExtends.trans
-                            hBaseExt hNameExt)
-                      have hBaseScopes :
-                          baseState.functionScopes =
-                            elabState.functionScopes :=
-                        Elab.Expr.elaborate_preserves_functionScopes
-                          rawBase hBaseElab
-                      have hNameScopes :
-                          nameState.functionScopes =
-                            baseState.functionScopes :=
-                        Elab.Expr.elaborate_preserves_functionScopes
-                          rawNameArg hNameElab
-                      have hValueContext :
-                          PathCompiledContext builtinContext contract
-                            rawContext nameState.functionScopes := by
-                        simpa [hNameScopes, hBaseScopes] using hContext
-                      have hBlock :
-                          BlockCodeRunForward fuel (fuel + (slack + 1))
-                            rawContext rawPatch
-                            (orderedImmutablePatchStmts
-                              references orderedBase orderedValue)
-                            contract state :=
-                        blockCodeRunForward_immutablePatches
-                          (fuel := fuel) (slack := slack + 1)
-                          (context := rawContext) (references := references)
-                          (rawBase := rawBase) (rawValue := rawValue)
-                          (orderedBase := orderedBase)
-                          (orderedValue := orderedValue)
-                          (contract := contract) (state := state) hRawPatch
-                          (fun extra n hN state => by
-                            apply exprRunForward_of_values
-                            simpa [Nat.add_assoc, Nat.add_comm,
-                              Nat.add_left_comm] using
-                              (hExpr (extra + 1) n (by omega)
-                                (state := state) hContext hBasePath
-                                hBaseElab hBaseNormalized))
-                          (fun extra n hN state => by
-                            apply exprRunForward_of_values
-                            simpa [Nat.add_assoc, Nat.add_comm,
-                              Nat.add_left_comm] using
-                              (hExpr (extra + 1) n (by omega)
-                                (state := state) hValueContext hValuePath
-                                hValueElab hValueNormalized))
-                      apply scopedStmtRunForward_of_exact
-                      have hStmt :=
-                        stmtRunForward_setimmutable_succ
-                          (fuel := fuel)
-                          (orderedFuel := fuel + (slack + 1))
-                          (context := rawContext) (rawBase := rawBase)
-                          (rawNameArg := rawNameArg)
-                          (rawValue := rawValue)
-                          (immutableName := immutableName)
-                          (references := references)
-                          (rawStmts := rawPatch)
-                          (orderedStmts :=
-                            orderedImmutablePatchStmts
-                              references orderedBase orderedValue)
-                          (contract := contract) (state := state)
-                          hRawName hRawRefs hRawPatch hBlock
-                      simpa [Nat.add_assoc, Nat.add_comm,
-                        Nat.add_left_comm] using hStmt
+                            (orderedBase := orderedBase)
+                            (orderedValue := orderedValue)
+                            (contract := contract) (state := state) hRawPatch
+                            (fun extra n hN state => by
+                              apply exprRunForward_of_values
+                              simpa [Nat.add_assoc, Nat.add_comm,
+                                Nat.add_left_comm] using
+                                (hExpr (extra + 1) n (by omega)
+                                  (state := state) hContext hBasePath
+                                  hBaseElab hBaseNormalized))
+                            (fun extra n hN state => by
+                              apply exprRunForward_of_values
+                              simpa [Nat.add_assoc, Nat.add_comm,
+                                Nat.add_left_comm] using
+                                (hExpr (extra + 1) n (by omega)
+                                  (state := state) hValueContext hValuePath
+                                  hValueElab hValueNormalized))
+                        apply scopedStmtRunForward_of_exact
+                        have hStmt :=
+                          stmtRunForward_setimmutable_succ
+                            (fuel := fuel)
+                            (orderedFuel := fuel + (slack + 1))
+                            (context := rawContext) (rawBase := rawBase)
+                            (rawNameArg := rawNameArg)
+                            (rawValue := rawValue)
+                            (immutableName := immutableName)
+                            (references := references)
+                            (rawStmts := rawPatch)
+                            (orderedStmts :=
+                              orderedImmutablePatchStmts
+                                references orderedBase orderedValue)
+                            (contract := contract) (state := state)
+                            hRawName hRawRefs hRawPatch hBlock
+                        simpa [Nat.add_assoc, Nat.add_comm,
+                          Nat.add_left_comm] using hStmt
 
 theorem blockCodeRunForward_of_scope_scopedSeq
     {rawFuel orderedFuel : Nat}
