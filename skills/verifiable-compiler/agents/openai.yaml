@@ -1,0 +1,4 @@
+interface:
+  display_name: "Verifiable Compiler"
+  short_description: "Grow and audit target-up Lean compiler theorem spines"
+  default_prompt: "Use $verifiable-compiler to build or refactor a Lean verified compiler by adding one target-up semantic layer at a time, checking the theorem boundary for false or overbroad claims, completing the layer's source-faithful feature set, proving adjacent preservation, and auditing before moving higher."
