@@ -88,6 +88,17 @@ When a theorem is false or overbroad, fix the statement before adding wrappers,
 compatibility lemmas, or local heartbeats. Record the correction in
 `PROGRESS_LOG.md` as `theorem-boundary`, `deletion`, or `architecture-risk`.
 
+Once the project freezes its public specification — hash-pinned theorem
+statements, a frozen-closure checker, or a challenge/scoring regime that
+measures rewrites against a fixed theorem — this workflow changes mode. A
+frozen statement is an immutable interface: do not restate, weaken, or
+"improve" it, even when the boundary looks fixable; rewrites and
+optimizations must reprove the exact frozen statement. If a frozen statement
+turns out to be false or overbroad, that is a project-level incident — report
+it and get an explicit unfreeze decision from the user instead of editing
+around it. Run the project's freeze gates (hash and closure checks) alongside
+the usual build and axiom audits before calling any change complete.
+
 ## No Unproven Compiler Paths
 
 Do not introduce, wire in, or commit an unproven path that emits compiler output
@@ -98,8 +109,8 @@ runner, benchmark harness, or user-facing validation, it must either be the
 checked theorem path or have a Lean theorem proving equality/refinement to the
 checked theorem path, with an axiom audit showing only standard Lean axioms.
 
-Executable variants are allowed only when they are proved equivalent to the
-proof-facing definition, such as `compileExecutable? = compile?`, and all
+Executable variants are allowed only when a checked equality/refinement
+theorem connects them to the proof-facing definition, and all
 callers that emit bytecode can be transported back to the public preservation
 theorem through checked lemmas. Existing unproven output paths are blockers to
 remove, prove equivalent/refining, or quarantine as non-compiler diagnostics;

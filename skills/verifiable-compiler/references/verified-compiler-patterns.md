@@ -30,11 +30,9 @@ Use this reference when choosing theorem boundaries or auditing claims.
   used both to program the compiler and prove correctness:
   https://xavierleroy.org/bibrefs/Leroy-Compcert-CACM.html
 - CakeML separates language definition, verified backend, verified frontend
-  properties, bootstrapping, and verified applications. Its public overview is
-  especially useful for trust-boundary thinking:
-  https://cakeml.org/
-- CakeML's latest compiler overview notes multiple intermediate languages and
-  multiple concrete machine-code targets, a useful model for staged growth:
+  properties, bootstrapping, and verified applications; its use of multiple
+  intermediate languages and machine-code targets is a useful model for
+  staged growth and trust-boundary thinking:
   https://cakeml.org/
 - Software Foundations' compiler chapters are useful for tiny first slices:
   expression/statement semantics, stack machines, and preservation proofs:
