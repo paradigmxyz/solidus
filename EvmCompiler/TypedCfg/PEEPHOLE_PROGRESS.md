@@ -685,3 +685,111 @@ remaining glue is `SourceFrameFits input n → input.length ≤ n` (or the
 congruence over `SourceFrameFits`. This is the concrete, reuse-based unblock for
 a future session; it is bounded by the Structured-source coupling, not by a new
 frame model.
+
+## Session-7 update (2026-07-16): the SourceFrameFits reuse path does NOT close — corrected, with the exact wrong-side/wrong-magnitude proof
+
+Session 7 executed the step-4 recipe as written (couple the swap depth guard to
+the already-threaded `SourceFrameFits` invariant at the OIC splice) and, after a
+full trace of the Structured→TypedCfg preservation layer, found that the
+session-6 "reuse job" framing is **over-optimistic**: `SourceFrameFits` is the
+*wrong side and the wrong magnitude* for the swap guard. No swap arm was added
+(it would redden the tower ungreenably, per session 5); the tower stays green,
+axioms exactly `[propext, Classical.choice, Quot.sound]`, and the measured
+corpus delta is still **+0 bytes / +0.00% gas on all 56 contracts** (bench,
+solc 0.8.26; TOTAL 103211 our runtime bytes vs 36115 solc = 2.86×; ExternalCallBox
+6 vec, +0). This section replaces the step-4 route above with the accurate
+obstruction and the two genuine routes forward.
+
+### The precise obstruction (definitions, not intuition)
+The swap arm's landed reduction `openRunBody_swap_swap_congr` (step 3) requires
+`StackRealizes input state2` = `input.length ≤ state2.stack.length`, where
+`state2` is the **TARGET (cfg) EVM state** the *original* body runs from (the
+peephole congruence's right leg). Via `runBody_stackRealizes` (landed) this only
+has to hold at each **block entry**; the within-body evolution carries it.
+
+`SourceFrameFits input n := sourceLength input ≤ n ∧ (returnTokenDepth? = some d → n = d)`
+(`Structured/TypedCfgCompiler.lean:186`), and it is threaded everywhere as
+`SourceFrameFits input source.evm.stack.length` — i.e. about the **SOURCE**
+stack. Two facts make it unusable directly:
+
+1. **Wrong side / wrong magnitude.** `sourceLength input ≤ input.length`
+   (`TypedCfgCompilerFacts.lean:161 sourceLength_le_length`), and whenever a
+   return token is present the second `SourceFrameFits` conjunct *pins*
+   `source.evm.stack.length = returnTokenDepth = sourceLength < input.length`
+   (`returnTokenDepth?_lt_length`, `sourceLength_eq_of_returnTokenDepth?_eq_some`).
+   So on the source stack `input.length` provably does **NOT** fit — the source
+   stack is strictly shallower than `input.length` exactly for the caller-tailed
+   procedure bodies where the SWAP-heavy code lives. `SourceFrameFits` cannot give
+   `StackRealizes` for the target.
+
+2. **The target bound exists but needs a missing correspondence.** The correct
+   target-stack fact is `ActivationFrameMatches` (`TypedCfgPreservation/Core.lean:469`):
+   for a token shape at depth `d`, `target.stack.length = d + hidden.length`
+   where `hidden = realizeStack [] returns tokens` is the realized ghost
+   caller-frame suffix (`Core.lean:17`). Deriving `input.length ≤ target.stack.length`
+   thus reduces to `input.length - d ≤ hidden.length`, i.e. *the shape's slots at
+   and below the return token are covered by the realized caller-frame suffix*.
+   This is NOT implied by `SourceFrameFits`/`StateRel`: `returnTokenDepth?`
+   (`Typing.lean:286`) explicitly permits slots below the token, and nothing in
+   `SourceFrameFits` bounds them by `hidden.length`. It is a genuine shape↔frame
+   layout invariant, and in the current tower it is established only *distributed*
+   through the procedure-CALL convention proof, threaded as the bare hypothesis
+   `input.length ≤ state.stack.length` (`Core.lean:749 step_stack_bound_of_type`,
+   `:1180 exists_step_of_type_bound_append`, `:1223`), never exposed as a
+   standalone "`openRunN` maintains `block.input.length ≤ state.stack.length` at
+   every entry" theorem (grep-confirmed absent, consistent with sessions 5/6).
+
+### Consequence: step 4 is a re-architecture, not a glue lemma
+There are exactly two honest routes, both real work (multi-hundred-line,
+plausibly multi-session):
+
+- **Route A — standalone target-stack invariant.** Prove the missing
+  correspondence `input.length - returnTokenDepth? ≤ (realizeStack [] returns tokens).length`
+  as a program-level invariant of `openRunN` under the block typing, using
+  `ActivationFrameMatches` as the hook. This needs a new "below-token shape slots
+  are caller-frame slots" fact tying the CFG shape to the realized frames —
+  precisely the calling-convention layout invariant the current tower proves only
+  incrementally inside the CALL handler, not as a reusable `openRunN` invariant.
+
+- **Route B — interleave the peephole with the source simulation.** Do NOT prove
+  a standalone `openRunN_peephole_congr` carrying the invariant. Instead thread
+  the peephole congruence *through* the whole-program Structured→cfg simulation
+  (`Structured/InteractionTruncationOwnerPreservation.lean`, ~2000 lines, which
+  already maintains `SourceFrameFits`/`StateRel`/`ActivationFrameMatches` per
+  block-entry across `openRunNResultWithStop`), converting each maintained
+  target-stack bound (`ActivationFrameMatches ⇒ target.stack.length = d + hidden.length`)
+  into the swap depth guard `d_swap + 2 ≤ state2.stack.length` at each straight-line
+  body. This is a triple (source, cfg, peephole-cfg) simulation and touches the
+  subtle terminator/CALL cases.
+
+Route B reuses the most and is the intended spirit, but it is NOT the "add a
+`SourceFrameFits input n → input.length ≤ n` glue lemma at the splice" that the
+session-6 note implied — that glue lemma is *false* (fact 1 above).
+
+### Smaller win considered and rejected
+Restricting the swap peephole to **closed-tail** blocks (`returnTokenDepth? = none`),
+where `SourceFrameFits` with empty ghost frames *does* give `StackRealizes`
+(`hidden = []`, `sourceLength = length`, target.stack = source.stack), was
+weighed. Rejected: (a) it still needs the source coupling to obtain
+`SourceFrameFits` at entry, (b) it needs per-block closed-tail classification
+threaded through the congruence tower, and (c) the payoff is limited to
+dispatch/entry shuffles — almost all SWAP1;SWAP1 no-ops on ExternalCallBox /
+AdversarialStackPressure live in caller-tailed procedure bodies. Net expected
+delta small-to-zero for real complexity; not landed.
+
+### No unconditional alternative exists
+Every adjacent-inverse stack rewrite that would actually fire needs the same
+runtime depth guard: `swap n; swap n` and `dup n; pop` both diverge from `ε` on
+a shallow stack (original underflows, cancelled succeeds). The one *unconditional*
+rewrite, `push v; pop`, has zero corpus targets (measured, sessions 4 & 7). So
+there is no depth-free lever; the swap arm genuinely requires Route A or B.
+
+### Status handed to session 8
+Landed foundation is UNCHANGED and green: kernel `swap_swap_sameRuntimeData`,
+`swap_type_involution` + `StackRealizes` + runBody preservation,
+`openRunBody_swap_swap_congr` (the depth-guarded body reduction, ready to be
+invoked by the new arm). The single remaining blocker is the block-entry
+target-stack bound (Route A or B). Sessions 5, 6, and 7 have each independently
+converged on this being the deferred hard part; session 7's contribution is the
+definitional proof that the `SourceFrameFits`-glue shortcut is unsound and the
+correct hook is `ActivationFrameMatches` + the missing shape↔frame length fact.
