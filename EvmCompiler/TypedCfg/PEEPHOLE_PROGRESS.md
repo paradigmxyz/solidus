@@ -793,3 +793,84 @@ target-stack bound (Route A or B). Sessions 5, 6, and 7 have each independently
 converged on this being the deferred hard part; session 7's contribution is the
 definitional proof that the `SourceFrameFits`-glue shortcut is unsound and the
 correct hook is `ActivationFrameMatches` + the missing shape↔frame length fact.
+
+## Session-8 update (2026-07-16): Route A reduced to its minimal residual + closed-tail half proved outright; the "deep" below-token layout invariant collapses for compiler shapes
+
+Session 8 executed Route A. The full standalone `openRunN` invariant is confirmed
+*not* provable over arbitrary well-typed programs (a caller-tailed block may be
+jumped to "wider" than the jumping block's output — the extra depth is a runtime
+call-convention property, not CFG typing; session 7's `A→B jump` obstruction is
+correct). But Route A's *reusable core* — the lemma that turns the maintained
+source invariants into the target-stack realization the swap arm needs — is now
+landed green and axiom-clean, and the residual it leaves is far smaller than
+sessions 6/7 feared.
+
+### (h) landed — `EvmCompiler/Structured/TypedCfgPreservation/StackRealizesEntry.lean`
+Green, axiom-clean `[propext, Classical.choice, Quot.sound]`, wired into
+`EvmCompiler.Verification`. Full `Verification` rebuilds green; `compile_correct` /
+`compile_correct_creation` axioms unchanged. Public spine / `peepholeBody`
+UNTOUCHED (measured delta still +0 — no arm shipped; compiled output byte-identical
+to session 7, so `peepholeProgram` stays identity corpus-wide by construction).
+
+- **`stackRealizes_of_stateRel`** — THE Route A reduction. From the invariants the
+  whole-program Structured→cfg simulation *already* maintains at every block entry
+  (`StateRel source tokens target` + `SourceFrameFits shape source.evm.stack.length`)
+  plus ONE crisp residual hypothesis
+  `hBelow : returnTokenDepth? = some depth → realizeStack [] source.returns tokens = some hidden → shape.length - depth ≤ hidden.length`,
+  it concludes `TypedCfg.StackRealizes shape target` (= `shape.length ≤ target.stack.length`).
+  Proof: `StateRel` ⇒ `target.stack = source.evm.stack ++ hidden` (via
+  `realizeStack_append_prefix`, mirroring `ActivationFrameMatches.of_stateRel`) so
+  `target.stack.length = source.evm.stack.length + hidden.length`; the token case
+  pins `source.evm.stack.length = depth` (`SourceFrameFits.2`) and closes by
+  `hBelow` + `returnTokenDepth?_lt_length`; the no-token case needs no residual.
+- **`stackRealizes_of_stateRel_of_returnTokenDepth?_eq_none`** — the closed /
+  token-free half closes UNCONDITIONALLY (no residual): with no token
+  `sourceLength = length`, and `StateRel` only appends frames beneath the source
+  stack, so `input.length = sourceLength ≤ source.stack.length ≤ target.stack.length`.
+  This fully covers entry/deploy/dispatch closed-tail blocks — genuine new ground.
+- **`stackRealizes_of_stateRel_of_token_last`** — discharges `hBelow` for the
+  procedure-entry shapes the compiler actually emits, via the KEY FINDING below.
+- Supporting: `realizeStack_seed_le` (realizeStack only appends),
+  `realizeStack_length_pos_of_returns_ne_nil` (a live frame realizes ≥ 1 slot).
+
+### KEY FINDING: the "below-token slots are caller-frame slots" blocker collapses
+Sessions 6/7 flagged `shape.length - depth ≤ hidden.length` as a full
+calling-convention *layout* invariant (feared multi-hundred-line). But
+`TypedCfgCompiler` places `.returnToken` as the **LAST** slot of every procedure
+input shape (`TypedCfgCompiler.lean:147, 153, 160, 935` — `replicate argc .word ++
+[.returnToken]`, etc.). So for procedure-entry shapes `depth = length - 1` and
+`shape.length - depth = 1`; there are ZERO slots strictly below the token, and the
+"deep layout" fact reduces to `1 ≤ hidden.length`, i.e. the realized caller frame
+is non-empty — which follows from `source.returns ≠ []` (being inside a live
+procedure activation). `stackRealizes_of_stateRel_of_token_last` proves exactly this.
+
+### The genuine remaining work (materially smaller than sessions 5–7 estimated)
+To ship the swap arm, discharge, at each block entry, the two hypotheses of
+`stackRealizes_of_stateRel_of_token_last` / `_of_returnTokenDepth?_eq_none`:
+1. **Shape structural fact (open risk, must verify first):** every reachable block
+   **input** shape has `returnTokenDepth? = none` OR `= some (length - 1)` (token
+   at bottom). CAVEAT: `Instr.returnToken` pushes a `.returnPC` slot on TOP
+   (`Typing.lean:15`), so token-not-at-bottom shapes DO occur mid-body during call
+   setup. Whether any block-**boundary** input shape inherits such a top-`returnPC`
+   layout is unverified — this is the one thing to check before committing to the
+   token-last route. If some block inputs are token-not-at-bottom with slots below,
+   those specific blocks fall back to the general `stackRealizes_of_stateRel` +
+   the full `hBelow` (still the deep fact, but now scoped to only those blocks; the
+   swap arm could alternatively be guarded to fire only on token-at-bottom/none
+   blocks, which covers the SWAP-heavy procedure bodies).
+2. **Source coupling:** `returnTokenDepth? = some _ → source.returns ≠ []` at block
+   entry (in-a-procedure ⟺ live frame). Almost certainly already available near the
+   `StateRel`/`ActivationFrameMatches` threading in
+   `Structured/InteractionPreservation.lean` /
+   `InteractionTruncationOwnerPreservation.lean` — locate and reuse.
+
+Then (Route-B-style, but per-entry obligation is now a PROVED lemma, not an open
+goal): thread `stackRealizes_of_stateRel_of_{token_last,returnTokenDepth?_eq_none}`
+into a `StackRealizes`-guarded peephole congruence at the OIC splice (both source
+bridge and cfg are on the same `generated.cfg` there, so `StateRel`/`SourceFrameFits`
+are in scope); consume `openRunBody_swap_swap_congr` (landed session 6); finally add
+the `swap d :: swap d :: rest → rest` arm to `peepholeBody` and re-green (b)–(g)
+(syntactic arms trivial; semantic ones consume the guarded congruence).
+
+Commit this session: `StackRealizesEntry.lean` + `Verification.lean` import. Foundation
+from sessions 1–7 unchanged and green.
