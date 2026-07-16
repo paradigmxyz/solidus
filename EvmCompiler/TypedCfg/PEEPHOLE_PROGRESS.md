@@ -175,3 +175,120 @@ well-scoped continuation. `swap n ; swap n` (higher payoff than push;pop) needs
 only an additional involution kernel lemma
 (`EvmYul.swap n (EvmYul.swap n s) = .ok s` under stack depth ≥ n+1) plus one
 more `peepholeBody` match arm; it reuses all of the c-core congruence machinery.
+
+## Session-3 update (2026-07-16): open congruence + Program transform + WellTyped, all green
+
+Landed the entire semantic core of the wiring plan (steps 1–2 of the session-3
+directive) as four green, axiom-clean commits. What remains is purely the
+mechanical spine splice plus ONE lowering-length lemma (details + exact recipe
+below). Axioms on every new theorem: `[propext, Classical.choice, Quot.sound]`
+(the two shape/label-only lemmas need only `[propext, Quot.sound]`).
+
+### Landed commits (branch `arena-opt`)
+- **(d) `EvmCompiler/TypedCfg/PeepholeOpen.lean`** (commit c062ab44) — THE
+  genuinely-new lemma. `openRunBody_peephole_congr`: peepholed body from
+  `state1` `Simulation.Interaction.Rel`-relates (`Instr.RuntimeAtRel`, i.e.
+  `SameRuntimeData` up to pc/execLength) to the original body from any
+  `SameRuntimeData` `state2`. Needs only `ProgramCounterIndependent` (NO
+  call/create exclusion — CALL/CREATE ride `Instr.openRunAt_runtimeRel`;
+  cancelled push/pop are non-prim `.done` steps reusing
+  `pop_after_push_sameRuntimeData`). Lifts through the terminator via the
+  existing `runTermChecked_runtimeRel` to `Block.openRun_peephole_runtimeRel`.
+  Also `peepholeBody_bodyType?` (shape neutrality), `peepholeBlock` + proj simps,
+  `openRunBody_nonprim_cons` / `openRunBody_push_cons` reductions.
+- **(e) `EvmCompiler/TypedCfg/PeepholeProgram.lean`** (commit c2f7c552) —
+  `peepholeProgram : Program → Program` (blocks.map peepholeBlock; CFG untouched);
+  `findBlock?_peepholeProgram`, `peepholeProgram_programCounterIndependent`, and
+  the WHOLE-PROGRAM open congruence `openStep_/openRunN_/openRunNPrefix_peephole_congr`
+  relating the ORIGINAL program from `state1` to the PEEPHOLED program from any
+  `SameRuntimeData` `state2` (original on the LEFT), up to
+  `Block.RuntimeOutcomeRel`. Plus `runtimeOutcomeRel_symm/_trans`,
+  `rel_runtimeOutcomeRel_symm`.
+- **(f) `EvmCompiler/TypedCfg/PeepholeSpine.lean`** (commit 58ed8314) —
+  `peepholeProgram_wellTyped` (via `labelShape?_peepholeProgram` invariance ⇒
+  `terminator_type?_peepholeProgram`; `block_wellTyped_peepholeProgram`;
+  `emittedLabels_/labelsUnique_peepholeProgram`). Ensures
+  `(peepholeProgram cfg).compileCertified?` succeeds whenever cfg's does.
+
+### Exact wiring the spine map established (session-2/3 recon, verified)
+Public spine (all NON-frozen; frozen public theorems never name `fuelBudget`, so
+the change is absorbed at their `∃ openFuel`):
+- `Compiler/StackArtifact.lean:33 compile?` builds `cfg := generated.cfg`, then
+  `certified ← cfg.compileCertified?` (line 59), `target ← compileExecutable?
+  certified.target` (60). `compile?_parts` (72) exposes `hGenerate` (source),
+  `cfg.WellTyped`, `cfg.ProgramCounterIndependent`, `cfg.compileCertified? = some
+  certified` (assembly).
+- `Compiler/OpenInteractionComposition.lean:808 yulToNormalizedStackAssemblyPrefixForward`
+  couples BOTH ends to the SAME `cfg`: `hGenerate`/`hWellTyped` feed the source
+  bridge `yulToNormalizedStackTypedCfgPrefixForward` (→ `openRunNPrefix cfg`);
+  `hCompile : cfg.compileCertified? = some artifact` + `hIndependent` feed the
+  assembly bridge `InteractionPrefixPreservation.Program.
+  compileCertified?_entry_openRunNPrefix_assembly_follows` / `_branch` (lines
+  896/914). Conclusion assembly fuel = `blockBudget… * fuelBudget cfg`.
+- `compiledVerifiedStackCodeToRawBytecodeForward` (OIC:2018) supplies those from
+  `StackArtifact.compile?_parts` and passes `codeArtifact.compiled.certified.target`
+  (= `cfg.lower?`) as the emitted bytes. Fuel `fuelBudget cfg` is LITERAL up
+  through ~8 theorems (×2 suffix variants: EndToEnd.lean, RawAstSourcePreservation,
+  RawAstEndToEnd, RawAstTotal) and only becomes `∃ openFuel` at frozen
+  `Correctness.lean` compile_correct / compile_correct_creation.
+
+### Remaining: the splice (option b, keep-original-budget-and-pad)
+Chosen so NO downstream statement changes (only hypotheses/proofs):
+1. `StackArtifact.compile?`: `let certified ← (peepholeProgram cfg).compileCertified?`
+   (keep `cfg := generated.cfg`). `compile?_parts`: change the certified field to
+   `(peepholeProgram artifact.cfg).compileCertified? = some artifact.certified`;
+   KEEP `artifact.cfg.WellTyped` / `.ProgramCounterIndependent` / `hGenerate`
+   (about original cfg). `certified.target = (peepholeProgram cfg).lower?` now,
+   i.e. the smaller peepholed bytes — the whole gas win. All other `compile?_*`
+   corollaries use `certified.target` opaquely (unchanged). Downstream callers
+   (`compiledVerifiedStackCodeToRawBytecodeForward`) now get
+   `hCertified : (peepholeProgram cfg).compileCertified? = some certified`.
+2. `yulToNormalizedStackAssemblyPrefixForward`: change hyp
+   `hCompile : cfg.compileCertified? = some artifact` →
+   `(peepholeProgram cfg).compileCertified? = some artifact`. KEEP conclusion
+   budget `… * fuelBudget cfg`. Internally:
+   - `hIndepPeep := peepholeProgram_programCounterIndependent hIndependent`.
+   - Transfer source `Follows`/`Executes` on `openRunNPrefix cfg …` to
+     `openRunNPrefix (peepholeProgram cfg) …` via `openRunNPrefix_peephole_congr`
+     (cfg=left, peephole=right, `SameRuntimeData.refl`) + `Rel.executes`
+     (Interaction.lean:1871) for the done branch, and
+     `exists_executes_extension` + `Rel.executes` + `Follows.prefix_of_append`
+     for the truncated branch (mirror `assembly_follows` at
+     InteractionPrefixPreservation.lean:90-95).
+   - Feed peephole preservation `…assembly_follows`/`…assembly_branch hCompile
+     hIndepPeep …` (budget `… * fuelBudget (peepholeProgram cfg)`).
+   - Pad `… * fuelBudget (peepholeProgram cfg)` up to `… * fuelBudget cfg` with
+     `Source.openRunNResult_follows_of_le_follows` (Follows) /
+     `openRunNResult_halted_add_executes` (Executes) — REQUIRES the ONE missing
+     lemma `fuelBudget (peepholeProgram cfg) ≤ fuelBudget cfg` (see below).
+   - Convert the branch's `RunSimulates target peepDone targetDone` +
+     `RuntimeOutcomeRel cfgDone peepDone` back to `RunSimulates target cfgDone
+     targetDone` via `InteractionPreservation.OpenBlock.runtime_left`
+     (InteractionPreservation.lean:144). The final `YulStackAssemblyPrefixDoneRel`
+     binds cfgDone existentially, so the source-supplied cfgDone stays on the
+     source leg untouched.
+   - Need `PrefixAssemblySafe cfgDone → RuntimeOutcomeRel cfgDone peepDone →
+     PrefixAssemblySafe peepDone` (SafeAt is `SameRuntimeData`-stable: it reads
+     only memory/stack; prove a small transfer lemma).
+
+### The ONE remaining lowering lemma (blocker for the pad)
+`fuelBudget (peepholeProgram cfg) ≤ fuelBudget cfg`
+(`InteractionSemantics.CompiledProgram.fuelBudget`). Reduce to per-block
+`CompiledBlock.fuelBudget (peepholeBlock b) ≤ CompiledBlock.fuelBudget b`
+(sum over `blocks.map` monotone). Per-block: when the peephole side lowers to a
+positive budget `1 + bodyCode'.length + termCode.length`, the orig side lowers to
+`1 + bodyCode.length + termCode.length` with `bodyCode'.length ≤ bodyCode.length`
+and SAME `output`/`termCode` (term/output untouched). This is a
+`lowerBodyFrom?`-length analogue of `peepholeBody_runBody_erase`
+(`Lower.lean:def lowerBodyFrom?` is a simple `head ++ tail` fold; push;pop
+cancellation returns the shape to `input` so the tail lowers identically and only
+`head_push ++ head_pop` bytes are removed). ~80-120 lines mirroring
+`peepholeBody_bodyType?`, tail-first with the `peepholeBody_cons` split. Once this
+lands the pad + splice compiles with no downstream statement churn.
+
+### Build/validation note
+Steps 1/2/f build in seconds (narrow modules). The splice (step 3) recompiles
+`InteractionPreservation` (165k) + RawAst tower + Verification + harness — budget
+for 2–3 full rebuilds. Run `scripts/opt_harness.sh full` only at the end;
+`#print axioms Solidus.compile_correct` must stay
+`[propext, Classical.choice, Quot.sound]`.
