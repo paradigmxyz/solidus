@@ -26,7 +26,101 @@ no-ops on ExternalCallBox alone).
   - `peepholeBody_runBody_erase`: **the preservation theorem** for the closed
     straight-line case.
 
-## Remaining to a live, validated gas delta
+## Session-2 update (2026-07-16): reuse path found, c-block landed, wiring plan sharpened
+
+Landed one more green, axiom-clean milestone and mapped a substantially cheaper
+route than the original plan (3). Read this before continuing; it supersedes the
+tactical detail (not the goal) of the numbered list below.
+
+### (c-block) landed — `EvmCompiler/TypedCfg/PeepholeBlock.lean` (commit 43403cf)
+`Peephole.Block.run_peephole_runtimeRel`: peepholing a peephole-safe body
+preserves the CLOSED `Block.run` up to `InteractionCongruence.Block.
+RuntimeOutcomeRel` (= `ExceptRel (=) Outcome.RuntimeRel`: equal control
+label / equal halt kind / `SameRuntimeData` carried state), from the *same*
+input state. Proof = `peepholeBody_runBody_erase` (c-core) composed with the
+EXISTING terminator congruence, plus `runBody_erase_cases` (a helper turning the
+`map eraseFst` equality into the error/error ∨ ok/ok+SameRuntimeData split).
+Axioms: `[propext, Classical.choice, Quot.sound]`.
+
+### KEY DISCOVERY: the RuntimeRel congruence tower already exists
+The original notes pointed only at the single-step
+`Assembly.InteractionPreservation.openStep_runtimeRel_of_ne_pc`. In fact
+`EvmCompiler/TypedCfg/InteractionCongruence.lean` already builds the whole
+block/program congruence over `SameRuntimeData`, all pass-agnostic:
+- `Outcome.RuntimeRel` (inductive; identical to what c-block needed — do NOT
+  redefine it), with `refl`/`symm`/`trans`.
+- `Block.runTerm_runtimeRel`, `Block.runTermChecked_runtimeRel` (CLOSED
+  terminator congruences — reused by c-block).
+- `Block.openRunBody_runtimeRel`, `Block.openRun_runtimeRel`,
+  `Program.openStep_runtimeRel` — OPEN congruences: same program, two
+  `SameRuntimeData` states ⇒ `Simulation.Interaction.Rel RuntimeOutcomeRel`.
+- `InteractionPreservation.OpenOutcome.Simulates` handles the halt case with an
+  EXISTENTIAL simulant (`∃ simulated, SameRuntimeData simulated state ∧ target =
+  stepInstrResult (prim kind.toPrimOp) simulated`), and
+  `OpenOutcome.Simulates.runtime_left : RuntimeRel left middle → Simulates
+  program middle target → Simulates program left target`.
+
+### The halt-PC "blocker" is NOT a blocker
+`Block.Halt` records the full pc-bearing state, so `Preservation.Outcome.
+Simulates`'s halt arm is literal equality incl. pc — a naive local congruence
+fails there. BUT it is reconciled two layers up: (a) `OpenOutcome.Simulates`
+uses the existential simulant above, and (b) the frozen top relation
+`EvmCompiler/Solidus/Bridge.lean::DoneRel` compares a halt via `OpenSameData`
+(control/gas erased) and existentially binds `haltKind`; `output` for
+return/revert is `state.toMachineState.H_return` (memory, i.e. runtime data,
+`SameRuntimeData`-stable). So the peephole's byte/pc shift at a halt is absorbed;
+no "global .pc guard" for halts is required. (A `.pc`-opcode guard is still
+needed — `Instr.peepholeSafe` already excludes `.prim .pc`, and `BodySafe`
+carries it.)
+
+### Recommended architecture (cheaper than re-threading `lower?_eventually`)
+Instead of manually re-proving `Preservation.lower?_eventually` with pc/
+SameRuntimeData threaded through the terminator, model the peephole as a
+`Program → Program` transform and reuse the existing generic preservation +
+`runtime_left`:
+1. `peepholeProgram P := { P with blocks := P.blocks.map (fun b =>
+   { b with body := peepholeBody b.body }) }` (a valid `Program`; labels/terms
+   untouched).
+2. Prove `peepholeProgram` preserves `WellTyped` and
+   `ProgramCounterIndependent` (peephole drops safe non-pc ops; `bodyType?`
+   preserved because a `push;pop` pair is shape-neutral — this needs a
+   `peepholeBody_bodyType?` lemma paralleling the shape bookkeeping in
+   `peepholeBody_runBody_erase`).
+3. **The one genuinely-new lemma**: the OPEN peephole body congruence
+   `Rel RuntimeOutcomeRel (openRun (peepholeBlock b) state) (openRun b state)`
+   — analogue of c-block but on `InteractionSemantics.Block.openRun`. ENABLER:
+   `push`/`pop` are NOT `.prim`, so `openRunState` on them is `.done (runState
+   …)` (`InteractionSemantics.openRunAt_eq_done_of_not_prim`); a cancelled
+   `push;pop` pair therefore reduces to closed `.done` steps and the cancellation
+   reuses `PeepholeKernel.pop_after_push_sameRuntimeData` directly, threaded
+   through `Simulation.Interaction.Rel.bind`. Kept (possibly `.prim`)
+   instructions ride `Instr.openRunAt_runtimeRel` + `Rel.bind` exactly as
+   `openRunBody_runtimeRel` does. Structure the induction like
+   `peepholeBody_runBody_erase` (tail-first, `peepholeBody_cons` split).
+4. Insert `peepholeProgram` into the compile spine so `compileCertified?`
+   lowers the peepholed program. Two options:
+   - (a) fold into `Block.lower?` (original plan): `certificate?`/`certified.
+     target` unchanged by definition, but every `lower?`-unfolding lemma sees the
+     peepholed body; OR
+   - (b) compose at the `Program` level: `compileCertified? (peepholeProgram P)`
+     with the frontend still yielding `P`. Cleaner for reuse: the existing
+     preservation applies verbatim to `peepholeProgram P` (a valid program), and
+     the source↔`openRun P` bridge is untouched; glue = `openRun (peepholeProgram
+     P) RuntimeRel openRun P` (from step 3, lifted program-wide) fed to
+     `runtime_left`. Check where the frozen spine pins `certified.target` /
+     `compileCertified?_target` to decide (a) vs (b); (b) may need a thin
+     `compileCertified?_target`-style lemma for the composed entry.
+5. Validate: `scripts/opt_harness.sh full`.
+
+### Build-cost note
+Steps 2–4 recompile `InteractionPreservation.lean` (165k) + downstream per
+iteration. Kick narrow module builds (`lake build EvmCompiler.TypedCfg.<mod>`)
+while iterating; only run the full `EvmCompiler.Verification` + harness at the
+end. `swap n ; swap n` (step 4 of the original list) still layers cleanly on top
+once push;pop is wired: add one `peepholeBody` arm + the involution kernel lemma;
+all c-core/c-block/open machinery is reused unchanged.
+
+## Remaining to a live, validated gas delta (original plan — tactics partly superseded above)
 
 1. **Open-interaction analogue.** The public theorem routes *every* block
    (call-free and call-bearing alike) through
