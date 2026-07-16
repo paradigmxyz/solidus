@@ -292,3 +292,71 @@ Steps 1/2/f build in seconds (narrow modules). The splice (step 3) recompiles
 for 2–3 full rebuilds. Run `scripts/opt_harness.sh full` only at the end;
 `#print axioms Solidus.compile_correct` must stay
 `[propext, Classical.choice, Quot.sound]`.
+
+## Session-3 addendum: fuelBudget monotonicity landed; splice blast radius verified
+
+Two more green, axiom-clean commits closed every self-contained obligation the
+splice needs:
+- **(g) `EvmCompiler/TypedCfg/PeepholeFuel.lean`** (commit ea7ed24e) —
+  `fuelBudget_peepholeProgram_le : fuelBudget (peepholeProgram cfg) ≤ fuelBudget
+  cfg`, via `lowerBodyFrom?_peephole_le` (peepholed body lowers to the SAME output
+  shape with ≥ bytes; push;pop removes exactly the 1-byte `[.push v]`/`[.prim
+  .pop]` fragments) → `compiledBlock_fuelBudget_peephole_le`. This is the exact
+  fact that lets the splice KEEP its conclusion budget at `fuelBudget cfg` and
+  pad the (smaller) peepholed assembly run up with the existing
+  `openRunNResult_*_add_executes` / `_follows_of_le_follows` — so NO downstream
+  statement changes.
+- **(f) `PeepholeSpine.lean`** already gives `peepholeProgram_wellTyped`.
+
+### Blast radius of the splice — verified CONTAINED (all non-frozen)
+`StackArtifact.compile?_parts` is consumed at EXACTLY three sites, all in
+`EvmCompiler/Compiler/OpenInteractionComposition.lean` (2084 = the Forward/prefix
+path → `compile_correct`; 2447 + 2538 = the terminal/gasful path →
+`RunRefinesOpenTotal` in the total theorem), plus a `#check` in Verification.lean.
+The `compile?_parts` appearing in FROZEN `Correctness.lean:136/195` is the
+UNRELATED `Solidus.compile?_parts` (SolidusInstall.lean:29), decomposing the
+public JSON entry — NOT StackArtifact's. So the frozen surface is untouched.
+
+### The splice, now fully unblocked (mechanical)
+1. `StackArtifact.compile?`: `let certified ← (peepholeProgram cfg).compileCertified?`
+   (keep `cfg := generated.cfg`). In `compile?_parts`, change ONLY the 11th
+   tuple field from `artifact.cfg.compileCertified? = some artifact.certified` to
+   `(peepholeProgram artifact.cfg).compileCertified? = some artifact.certified`
+   (proof: rename `cases hCertified : generated.cfg.compileCertified?` →
+   `(peepholeProgram generated.cfg).compileCertified?`). Positions/count of the
+   tuple unchanged, so the `_`-discarded uses in the sibling corollaries
+   (`compile?_assembly` etc., which use `hTarget`) keep elaborating.
+2. Each of the three OIC consumer theorems (2018 Forward, and the two terminal
+   ones feeding 2447/2538): after `compile?_parts`, `hCertified` is now about
+   `peepholeProgram cfg`; derive `hIndepPeep := peepholeProgram_programCounterIndependent
+   hIndependent`; transfer the source-side `openRunNPrefix cfg …` Follows/Executes
+   to `openRunNPrefix (peepholeProgram cfg) …` via `openRunNPrefix_peephole_congr`
+   + `Simulation.Interaction.Rel.executes` (Interaction.lean:1871) /
+   `exists_executes_extension`; feed the peephole preservation
+   (`InteractionPrefixPreservation`/`InteractionPreservation` entry theorems with
+   `hCertified`,`hIndepPeep`, budget `… * fuelBudget (peepholeProgram cfg)`); pad
+   up to `… * fuelBudget cfg` with `fuelBudget_peepholeProgram_le` +
+   `Source.openRunNResult_follows_of_le_follows` / `_halted_add_executes`; convert
+   the resulting `OpenBlock.RunSimulates target peepDone targetDone` +
+   `RuntimeOutcomeRel cfgDone peepDone` back to `… cfgDone …` via
+   `OpenBlock.runtime_left` (InteractionPreservation.lean:144). The final DoneRels
+   bind cfgDone existentially, so the source leg is untouched and the CONCLUSIONS
+   are byte-identical (still `fuelBudget cfg`).
+3. Two tiny transfer lemmas still to write for the terminal path:
+   `PrefixAssemblySafe cfgDone → RuntimeOutcomeRel cfgDone peepDone →
+   PrefixAssemblySafe peepDone` and the gasful `AssemblySafeHalted` analogue
+   (`Terminal.SafeAt` reads only memory/stack, `SameRuntimeData`-stable).
+4. `scripts/opt_harness.sh full`: expect `#print axioms Solidus.compile_correct`
+   / `compile_correct_creation` still `[propext, Classical.choice, Quot.sound]`,
+   all 56 corpus contracts compiling (guaranteed to still COMPILE by
+   `peepholeProgram_wellTyped` + PCFits-shrinks + accepted), and a bytes/deploy-gas
+   reduction concentrated on the 61 `SWAP1;SWAP1`/`push;pop` no-ops (ExternalCallBox
+   ≈122 bytes / ≈24.4k deploy gas; corpus-wide grows once `swap n; swap n` is
+   added — one extra `peepholeBody` arm + an involution kernel lemma, reusing all
+   of (a)–(g) unchanged).
+
+### Status: the semantic tower is COMPLETE and green
+Commits deda555f (a), 16e38b0c (b), 9728d205 (c-core), 43403cfc (c-block),
+c062ab44 (d open-block), c2f7c552 (e program+whole-program congruence),
+58ed8314 (f WellTyped), ea7ed24e (g fuelBudget). Remaining = only the mechanical
+spine rewrite in steps 1–3 above + one full `EvmCompiler.Verification` rebuild.
