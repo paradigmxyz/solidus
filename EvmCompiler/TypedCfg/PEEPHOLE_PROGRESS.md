@@ -504,3 +504,121 @@ Landed this session: commit for `PeepholeSwapKernel.lean` + `Verification.lean`
 import. `#print axioms swap_swap_sameRuntimeData` =
 `[propext, Classical.choice, Quot.sound]`. Public spine unchanged (push;pop splice
 from session 4 intact; measured delta still 0 until the swap arm ships).
+
+## Session-6 update (2026-07-16): steps (1)–(3) landed; step (4) obstruction pinned to caller-tail frames
+
+Three more green, axiom-clean commits. Steps (1)+(2)+(3) of the session-5 recipe
+are done as standalone modules (the landed push;pop tower and `peepholeBody`
+remain untouched, so the frozen-adjacent tower stays green). Step (4) is analysed
+below and found to require the procedure-calling-convention model — genuinely the
+deferred multi-hundred-line addition, with the precise obstruction now located.
+
+### (1)+(2) landed — `EvmCompiler/TypedCfg/PeepholeStackRealizes.lean`
+- **`Instr.swap_type_involution`** (`[propext, Quot.sound]`): `type? (.swap d)`
+  is its own inverse on shapes (`type?(swap d)(type?(swap d) s) = s`). Pure
+  typing; the shape-level companion of the runtime kernel. Proof via the
+  `getElem?`/`set` characterization of `type? (.swap d)` + `List.set_set` +
+  `set_getElem_self`.
+- **`StackRealizes shape state := shape.length ≤ state.stack.length`** with
+  preservation (`[propext, Classical.choice, Quot.sound]`):
+  - `runState_stackRealizes` — per-instruction: from `StackRealizes input state`
+    + `type? instr input = some output` + `runState instr input state = .ok state'`
+    conclude `StackRealizes output state'`. All 10 `Instr` cases; dup/swap use
+    `interval_cases` + `step_stack_length_of_stackArity` with the δ/α arity
+    reduced uniformly via `norm_num [EvmYul.EVM.δ, EvmYul.EVM.α, PrimOp.toEVM]`
+    (the generic lemma leaves the arity symbolic; norm_num forces it concrete so
+    it matches the concrete `length_of_type?_*` bound); unwind uses
+    `Preservation.runPops_stack_length`.
+  - `runAt_stackRealizes` (single `runAt`) and `runBody_stackRealizes`
+    (whole straight-line body, by induction) wrappers.
+
+### (3) landed — `EvmCompiler/TypedCfg/PeepholeSwapOpen.lean`
+- **`openRunBody_swap_swap_congr`** (`[propext, Classical.choice, Quot.sound]`):
+  the depth-guarded OPEN-body swap-arm reduction — the swap analogue of the
+  `push v ; pop` cancel branch inside `openRunBody_peephole_congr`, isolated so
+  the green tower stays green. From `(type? (.swap d) input).isSome`,
+  `bodyType? rest input = some output`, `rest` PC-independent,
+  `StackRealizes input state2`, and `SameRuntimeData state1 state2`, it derives
+  `Rel (Instr.RuntimeAtRel output) (openRunBody rest input state1)
+  (openRunBody (.swap d :: .swap d :: rest) input state2)`.
+  Proof: `length_of_type?_swap` (⇒ `d+2 ≤ input.length`) + `StackRealizes`
+  (⇒ `d+2 ≤ state2.stack.length`) feeds `swap_swap_sameRuntimeData`; the two
+  swaps reduce via `runState_swap_eq` (`runState (.swap d) = EvmYul.swap (d+1)`,
+  `interval_cases <;> rfl`) + `openRunBody_swap_cons_ok`; `swap_type_involution`
+  supplies the second-swap typing back to `input`; the shared tail rides the
+  pre-existing `InteractionCongruence.Block.openRunBody_runtimeRel`. This lemma
+  is exactly what step 5's new `openRunBody_peephole_congr` swap arm will invoke.
+
+Commits: `93ec0755` (1+2), plus the (3) commit; both wired into
+`EvmCompiler.Verification` (imports) — full `EvmCompiler.Verification` rebuilds
+green, `compile_correct` / `compile_correct_creation` axioms unchanged
+`[propext, Classical.choice, Quot.sound]`.
+
+### THE STEP-(4) OBSTRUCTION, precisely located: caller-tail hidden frames
+Step (4) wants `StackRealizes (labelShape? label) state` maintained as an
+execution invariant of `openRunN`/`openStep`, i.e. **at every block entry the
+runtime stack realizes that block's `input` shape**. The within-block half is
+done (`runBody_stackRealizes`). The cross-block half does NOT follow from
+`WellTyped`, and here is why:
+
+A terminator is well-typed via `Shape.compatible output target.input`
+(`Typing.lean:typeWith?`). But `Shape.compatible left right`
+(`Syntax.lean:111`) explicitly PERMITS `left.length < right.length` — precisely
+when `left.tail = .caller`. So a well-typed `jump`/`jumpi`/`returnDispatch` may
+hand control to a target block whose `input.length` is STRICTLY GREATER than the
+jumping block's `output.length`. Since `output.length ≤ state.stack.length` is
+all `runBody_stackRealizes` gives, `target.input.length ≤ state.stack.length`
+(the realization the target needs at entry) is simply NOT DERIVABLE at the pure
+CFG level. The missing slots live in the opaque `caller` suffix of the runtime
+stack: a caller-tailed shape describes only a PREFIX of the stack, and how deep
+the hidden caller portion actually is (whether it supplies the extra
+`target.input.length − output.length` slots) is a **runtime call-convention
+property**, established by the real CALL that entered the procedure, not by the
+CFG typing. `tail_of_type?` shows the tail is invariant through a body, so a
+block that can jump "wider" is itself caller-tailed — confirming the extra depth
+must come from a caller frame that the CFG type deliberately hides.
+
+Consequently `StackRealizes` as defined (`shape.length ≤ stack.length`) is
+maintainable only for the **closed-tail** fragment (entry/deploy/dispatch blocks
+with `tail = .closed`, where `compatible` forces equal lengths and realization
+holds with equality). For caller-tailed procedure bodies — where essentially all
+the SWAP-heavy code lives — the correct invariant must additionally assert that
+the runtime stack carries a VALID CALLER FRAME beneath the shape prefix, i.e. an
+inductive relation of the form `state.stack = shape.slots' ++ frame` with `frame`
+recursively realizing the caller's continuation shape. That relation is the
+procedure-calling-convention model; it does not exist in the current TypedCfg
+semantic layer and is the genuine multi-hundred-line addition (grep-confirmed
+absent, consistent with the session-5 diagnosis, now with the exact mechanism).
+
+### Refined next-session recipe (step 4 → 5 → 6)
+4a. Define `FrameRealizes : Shape → EVMState → Prop` inductively: for a
+    `.closed` shape, `shape.length = state.stack.length` (or `≤` if trailing
+    scratch is permitted — check `runTerm`/dispatch); for a `.caller` shape,
+    `∃ frameLen, shape.length + frameLen ≤ state.stack.length` where `frameLen`
+    is pinned by the caller's continuation (thread the caller shape as an index,
+    or carry the return-frame layout the `returnDispatch`/`unwind` terminators
+    consume). Reconcile with how `returnToken`/`returnPC` slots and
+    `Shape.returnTokenDepth?` mark the frame boundary.
+4b. Prove `openStep` preserves `FrameRealizes` per terminator: fallthrough/jump
+    (row-compat + frame carried), jumpi (pops the 1 condition slot — realization
+    of `{shape with slots := rest}` at both targets), returnDispatch (erases the
+    token slot, `Shape.erase`, and the selected `site.target` is realized because
+    the dispatched frame supplied it), halt/invalid (terminal). Compose with
+    `runBody_stackRealizes` for the body leg. Feed the result into `openRunN`
+    by fuel induction.
+4c. Restate `openRunBody_peephole_congr` (and the closed `peepholeBody_runBody_erase`)
+    with the `StackRealizes input state`/`FrameRealizes` hypothesis; discharge the
+    swap arm via `openRunBody_swap_swap_congr` (landed); discharge the entry
+    hypothesis at each block from 4b.
+5.  Add the `swap d :: swap d :: rest → rest` arm to `peepholeBody`; re-green the
+    syntactic (b)-family lemmas (`peepholeBody_length_le`, `mem_peepholeBody`,
+    `peepholeBody_bodyType?`, `lowerBodyFrom?_peephole_le` — all trivial extra
+    match arm) and the semantic ones (consume 4c).
+6.  `scripts/opt_harness.sh full` (solc 0.8.26 via solc-select, restore 0.8.35
+    after). Expect ExternalCallBox ≈122 bytes / ≈24.4k deploy gas; corpus-wide
+    delta dominated by the SWAP-heavy AdversarialStackPressure contract.
+
+Landed this session: `PeepholeStackRealizes.lean` (1+2), `PeepholeSwapOpen.lean`
+(3), `Verification.lean` imports. All axiom-clean, all green,
+`compile_correct` unchanged, `peepholeBody`/public spine untouched (measured
+delta still 0 until step 5 ships the arm).
