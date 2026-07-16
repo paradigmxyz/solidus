@@ -622,3 +622,66 @@ Landed this session: `PeepholeStackRealizes.lean` (1+2), `PeepholeSwapOpen.lean`
 (3), `Verification.lean` imports. All axiom-clean, all green,
 `compile_correct` unchanged, `peepholeBody`/public spine untouched (measured
 delta still 0 until step 5 ships the arm).
+
+### KEY DISCOVERY for step 4: the caller-frame entry-depth invariant ALREADY EXISTS (reuse, don't rebuild)
+A fan-out search of the whole tower found that the "at each block entry the
+runtime stack realizes the shape" invariant — including the caller-frame
+hidden-suffix — is ALREADY defined and ALREADY maintained across open multi-block
+execution, in the Structured→TypedCfg simulation layer. Do NOT rebuild it from
+scratch (the 4a `FrameRealizes` sketch above is subsumed). The reusable pieces:
+
+- **`EvmCompiler/Structured/TypedCfgCompiler.lean:186`**
+  `def SourceFrameFits (shape : Shape) (stackLength : Nat) : Prop :=
+   shape.sourceLength ≤ stackLength ∧
+   ∀ depth, shape.returnTokenDepth? = some depth → stackLength = depth`
+  — EXACTLY the block-entry depth invariant needed (`sourceLength :=
+  shape.sourceView.length`, the visible slots below the return token; exact
+  depth at a return-token frame). `TypedCfgCompilerFacts.lean:76`
+  `returnTokenDepth?_lt_length` bounds the token slot.
+- **`EvmCompiler/Structured/TypedCfgPreservation/Core.lean`** — the concrete
+  hidden-suffix decomposition: `realizeStack : Stack → List ReturnDest →
+  List Word → Option Stack` (17) appends each ghost return frame BENEATH the
+  visible stack; `StateRel source tokens target` (51) = runtime stack decomposes
+  as source stack with all caller frames realized beneath; `ActivationExtension`
+  (285, inductive, with `trans`/`realize_length_lt`) tracks nested frames.
+- **`EvmCompiler/Structured/InteractionPreservation.lean`** — the invariant is
+  THREADED across open steps/blocks: `StateRel.hiddenSuffix` (16) gives
+  `stack = visible ++ hidden`; `openStepEVM_sourceFrameFits` (200) preserves
+  `SourceFrameFits` across one open step; `openRun_toCfg` (457, documented at
+  454 as "carries the source-frame invariant needed by the next block").
+  `InteractionTruncationOwnerPreservation.lean` (e.g. 611) threads
+  `SourceFrameFits input source.evm.stack.length` as the block-entry invariant
+  across `Block.openRun` / `openRunNResultWithStop`.
+
+**Two caveats that define the remaining work (still nontrivial, but NOT a
+from-scratch frame model):**
+1. It is parameterized by the STRUCTURED SOURCE's ghost return frames
+   (`RunState.returns : List ReturnDest`) and the shape's
+   `sourceLength`/`returnTokenDepth?` — NOT directly by `Shape.tail = .caller`.
+   `Shape.compatible`/`hasPrefix`/`unwindTo` remain pure boolean predicates with
+   no proven runtime-suffix bridge; the runtime tie-in goes exclusively through
+   `sourceView`/`returnTokenDepth?`/`SourceFrameFits`.
+2. There is NO standalone theorem "for an arbitrary well-typed TypedCfg
+   `Program`, `openRunN` maintains `block.input.length ≤ state.stack.length` at
+   every entry" independent of a Structured source.
+
+**Therefore the correct step-4 route (revised):** couple the peephole congruence
+to the SAME Structured source witness the public spine already carries. The
+splice point (`Compiler/OpenInteractionComposition.lean`,
+`yulToNormalizedStackAssemblyPrefixForward` and the terminal theorems) already
+has both ends on `cfg` = `generated.cfg` AND the source bridge
+`yulToNormalizedStackTypedCfgPrefixForward` in scope — so `SourceFrameFits` /
+`StateRel` for the running state is available there. Rather than adding a raw
+`StackRealizes` hypothesis to `openRunBody_peephole_congr` (unprovable
+standalone for caller tails, per the obstruction above), thread the EXISTING
+`SourceFrameFits input state` (already established at each block entry by the
+source simulation) into a `SourceFrameFits`-guarded peephole congruence, and
+derive the swap arm's runtime guard `depth+2 ≤ state.stack.length` from
+`SourceFrameFits` + `sourceLength`/`length` bounds (`returnTokenDepth?_lt_length`
+et al.). The landed `openRunBody_swap_swap_congr` (step 3) already takes a
+`StackRealizes input state2` = `input.length ≤ state2.stack.length` guard; the
+remaining glue is `SourceFrameFits input n → input.length ≤ n` (or the
+`sourceLength`-adjusted variant) at the swap position, plus re-stating the body
+congruence over `SourceFrameFits`. This is the concrete, reuse-based unblock for
+a future session; it is bounded by the Structured-source coupling, not by a new
+frame model.
