@@ -7,6 +7,7 @@ import EvmCompiler.Structured.SourceAcceptedCheck
 import EvmCompiler.Structured.Semantics
 import EvmCompiler.Structured.TypedCfgCompiler
 import EvmCompiler.TypedCfg.Certificate
+import EvmCompiler.TypedCfg.PeepholeSpine
 import EvmCompiler.Assembly.Bytecode
 
 namespace EvmCompiler
@@ -56,7 +57,7 @@ def compile? (source : Functions.Program) : Option Artifact := do
     pure ()
   else
     none
-  let certified ← cfg.compileCertified?
+  let certified ← (TypedCfg.Peephole.peepholeProgram cfg).compileCertified?
   let target ← Assembly.compileExecutable? certified.target
   if Assembly.Bytecode.targetFitsDecodeWindow? target then
     if Functions.OpenSupportCheck.Program.openSupported? source then
@@ -88,7 +89,8 @@ theorem compile?_parts
         some artifact.cfg ∧
       artifact.cfg.WellTyped ∧
       artifact.cfg.ProgramCounterIndependent ∧
-      artifact.cfg.compileCertified? = some artifact.certified ∧
+      (TypedCfg.Peephole.peepholeProgram artifact.cfg).compileCertified? =
+        some artifact.certified ∧
       Assembly.compileExecutable? artifact.certified.target =
         some artifact.target ∧
       Assembly.Bytecode.TargetFitsDecodeWindow artifact.target ∧
@@ -141,7 +143,9 @@ theorem compile?_parts
                 by_cases hIndependent :
                     generated.cfg.programCounterIndependent? = true
                 · simp [hIndependent] at hCompile
-                  cases hCertified : generated.cfg.compileCertified? with
+                  cases hCertified :
+                      (TypedCfg.Peephole.peepholeProgram
+                        generated.cfg).compileCertified? with
                   | none => simp [hCertified] at hCompile
                   | some certified =>
                       simp [hCertified] at hCompile

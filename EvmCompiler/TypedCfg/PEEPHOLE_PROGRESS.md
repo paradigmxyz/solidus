@@ -360,3 +360,59 @@ Commits deda555f (a), 16e38b0c (b), 9728d205 (c-core), 43403cfc (c-block),
 c062ab44 (d open-block), c2f7c552 (e program+whole-program congruence),
 58ed8314 (f WellTyped), ea7ed24e (g fuelBudget). Remaining = only the mechanical
 spine rewrite in steps 1–3 above + one full `EvmCompiler.Verification` rebuild.
+
+## Session-4 update (2026-07-16): splice LANDED, green, axiom-clean — but push;pop delta is ZERO
+
+The mechanical spine splice is done and validated. `EvmCompiler.Verification`
+builds green; `#print axioms` on `Solidus.compile_correct` /
+`compile_correct_creation` = exactly `[propext, Classical.choice, Quot.sound]`
+(all 43 public theorems contained). All 56 corpus contracts still compile.
+
+### What landed
+- **`Compiler/StackArtifact.lean`**: `compile?` now certifies
+  `(peepholeProgram cfg).compileCertified?`; `compile?_parts`' 11th field is the
+  peephole certificate. `certified.target = (peepholeProgram cfg).lower?`.
+- **`TypedCfg/PeepholeTransfer.lean`** (new, axiom-clean): the
+  `RuntimeOutcomeRel`-stability transfer lemmas
+  (`prefixAssemblySafe_of_runtimeRel`, `assemblySafeHalted_of_runtimeRel`,
+  `assemblySafeFinished_of_runtimeRel`, `runtimeOutcomeRel_eq_error_right`,
+  `assemblySafeFinished_of_prefixAssemblySafe`) + the generic target-fuel padding
+  lemma `rel_openRunNResult_finished_pad` (finished assembly `Rel` lifts to any
+  larger budget via `Rel.of_executes` + `openRunNResult_*_add_executes`).
+- **`Compiler/OpenInteractionComposition.lean`**: the consuming theorems now take
+  `hCompile : (peepholeProgram cfg).compileCertified?` + an explicit
+  `hWellTyped : cfg.WellTyped` (the source bridge still needs the ORIGINAL cfg's
+  WellTyped, no longer derivable from the peephole certificate). Prefix path
+  (`yulToNormalizedStackAssemblyPrefixForward`) transfers source-side
+  `openRunNPrefix cfg` Follows/Executes to `peepholeProgram cfg` via
+  `openRunNPrefix_peephole_congr` + `Rel.executes`, pads with
+  `fuelBudget_peepholeProgram_le`, reconciles via `OpenBlock.runtime_left`.
+  Terminal paths (`structuredToAssemblySource[Finished]`,
+  `structuredToEncodedBytecode`, and their yul wrappers) bridge `openRunN cfg` →
+  `openRunN (peepholeProgram cfg)` via `openRunN_peephole_congr`, transfer the
+  `AssemblySafe*` side-condition, pad the finished target `Rel`, collapse via
+  `runtime_left`. `hWellTyped` is threaded from `compile?_parts` at the two
+  terminal consumers. Blast radius was exactly the theorems carrying
+  `cfg.compileCertified?` (incl. the dead `structuredToEncodedBytecode` /
+  `yulStackToEncodedBytecode` / `yulStackToAssemblySource` cluster — reworked for
+  consistency). No frozen file touched.
+
+### MEASURED RESULT: zero delta (push;pop has no targets)
+`scripts/opt_harness.sh` check = OK; bench (solc 0.8.26, matching the baseline —
+NOTE the env's default solc 0.8.35 gates `irOptimizedAst` behind
+`settings.experimental` and cannot drive the pipeline) = **+0.00% total_gas, 0
+bytes on every contract** incl. ExternalCallBox (runtime 2791 bytes, unchanged).
+The reason: our generated code essentially never emits a literal adjacent
+`push v ; pop` pair, so `peepholeProgram` is the identity corpus-wide. The
+verified wiring is correct and inert.
+
+### The real lever is `swap n ; swap n` (step 3), NOT push;pop
+The 61 cancellable no-ops on ExternalCallBox are `SWAP1;SWAP1`, not `push;pop`.
+Delivering a nonzero delta requires the involution arm: one extra `peepholeBody`
+match arm (`swap n :: swap n :: rest → rest` when the two `n` agree) + an
+involution kernel lemma (`swap n (swap n s) = s` under stack depth ≥ n+1 from the
+depth-typing invariant) + threading it through the (b)–(g) structural inductions
+(each pattern-matches on `peepholeBody`, so the new arm must be discharged in
+`peepholeBody_length_le`, `peepholeBody_bodyType?`, `runBody_erase`,
+`lowerBodyFrom?_peephole_le`, etc.). This is the outstanding work for a live
+byte/gas win; the push;pop tower + splice is the reusable, validated substrate.
