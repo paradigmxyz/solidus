@@ -416,3 +416,91 @@ depth-typing invariant) + threading it through the (b)–(g) structural inductio
 `peepholeBody_length_le`, `peepholeBody_bodyType?`, `runBody_erase`,
 `lowerBodyFrom?_peephole_le`, etc.). This is the outstanding work for a live
 byte/gas win; the push;pop tower + splice is the reusable, validated substrate.
+
+## Session-5 update (2026-07-16): swap involution kernel LANDED; tower blocker precisely located
+
+### (a-swap) landed — `EvmCompiler/TypedCfg/PeepholeSwapKernel.lean`
+`swap_swap_sameRuntimeData` (green, axiom-clean `[propext, Classical.choice,
+Quot.sound]`; wired into `EvmCompiler.Verification` so CI checks it):
+```
+theorem swap_swap_sameRuntimeData (s : EVMState) (n : Nat)
+    (hn : 1 ≤ n) (hDepth : n + 1 ≤ s.stack.length) :
+    ∃ s1 s2, EvmYul.swap n s = .ok s1 ∧ EvmYul.swap n s1 = .ok s2 ∧
+      SameRuntimeData s2 s
+```
+Uniform in `n` (no 16-way split), phrased at the `EvmYul.swap` transformer level.
+Proof = `exists_swap_decomp` (a length-≥`n+1` list splits as
+`top :: front ++ [last] ++ suffix`) + two applications of the pre-existing
+`Assembly.StackShuffle.swap_snoc` characterization (first swap exchanges
+`top`/`last`; second exchanges them back, restoring `s.stack`; only pc advances).
+The kernel is deliberately standalone: the landed green `push v ; pop` tower and
+`peepholeBody` are UNTOUCHED. Note `Instr.swap depth` runs `EvmYul.swap (depth+1)`
+so the `hn : 1 ≤ n` guard is always met at the instruction level, and
+`hDepth : depth+2 ≤ stack.length` is exactly what `Instr.type? (.swap depth)`
+demands of the SHAPE — see the blocker below for the missing shape⇒stack step.
+
+### WHY the swap arm is NOT a drop-in like push;pop — the exact blocker
+`push v ; pop` cancellation is sound UNCONDITIONALLY (pop after push always sees
+a non-empty stack), so its kernel needs no side condition and the (b)–(g)
+inductions are stated as unconditional equalities/`Rel`s over ARBITRARY states.
+`swap n ; swap n` cancellation is sound ONLY when the runtime stack is ≥ `n+1`
+deep. On a shallower stack the first `swap n` errors (`StackUnderflow`) where the
+cancelled `ε` succeeds, so the OPEN congruence `openRunBody_peephole_congr`
+(and hence `Block.openRun_peephole_runtimeRel`, `openStep_peephole_congr`,
+`openRunN_peephole_congr`) is literally FALSE for such states. These lemmas are
+proved for arbitrary `state1 state2` with only `SameRuntimeData` between them and
+`bodyType? body input = some output`; `bodyType?` bounds the SHAPE length
+(`depth+2 ≤ shape.length`) but the semantic layer has NO invariant tying
+`shape.length ≤ state.stack.length`. So the swap arm needs a runtime stack-depth
+precondition threaded through the whole open tower.
+
+Scoping of the threading (from a full read of the tower):
+- **Body level (bounded, provable now):** add hyp `input.length ≤ state.stack.length`
+  to `openRunBody_peephole_congr` (and the closed `peepholeBody_runBody_erase`).
+  Swap arm discharges via `swap_swap_sameRuntimeData` (shape depth ⇒ stack depth)
+  + a shape-level `type?(swap)(type?(swap) s) = s` involution + `runBody_map_erase`
+  to carry the pc-shift through the tail. The keep/cancel recursion re-establishes
+  the invariant one step down using the per-instruction stack-length facts already
+  in `Preservation.lean` (`PrimOp.step_stack_length_of_stackArity`,
+  `runPops_stack_length`). Shape involution and the invariant-preservation step
+  are new but self-contained (~150 lines).
+- **THE DEEP BLOCKER — program level:** `openRunN_peephole_congr` steps between
+  blocks through arbitrary jump targets with only `SameRuntimeData`. To discharge
+  the body-level `block.input.length ≤ state.stack.length` at EVERY block entry it
+  must maintain, as an execution invariant of `openRunN`, that the runtime stack
+  realizes the current block's input shape. Establishing this requires a
+  per-terminator stack-effect argument (fallthrough/jump/jumpi-pops-1/
+  returnDispatch-erases-1/halt) composed with the CFG's row-compatibility
+  (`Shape.compatible`, incl. opaque `caller` tails) so that the state handed to
+  the next block is ≥ that block's `input.length` deep. This invariant does not
+  exist anywhere in the current TypedCfg semantic layer (grep-confirmed: only
+  isolated `runPops_stack_length` / `step_stack_length` facts, no
+  "stack-realizes-shape" relation on `openRunN`). It is a genuine multi-hundred-
+  line addition touching subtle row typing.
+
+Because adding the `swap` arm to `peepholeBody` immediately forces the unhandled
+arm into EVERY lemma that `split`s on `peepholeBody_cons` — reddening the frozen-
+adjacent green tower — the arm must NOT be added until the whole open tower
+(including the program-level invariant) is proved. Landing it partially is not
+green-preservable. Hence this session lands the kernel (the requested first
+milestone) and the invariant is deferred.
+
+### Exact next-session recipe
+1. Write `swap_type_involution` : `type?(swap d) s = some s' → type?(swap d) s' = some s`
+   (pure typing; ~40 lines, mirrors `length_of_type?_swap`).
+2. Write `StackRealizes shape state := shape.length ≤ state.stack.length`; prove
+   `runAt`-step preservation from the per-instruction length facts.
+3. Add the depth hyp to `peepholeBody_runBody_erase` + `openRunBody_peephole_congr`
+   + prove the swap arm with (1)(2) + `swap_swap_sameRuntimeData`.
+4. The hard part: prove `openRunN`/`openStep` maintain `StackRealizes (labelShape? label) state`
+   across terminators (per-terminator + row-compat), feed it to the block congruence.
+5. Only THEN add the `swap n :: swap n → ε` arm to `peepholeBody`; re-green (b)–(g)
+   swap arms (length_le/mem/bodyType?/lowerBodyFrom?_le are syntactic — trivial;
+   the semantic ones consume steps 1–4).
+6. `scripts/opt_harness.sh full`; expect ExternalCallBox ≈122 bytes / ≈24.4k deploy
+   gas, corpus-wide delta from the SWAP-heavy AdversarialStackPressure contract.
+
+Landed this session: commit for `PeepholeSwapKernel.lean` + `Verification.lean`
+import. `#print axioms swap_swap_sameRuntimeData` =
+`[propext, Classical.choice, Quot.sound]`. Public spine unchanged (push;pop splice
+from session 4 intact; measured delta still 0 until the swap arm ships).
