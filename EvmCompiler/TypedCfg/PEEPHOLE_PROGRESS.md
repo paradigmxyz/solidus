@@ -739,6 +739,8 @@ stack. Two facts make it unusable directly:
    standalone "`openRunN` maintains `block.input.length ≤ state.stack.length` at
    every entry" theorem (grep-confirmed absent, consistent with sessions 5/6).
 
+### (jump to session-10 for the definitive interleave scoping)
+
 ### Consequence: step 4 is a re-architecture, not a glue lemma
 There are exactly two honest routes, both real work (multi-hundred-line,
 plausibly multi-session):
@@ -997,3 +999,105 @@ Commit this session: `StackRealizesEntry.lean` (+`stackRealizes_of_stateRel_of_t
 + this note. `#print axioms` on the new lemma and on
 `compile_correct`/`compile_correct_creation` unchanged
 `[propext, Classical.choice, Quot.sound]`.
+
+## Session-10 update (2026-07-16): the interleaved congruence traced to the theorem level — it is a genuine 4-file / ~16.7k-line re-architecture of the source→cfg sim; NO reusable per-entry hook exists (grep- AND structurally-confirmed). Tower green, axioms clean, delta still +0 (no arm shipped).
+
+Session 10 attempted step (1) of the session-9 recipe — the source-carrying
+program congruence `openRunNPrefix_peephole_congr_of_source`. After an
+independent, theorem-level trace of the entire Structured→cfg preservation
+stack it is confirmed that this cannot be landed green in one session, for a
+reason now pinned MORE precisely than sessions 5–9: the per-block-entry
+`StateRel` witness the swap guard needs is **not exposed anywhere** — the single
+whole-program forward theorem exposes only the *final-outcome* relation, and the
+per-entry invariant is threaded internally across four files totalling ~16.7k
+lines. No arm was added (adding it reddens the whole (b)–(g) tower ungreenably;
+session 5). Inherited tower UNCHANGED and green: `scripts/opt_harness.sh check`
+= OK, 43 public theorems, axioms `[propext, Classical.choice, Quot.sound]` incl.
+`compile_correct` / `compile_correct_creation`. `peepholeProgram` stays identity
+corpus-wide (no swap arm; push;pop has zero targets, measured sessions 4/7), so
+the compiled output is byte-identical to session 9 and the measured corpus delta
+is definitionally **+0 bytes / +0.00% gas on all 56 contracts** (TOTAL 103211
+our runtime bytes vs 36115 solc = 2.86×, per the session-9 committed baseline;
+no spine/peepholeBody change this session ⇒ no re-bench needed).
+
+### What was verified this session (new, concrete, saves the next session the trace)
+1. **The only source→cfg forward theorem exposes just the final outcome.**
+   `InteractionTruncationOwnerPreservation.GeneratedProgram.main_prefix_forward`
+   (`:4833`) yields `ForwardRel Truncated (PrefixDoneRel generated) (source
+   openRun) (cfg openRunNPrefix)`. `PrefixDoneRel` (`:4613`) = `ExceptRel
+   StructuralErrorRel (PrefixOutcomeRel generated)` — it relates ONLY the
+   terminal `sourceDone`/`targetDone`. There is **no** per-entry `StateRel`
+   carried in the conclusion. Confirmed by reading the statement AND by
+   `grep -rn "openRunN.*StateRel|entry.*StateRel"` over `Structured/*.lean`
+   returning **nothing**.
+2. **The per-entry `StateRel` lives inside the recursion, across four files.**
+   `main_prefix_forward` → `main_forward` (`:4561`) →
+   `InteractionBoundedOwnerPreservation` (3490 L) →
+   `InteractionControlPreservation` (6212 L) →
+   `InteractionOwnerPreservation` (2116 L). The actual per-construct threading of
+   `StateRel source tokens target` + `SourceFrameFits input source.evm.stack.length`
+   is the family `code_exec` / `if_exec` / `switch_exec` / `for_exec` /
+   `call_exec` / `brk|cont|leave|terminal_exec` / `exec_succ` / `block_owner`
+   (`InteractionOwnerPreservation.lean:555–1615`) plus the truncation-bounded
+   mirrors in `InteractionTruncationOwnerPreservation.lean` (`Call`/`Loop`/
+   `Switch`/`Block`/`Stmt` namespaces). Each is a source-structural induction; a
+   peephole (third) leg must be threaded through EVERY one.
+
+### Why no black-box reuse of `main_prefix_forward` closes it
+The splice consumes the congruence as `Rel.executes hCongr hCfgExec`
+(`OpenInteractionComposition.lean:916/947`) — applied to ONE concrete cfg
+execution `hCfgExec` that itself came from the source via `hUpper`. So the
+natural fix is an **execution-indexed** transfer, not a universal `Rel`:
+`openRunNPrefix_peephole_execTransfer : Executes (openRunNPrefix cfg …)
+transcript cfgDone → «this-execution-is-source-realizing» → ∃ peepDone, Executes
+(openRunNPrefix (peepholeProgram cfg) …) transcript peepDone ∧ RuntimeOutcomeRel
+cfgDone peepDone`. Its fuel/execution induction needs `StackRealizes block.input
+state` at each entry, dischargeable (landed sessions 8/9:
+`stackRealizes_of_stateRel_of_{token_last_of_tokens_cons,returnTokenDepth?_eq_none}`,
+NO token guard needed — audit session 9) ONLY from a per-entry `StateRel` — which
+`main_prefix_forward` does not hand out. Hence the "source-realizing witness"
+premise is exactly the missing exposure, and supplying it = strengthening the
+giant sim. No shortcut around re-threading.
+
+### The concrete, minimal re-architecture (recommended shape for the next session)
+Rather than a fresh triple simulation, **strengthen the existing recursion's
+carried relation** so it exposes the per-entry invariant, then compose:
+- **Step A (the bulk).** Add to `InteractionOwnerPreservation` /
+  `…BoundedOwnerPreservation` / `…TruncationOwnerPreservation` an *entry
+  invariant* alongside the existing threading: prove a forward theorem
+  `main_prefix_forward_realizing` whose target-done relation additionally records
+  that every block entry visited by the cfg `openRunNPrefix` satisfies
+  `∃ source tokens, StateRel source tokens state ∧ SourceFrameFits input
+  source.evm.stack.length` (equivalently, expose an `openRunNResultWithStop`
+  invariant "each `openStep` is entered in a `StateRel`-realized state"). Because
+  the per-construct lemmas ALREADY carry precisely these witnesses at entry and
+  exit (see `openRun_toCfg` in `InteractionPreservation.lean:457`, and the
+  `hStateRel`/`hFits` parameters threaded through `*_exec`), this is a
+  *bookkeeping strengthening* of the conclusion, not new mathematics — but it
+  touches every `*_exec` case and both mirror files.
+- **Step B (small, mostly landed).** Given the per-entry witness from Step A,
+  prove `openRunNPrefix_peephole_congr_of_source` by the SAME fuel induction as
+  the current `openRunNPrefix_peephole_congr` (`PeepholeProgram.lean:174`), but at
+  each `openStep` discharge `StackRealizes input state` via the session-8/9
+  entry lemmas and feed the (new) swap arm through `openRunBody_swap_swap_congr`
+  (landed session 6). The push;pop cases are unchanged.
+- **Step C.** Swap the four OIC call sites
+  (`OpenInteractionComposition.lean:909/942` prefix path; `:1415/1561/1688`
+  terminal paths) from `openRunNPrefix_peephole_congr` /
+  `openRunN_peephole_congr` to the `_of_source` variants; the source witness
+  (`hUpper` / `generated`) is already in scope at all four.
+- **Step D.** Add the `swap d :: swap d :: rest → rest` arm to `peepholeBody`;
+  re-green the syntactic (b)-family (trivial extra arm) and semantic congruences
+  (consume Step B). Validate `scripts/opt_harness.sh full`.
+
+**Effort estimate:** Step A is the multi-hundred-line (plausibly multi-session)
+item — it is a conclusion-strengthening pass over ~16.7k lines of already-green
+source-structural induction. Steps B–D are the bounded, de-risked remainder
+(session 9 proved (1)+(2) of the recipe; the entry-discharge lemmas are landed).
+The honest scope: this is NOT a glue lemma at the splice; it is a strengthening
+of the Structured→cfg simulation's carried invariant. Sessions 5–9 and 10 have
+each independently converged on exactly this, now pinned to the four files and
+the specific `*_exec` case family that must gain the entry-invariant bookkeeping.
+
+Landed this session: this note. Foundation from sessions 1–9 unchanged and green;
+`peepholeBody`/public spine UNTOUCHED; measured delta +0.
