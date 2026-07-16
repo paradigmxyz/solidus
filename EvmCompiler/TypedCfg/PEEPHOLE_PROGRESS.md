@@ -874,3 +874,126 @@ the `swap d :: swap d :: rest → rest` arm to `peepholeBody` and re-green (b)�
 
 Commit this session: `StackRealizesEntry.lean` + `Verification.lean` import. Foundation
 from sessions 1–7 unchanged and green.
+
+## Session-9 update (2026-07-16): token audit RESOLVED (no guard needed); source coupling reduced to the runtime tokens witness; the genuine remaining blocker re-confirmed as the interleaved (triple) simulation at the OIC
+
+Session 9 executed the two open pre-conditions from session 8 (token-position
+audit + source coupling) and pinned, with definitions, why the arm still cannot
+ship green in one session. Foundation from sessions 1–8 UNCHANGED and green;
+`peepholeBody`/public spine UNTOUCHED, so the measured corpus delta is still
+**+0 bytes / +0.00% gas on all 56 contracts** (no arm shipped — by construction
+`peepholeProgram` stays identity corpus-wide). One new green, axiom-clean lemma
+landed (below).
+
+### (1) TOKEN AUDIT — RESOLVED by code inspection: every block INPUT is token-at-bottom or none
+Session 8 flagged "does any block-**boundary** input inherit the top-`returnPC`
+layout?" as the one open risk gating the token-last route. Answer: **NO.** The
+complete inventory of block-input shapes (`Block.input` = the `input`/`valueShape`
+argument at every `mkBlock?` site + the fixed entry/dispatch/end blocks) is:
+- `main`/entry block — `input = TypedCfg.Shape.caller` = `{slots := [], tail := .caller}`
+  → `returnTokenDepth? = none`. (`TypedCfgCompiler.lean:722/724`)
+- `endBlock` — `input = main.fallthrough?.getD caller`, a top-level source-visible
+  shape → **none**. (`:731-737`)
+- procedure entry blocks — `input = Shape.procEntry proc = replicate argc .word ++
+  [.returnToken]` → token LAST (`depth = length-1`). (`:671`, `:145-148`)
+- dispatch blocks — `input = Shape.procExit proc = replicate retc .word ++
+  [.returnToken]` → token LAST. (`:706`, `:158-161`)
+- all `compileBlock?`-emitted blocks (if/switch/loop joins, call block, terminal,
+  break/continue/leave) — `input` is the **threaded current shape**, which starts
+  at `procEntry`/`procExit`/`caller` and evolves only by source ops that act on the
+  `sourceView` ABOVE the return token (`Shape.sourceView` takes `slots.take depth`),
+  so the token stays at the bottom throughout a procedure body. Switch case blocks
+  take `valueShape` = scrutinee pushed on TOP of the current shape (`[.pop]` body) →
+  token still at bottom.
+- The ONE `returnPC`-on-top layout in the whole compiler is the call-setup **body**
+  `.returnToken token :: sinkTopUnder proc.argc` (`:542`), which `Instr.returnToken`
+  types by pushing `.returnPC` on top (`Typing.lean:15`). This is strictly
+  **mid-body** inside the single call block; that block's terminator is
+  `.jump (ProcLabel.entry name)`, and the callee's INPUT is the fresh `procEntry`
+  (token at bottom). The returnPC-not-at-bottom shape is a block OUTPUT consumed
+  only by the jump-compatibility check, never a block INPUT.
+
+**Consequence:** the swap arm needs NO token-position guard — every reachable block
+entry is covered by `stackRealizes_of_stateRel_of_token_last` (token-last) or
+`stackRealizes_of_stateRel_of_returnTokenDepth?_eq_none` (none), both landed
+session 8. (A fully formal Lean proof of this inventory would be a structural
+induction over `compileBlock?`/`lowerProcBodiesWithShapes?` — a bounded sub-project,
+but NOT required for a guarded arm and NOT on the critical path: the guard can be a
+decidable per-block `returnTokenDepth? ∈ {none, some (length-1)}` check that fires
+on 100% of emitted blocks anyway.)
+
+### (2) SOURCE COUPLING — the `returns ≠ []` obligation reduces to a non-empty runtime tokens list
+`stackRealizes_of_stateRel_of_token_last` needs `source.returns ≠ []`. The existing
+`StateRel.returns_cons_of_tokens_cons` (`Core.lean:74`) already gives
+`StateRel source (token :: tokens) target → source.returns = frame :: returns`.
+So the frame-nonemptiness obligation is discharged by a *non-empty* realized token
+list — exactly what the whole-program simulation carries at a token-bearing block
+entry. Landed this session:
+
+- **`stackRealizes_of_stateRel_of_token_last_of_tokens_cons`** in
+  `StackRealizesEntry.lean` (green, axiom-clean `[propext, Classical.choice,
+  Quot.sound]`): same conclusion as `_of_token_last`, but takes
+  `StateRel source (token :: tokens) target` instead of `source.returns ≠ []`.
+  A future spine wiring now only has to supply the token-list *shape* at each
+  token block entry (non-empty because the input shape owns a return token), not a
+  separate frame fact.
+
+The residual gap in (2): the fully-static `returnTokenDepth? = some _ → tokens ≠ []`
+still needs the shape↔tokens-count correspondence (that a token-bearing input shape
+forces a non-empty maintained `tokens` list). That correspondence is threaded inside
+the whole-program sim (`InteractionTruncationOwnerPreservation`), not exposed
+standalone — and this is the SAME threading the deep blocker below requires, so it
+is not separately blocking.
+
+### THE DEEP BLOCKER, re-confirmed with the exact call site
+The per-entry realization is now a PROVED lemma, but CONNECTING it to the peephole
+congruence still requires the source witness at the program level, and that witness
+is **not present** where the congruence is invoked. At the OIC splice
+(`OpenInteractionComposition.lean:909-916`, `:942-947`, and the three terminal
+consumers at `:1415/1561/1688`), `openRunNPrefix_peephole_congr` /
+`openRunN_peephole_congr` are called as:
+```
+TypedCfg.Peephole.openRunNPrefix_peephole_congr hWellTyped hIndependent
+  budget cfg.entry expressionsState.evm expressionsState.evm
+  (Assembly.SameRuntimeData.refl _)
+```
+i.e. with only `WellTyped`/`ProgramCounterIndependent` and `SameRuntimeData.refl` —
+**no source witness**. It works today only because push;pop is UNCONDITIONAL. The
+swap arm makes the congruence FALSE on shallow stacks, so it needs
+`StackRealizes block.input state` at EVERY block entry the internal `openRunN` fuel
+induction steps through — which is NOT derivable standalone (sessions 5–8: a
+caller-tailed block can be jumped-to "wider"; the extra depth is a runtime
+call-convention property). The `hUpper` source coupling from
+`yulToNormalizedStackTypedCfgPrefixForward` IS in scope at the splice, but only as a
+whole-prefix `ForwardRel`; the per-entry `StateRel`/`SourceFrameFits`/
+`ActivationFrameMatches` invariants live INSIDE the ~2000-line
+`InteractionTruncationOwnerPreservation` proof, not at the OIC. Therefore shipping
+the arm requires re-proving `openRunNPrefix_peephole_congr` as an **interleaved
+(triple: source × cfg × peephole-cfg) simulation** that carries the source
+invariant — the Route-B re-architecture. This is genuinely multi-session and is why
+the arm is not added here (adding it to `peepholeBody` without the guarded congruence
+reddens the whole (b)–(g) tower ungreenably; session 5).
+
+### Exact next-session recipe (unchanged in spirit, now fully de-risked on (1)+(2))
+1. Prove a source-carrying program congruence
+   `openRunNPrefix_peephole_congr_of_source` that threads the Structured→cfg
+   invariants (`StateRel`/`SourceFrameFits` at each entry) alongside the fuel
+   induction — reuse `InteractionTruncationOwnerPreservation`'s per-block-entry
+   invariant maintenance rather than re-deriving it; at each straight-line body
+   discharge `StackRealizes input state` via
+   `stackRealizes_of_stateRel_of_{token_last_of_tokens_cons,returnTokenDepth?_eq_none}`
+   (landed) — NO token guard needed (audit (1)) — and feed
+   `openRunBody_swap_swap_congr` (landed session 6) for the swap arm.
+2. Swap the OIC calls to the source-carrying variant (the `hUpper`/`generated`
+   witness is already in scope at all four consumers).
+3. Add the `swap d :: swap d :: rest → rest` arm to `peepholeBody`; re-green the
+   syntactic (b)-family (`peepholeBody_length_le`, `mem_peepholeBody`,
+   `peepholeBody_bodyType?`, `lowerBodyFrom?_peephole_le` — trivial extra arm) and
+   the semantic congruences (consume step 1).
+4. `scripts/opt_harness.sh full`; expect ExternalCallBox ≈122 bytes / ≈24.4k deploy
+   gas, corpus-wide delta from the SWAP-heavy AdversarialStackPressure contract.
+
+Commit this session: `StackRealizesEntry.lean` (+`stackRealizes_of_stateRel_of_token_last_of_tokens_cons`)
++ this note. `#print axioms` on the new lemma and on
+`compile_correct`/`compile_correct_creation` unchanged
+`[propext, Classical.choice, Quot.sound]`.

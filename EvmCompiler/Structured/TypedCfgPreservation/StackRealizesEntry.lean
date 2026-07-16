@@ -200,6 +200,29 @@ theorem stackRealizes_of_stateRel_of_token_last
     TypedCfgCompilerFacts.Shape.returnTokenDepth?_lt_length hDepth
   omega
 
+/--
+**Procedure-entry half, discharged by the runtime tokens witness.**  Identical
+conclusion to `stackRealizes_of_stateRel_of_token_last`, but the
+`source.returns ≠ []` obligation is discharged from a *non-empty* realized token
+list `token :: tokens` — exactly the witness the whole-program simulation carries
+at a block entry whose input shape owns a return token.  Via
+`returns_cons_of_tokens_cons` a non-empty `tokens` already forces a live ghost
+return frame (`source.returns = frame :: returns`), so a future spine wiring only
+has to supply the token-list shape at each token-bearing block entry rather than a
+separate frame-nonemptiness fact.
+-/
+theorem stackRealizes_of_stateRel_of_token_last_of_tokens_cons
+    {source : RunState} {token : Word} {tokens : List Word}
+    {shape : TypedCfg.Shape} {target : EVMState}
+    (hRel : StateRel source (token :: tokens) target)
+    (hFits :
+      TypedCfgCompiler.Shape.SourceFrameFits shape source.evm.stack.length)
+    (hLast : shape.returnTokenDepth? = some (shape.length - 1)) :
+    TypedCfg.StackRealizes shape target := by
+  obtain ⟨frame, returns, hEq⟩ := StateRel.returns_cons_of_tokens_cons hRel
+  exact stackRealizes_of_stateRel_of_token_last hRel hFits hLast
+    (by rw [hEq]; simp)
+
 end TypedCfgPreservation
 end Structured
 end EvmCompiler
