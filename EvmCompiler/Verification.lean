@@ -20,6 +20,7 @@ import EvmCompiler.Structured.TypedCfgPreservation.StackRealizesEntry
 import EvmCompiler.TypedCfg.InteractionEntryRealized
 import EvmCompiler.TypedCfg.InteractionReachesCap
 import EvmCompiler.TypedCfg.InteractionSettlesCap
+import EvmCompiler.TypedCfg.InteractionSettlesBridge
 import EvmCompiler.Structured.InteractionEntryRealizedForward
 import EvmCompiler.Structured.InteractionOwnerRealized
 import EvmCompiler.Structured.InteractionEntryRealizedBounded
