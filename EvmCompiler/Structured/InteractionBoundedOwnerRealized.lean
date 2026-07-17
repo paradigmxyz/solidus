@@ -292,6 +292,117 @@ theorem leave_bounded_realizing
       | ok hRel => exact contract.stops hRel
 
 end Stmt
+
+/--
+The source-realization witness `realized` predicate pinned in the session-15
+recipe.  A target block entry `(label, state)` is *realized* when it is the entry
+of a compiled cfg block whose source shape is inhabited by a source `StateRel`
+witness at the entry stack depth.
+
+This is the concrete instantiation the composite recursors require (per sessions
+14/15: at composites `realized` must be the source witness, since the child entry
+realization is discharged from the *extracted* child `StateRel`; the abstract
+pass-through only survives at the leaves).  Downstream (Step B), the swap depth
+guard `TypedCfg.StackRealizes block.input state` is produced from this witness by
+`stackRealizes_of_stateRel_of_{returnTokenDepth?_eq_none,token_last_of_tokens_cons}`
+(sessions 8/9), which consume exactly `SourceFrameFits block.input
+source.evm.stack.length`.
+-/
+def realizedWitness (cfg : TypedCfg.Program) :
+    Assembly.Label → EVMState → Prop :=
+  fun label state =>
+    ∃ (source : RunState) (tokens : List Word) (block : TypedCfg.Block),
+      cfg.findBlock? label = some block ∧
+      TypedCfgPreservation.StateRel source tokens state ∧
+      TypedCfgCompiler.Shape.SourceFrameFits block.input source.evm.stack.length
+
+/--
+Realizing counterpart of `BlockOwnerAt`: the source-budgeted recursive block
+capability, strengthened so every recursively executed block additionally yields
+the target-side per-entry accumulator at the concrete source witness
+`realizedWitness cfg`.
+
+This is the mutual-recursion anchor for the item-3b threading.  The composite
+`*_bounded_realizing` recursors consume this at strictly-smaller fuel for the child
+fragment; `block_owner_realizing` will produce it by the same
+`Nat.strong_induction_on sourceFuel` as the existing `block_owner`.
+-/
+def RealizingBlockOwnerAt
+    (sourceFuel : Nat)
+    (program : Structured.Program)
+    (entryShapes : TypedCfgCompiler.ProcEntryShapes)
+    (cfg : TypedCfg.Program)
+    (generated :
+      TypedCfgPreservation.Program.GeneratedContext
+        program entryShapes cfg) : Prop :=
+  ∀ {blockSourceFuel compilerFuel : Nat} {block : Structured.Block}
+      {ctx : TypedCfgCompiler.Context} {supply : LabelSupply}
+      {entry regular : Assembly.Label} {input : TypedCfg.Shape}
+      {result : TypedCfgCompiler.Result}
+      {source : RunState} {tokens : List Word}
+      {policy : StopPolicy}
+      {canBreak canContinue canLeave : Bool},
+    blockSourceFuel ≤ sourceFuel →
+    TypedCfgCompiler.compileBlockFuel? compilerFuel block ctx
+        supply entry input regular = some result →
+    TypedCfgPreservation.BlocksInProgram result cfg →
+    TypedCfgPreservation.CallsInProgram result generated.calls →
+    Structured.Block.WF canBreak canContinue canLeave block →
+    block.FrameSafe →
+    Structured.ProcList.BlockCallsResolved program.procs block →
+    TypedCfgPreservation.OutcomeSimulation.ContextSupports
+      ctx canBreak canContinue canLeave →
+    ctx.procs = program.procs →
+    (canLeave = true →
+      ∃ frame rest, source.returns = frame :: rest) →
+    FragmentContract cfg result ctx supply entry regular input
+      source tokens policy →
+    RealizingBoundedExecPreservesUnder result cfg entry ctx regular
+      source tokens
+      (InteractionSemantics.Block.openRun
+        program blockSourceFuel block source)
+      (InteractionStaticCost.blockBudget
+        program blockSourceFuel block)
+      policy (realizedWitness cfg)
+
+/-- The realizing owner forgets its accumulator to recover the existing
+`BlockOwnerAt` (each recursively executed block's outcome leg via
+`RealizingBoundedExecPreservesUnder.bounded`).  This lets a realizing composite
+feed the unchanged bounded spine while retaining the accumulator. -/
+theorem RealizingBlockOwnerAt.owner
+    {sourceFuel : Nat}
+    {program : Structured.Program}
+    {entryShapes : TypedCfgCompiler.ProcEntryShapes}
+    {cfg : TypedCfg.Program}
+    {generated :
+      TypedCfgPreservation.Program.GeneratedContext
+        program entryShapes cfg}
+    (h : RealizingBlockOwnerAt sourceFuel program entryShapes cfg generated) :
+    BlockOwnerAt sourceFuel program entryShapes cfg generated := by
+  intro blockSourceFuel compilerFuel block ctx supply entry regular input
+    result source tokens policy canBreak canContinue canLeave
+    hLe hCompile hBlocks hCalls hWF hFrameSafe hResolved hSupports hProcs
+    hReturns contract
+  exact
+    (h hLe hCompile hBlocks hCalls hWF hFrameSafe hResolved hSupports hProcs
+        hReturns contract).bounded
+
+/-- Lower the realizing owner's source-fuel ceiling (mirrors `BlockOwnerAt.mono`). -/
+theorem RealizingBlockOwnerAt.mono
+    {smaller larger : Nat}
+    {program : Structured.Program}
+    {entryShapes : TypedCfgCompiler.ProcEntryShapes}
+    {cfg : TypedCfg.Program}
+    {generated :
+      TypedCfgPreservation.Program.GeneratedContext
+        program entryShapes cfg}
+    (hOwner : RealizingBlockOwnerAt larger program entryShapes cfg generated)
+    (hLe : smaller ≤ larger) :
+    RealizingBlockOwnerAt smaller program entryShapes cfg generated := by
+  intro blockSourceFuel compilerFuel block ctx supply entry regular input
+    result source tokens policy canBreak canContinue canLeave hBlockLe
+  exact hOwner (Nat.le_trans hBlockLe hLe)
+
 end OpenOutcome
 end InteractionBoundedOwnerPreservation
 end Structured
