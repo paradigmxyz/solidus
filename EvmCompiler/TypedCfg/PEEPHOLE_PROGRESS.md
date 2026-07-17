@@ -1988,3 +1988,131 @@ Remaining = `switch`/`call` (pure-jump, larger construct-specific reconstruction
 `block_owner_realizing` → `main_bounded_realizing`, then truncation mirror + Steps B–D.
 `compile_correct` / `compile_correct_creation` axioms unchanged `[propext,
 Classical.choice, Quot.sound]`; measured delta +0 (no arm shipped).
+
+## Session-18 update (2026-07-17): the `switch`/`call` composites do NOT close via the standalone `allEntriesRealized_pure_step` route — the obstruction is a strict BUDGET SLACK requiring an UPWARD-monotone accumulator step. Landed the exact missing lever green + axiom-clean (`ReachesOpenStepAt.of_runCompletes` / `AllEntriesRealized.of_runCompletes`, `EvmCompiler/TypedCfg/InteractionReachesCap.lean`, commit `e6702dee`), which the whole tower had deliberately left open. `switch`/`call` themselves remain: their `RunCompletes` discharge is coupled to the child fragment's bounded stopping (the mutual anchor), and `call` additionally has a stop-policy-refinement gap. `scripts/opt_harness.sh check` = OK (43 theorems, axioms unchanged); `peepholeBody`/public spine UNTOUCHED ⇒ measured delta still **+0**.
+
+Session 18 executed the item-3b MANDATE (`switch_bounded_realizing`,
+`call_bounded_realizing` via `allEntriesRealized_pure_step`).  A full budget audit
+of both constructs found the session-17 remaining-recipe for `switch`/`call`
+**over-optimistic in the same way** session-17 found session-16's
+`allEntriesRealized_branch_step` unusable: the `pure_step` route only closes when
+the composite budget matches the child budget *exactly* (the `if` case).  It does
+NOT for `switch`/`call`, and the reason — and its fix — is now landed and pinned
+below.
+
+### KEY FINDING: the `pure_step` route fails on strict budget slack (why `if` ≠ `switch`/`call`)
+`if_bounded_realizing` (session 17) closes because
+`stmtBudget (.if_ cond body) = 1 + blockBudget body` (`stmtBudget_if_succ`), the
+head is exactly one `openStep`, so the `of_succ` residual budget is *precisely*
+`blockBudget body` — the budget the child owner (`RealizingBlockOwnerAt` at
+`Nat.le_refl sourceFuel`) provides.  Exact match ⇒ `allEntriesRealized_branch_step`
+lands the accumulator with no fuel arithmetic.
+
+`switch`/`call` carry **strict slack** (`InteractionStaticCost.lean`):
+* `stmtBudget_switch_succ` `:138` = `1 + (switchBodyBudget + cases.length + 1)`,
+  and `switchBodyBudget` `:70` is a `max` over case bodies.  The matched case is
+  reached after the entry `pop;jump` (`InteractionSwitchPreservation.openStep_pop_jump`
+  `:19`) plus `k` test blocks (`openStep_test` `:95`, each a single
+  `.done (.ok (.jump …))` with a retained-scrutinee `StateRel`); the `of_succ`
+  residual at the matched body is `switchBodyBudget + cases.length − k`, which is
+  `≥ blockBudget matchedBody` with the inequality generally **strict**.
+* `stmtBudget_call_succ` `:149` = `3 + procBodyBudget`, `procBodyBudget` `:82` a
+  `max` over procs.  The proc body (`fragment.entry = ProcLabel.body name`) is
+  reached after TWO pure jumps — the call-site block
+  (`InteractionCallPreservation.openStep_entry_of_compileStmtFuel?` `:264`, whose
+  `hSplit` is derivable from `contract.fits` + `argc ≤ sourceLength input`, cf.
+  `InteractionTruncationOwnerPreservation.lean:457-466`) and the proc-entry adapter
+  (`openStep_procEntry_of_adapter` `:336`) — leaving residual `1 + procBodyBudget`
+  at `fragment.entry`, `≥ blockBudget proc.body`, generally **strict**.
+
+Because `AllEntriesRealized` is *antitone* in fuel (`AllEntriesRealized.of_le`), a
+larger-fuel realization is strictly STRONGER and cannot be recovered from the
+child owner's `blockBudget`-level fact.  `RealizingBoundedExecPreservesUnder.mk`
+requires the accumulator at *exactly* `stmtBudget` (the slack-containing budget),
+so the composite MUST bridge the gap upward.  This is precisely the direction
+`RealizingBoundedExecPreservesUnder.mono_budget`'s docstring flags as
+"deliberately absent … exactly the extra reachability the composite threading must
+establish."
+
+### LANDED (green, axiom-clean): the upward lever — `EvmCompiler/TypedCfg/InteractionReachesCap.lean` (commit `e6702dee`)
+The gap closes because the fragment run genuinely *completes* (stops at its
+recursive boundary) within the child budget along every branch; past the stop,
+extra fuel reaches NO new block entries.  Made precise, target-side and
+`StateRel`-free:
+* **`RunCompletes program stopJump B label state`** — the fuel-`B` whole-program
+  runner (`openRunNResultWithStop`) reaches a proper `.stopped` result (never
+  `.exhausted`, never an interaction error) on EVERY concrete answer branch.
+* **`ReachesOpenStepAt.of_runCompletes`** — if the `B`-run completes, every block
+  entry reached at ANY fuel `n` is already reached at fuel `B`.  Proof: induction
+  on the fuel-`n` reach derivation, generalizing `B` + the completion hypothesis;
+  `.start` trivial; at a `.step` non-stopping jump, completion forces `B ≥ 1`
+  (fuel-0 = `.exhausted` ≠ `.stopped`), then `Simulation.Interaction.Executes.bind_ok`
+  (`.lake/packages/evm-interaction/…/Interaction.lean:1140`) composes the head jump
+  with any residual run to restrict whole-run completion to residual completion,
+  and the IH caps the residual reachability.
+* **`AllEntriesRealized.of_runCompletes`** — promotes a `B`-budget per-entry
+  realization to any larger budget given `RunCompletes … B`.  This is the exact
+  upward-monotone accumulator step `switch`/`call`/`for` need.
+Axioms `[propext, Classical.choice, Quot.sound]`; wired into `EvmCompiler.Verification`.
+
+### The remaining obstruction for `switch`/`call` (precisely located)
+With the cap lemma in hand, `switch_bounded_realizing` reduces to: walk the entry
+`pop;jump` + test chain with `allEntriesRealized_pure_step` (each hop realized via
+`jump_state_rel_of_pure` + the test/`pop` block's retained `StateRel`), then at the
+matched-case leaf promote the child owner's `blockBudget`-accumulator up to the
+residual `stmtBudget` slack via `AllEntriesRealized.of_runCompletes`.  The ONE piece
+that is NOT standalone is **discharging `RunCompletes` at each leaf**:
+* `RunCompletes` demands the target run stops on EVERY branch.  The child
+  fragment's `BoundedExecPreservesUnder` (available as `switch_bounded`/`call_bounded`'s
+  `.bounded` conjunct) proves stopping only for branches matching a *successful
+  source outcome*; the ERROR/divergent source branches are covered by the SEPARATE
+  `RuntimeErrorBlockOwnerAt` + truncation owners.  Assembling `RunCompletes` from
+  all three is exactly the coupled analysis that lives at the mutual anchor
+  (`block_owner_realizing`, `bounded_succ`-style dispatch `:2069`/`:2335`).  So the
+  `RunCompletes` discharge — and therefore `switch`/`call` — must be done AS PART
+  of the mutual anchor, not standalone.  (This is the same coupling session-17
+  flagged for `for`; the budget audit shows it applies to `switch`/`call` too.)
+* **`call` additionally** has a stop-policy-refinement gap: its proc body runs
+  under `InteractionCallPreservation.Call.bodyStopPolicy` (stops at `ProcLabel.exit`),
+  whereas the composite's `AllEntriesRealized` uses the OUTER `policy` (does not stop
+  at the exit — the run continues into the return-dispatch block and back to
+  `regular`).  So `call`'s reachable-entry SET differs from the child owner's, and a
+  policy-refinement reachability bridge (the `AllEntriesRealized` analogue of
+  `ExecPreservesUnder.close_refined_follows`, `InteractionControlPreservation.lean`)
+  is needed on top of the cap.  `switch`'s case bodies run under the SAME outer
+  `policy` (stop at `regular`, like `if` — `switch_bounded` `:472-496`), so `switch`
+  has NO policy gap; `switch` is strictly closer than `call`.
+
+### Exact next-session recipe (session 19)
+1. Prove a `RunCompletes` discharge at the mutual anchor: `RealizingBlockOwnerAt`
+   (or a sibling) should additionally yield `RunCompletes cfg policy (blockBudget …)
+   entry target` for every `StateRel`-related `target`, assembled from the bounded
+   owner's stopping (success branches) + `RuntimeErrorBlockOwnerAt`/truncation
+   (error branches).  This is the genuine coupled obligation.
+2. `switch_bounded_realizing`: `.bounded` = existing `switch_bounded` fed
+   `hBlockOwner.owner`; `.allEntriesRealized` = pop;jump + `cases.length` test-chain
+   `allEntriesRealized_pure_step` hops (entry witnesses from `openStep_pop_jump`/
+   `openStep_test` block shapes), then the matched-case leaf via the child owner's
+   `blockBudget`-accumulator promoted through `AllEntriesRealized.of_runCompletes`
+   (discharge `RunCompletes` from step 1).  Same outer `policy`, no refinement.
+3. `call_bounded_realizing`: two `allEntriesRealized_pure_step` hops (call-site +
+   adapter, `hSplit` from `contract.fits`), then the proc body — but FIRST bridge
+   `bodyStopPolicy`-reachability to `policy`-reachability (the missing
+   `AllEntriesRealized` refinement lemma), THEN promote via
+   `AllEntriesRealized.of_runCompletes`.
+4. `for_bounded_realizing` (loop re-entry) → `bounded_succ_realizing` →
+   `block_owner_realizing` (mutual anchor, where step 1's `RunCompletes` discharge
+   is produced by the same `Nat.strong_induction_on sourceFuel`) →
+   `main_bounded_realizing`; truncation mirror → `main_prefix_forward_realizing`;
+   Steps B–D.
+
+### Status handed to session 19
+The upward-monotone accumulator lever — the tower's long-standing "deliberately
+absent" step — is CLOSED and banked green (`InteractionReachesCap.lean`, commit
+`e6702dee`).  No `*_bounded_realizing` composite landed this session: the audit
+showed `switch`/`call` are NOT standalone (their `RunCompletes` discharge couples to
+the mutual anchor's success+error+truncation stopping analysis, and `call` also
+needs a stop-policy-refinement reachability bridge), correcting session-17's
+`pure_step`-suffices recipe.  `compile_correct` / `compile_correct_creation` axioms
+unchanged `[propext, Classical.choice, Quot.sound]`; `scripts/opt_harness.sh check`
+= OK (43 theorems); measured delta +0 (no arm shipped).
