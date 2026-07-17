@@ -1613,3 +1613,141 @@ existing `openStep_*` relations"** — a bounded, mechanical build with the `if`
 template already landed.  `compile_correct` / `compile_correct_creation` axioms
 unchanged `[propext, Classical.choice, Quot.sound]`; measured delta +0 (no arm
 shipped).
+
+## Session-15 update (2026-07-17): the `call` child-`StateRel` extraction LANDED, and the KEY finding that ALL FOUR composite extraction lemmas collapse to exactly TWO reusable lemmas — the entire item-3b *extraction* layer is now closed. The realizing recursors + `block_owner_realizing` mutual recursion (item 3b *threading*) remain the genuine multi-session bulk; the bounded owner layer is confirmed as the exact mirror target and the source-witness form is pinned. One green, axiom-clean commit; peepholeBody/public spine UNTOUCHED ⇒ measured delta still definitionally **+0**.
+
+### Landed commit (branch `arena-opt`)
+- **`56f06ce3`** — NEW file
+  `EvmCompiler/Structured/InteractionCallEntryRealized.lean` (wired into
+  `EvmCompiler.Verification`).  `jump_state_rel_of_pure` (`:63`, namespace
+  `Structured.InteractionCallPreservation.Call`): the **`call` analogue of the
+  session-14 `if` template `jump_state_rel_of_rel`**.  From a concrete pure-jump
+  characterization `openStep cfg entry target = pure (.jump childLabel childState)`
+  (exactly what `InteractionCallPreservation.Call.openStep_entry_of_compileStmtFuel?`
+  at `InteractionCallPreservation.lean:264` establishes for the *silent* call-site
+  block, with `childLabel = ProcLabel.entry name` and a child `StateRel` for
+  `childState`), plus a child `StateRel childSource childTokens childState`, plus a
+  concrete `Executes … transcript (.ok (.jump next state'))`, it extracts
+  `next = childLabel ∧ StateRel childSource childTokens state'`.  Proof: `pure x =
+  .done (.ok x)`, so `cases` on the `Executes` of the `.done` leaf pins
+  `transcript = []` and `next = childLabel`, `state' = childState` by injection — no
+  backward simulation needed (unlike the `if`/jumpi case).  Axioms `[propext,
+  Classical.choice, Quot.sound]`.
+
+### THE KEY FINDING: four constructs, two extraction lemmas (extraction layer CLOSED)
+A per-construct read of every composite's first-`openStep` exposure shows the item-3b
+"write the `openStep` child-`StateRel` extraction lemma for each" obligation collapses
+to the two lemmas now landed — no new extraction lemmas for `switch`/`for` are needed:
+
+- **`if`** — entry block is a `jumpi` to `body`/`regular`, related to the source
+  condition run by `InteractionBranchPreservation.Condition.DoneRel trueLabel
+  falseLabel tokens restShape` (an interaction `Rel`).  Extraction =
+  **`jump_state_rel_of_rel`** (landed session 14).
+- **`for`** — the loop condition block is *also* a `jumpi`, and
+  `InteractionLoopPreservation.Loop.openStep_condition`
+  (`InteractionLoopPreservation.lean:76`) states its relation over the **same**
+  `InteractionBranchPreservation.Condition.DoneRel bodyLabel endLabel tokens {…}`
+  (verified at `:98-104`).  So `for`'s extraction is **`jump_state_rel_of_rel`
+  reused verbatim** (generic over `trueLabel`/`falseLabel`/`tokens`/`restShape`);
+  no `for`-specific lemma is required.
+- **`switch`** — the entry block (`[.pop]` then `jump` to the first test) and every
+  test block (`[.dup 0, .push cv, .prim .eq]` then `jumpi`) are **silent**:
+  `InteractionSwitchPreservation.Switch.openStep_pop_jump`
+  (`InteractionSwitchPreservation.lean:19`) and `.openStep_test` (`:95`) both prove
+  `openStep … = .done (.ok (.jump L targetFinal))` = a concrete `pure` jump, with
+  `StateRel` in hand.  So `switch`'s extraction is **`jump_state_rel_of_pure`
+  reused** (`.done (.ok x) = pure x`); no `switch`-specific lemma is required.
+- **`call`** — silent call-site block, `pure` jump to `ProcLabel.entry name`.
+  Extraction = **`jump_state_rel_of_pure`** (landed this session).
+
+**Net: `jump_state_rel_of_rel` (jumpi-branch `Rel` form; if + for) and
+`jump_state_rel_of_pure` (pure-jump form; switch + call) together discharge the
+child-`StateRel` extraction for every composite.**  Item 3b's extraction sub-task
+(the "write the `openStep_*` child-`StateRel` extraction lemmas for each" in the
+session-14 recipe) is CLOSED.
+
+### The recursor + mutual-recursion bulk (item 3b *threading*) — still the remaining work, now fully de-risked
+The outstanding piece is the accumulator *threading*: the `*_bounded_realizing`
+recursors + `bounded_succ_realizing` + `block_owner_realizing` + `main_bounded_realizing`.
+Recon this session pinned the exact mirror target and the design crux:
+
+- **Mirror target = the BOUNDED owner layer** (`InteractionBoundedOwnerPreservation.lean`),
+  NOT the plain `InteractionOwnerPreservation.lean` `*_exec` layer.  The bounded layer
+  already has the full spine at the `BoundedExecPreservesUnder` budget
+  `InteractionStaticCost.blockBudget program blockSourceFuel block`, which is the
+  single concrete `targetBudget` the realizing family
+  (`RealizingBoundedExecPreservesUnder`, landed session 14) needs:
+  `code_bounded` (`:152`), `if_bounded` (`:205`), `switch_bounded` (`:387`),
+  `for_bounded` (`:609`), `call_bounded` (`:1385`), `brk/cont/leave/terminal_bounded`
+  (`:1803`/`:1870`/`:1937`/`:2014`), `bounded_succ` (`:2069`), the fuel-founded
+  `block_owner` (`:2335`, `Nat.strong_induction_on sourceFuel`), `main_bounded`
+  (`:3121`), `main_uniform` (`:3229`).  The realizing layer mirrors each with a
+  `_realizing` suffix: `.bounded` conjunct = the existing bounded theorem verbatim;
+  `.allEntriesRealized` conjunct = the accumulator threaded via `of_succ`.
+- **`StopPolicy = Assembly.Label → EVMState → Bool`** (`InteractionControlPreservation.lean:108`),
+  i.e. `policy` IS the `stopJump` that `AllEntriesRealized` takes as its second
+  argument — no coercion.  So the composite's `regular`/boundary branch (`if` false,
+  `for` end, `switch` default-fallthrough) is ruled out inside `of_succ`'s `hNext`
+  by `policy regular _ = true` (the contract's `boundary`/`stops` fact) contradicting
+  the supplied `hStop : policy next state' = false`.  The `body`/`case`/`proc-entry`
+  branch is non-stopping and recurses into the child's realizing owner at the
+  extracted `StateRel`.
+- **The source-witness `realized` is pinned** (validated against BOTH the extraction
+  outputs AND the session-8/9 discharge lemmas):
+  ```
+  realized label state :=
+    ∃ (source : RunState) (tokens : List Word) (block : TypedCfg.Block),
+      cfg.findBlock? label = some block ∧
+      TypedCfgPreservation.StateRel source tokens state ∧
+      TypedCfgCompiler.Shape.SourceFrameFits block.input source.evm.stack.length
+  ```
+  Note `SourceFrameFits` reads the **SOURCE** stack length (`source.evm.stack.length`),
+  exactly as `jump_state_rel_of_rel` returns it (`SourceFrameFits restShape
+  srcState.evm.stack.length`) and exactly as `stackRealizes_of_stateRel_of_{returnTokenDepth?_eq_none,
+  token_last_of_tokens_cons}` (`StackRealizesEntry.lean:166`/`:214`) consume it to
+  produce the runtime `TypedCfg.StackRealizes block.input state` the swap arm needs.
+  `state` is the runtime/target state at the entry.  This is the concrete instantiation
+  the composite recursors require (per session-14: `realized` must be the source
+  witness at composites, since the child `hEntry` is discharged from the extracted
+  `StateRel`; abstract pass-through only survives at the leaves).
+
+### Exact next-session recipe (item 3b threading — extraction closed, mirror + witness pinned)
+1. **`RealizingBlockOwnerAt`** — mirror `InteractionBoundedOwnerPreservation.BlockOwnerAt`
+   (`:42`) but yield `RealizingBoundedExecPreservesUnder … (blockBudget …) policy
+   (realizedWitness cfg)` (define `realizedWitness cfg` as the pinned predicate above).
+   Prove `.owner`/`.mono` projections (the `.bounded`/`.exec`/`.allEntriesRealized`
+   projections on the family itself are already landed session 14).
+2. **Per-construct `*_bounded_realizing`** (order `if`→`for`→`switch`→`call`; `if`/`for`
+   share `jump_state_rel_of_rel`, `switch`/`call` share `jump_state_rel_of_pure`):
+   `.bounded` = the existing `*_bounded`; `.allEntriesRealized` = `AllEntriesRealized.of_succ`
+   with `hHere` from the entry's `realizedWitness` (supplies `StateRel` + `SourceFrameFits
+   input` ⇒ feeds `openStep_*`/the extraction lemma), and `hNext` per first jump:
+   extraction lemma ⇒ (`next`, child `StateRel`, child `SourceFrameFits`) ⇒ the
+   child's realizing owner (`hBlockOwner : RealizingBlockOwnerAt`) at that `StateRel`
+   gives the residual `AllEntriesRealized`; the boundary branch is killed by
+   `policy regular _ = true` vs `hStop`.  Discharging `openStep_*`'s own hypotheses
+   (`hBlocks`, `hFits`, `StateRel target`) at the composite entry comes from the
+   entry's `realizedWitness` + the compile facts already in the `*_bounded` proofs.
+3. **`bounded_succ_realizing`** (dispatch over `Stmt`, mirror `bounded_succ` `:2069`)
+   → **`block_owner_realizing`** (same `Nat.strong_induction_on`, mirror `:2335`;
+   likely one commit for the mutual anchor) → **`main_bounded_realizing`**
+   (mirror `:3121`) exposing `AllEntriesRealized cfg policy (blockBudget …) cfg.entry
+   target (realizedWitness cfg)`.
+4. Mirror into `InteractionTruncationOwnerPreservation` → `main_prefix_forward_realizing`;
+   then Steps B–D unchanged (`openRunNPrefix_peephole_congr_of_source` consumes the
+   `AllEntriesRealized`, discharges `StackRealizes` via
+   `stackRealizes_of_stateRel_of_*` + `openRunBody_swap_swap_congr`; swap the four OIC
+   call sites `OpenInteractionComposition.lean:909/942`/`:1415/1561/1688`; add the
+   `swap d :: swap d :: rest → rest` arm to `peepholeBody`; re-green the syntactic
+   (b)-family + semantic congruences; `scripts/opt_harness.sh full`).
+
+### Status handed to session 16
+The item-3b **extraction** layer is CLOSED (two reusable lemmas cover all four
+composites; both landed).  Remaining = the item-3b **threading** bulk: the
+`*_bounded_realizing` recursors + `block_owner_realizing` mutual recursion +
+`main_bounded_realizing`, mirroring `InteractionBoundedOwnerPreservation.lean`
+theorem-for-theorem with the accumulator conjunct, then the truncation mirror and
+Steps B–D.  Mirror target, `StopPolicy=stopJump` identity, and the source-witness
+`realized` form are all pinned above.  `compile_correct` / `compile_correct_creation`
+axioms unchanged `[propext, Classical.choice, Quot.sound]`; measured delta +0
+(no arm shipped).
