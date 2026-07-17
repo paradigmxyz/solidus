@@ -1876,3 +1876,115 @@ entry-witness extraction located above) → `bounded_succ_realizing` →
 truncation mirror and Steps B–D.  `compile_correct` / `compile_correct_creation`
 axioms unchanged `[propext, Classical.choice, Quot.sound]`; measured delta +0
 (no arm shipped).
+
+## Session-17 update (2026-07-17): the `if` composite recursor `if_bounded_realizing` LANDED green + a CORRECTED, reusable `allEntriesRealized_branch_step` (session-16's had an undischargeable unconditional false-branch stop). This is the composite TEMPLATE — it solves every core problem the other constructs share (returns threading, false-branch stopping, entry witness, body-`FragmentContract` reconstruction). Two green, axiom-clean commits; `switch`/`call`/`for` remain (each a distinct large reconstruction, `for` coupled to the mutual anchor). `scripts/opt_harness.sh check` = OK; `peepholeBody`/public spine UNTOUCHED ⇒ measured delta still definitionally **+0**.
+
+Session 17 executed the item-3b MANDATE (composite `*_bounded_realizing` recursors,
+`if` first).  It landed the `if` composite and, in doing so, corrected the
+accumulator step helper and pinned the exact obstruction for the other three
+constructs.  All additive in `InteractionBoundedOwnerRealized.lean`.
+
+### Landed commits (branch `arena-opt`)
+- **`1876993e`** — `if_bounded_realizing`
+  (`InteractionBoundedOwnerPreservation.OpenOutcome.Stmt.if_bounded_realizing`).
+  `.bounded` conjunct = the existing green `if_bounded` fed `hBlockOwner.owner`
+  (the realizing owner's forgetful projection).  `.allEntriesRealized` conjunct =
+  `AllEntriesRealized.of_succ` over the `if`-head's single `openStep`, with the
+  body-`FragmentContract` reconstructed EXACTLY as `if_bounded` does internally
+  (`InteractionBoundedOwnerPreservation.lean:270-294`) and the false/regular branch
+  ruled out via the reconstructed regular-exit `Rel` + `contract.stops`
+  (mirroring `openRun_if_under`'s false arm, `InteractionBranchPreservation.lean:499-519`).
+  Budget `stmtBudget program (sourceFuel+1) (.if_ cond body) = 1 + blockBudget program
+  sourceFuel body` (`stmtBudget_if_succ`), so the residual `of_succ` budget is exactly
+  `blockBudget program sourceFuel body` and the child owner is invoked at
+  `Nat.le_refl sourceFuel` — no monotone step.  Axioms `[propext, Classical.choice,
+  Quot.sound]`.
+- **`1813be7b`** — corrected reusable `allEntriesRealized_branch_step` +
+  `if_bounded_realizing` refactored to call it.
+
+### KEY FINDING: session-16's `allEntriesRealized_branch_step` was UNUSABLE (flaw + fix)
+Session 16 landed `allEntriesRealized_branch_step` with an **unconditional**
+false-branch stop obligation `hRegularStops : ∀ state', policy falseLabel state' = true`.
+This is **not dischargeable**: the fragment's stop policy `policy` is arbitrary (a
+theorem variable), and it halts at `regular` ONLY for frame-matching states — the
+mechanism is `contract.stops` applied to a reconstructed `Rel result ctx regular
+source.returns tokens (.regular afterCond) (.jump regular state')`
+(`TargetStoppedBy` def: a `.jump` stops iff `policy label state = true`, established
+only through that `Rel`, `InteractionControlPreservation.lean:1186`).  The corrected
+helper therefore:
+1. takes the branch relation **strengthened with returns** — `Rel (fun l r =>
+   Condition.DoneRel … l r ∧ ConditionReturnsEq sourceReturns l)` (built via
+   `Simulation.Interaction.Rel.strengthen_left hHeadRel (openRunCondition_returns
+   cond source)`, exactly as `openRun_if_under` does) so BOTH branches recover
+   `afterCond.returns = sourceReturns` (the fact the body contract's
+   `boundary`/`stops`/`nonregular` fields require — they read `source.returns`);
+2. takes a **conditional** false-stop obligation `hFalseStops : ∀ afterCond state',
+   afterCond.returns = sourceReturns → StateRel afterCond tokens state' →
+   SourceFrameFits restShape afterCond.evm.stack.length → policy falseLabel state' =
+   true` (discharged from the extracted child StateRel/returns/fits);
+3. takes `hBody` in the same extracted form.
+The extraction (`Rel.executes_right` on the strengthened relation → `ExceptRel.ok` →
+`ResultRel` destructure + `ConditionReturnsEq`) is inlined in the helper (it does NOT
+reuse `jump_state_rel_of_rel`, which discards returns).  `for`'s loop-condition block
+reuses `Condition.DoneRel`, so this helper is the shared jumpi-branch step for
+`for_bounded_realizing`.
+
+### The `if` reconstruction, reusable pattern for the other constructs
+Every composite `*_bounded_realizing` is `RealizingBoundedExecPreservesUnder.mk
+(<existing *_bounded> … hBlockOwner.owner …) (accumulator)`.  The accumulator's two
+non-trivial pieces (both mechanical once the pattern is known, ~inlined in `if`):
+1. **Entry witness `hHere : realizedWitness cfg entry target`.**  For `if`:
+   `components_of_compileStmtFuel?_if hCompile` → build the entry `jumpi` block
+   `entryBlock` (input := input) → `hFind : cfg.findBlock? entry = some entryBlock`
+   via `hBlocks entryBlock (by simp [entryBlock, hResult])` → witness
+   `⟨source, tokens, entryBlock, hFind, hStateRel, contract.fits⟩` (`entryBlock.input
+   = input`, so `SourceFrameFits entryBlock.input _ = contract.fits`).
+2. **Body `FragmentContract` + child owner.**  Reconstruct the `if_bounded`
+   `:270-294` record with `hReturns := afterCond.returns = source.returns` (from the
+   strengthened relation), then invoke `(hBlockOwner (Nat.le_refl sourceFuel)
+   hBodyCompile hBodyBlocks hBodyCalls hBodyWF hBodySafe hBodyCallsResolved hSupports
+   hProcs hBodyReturns bodyContract).allEntriesRealized hAfterCondRel (Nat.le_refl _)`.
+   `hBodyBlocks`/`hBodyCalls` derived from `hResult` (the `components_…` result
+   structure) + `hBlocks`/`hResultCalls`; `hBodyWF`/`hBodySafe`/`hBodyCallsResolved`
+   via `cases hWF/hFrameSafe/hCalls` inside `have`s (so the whole hyps survive for the
+   `if_bounded` call in the `.bounded` conjunct).
+
+### Remaining (recipe for session 18)
+- **`for_bounded_realizing`** — loop-condition block is a `jumpi` over the SAME
+  `Condition.DoneRel bodyLabel endLabel tokens {…}` (`openStep_condition`,
+  `InteractionLoopPreservation.lean:76`), so it reuses the corrected
+  `allEntriesRealized_branch_step` for the FIRST jump.  BUT the `for` fragment's open
+  run re-enters cond→body→post→cond across iterations (`loopBudget_succ = 1 +
+  blockBudget body + blockBudget post + loopBudget …`), so `of_succ` on the entry
+  covers only the first body-entry; the post block and re-entered cond are reachable
+  too.  Realizing ALL of them needs the loop-level fuel recursion — i.e. `for` is
+  coupled to `block_owner_realizing` (the child owner must realize body, then post
+  re-enters the loop owner at smaller fuel).  Do `for` AS PART OF the mutual anchor,
+  not standalone.
+- **`switch_bounded_realizing` / `call_bounded_realizing`** — pure-jump composites
+  (use `allEntriesRealized_pure_step`, landed session 16, which is fine — no false
+  branch).  Obstruction is the ENTRY-WITNESS + child extraction for their specific
+  block shapes, and for `call` the child is a PROCEDURE BODY: `openStep_entry_of_compileStmtFuel?`
+  (`InteractionCallPreservation.lean:264`) needs `hSplit : splitArgs? proc.argc
+  source.evm.stack = some (args, callerStack)` (invert from the deterministic pure
+  jump) and the child owner must be invoked on the proc body with the pushed call
+  frame — i.e. re-deriving `call_bounded`'s ~150-line ownership-callback machinery
+  (`InteractionBoundedOwnerPreservation.lean:1385-1560+`).  `switch` threads through
+  the entry `pop;jump` then N `jumpi` test blocks (a multi-step reachability to the
+  matching case, not a single `of_succ`).  Both are larger than `if`; do them after
+  (or alongside) the mutual anchor.
+- Then `bounded_succ_realizing` (mirror `bounded_succ` `:2069`) →
+  `block_owner_realizing` (`Nat.strong_induction_on sourceFuel`, mirror `:2335`) →
+  `main_bounded_realizing` (`:3121`); truncation mirror → `main_prefix_forward_realizing`;
+  Steps B–D.
+
+### Status handed to session 18
+The `if` composite recursor is CLOSED and banked green, and the shared jumpi-branch
+step helper is corrected and reusable (fixes the session-16 flaw).  `if_bounded_realizing`
+is the working TEMPLATE: entry-witness construction, returns threading, false-branch
+stopping, and body-`FragmentContract` reconstruction are all demonstrated and reusable.
+Remaining = `switch`/`call` (pure-jump, larger construct-specific reconstructions) and
+`for` (coupled to the mutual anchor via loop re-entry) → `bounded_succ_realizing` →
+`block_owner_realizing` → `main_bounded_realizing`, then truncation mirror + Steps B–D.
+`compile_correct` / `compile_correct_creation` axioms unchanged `[propext,
+Classical.choice, Quot.sound]`; measured delta +0 (no arm shipped).
