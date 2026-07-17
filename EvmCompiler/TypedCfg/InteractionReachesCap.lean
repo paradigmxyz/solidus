@@ -201,6 +201,56 @@ theorem RunCompletes.of_head_stops
       absurd (hAllStop transcript next state' hHead) (by rw [hsf]; simp))
 
 /--
+**`RunCompletes` is monotone upward in fuel (additive form).**  A run that
+completes within `firstFuel` steps still completes with any extra fuel appended:
+`openRunNResultWithStop_add` factors the `(firstFuel + restFuel)`-run as the
+`firstFuel`-run bound to a continuation, and on every branch the first run is
+already `.ok (.stopped …)` (never `.error`, never `.exhausted`), so the
+continuation is the trivial `pure (.stopped (remaining + restFuel) …)` leaf.
+
+This absorbs the same budget slack for `RunCompletes` that
+`AllEntriesRealized.of_runCompletes` absorbs for the accumulator: the mutual
+anchor supplies each child's `RunCompletes` at that child's own budget, and this
+promotes it up to the composite's larger residual budget before feeding
+`RunCompletes.succ`.
+-/
+theorem RunCompletes.add_right
+    {program : TypedCfg.Program} {stopJump : Label → EVMState → Bool}
+    {firstFuel : Nat} {label : Label} {state : EVMState}
+    (h : RunCompletes program stopJump firstFuel label state)
+    (restFuel : Nat) :
+    RunCompletes program stopJump (firstFuel + restFuel) label state := by
+  intro transcript result hExec
+  rw [openRunNResultWithStop_add] at hExec
+  rcases Interaction.Executes.bind_cases hExec with
+    ⟨err, _hResult, hErrExec⟩ | ⟨value, ft, _rt, _hTr, hFirst, hRest⟩
+  · obtain ⟨remaining, outcome, hEq⟩ := h transcript _ hErrExec
+    exact absurd hEq (by simp)
+  · obtain ⟨remaining, outcome, hEq⟩ := h ft _ hFirst
+    injection hEq with hValue
+    subst hValue
+    have hRest' :
+        Interaction.Executes
+          (Interaction.pure
+            (Control.Program.RunResult.stopped (remaining + restFuel) outcome))
+          _rt result := by
+      simpa only [continueOpenRunNResultWithStop] using hRest
+    cases hRest'
+    exact ⟨remaining + restFuel, outcome, rfl⟩
+
+/--
+**`RunCompletes` is monotone upward in fuel (`≤` form).**  A convenience wrapper
+over `RunCompletes.add_right`. -/
+theorem RunCompletes.of_le
+    {program : TypedCfg.Program} {stopJump : Label → EVMState → Bool}
+    {m n : Nat} {label : Label} {state : EVMState}
+    (h : RunCompletes program stopJump m label state)
+    (hle : m ≤ n) :
+    RunCompletes program stopJump n label state := by
+  obtain ⟨k, rfl⟩ : ∃ k, n = m + k := ⟨n - m, by omega⟩
+  exact h.add_right k
+
+/--
 **Upward reachability cap.**  If the `B`-fuel run from `(entry, target)` completes
 on every branch (`RunCompletes … B`), then every block entry reached at *any*
 fuel `n` is already reached at fuel `B`.
