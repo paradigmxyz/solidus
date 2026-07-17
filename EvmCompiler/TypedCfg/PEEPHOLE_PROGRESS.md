@@ -2364,3 +2364,131 @@ by the landed `of_refined`).  Everything downstream of that lemma is mechanical
 composition with tools already in hand.  `compile_correct` /
 `compile_correct_creation` axioms unchanged `[propext, Classical.choice,
 Quot.sound]`; measured delta +0 (no arm shipped).
+
+## Session-21 update (2026-07-17): session-20's "real remaining bulk" (`hNoError` / `openStep` interpreter-totality) is ELIMINATED from the promotion path by weakening `RunCompletes`→`RunSettles`; the lever landed green + axiom-clean
+
+Session 21 attacked the session-20 mandate (prove `openStep_ok_of_stateRel`, the
+`hNoError` interpreter-totality theorem).  A close reading of exactly *how* the
+completion witness is consumed found that theorem is **not needed at all** for the
+composite budget-slack promotion — it was an over-specification introduced by
+session 18's `RunCompletes`.  The genuinely-needed fact is strictly weaker and
+carries no source coupling.  Landed as `EvmCompiler/TypedCfg/InteractionSettlesCap.lean`
+(commit `18c45ef2`, additive sibling of `InteractionReachesCap.lean`, ~2 s module).
+`scripts/opt_harness.sh check` = OK; `peepholeBody`/public spine UNTOUCHED ⇒ measured
+delta still **+0**.
+
+### KEY FINDING: the upward cap only ever uses "never `.exhausted`", never "reaches `.stopped`"/"no error"
+The sole consumer of the completion witness is `ReachesOpenStepAt.of_runCompletes`
+(→ `AllEntriesRealized.of_runCompletes`), the upward-monotone accumulator promotion
+that `switch`/`call`/`for` need for their budget slack.  Reading its proof
+(`InteractionReachesCap.lean:268`): the witness `RunCompletes … B` is used in
+exactly two spots, **both to rule out `.exhausted`**:
+* the `B = 0` case derives a contradiction from the fuel-`0` runner yielding
+  `.ok (.exhausted …)`;
+* the `.step` case restricts whole-run completion to residual-run completion — and
+  only needs the residual not to exhaust.
+
+The `.stopped`-shape / no-`.error` strength of `RunCompletes` is **dead weight**.
+Session-18's `RunCompletes` (`reaches .ok (.stopped …)` on every branch, hence
+never `.error`) is therefore strictly stronger than the cap requires, and its
+`.succ` constructor's `hNoError` premise — session-20's "real remaining bulk",
+the `openStep` interpreter-totality obligation — exists only to serve that unused
+strength.
+
+### THE UNSOUNDNESS `hNoError` WOULD HAVE HIT (why the weaker witness is also the *correct* one)
+`hNoError` ("a realized block's `openStep` never `Executes … (.error e)`") is in fact
+**false in general**: `Assembly.InteractionSemantics.callStep`/`createStep`
+(`EvmCompiler/Assembly/InteractionSemantics.lean:203-235`) raise
+`.done (.error .StaticModeViolation)` for a state-modifying CALL/CREATE issued in
+static mode, and `.done (.error .StackUnderflow)` — genuine interaction errors that
+`WellTyped` + `SourceFrameFits` do **not** rule out (static-mode violation is a
+*runtime* condition, not a shape condition).  A block that CALLs with value while
+in static mode has an answer branch on which `openStep` errors.  So the session-20
+plan to prove `openStep_ok_of_stateRel` outright would not have closed — the target
+genuinely can error.  (This is consistent with the error↔error bijection in
+`openStep_code_of_compileStmtFuel?`'s `doneRel`, `InteractionControlPreservation.lean:5192-5203`:
+on those branches the SOURCE errors identically, so peephole preservation still
+holds — both sides error.)  A branch that errors reaches *fewer* block entries, so
+it never threatens the per-entry realization accumulator; demanding it not error was
+the wrong requirement.
+
+### LANDED (green, axiom-clean `[propext, Classical.choice, Quot.sound]`): `EvmCompiler/TypedCfg/InteractionSettlesCap.lean` (commit `18c45ef2`)
+* **`RunSettles program stopJump fuel label state`** — the fuel-bounded whole-program
+  runner never yields `.ok (.exhausted …)` on any answer branch (an interaction
+  `.error` is *allowed*).  Strictly weaker than `RunCompletes`.
+* **`RunSettles.succ`** — the recursion constructor, **with NO `hNoError`**: only
+  `hStops` (after any non-stopping head jump, the residual `fuel`-run settles).  An
+  erroring head branch makes the whole run `.error`, trivially not `.exhausted`; every
+  stopping/non-jump head outcome settles at `.ok (.stopped …)`.  This is the exact
+  spot where session-20's obligation evaporates.
+* **`RunSettles.of_head_stops`** — leaf constructor, only `hAllStop` (every jump lands
+  on a stopping boundary — the same fact the leaf `*_bounded_realizing` already prove
+  via `contract.stops`).  No `hNoError`.
+* **`RunSettles.add_right` / `.of_le`** — upward fuel monotonicity (absorbs the
+  `switch`/`call` budget slack; `RunResult` is `exhausted | stopped`, so
+  never-exhausted ⇒ stopped ⇒ the continuation is the pure `.stopped (…+restFuel)` leaf).
+* **`RunSettles.of_runCompletes`** — any already-discharged `RunCompletes` (e.g. an
+  `if`-leaf) feeds the `RunSettles` cap unchanged.
+* **`ReachesOpenStepAt.of_runSettles`** — the upward reachability cap, verbatim the
+  `of_runCompletes` proof with the `.exhausted` obstructions discharged from
+  `RunSettles`.
+* **`AllEntriesRealized.of_runSettles`** — the `hNoError`-free replacement for
+  `AllEntriesRealized.of_runCompletes`: promote the child owner's `blockBudget`-level
+  accumulator up to the composite's `stmtBudget` using only that the child run does
+  not *exhaust* its budget.
+
+### The corrected frontier (materially weaker than session 20's)
+`block_owner_realizing` (the mutual anchor) still has to *supply* the composites'
+`RunSettles blockBudget childLabel childState` — but this is now a **non-exhaustion**
+(fuel-sufficiency) fact, NOT the interpreter-totality no-error theorem:
+* **Success branches** (source `Executes` to `.ok sourceOutcome`): the child
+  `BoundedExecPreservesUnder` (`InteractionControlPreservation.lean:1140`, the
+  `.bounded` conjunct of `RealizingBoundedExecPreservesUnder`) already gives a target
+  `Executes … (.ok (.stopped remaining targetOutcome))` at some `targetFuel ≤ budget`;
+  promote to non-exhaustion at exactly `budget` via `RunSettles.of_le`-style
+  monotonicity.  (Needs the per-transcript `.stopped` fact re-quantified into the
+  `RunSettles` ∀-form — a mechanical repackaging.)
+* **Error branches** (source `Executes` to `.error`): via the error↔error bijection
+  in the head `doneRel`, the target `openStep` errors too, so the whole target run is
+  `.error` — trivially not `.exhausted`.  No totality needed.
+The remaining anchor work is thus the same success+error branch split sessions 18/19
+flagged, but discharging **non-exhaustion** instead of **no-error** — qualitatively
+easier, and with the unsound `hNoError` obligation removed.
+
+### Exact next-session recipe (session 22)
+1. **Bridge lemma** (self-contained, landable before the anchor):
+   `RunSettles cfg policy budget entry target` from
+   `BoundedExecPreservesUnder result cfg entry ctx regular source tokens sourceRun budget policy`
+   + the head forward `Rel` (`openStep_*_of_compileStmtFuel?`) at the entry, for every
+   `StateRel`-related `target`.  Success branches: `BoundedExec` → `.stopped ≤ budget`
+   → `of_le`.  Error branches: `Rel.executes_right` + the error↔error `doneRel` ⇒
+   target result is `.error` (not `.exhausted`).  Requires care to cover EVERY target
+   `Executes` branch (not just those arising from a source execution) — use the source
+   fuel-safety `InteractionFuelSafety.Code.openRun` (`AllDone NotOutOfFuel`) +
+   `Rel.executes_right` to get a source execution for each target transcript, then the
+   `doneRel` classification.
+2. With (1) and `AllEntriesRealized.of_runSettles`, `switch_bounded_realizing` /
+   `call_bounded_realizing` / `for_bounded_realizing` are mechanical per the
+   session-19/20 recipe — child accumulator at `blockBudget` from `hBlockOwner`, child
+   `RunSettles` at `blockBudget` from (1), promote to `stmtBudget` via
+   `AllEntriesRealized.of_runSettles`; `call` bridges the stop-policy refinement via
+   the LANDED `AllEntriesRealized.of_refined`; entry witnesses via the LANDED
+   `realizedWitness_of_stateRel`.
+3. `bounded_succ_realizing` (dispatch over `Stmt`, mirror `bounded_succ` `:2069`;
+   now total: leaves + `if` (landed) + switch/call/for (step 2) + fuel-0 arm is the
+   LANDED `bounded_zero_realizing`) → `block_owner_realizing`
+   (`Nat.strong_induction_on sourceFuel`, mirror `block_owner` `:2335`) →
+   `main_bounded_realizing` (`:3121`) → truncation mirror →
+   `main_prefix_forward_realizing`; then Steps B–D (add the swap arm to `peepholeBody`,
+   re-green the syntactic (b)-family, ship the measured delta).
+
+### Status handed to session 22
+The single obstruction session 20 identified as the sole remaining source-coupled
+bulk (`openStep` interpreter-totality / `hNoError`) is **removed** — it was serving an
+unused strength of `RunCompletes`, and is moreover *false in general*
+(`StaticModeViolation`).  The `hNoError`-free promotion lever `RunSettles` (+ cap +
+accumulator promotion) is CLOSED and banked green (commit `18c45ef2`).  The composites
+now need only child-run **non-exhaustion** at budget, dischargeable from the existing
+`BoundedExecPreservesUnder` (success) + head error-bijection (error) — the step-1
+bridge lemma.  `compile_correct` / `compile_correct_creation` axioms unchanged
+`[propext, Classical.choice, Quot.sound]`; measured delta +0 (no arm shipped).
