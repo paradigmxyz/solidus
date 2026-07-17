@@ -1,4 +1,5 @@
 import EvmCompiler.Structured.InteractionBoundedOwnerRealized
+import EvmCompiler.Structured.InteractionDispatchEntryRealized
 
 /-!
 # Per-leg `realizedWitness` successor lemmas (framing-2 `hInv` discharge substrate)
@@ -121,6 +122,72 @@ theorem realizedWitness_of_pure_jump
     realizedWitness cfg next state' := by
   obtain ⟨hNext, hStateRel⟩ :=
     InteractionCallPreservation.Call.jump_state_rel_of_pure hStep hChildRel hExec
+  subst hNext
+  exact realizedWitness_of_stateRel hLabelShape hStateRel hFits
+
+/--
+**Return-dispatch leg of the `realizedWitness` `openStep`-jump invariant**
+(the widening `returnDispatch` caller-frame successor, deferred since session 5).
+
+For a compiled procedure-exit (return-dispatch) block, any concrete non-stopping
+first jump lands the CALLER continuation `(site.returnLabel, state')`.  The
+frame-model dispatch (return-token read, dispatch-table select, one-activation
+peel) is discharged by
+`InteractionCallPreservation.Call.jump_state_rel_of_dispatch` — which reads the
+caller `StateRel` off the silent `pure`-jump `openStep_dispatch` establishes — so
+this leg lands the child `realizedWitness cfg next state'`, provided the ambient
+CFG block at `site.returnLabel` expects `callerInput`
+(`LabelShape cfg site.returnLabel callerInput`) and the restored caller frame fits
+(`SourceFrameFits callerInput …`).
+
+Proof: `jump_state_rel_of_dispatch` reads off the caller `StateRel`/label at
+`state'`; `realizedWitness_of_stateRel` packages it with the target `LabelShape`.
+This is the exact structural sibling of `realizedWitness_of_branch_jump` /
+`realizedWitness_of_pure_jump`, closing the *successor* half of the invariant's
+`hInv` for the return-dispatch terminator (the widening case).
+-/
+theorem realizedWitness_of_dispatch_jump
+    {sourceProgram : Structured.Program}
+    {entryShapes : TypedCfgCompiler.ProcEntryShapes}
+    {cfg : TypedCfg.Program}
+    (context :
+      TypedCfgPreservation.Program.GeneratedContext
+        sourceProgram entryShapes cfg)
+    {name : Structured.Name} {proc : Structured.Proc}
+    {site : TypedCfgCompiler.DispatchSite}
+    {bodyState returned : RunState} {frame : ReturnDest}
+    {stack : EvmYul.Stack Word} {tokens : List Word}
+    {target state' : EVMState}
+    {next : Assembly.Label} {callerInput : TypedCfg.Shape}
+    {transcript : Simulation.Interaction.Transcript}
+    (hLookup :
+      Structured.ProcList.lookup? name sourceProgram.procs = some proc)
+    (hSiteProc : site.procName = proc.name)
+    (hSiteMem : site ∈ context.calls)
+    (hRel :
+      TypedCfgPreservation.StateRel
+        bodyState (site.token :: tokens) target)
+    (hPop : bodyState.popReturn? = some (frame, returned))
+    (hAttach :
+      Structured.StackFrame.attachReturns? frame bodyState.evm.stack =
+        some stack)
+    (hRetc : frame.retc = proc.retc)
+    (hExec :
+      Simulation.Interaction.Executes
+        (TypedCfg.InteractionSemantics.Program.openStep
+          cfg (ProcLabel.exit proc.name) target)
+        transcript (Except.ok (TypedCfg.Outcome.jump next state')))
+    (hLabelShape :
+      TypedCfgPreservation.LabelShape cfg site.returnLabel callerInput)
+    (hFits :
+      TypedCfgCompiler.Shape.SourceFrameFits
+        callerInput
+        (returned.withEVM
+          { bodyState.evm with stack := stack }).evm.stack.length) :
+    realizedWitness cfg next state' := by
+  obtain ⟨hNext, hStateRel⟩ :=
+    InteractionCallPreservation.Call.jump_state_rel_of_dispatch
+      context hLookup hSiteProc hSiteMem hRel hPop hAttach hRetc hExec
   subst hNext
   exact realizedWitness_of_stateRel hLabelShape hStateRel hFits
 
