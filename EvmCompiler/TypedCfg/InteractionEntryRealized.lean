@@ -95,6 +95,29 @@ theorem eq_of_zero {program : TypedCfg.Program}
   cases h with
   | start => exact ⟨rfl, rfl⟩
 
+/-- Reachability is **monotone in fuel**: more fuel can only reach a superset of
+block entries.  Every `.step` in the derivation is re-applicable one fuel level
+higher (its residual sub-run gains a level by the induction hypothesis), and the
+reflexive `.start` witness holds at any fuel.  This is the target-side fact
+behind the bounded realizing family's fuel quantifier — the run actually taken
+uses *some* fuel `≤ budget`, and its reachable set is contained in the one at
+`budget`. -/
+theorem of_le {program : TypedCfg.Program}
+    {stopJump : Label → EVMState → Bool}
+    {m : Nat} {entry : Label} {target : EVMState}
+    {rLabel : Label} {rState : EVMState}
+    (h : ReachesOpenStepAt program stopJump m entry target rLabel rState) :
+    ∀ {n : Nat}, m ≤ n →
+      ReachesOpenStepAt program stopJump n entry target rLabel rState := by
+  induction h with
+  | start _ label state =>
+      intro n _
+      exact .start n label state
+  | step hExec hStop _hRest ih =>
+      intro n hle
+      obtain ⟨n', rfl⟩ : ∃ n', n = n' + 1 := ⟨n - 1, by omega⟩
+      exact .step hExec hStop (ih (by omega))
+
 end ReachesOpenStepAt
 
 /--
@@ -189,6 +212,22 @@ theorem of_first_jump_stops {program : TypedCfg.Program}
   refine of_succ hHere ?_
   intro transcript next state' hExec hStop
   exact absurd (hStops transcript next state' hExec) (by rw [hStop]; simp)
+
+/-- `AllEntriesRealized` is **antitone in fuel**: realizing every entry an
+`n`-fuel run visits also realizes every entry any shorter `m ≤ n` run visits,
+because the shorter run's reachable set is contained in the longer one's
+(`ReachesOpenStepAt.of_le`).  Consequently the bounded realizing family's
+`∀ tf ≤ budget, AllEntriesRealized … tf …` conjunct is *equivalent* to the single
+fact `AllEntriesRealized … budget …` — see `RealizingBoundedExecPreservesUnder`
+at the bounded layer, which builds the fuel quantifier from this lemma. -/
+theorem of_le {program : TypedCfg.Program}
+    {stopJump : Label → EVMState → Bool} {m n : Nat}
+    {entry : Label} {target : EVMState} {realized : Label → EVMState → Prop}
+    (hmn : m ≤ n)
+    (h : AllEntriesRealized program stopJump n entry target realized) :
+    AllEntriesRealized program stopJump m entry target realized := by
+  intro label state hReach
+  exact h label state (hReach.of_le hmn)
 
 end AllEntriesRealized
 
