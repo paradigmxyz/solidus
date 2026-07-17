@@ -85,6 +85,122 @@ def RunCompletes (program : TypedCfg.Program)
       result = Except.ok (Control.Program.RunResult.stopped remaining outcome)
 
 /--
+**`RunCompletes` recursion constructor.**  The whole-program `(fuel + 1)`-run from
+`(label, state)` completes on every branch as soon as:
+
+* `hNoError` — the head `openStep` never raises an interaction error on any answer
+  branch (a stopped run cannot begin with a failing step); and
+* `hStops` — after any head jump to a *non-stopping* `(next, state')`, the residual
+  `fuel`-run from there already completes (`RunCompletes … fuel next state'`).
+
+Every other head outcome — a *stopping* jump, or a `fallthrough`/`returnDispatch`/
+`halt`/`invalid` — settles the run immediately via
+`afterOpenStepResultWithStop`'s `pure (.stopped …)` leaf, so no hypothesis about it
+is required.  This is the exact branch-by-branch assembler the mutual anchor uses
+to build `RunCompletes` for a composite fragment: `hNoError` from the fragment
+executing cleanly under its realizing `StateRel`, `hStops` from the child
+fragment's bounded stopping.
+-/
+theorem RunCompletes.succ
+    {program : TypedCfg.Program} {stopJump : Label → EVMState → Bool}
+    {fuel : Nat} {label : Label} {state : EVMState}
+    (hNoError :
+      ∀ (transcript : Interaction.Transcript) (err : EVMException),
+        ¬ Interaction.Executes (openStep program label state) transcript
+            (Except.error err))
+    (hStops :
+      ∀ (transcript : Interaction.Transcript) (next : Label) (state' : EVMState),
+        Interaction.Executes (openStep program label state) transcript
+            (Except.ok (TypedCfg.Outcome.jump next state')) →
+        stopJump next state' = false →
+        RunCompletes program stopJump fuel next state') :
+    RunCompletes program stopJump (fuel + 1) label state := by
+  intro transcript result hExec
+  rw [openRunNResultWithStop_succ_eq_bind] at hExec
+  rcases Interaction.Executes.bind_cases hExec with
+    ⟨err, _hResult, hErrExec⟩ | ⟨outcome, ft, rt, _hTr, hHead, hRest⟩
+  · exact absurd hErrExec (hNoError transcript err)
+  · cases outcome with
+    | jump next state' =>
+        by_cases hs : stopJump next state' = true
+        · have hRest' :
+              Interaction.Executes
+                (Interaction.pure
+                  (Control.Program.RunResult.stopped fuel
+                    (TypedCfg.Outcome.jump next state'))) rt result := by
+            simpa only [afterOpenStepResultWithStop, hs, if_true] using hRest
+          cases hRest'
+          exact ⟨fuel, _, rfl⟩
+        · have hsf : stopJump next state' = false := by
+            simpa using hs
+          have hRest' :
+              Interaction.Executes
+                (openRunNResultWithStop stopJump program fuel next state')
+                rt result := by
+            simpa only [afterOpenStepResultWithStop, hsf, if_false] using hRest
+          exact hStops ft next state' hHead hsf rt result hRest'
+    | fallthrough state' =>
+        have hRest' :
+            Interaction.Executes
+              (Interaction.pure
+                (Control.Program.RunResult.stopped fuel
+                  (TypedCfg.Outcome.fallthrough state'))) rt result := by
+          simpa only [afterOpenStepResultWithStop] using hRest
+        cases hRest'
+        exact ⟨fuel, _, rfl⟩
+    | returnDispatch state' =>
+        have hRest' :
+            Interaction.Executes
+              (Interaction.pure
+                (Control.Program.RunResult.stopped fuel
+                  (TypedCfg.Outcome.returnDispatch state'))) rt result := by
+          simpa only [afterOpenStepResultWithStop] using hRest
+        cases hRest'
+        exact ⟨fuel, _, rfl⟩
+    | halt kind state' =>
+        have hRest' :
+            Interaction.Executes
+              (Interaction.pure
+                (Control.Program.RunResult.stopped fuel
+                  (TypedCfg.Outcome.halt kind state'))) rt result := by
+          simpa only [afterOpenStepResultWithStop] using hRest
+        cases hRest'
+        exact ⟨fuel, _, rfl⟩
+    | invalid state' =>
+        have hRest' :
+            Interaction.Executes
+              (Interaction.pure
+                (Control.Program.RunResult.stopped fuel
+                  (TypedCfg.Outcome.invalid state'))) rt result := by
+          simpa only [afterOpenStepResultWithStop] using hRest
+        cases hRest'
+        exact ⟨fuel, _, rfl⟩
+
+/--
+**`RunCompletes` leaf constructor.**  A single-block fragment whose head `openStep`
+never errors and whose every jump lands on a *stopping* boundary
+(`stopJump = true`) completes at `fuel + 1`: the run settles at the first step on
+every branch.  This is the shape the leaf fragments (`code`/`terminal`/`brk`/
+`cont`/`leave`, all one block ending in a boundary jump) present to the anchor.
+-/
+theorem RunCompletes.of_head_stops
+    {program : TypedCfg.Program} {stopJump : Label → EVMState → Bool}
+    {fuel : Nat} {label : Label} {state : EVMState}
+    (hNoError :
+      ∀ (transcript : Interaction.Transcript) (err : EVMException),
+        ¬ Interaction.Executes (openStep program label state) transcript
+            (Except.error err))
+    (hAllStop :
+      ∀ (transcript : Interaction.Transcript) (next : Label) (state' : EVMState),
+        Interaction.Executes (openStep program label state) transcript
+            (Except.ok (TypedCfg.Outcome.jump next state')) →
+        stopJump next state' = true) :
+    RunCompletes program stopJump (fuel + 1) label state :=
+  RunCompletes.succ hNoError
+    (fun transcript next state' hHead hsf =>
+      absurd (hAllStop transcript next state' hHead) (by rw [hsf]; simp))
+
+/--
 **Upward reachability cap.**  If the `B`-fuel run from `(entry, target)` completes
 on every branch (`RunCompletes … B`), then every block entry reached at *any*
 fuel `n` is already reached at fuel `B`.
