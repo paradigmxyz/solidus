@@ -1,5 +1,6 @@
 import EvmCompiler.Structured.InteractionEntryRealizedForward
 import EvmCompiler.Structured.InteractionOwnerPreservation
+import EvmCompiler.Structured.InteractionBoundedOwnerRealized
 
 /-!
 # The per-outcome existential-fuel realizing family (Step A, route C — session 23)
@@ -106,6 +107,43 @@ theorem exec
   obtain ⟨targetFuel, remaining, targetOutcome, hRun, hRel, _⟩ :=
     h target hStateRel transcript sourceOutcome hExec
   exact ⟨targetFuel, remaining, targetOutcome, hRun, hRel⟩
+
+/--
+Derive the per-outcome existential-fuel realizing family from the **bounded**
+realizing family.
+
+Whenever a fragment's bounded realizing family closes at a *static* budget
+(`RealizingBoundedExecPreservesUnder … targetBudget …`), its exec-level realizing
+family follows with no extra reachability argument:
+
+* the bounded outcome leg (`BoundedExecPreservesUnder`) supplies, for each
+  successful source outcome, a *settling* `targetFuel ≤ targetBudget` (the run at
+  it produces `.stopped`);
+* the bounded accumulator, specialized to that very `targetFuel` (which is
+  `≤ targetBudget`), supplies `AllEntriesRealized cfg policy targetFuel …` — exactly
+  the conjunct the exec family attaches under its existential `targetFuel`.
+
+This is the clean landing for every composite whose *bounded* family already
+closes.  It applies to `if` (`if_bounded_realizing`, session 17, whose
+`stmtBudget = 1 + blockBudget body` matches its child exactly).  It does **not**
+help `switch`/`call`/`for`, whose bounded families do not close (their static
+`stmtBudget` carries strict slack, quantifying the accumulator over witnessless
+truncation-branch entries — the session-22 obstruction 3); those must build the
+exec family directly at the settling fuel.
+-/
+theorem of_bounded
+    {targetBudget : Nat}
+    (h :
+      RealizingBoundedExecPreservesUnder result cfg entry ctx regular
+        source tokens sourceRun targetBudget policy realized) :
+    RealizingExecPreservesUnder result cfg entry ctx regular
+      source tokens sourceRun policy realized := by
+  intro target hStateRel transcript sourceOutcome hExec
+  obtain ⟨targetFuel, remaining, targetOutcome, hLe, hRun, hRel⟩ :=
+    h.bounded target hStateRel transcript sourceOutcome hExec
+  exact
+    ⟨targetFuel, remaining, targetOutcome, hRun, hRel,
+      h.allEntriesRealized hStateRel hLe⟩
 
 /--
 Generic single-block leaf constructor.
@@ -417,6 +455,68 @@ theorem leave_exec_realizing
           hExec
       cases hDone with
       | ok hRel => exact contract.stops hRel
+
+/--
+Composite realizing recursor for `if`, at the existential-fuel exec level.
+
+The `if` fragment's *bounded* realizing family already closes at its static budget
+(`InteractionBoundedOwnerPreservation.OpenOutcome.Stmt.if_bounded_realizing`,
+session 17 — `stmtBudget (.if_ cond body) = 1 + blockBudget body`, an exact child
+match with no slack).  So the exec-level family follows directly by
+`RealizingExecPreservesUnder.of_bounded`: the bounded outcome leg supplies a
+settling `targetFuel ≤ stmtBudget`, and the bounded accumulator specialized to
+that same `targetFuel` supplies `AllEntriesRealized` under the exec family's
+existential fuel.  No separate reachability argument is needed (contrast
+`switch`/`call`/`for`, whose bounded families do NOT close — see
+`TypedCfg/PEEPHOLE_PROGRESS.md`, session-24).
+-/
+theorem if_exec_realizing
+    {compilerFuel sourceFuel : Nat}
+    {program : Structured.Program}
+    {entryShapes : TypedCfgCompiler.ProcEntryShapes}
+    {cfg : TypedCfg.Program}
+    {generated :
+      TypedCfgPreservation.Program.GeneratedContext
+        program entryShapes cfg}
+    {cond : Structured.Code} {body : Structured.Block}
+    {ctx : TypedCfgCompiler.Context} {supply : LabelSupply}
+    {entry regular : Assembly.Label} {input : TypedCfg.Shape}
+    {result : TypedCfgCompiler.Result}
+    {source : RunState} {tokens : List Word} {policy : StopPolicy}
+    {canBreak canContinue canLeave : Bool}
+    (hCompile :
+      TypedCfgCompiler.compileStmtFuel? (compilerFuel + 1)
+          (.if_ cond body) ctx supply entry input regular = some result)
+    (hBlocks : TypedCfgPreservation.BlocksInProgram result cfg)
+    (hResultCalls :
+      TypedCfgPreservation.CallsInProgram result generated.calls)
+    (hWF :
+      Structured.Stmt.WF canBreak canContinue canLeave (.if_ cond body))
+    (hFrameSafe : Structured.Stmt.FrameSafe (.if_ cond body))
+    (hCalls :
+      Structured.ProcList.StmtCallsResolved program.procs (.if_ cond body))
+    (hSupports :
+      TypedCfgPreservation.OutcomeSimulation.ContextSupports
+        ctx canBreak canContinue canLeave)
+    (hProcs : ctx.procs = program.procs)
+    (hSourceReturns :
+      canLeave = true →
+        ∃ frame rest, source.returns = frame :: rest)
+    (hBlockOwner :
+      InteractionBoundedOwnerPreservation.OpenOutcome.RealizingBlockOwnerAt
+        sourceFuel program entryShapes cfg generated)
+    (contract :
+      InteractionOwnerPreservation.OpenOutcome.StmtContract
+        cfg result ctx supply entry regular input source tokens policy) :
+    RealizingExecPreservesUnder result cfg entry ctx regular source tokens
+      (InteractionSemantics.Stmt.openRun
+        program (sourceFuel + 1) (.if_ cond body) source)
+      policy
+      (InteractionBoundedOwnerPreservation.OpenOutcome.realizedWitness cfg) :=
+  RealizingExecPreservesUnder.of_bounded
+    (InteractionBoundedOwnerPreservation.OpenOutcome.Stmt.if_bounded_realizing
+      hCompile hBlocks hResultCalls hWF hFrameSafe hCalls hSupports hProcs
+      hSourceReturns hBlockOwner contract)
 
 end OpenOutcome
 end InteractionControlPreservation
