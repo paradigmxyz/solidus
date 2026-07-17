@@ -329,6 +329,112 @@ theorem AllEntriesRealized.of_runCompletes
   intro label state hReach
   exact hAll label state (hReach.of_runCompletes hComplete)
 
+/--
+**Refined-stop reachability decomposition.**  Reachability under a *looser* stop
+policy `outer` factors through a *tighter* policy `inner`: every entry the
+`outer`-run reaches is either
+
+* already reached by the `inner`-run at the same fuel (`Or.inl`); or
+* reached only after the run first *crosses* an `inner`-boundary that `outer`
+  steps through — i.e. there is a jump out of an `inner`-reachable
+  `(crossLabel, crossState)` into some `(next, state')` at which `inner` stops
+  (`inner next state' = true`) but `outer` does not (`outer next state' = false`),
+  and the reached entry is `outer`-reachable from `(next, state')` (`Or.inr`).
+
+No relationship between `outer` and `inner` is required; the split is purely
+structural.  The proof inducts on the `outer` reachability derivation: at each
+non-stopping `outer` step, either `inner` also proceeds (fold the step into both
+disjuncts' `inner`-reach prefixes) or `inner` would stop here (this is the
+crossing, taken at the current entry).
+
+This is the target-side lever behind the `call` composite's stop-policy
+refinement (session-18 gap): the proc body is realized under
+`bodyStopPolicy = pushStopJump … policy` (the tighter `inner`, which stops at
+`ProcLabel.exit`), while the composite must realize entries under the outer
+`policy`, which continues past the exit into the return-dispatch tail.  The only
+`inner`-reachable crossing is the exit, so the tail obligation is confined to the
+exit continuation.
+-/
+theorem ReachesOpenStepAt.refined_decomp
+    {cfg : TypedCfg.Program} {outer inner : Label → EVMState → Bool}
+    {n : Nat} {entry : Label} {target : EVMState}
+    {rLabel : Label} {rState : EVMState}
+    (hReach : ReachesOpenStepAt cfg outer n entry target rLabel rState) :
+    ReachesOpenStepAt cfg inner n entry target rLabel rState ∨
+    ∃ (crossLabel : Label) (crossState : EVMState)
+        (transcript : Interaction.Transcript)
+        (next : Label) (state' : EVMState),
+      (∃ innerFuel,
+        ReachesOpenStepAt cfg inner innerFuel entry target crossLabel crossState) ∧
+      Interaction.Executes (openStep cfg crossLabel crossState) transcript
+        (Except.ok (TypedCfg.Outcome.jump next state')) ∧
+      inner next state' = true ∧ outer next state' = false ∧
+      (∃ outerFuel,
+        ReachesOpenStepAt cfg outer outerFuel next state' rLabel rState) := by
+  induction hReach with
+  | start fuel label state =>
+      exact Or.inl (.start fuel label state)
+  | @step fuel label state transcript next state' rLabel rState
+        hExec hStop _hRest ih =>
+      by_cases hInnerStop : inner next state' = true
+      · exact
+          Or.inr
+            ⟨label, state, transcript, next, state',
+              ⟨fuel, .start fuel label state⟩,
+              hExec, hInnerStop, hStop, ⟨fuel, _hRest⟩⟩
+      · have hIF : inner next state' = false := by simpa using hInnerStop
+        cases ih with
+        | inl hA => exact Or.inl (.step hExec hIF hA)
+        | inr hCross =>
+            obtain
+                ⟨cL, cS, tr, nx, st, ⟨iF, hIR⟩, hC, hISt, hOSt, hOR⟩ := hCross
+            exact
+              Or.inr
+                ⟨cL, cS, tr, nx, st,
+                  ⟨iF + 1, .step hExec hIF hIR⟩,
+                  hC, hISt, hOSt, hOR⟩
+
+/--
+**Policy-refinement accumulator bridge.**  Promotes a per-entry realization under
+a tighter stop policy `inner` to one under a looser policy `outer`, given that the
+`outer`-continuation from every `inner`-boundary crossing is itself realized.
+
+Consumes `hInner` (the tighter run's realization at the same fuel `n`) and `hTail`
+(for each crossing — an `inner`-reachable `(crossLabel, crossState)` jumping into a
+`(next, state')` where `inner` stops but `outer` continues — realize every entry
+the `outer`-run reaches from `(next, state')`).  This is the `AllEntriesRealized`
+analogue of `InteractionControlPreservation.OpenOutcome.ExecPreservesUnder.close_refined_follows`
+the `call` composite needs: `hInner` from the proc body's realization under
+`bodyStopPolicy` (via the child owner + `AllEntriesRealized.of_runCompletes`),
+`hTail` from the outer fragment realizing the return-dispatch tail.
+-/
+theorem AllEntriesRealized.of_refined
+    {cfg : TypedCfg.Program} {outer inner : Label → EVMState → Bool}
+    {n : Nat} {entry : Label} {target : EVMState}
+    {realized : Label → EVMState → Prop}
+    (hInner : AllEntriesRealized cfg inner n entry target realized)
+    (hTail :
+      ∀ (crossLabel : Label) (crossState : EVMState)
+          (transcript : Interaction.Transcript)
+          (next : Label) (state' : EVMState)
+          (outerFuel : Nat) (rLabel : Label) (rState : EVMState),
+        (∃ innerFuel,
+          ReachesOpenStepAt cfg inner innerFuel entry target
+            crossLabel crossState) →
+        Interaction.Executes (openStep cfg crossLabel crossState) transcript
+          (Except.ok (TypedCfg.Outcome.jump next state')) →
+        inner next state' = true → outer next state' = false →
+        ReachesOpenStepAt cfg outer outerFuel next state' rLabel rState →
+        realized rLabel rState) :
+    AllEntriesRealized cfg outer n entry target realized := by
+  intro rLabel rState hReach
+  cases hReach.refined_decomp (inner := inner) with
+  | inl hA => exact hInner rLabel rState hA
+  | inr hCross =>
+      obtain
+          ⟨cL, cS, tr, nx, st, hIR, hC, hISt, hOSt, ⟨oF, hOR⟩⟩ := hCross
+      exact hTail cL cS tr nx st oF rLabel rState hIR hC hISt hOSt hOR
+
 end Program
 end InteractionSemantics
 end TypedCfg
