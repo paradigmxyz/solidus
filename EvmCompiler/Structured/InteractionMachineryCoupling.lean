@@ -1,4 +1,5 @@
 import EvmCompiler.Structured.InteractionConstructCoupling
+import EvmCompiler.Structured.InteractionSwitchPreservation
 
 /-!
 # Machinery-block successor suppliers (route-2 `hInv` machinery arms)
@@ -42,7 +43,7 @@ namespace EvmCompiler
 namespace Structured
 namespace InteractionMachineryCoupling
 
-open InteractionBoundedOwnerPreservation.OpenOutcome (realizedWitness)
+open InteractionBoundedOwnerPreservation.OpenOutcome (realizedWitness realizedWitness_of_stateRel)
 
 /--
 **Condition-block (`.jumpi` over `Code.toCfg cond`) successor supplier.**
@@ -106,6 +107,110 @@ theorem realizedWitness_of_condBlock_jump
   exact
     InteractionRealizedWitnessSuccessor.realizedWitness_of_branch_jump
       hDoneRel hExec hLabelShape
+
+/--
+**Switch-test block successor supplier.**
+
+A switch test block `{ body := [.dup 0, .push caseValue, .prim .eq], term := .jumpi
+caseLabel nextTest }` performs a purely target-side comparison of the retained
+scrutinee against `caseValue` and conditionally jumps, WITHOUT consuming the
+scrutinee — so its child `StateRel` is at the *same* source (`hFinalRel : StateRel
+source tokens targetFinal`), hence its `SourceFrameFits valueShape …` witness is
+unchanged from the entry (`hFits`).  Both successor labels (case-entry and next-test)
+expect `valueShape`.
+
+Given the entry `realizedWitness` ingredients (`hFits` + `hRel`), the scrutinee pop
+(`hPop`), and any concrete first jump, this lands the child `realizedWitness cfg next
+state'`, provided the ambient block at `next` expects `valueShape`.
+
+Proof: `openStep_test` settles the `openStep` to a completed `.jump (if caseValue =
+value then caseLabel else nextTest) targetFinal` outcome with `StateRel source tokens
+targetFinal`; the concrete jump `hExec` forces `next`/`state'` to that outcome;
+`realizedWitness_of_stateRel` packages the retained-source `StateRel` with the target
+`LabelShape`. -/
+theorem realizedWitness_of_test_jump
+    {result : TypedCfgCompiler.Result} {cfg : TypedCfg.Program}
+    {testLabel caseLabel nextTest next : Assembly.Label}
+    {valueShape : TypedCfg.Shape} {slot : TypedCfg.Slot}
+    {caseValue value : Word}
+    {source : RunState} {tokens : List Word}
+    {target state' : EVMState} {stack : EvmYul.Stack Word}
+    {transcript : Simulation.Interaction.Transcript}
+    (hBlocks : TypedCfgPreservation.BlocksInProgram result cfg)
+    (hMem :
+      { label := testLabel
+        input := valueShape
+        body := [.dup 0, .push caseValue, .prim .eq]
+        output := InteractionSwitchPreservation.Switch.testOutput valueShape
+        term := .jumpi caseLabel nextTest } ∈ result.blocks)
+    (hHead : valueShape.slots.head? = some slot)
+    (hFits :
+      TypedCfgCompiler.Shape.SourceFrameFits valueShape source.evm.stack.length)
+    (hRel : TypedCfgPreservation.StateRel source tokens target)
+    (hPop : source.evm.stack.pop = some (stack, value))
+    (hExec :
+      Simulation.Interaction.Executes
+        (TypedCfg.InteractionSemantics.Program.openStep cfg testLabel target)
+        transcript (Except.ok (TypedCfg.Outcome.jump next state')))
+    (hLabelShape : TypedCfgPreservation.LabelShape cfg next valueShape) :
+    realizedWitness cfg next state' := by
+  obtain ⟨targetFinal, hStep, hFinalRel⟩ :=
+    InteractionSwitchPreservation.Switch.openStep_test hBlocks hMem hHead hRel hPop
+  rw [hStep] at hExec
+  cases hExec
+  exact realizedWitness_of_stateRel hLabelShape hFinalRel hFits
+
+/--
+**Switch case-entry / default `pop` block successor supplier.**
+
+A switch case-entry (or absent-default) block `{ body := [.pop], term := .jump label }`
+removes the retained scrutinee and jumps unconditionally to the selected case body (or
+regular continuation).  Its child `StateRel` is at the popped source `source.withEVM {
+… stack := stack }` (`hFinalRel`), so its child `SourceFrameFits output …` witness is
+supplied by `hFits` (the fits after popping one word — discharged at assembly from the
+switch's `requireSourceWords? 1 valueShape` fact via `sourceFrameFits_pop`, exactly as
+`realizedWitness_of_pure_jump` takes its child fits).
+
+Given the entry `realizedWitness` `StateRel` (`hRel`), the scrutinee pop (`hPop`), the
+child fits (`hFits`), and any concrete first jump, this lands the child
+`realizedWitness cfg next state'`, provided the ambient block at `next` expects
+`output`.
+
+Proof: `openStep_pop_jump` settles the `openStep` to a completed `.jump label
+targetFinal` outcome with `StateRel (source.withEVM …) tokens targetFinal`; `hExec`
+forces `next`/`state'` to that outcome; `realizedWitness_of_stateRel` packages it with
+the target `LabelShape`. -/
+theorem realizedWitness_of_pop_jump
+    {result : TypedCfgCompiler.Result} {cfg : TypedCfg.Program}
+    {entry label next : Assembly.Label}
+    {input output : TypedCfg.Shape}
+    {source : RunState} {tokens : List Word}
+    {target state' : EVMState} {stack : EvmYul.Stack Word} {value : Word}
+    {transcript : Simulation.Interaction.Transcript}
+    (hBlocks : TypedCfgPreservation.BlocksInProgram result cfg)
+    (hMem :
+      { label := entry
+        input := input
+        body := [.pop]
+        output := output
+        term := .jump label } ∈ result.blocks)
+    (hType : TypedCfg.Instr.type? .pop input = some output)
+    (hRel : TypedCfgPreservation.StateRel source tokens target)
+    (hPop : source.evm.stack.pop = some (stack, value))
+    (hExec :
+      Simulation.Interaction.Executes
+        (TypedCfg.InteractionSemantics.Program.openStep cfg entry target)
+        transcript (Except.ok (TypedCfg.Outcome.jump next state')))
+    (hFits :
+      TypedCfgCompiler.Shape.SourceFrameFits output
+        (source.withEVM { source.evm with stack := stack }).evm.stack.length)
+    (hLabelShape : TypedCfgPreservation.LabelShape cfg next output) :
+    realizedWitness cfg next state' := by
+  obtain ⟨targetFinal, hStep, hFinalRel⟩ :=
+    InteractionSwitchPreservation.Switch.openStep_pop_jump hBlocks hMem hType hRel hPop
+  rw [hStep] at hExec
+  cases hExec
+  exact realizedWitness_of_stateRel hLabelShape hFinalRel hFits
 
 end InteractionMachineryCoupling
 end Structured
