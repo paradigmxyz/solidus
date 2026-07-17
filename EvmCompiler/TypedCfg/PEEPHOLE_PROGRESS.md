@@ -2842,3 +2842,122 @@ the budget arithmetic that blocked these; the extraction lemmas (sessions 14-15)
 supply every child-entry `StateRel`.  Do NOT reintroduce a static `targetBudget`
 into the accumulator — that is exactly what obstruction 3 punishes.
 
+## Session-24 update (2026-07-17): `if_exec_realizing` LANDED green + the generic `of_bounded` lift; the switch/call/for composites' exact obstruction pinned (the exec leg's opaque existential fuel), with the concrete threaded-re-derivation recipe
+
+Session 24's mandate was the composite exec recursors (route-C frontier item 1):
+`if_exec_realizing` first, then `switch`/`for`/`call`, then the mutual glue.  One
+green, axiom-clean commit landed (`if`); the other three are shown to require a
+genuinely larger threaded re-derivation and the exact obstruction + recipe are
+pinned below.  `scripts/opt_harness.sh check` = **OK** (43 theorems, axioms
+contained in `[propext, Classical.choice, Quot.sound]`); `compile_correct` /
+`compile_correct_creation` unchanged; `peepholeBody`/public spine UNTOUCHED ⇒
+measured delta still **+0**.
+
+### LANDED (green, axiom-clean, commit `aaccb2aa`): `EvmCompiler/Structured/InteractionOwnerExecRealized.lean`
+* **`RealizingExecPreservesUnder.of_bounded`** (`:134`) — the generic bounded→exec
+  lift.  Whenever a fragment's *bounded* realizing family closes at a static budget
+  (`RealizingBoundedExecPreservesUnder … targetBudget …`,
+  `InteractionEntryRealizedBounded.lean:62`), its exec-level realizing family
+  follows with NO extra reachability argument: the bounded outcome leg
+  (`BoundedExecPreservesUnder`, `InteractionControlPreservation.lean:1140`) hands
+  back a settling `targetFuel ≤ targetBudget`, and the bounded accumulator
+  `.allEntriesRealized`, specialized to that very `targetFuel`, supplies
+  `AllEntriesRealized cfg policy targetFuel …` — exactly the conjunct the exec
+  family attaches under its existential `targetFuel`.  (Proof = destructure
+  `h.bounded`; the `targetFuel ≤ targetBudget` witness feeds `h.allEntriesRealized`
+  directly; no `of_le`, no `of_runCompletes`.)
+* **`if_exec_realizing`** (`:473`) — the `if` composite exec recursor, = `of_bounded
+  (InteractionBoundedOwnerPreservation.OpenOutcome.Stmt.if_bounded_realizing …)`.
+  `if`'s bounded realizing already closed (session 17) because `stmtBudget (.if_ cond
+  body) = 1 + blockBudget body` is an EXACT child match (no slack), so the exec
+  family is a one-liner over it.  Same hypotheses as `if_bounded_realizing`
+  (incl. the mutual anchor `RealizingBlockOwnerAt` and `StmtContract`); concludes
+  `RealizingExecPreservesUnder … (openRun program (sourceFuel+1) (.if_ cond body)
+  source) policy (realizedWitness cfg)`.
+
+Module builds ~6.5 s; import added: `EvmCompiler.Structured.InteractionBoundedOwnerRealized`.
+`#print axioms if_exec_realizing` / `of_bounded` = `[propext, Classical.choice,
+Quot.sound]`.
+
+### WHY `switch`/`call`/`for` do NOT land via `of_bounded` — and the exact obstruction to the direct exec route
+`of_bounded` needs the *bounded* realizing family (accumulator at a static budget).
+For `switch`/`call`/`for` that family **does not close** (grep-confirmed: the only
+composite realizing theorems in `InteractionBoundedOwnerRealized.lean` are
+`if_bounded_realizing` + the five leaf `*_bounded_realizing` + `bounded_zero_realizing`;
+there is no `switch_/call_/for_bounded_realizing` and no `block_owner_realizing`).
+This is exactly obstruction 3 (sessions 18–22): their static `stmtBudget` carries
+strict slack over the matched child's `blockBudget`, so the accumulator at the
+static budget quantifies over witnessless truncation-branch entries.  Route C's
+whole purpose is to attach the accumulator at the *settling* fuel instead — but the
+direct exec construction of the composite recursor hits a concrete fuel-bridging
+wall:
+
+To build `switch_exec_realizing` at the exec family's existential `targetFuel` one
+would reuse `switch_exec` (`InteractionOwnerPreservation.lean:674`) for the outcome
+leg and glue the accumulator with `AllEntriesRealized.of_succ` across the dispatch
+jumps.  `of_succ` at `targetFuel = f+1` needs the residual
+`AllEntriesRealized cfg policy (f − dispatchSteps) matchedLabel matchedState realized`.
+The child's `*_exec_realizing` supplies `AllEntriesRealized … childFuel …` at the
+child's OWN settling fuel `childFuel`.  Bridging `f − dispatchSteps` to `childFuel`
+fails both ways:
+* `AllEntriesRealized.of_le` needs `f − dispatchSteps ≤ childFuel` — NOT derivable:
+  `switch_exec`'s `targetFuel` and the child's `childFuel` are *independent*
+  existentials (the composite leg is reused as a black box, so its internal
+  `Executes.bind_ok` fuel decomposition is not exposed).
+* `AllEntriesRealized.of_runCompletes` (`InteractionReachesCap.lean:322`) needs
+  `RunCompletes cfg policy childFuel matchedLabel matchedState` — settling on ALL
+  branches at that fixed `childFuel`.  A per-outcome `childFuel` does not give
+  uniform completion; constructing `RunCompletes`/`RunSettles` was the sessions
+  18–22 interpreter-totality wall (`hNoError` / `openStep` no-error), NOT dissolved
+  by route C.
+
+So the ONLY sound route is to re-derive the exec leg **fuel-matched**:
+`targetFuel := dispatchSteps + childFuel` via the internal `Executes.bind_ok`, so
+`of_succ`'s residual lands the child accumulator at exactly `childFuel`.  Concretely
+this means building **realizing siblings** of the underlying exec-under lemmas that
+thread the accumulator through the child callback:
+* `InteractionBranchPreservation.lean:573 openRun_if_exec_under_of_compileStmtFuel?`
+  (the `if` case — its `hBody` callback provides child `ExecPreservesUnder`; the
+  realizing sibling takes a child `RealizingExecPreservesUnder` and returns a
+  composite `RealizingExecPreservesUnder`),
+* `InteractionSwitchPreservation.lean:2425 openRun_switch_exec_under_of_compileStmtFuel?`,
+* `InteractionCallPreservation.lean:1888 openRun_call_exec_under_of_compileStmtFuel?`,
+* `InteractionLoopPreservation.lean:1309 openRun_for_exec_under_of_compileStmtFuel?`.
+These live in the large preservation files (Call is 1888+ lines) and the accumulator
+threading must ride the SAME internal `bind_ok` witness that fixes the fuel — a new
+additive sibling module cannot reconstruct it without re-proving the source
+decomposition those lemmas encapsulate.  This is the genuine multi-hundred-line
+bulk; the `if` case escaped it ONLY because `if_bounded_realizing` had already
+closed, letting `of_bounded` shortcut the whole thing.
+
+### Remaining frontier (route C)
+1. **`switch`/`call`/`for` `_exec_realizing`** via the threaded re-derivation above,
+   → `block_owner_exec_realizing` (mutual recursion at the exec layer, mirroring
+   `block_owner` but producing `RealizingExecPreservesUnder`/attaching the
+   accumulator at the matched fuel).  For `call` also thread the landed
+   `AllEntriesRealized.of_refined` (`InteractionReachesCap.lean:411`) for the
+   proc-body stop-policy refinement.  Child-entry `StateRel` at each `of_succ`/bind
+   step is already exposed by `jump_state_rel_of_rel`
+   (`InteractionBranchEntryRealized.lean:55`) / `jump_state_rel_of_pure`
+   (`InteractionCallEntryRealized.lean:61`).
+2. **Mirrors** to `main_prefix_exec_realizing` + the truncation owner
+   (`BoundedTruncationExecPreservesUnder`, `InteractionControlPreservation.lean:1035`)
+   at its own `Follows`-indexed settling fuel.
+3. **Consumer** (plan step 4) + wiring (step 5) — unchanged from session 23.
+
+### Next-session recipe (start here)
+Build `openRun_if_exec_realizing_under` first as the TEMPLATE (even though
+`if_exec_realizing` is already done via `of_bounded`): additively, in
+`InteractionBranchPreservation` or a sibling that can see its internals, mirror
+`openRun_if_exec_under_of_compileStmtFuel?` (`:573`) but (a) take `hBody` supplying
+the child `RealizingExecPreservesUnder`, and (b) at the internal `Executes.bind_ok`
+composition, in addition to the outcome leg, assemble the composite accumulator via
+`AllEntriesRealized.of_succ` (`InteractionEntryRealized.lean:173`) with `hHere` from
+`realizedWitness_of_stateRel` and the residual = the child callback's accumulator at
+the SAME `childFuel` the bind picks.  Then `switch`/`call`/`for` follow the identical
+pattern over their (pop;jump + k test blocks) / (two pure jumps) / (loop-condition
+`jumpi`) heads.  Do NOT reuse the plain `*_exec` as a black box for the accumulator
+leg — its existential `targetFuel` is opaque and cannot feed `of_succ`.  `of_bounded`
+is the correct tool ONLY where the bounded realizing family closes (`if` and the
+leaves); it is definitionally unavailable to `switch`/`call`/`for`.
+
