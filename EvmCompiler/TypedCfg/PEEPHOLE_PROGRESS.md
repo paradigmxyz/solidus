@@ -2116,3 +2116,133 @@ needs a stop-policy-refinement reachability bridge), correcting session-17's
 `pure_step`-suffices recipe.  `compile_correct` / `compile_correct_creation` axioms
 unchanged `[propext, Classical.choice, Quot.sound]`; `scripts/opt_harness.sh check`
 = OK (43 theorems); measured delta +0 (no arm shipped).
+
+## Session-19 update (2026-07-17): the ENTIRE target-side substrate for the `RunCompletes` discharge (session-18 recipe step 1) + the `call` policy-refinement bridge (step 3) LANDED green + axiom-clean, in three commits (all additive to `EvmCompiler/TypedCfg/InteractionReachesCap.lean`, the cheap ~2 s module). What remains is exactly and only the SOURCE-COUPLED mutual anchor `block_owner_realizing` (which discharges these target-side lemmas' hypotheses from the fragment owners). `scripts/opt_harness.sh check` = OK (43 theorems, `compile_correct`/`compile_correct_creation` axioms unchanged `[propext, Classical.choice, Quot.sound]`); `peepholeBody`/public spine UNTOUCHED ⇒ measured delta still **+0**.
+
+Session 19 executed the item-3b MANDATE at the mutual anchor. A design pass found
+that the recipe's step-1 (`RunCompletes` discharge) and step-3 (`call` policy
+refinement) each decompose into (a) a fully **target-side, `StateRel`-free**
+reusable lemma — landable NOW and cheaply — plus (b) a source-coupled discharge
+that genuinely lives at `block_owner_realizing`.  This session closed **all** of
+the (a) parts.  With them, `switch`/`call`/`for` composite recursors become
+mechanical once the anchor supplies the coupled facts; the anchor is now the sole
+remaining obstruction (as sessions 15–18 progressively localized).
+
+### Landed commits (branch `arena-opt`, all in `InteractionReachesCap.lean`)
+- **`8f5d29aa`** — `RunCompletes.succ` + `RunCompletes.of_head_stops`.  The
+  branch-by-branch **assembler** for `RunCompletes` (recipe step 1).
+  `RunCompletes.succ` reduces `RunCompletes … (fuel+1) label state` to
+  (i) `hNoError`: the head `openStep` never raises an interaction error on any
+  answer branch, and (ii) `hStops`: after any head jump to a *non-stopping*
+  `(next,state')`, `RunCompletes … fuel next state'`.  Every other head outcome
+  (stopping jump / fallthrough / returnDispatch / halt / invalid) settles the run
+  immediately via `afterOpenStepResultWithStop`'s `pure (.stopped …)` leaf, so it
+  needs no hypothesis.  Proof = `openRunNResultWithStop_succ_eq_bind` +
+  `Executes.bind_cases`.  `of_head_stops` is the single-block leaf shape (all jumps
+  stop).  **Discharge of `hNoError`/`hStops` is the coupled work at the anchor.**
+- **`30a1f772`** — `RunCompletes.add_right` + `RunCompletes.of_le`.  `RunCompletes`
+  is monotone UPWARD in fuel (via `openRunNResultWithStop_add`: the firstFuel run
+  is `.stopped` on every branch, so the continuation is the trivial pure-stopped
+  leaf).  Absorbs the strict `switch`/`call` **budget slack** for `RunCompletes`
+  exactly as `AllEntriesRealized.of_runCompletes` (session 18) does for the
+  accumulator: the anchor supplies each child's `RunCompletes` at that child's own
+  budget; these promote it to the composite's larger residual before feeding
+  `RunCompletes.succ`.
+- **`a69acd53`** — `ReachesOpenStepAt.refined_decomp` + `AllEntriesRealized.of_refined`.
+  The **`call` policy-refinement bridge** (recipe step 3 / the session-18 `call`
+  gap).  `refined_decomp`: reachability under a looser policy `outer` factors
+  through a tighter `inner` — every `outer`-reached entry is either `inner`-reached
+  at the same fuel, OR reached only after CROSSING an `inner`-boundary that `outer`
+  steps through (a jump out of an `inner`-reachable `(crossLabel,crossState)` into
+  `(next,state')` with `inner next state' = true ∧ outer next state' = false`, then
+  `outer`-reachable from `(next,state')`).  No `outer`/`inner` relationship needed;
+  pure structural induction on the `outer` derivation.  `of_refined` promotes a
+  tighter-policy realization to the looser one given each crossing continuation is
+  realized.  For `call`: `inner = bodyStopPolicy = pushStopJump … policy` (stops at
+  `ProcLabel.exit`), `outer = policy`; the ONLY `inner`-reachable crossing is the
+  exit, so the `hTail` obligation is confined to the return-dispatch continuation.
+
+All three: axioms `[propext, Classical.choice, Quot.sound]`; wired via the existing
+`InteractionReachesCap` import in `EvmCompiler.Verification`.  Together with
+session-18's `of_runCompletes`, the target-side toolkit for the RunCompletes
+discharge + switch/call/for composite promotion is now COMPLETE.
+
+### The sole remaining obstruction: the source-coupled discharge at `block_owner_realizing`
+Every landed lemma above reduces the composites to hypotheses that are ALL
+discharged at the mutual anchor from the existing fragment owners:
+1. **`hNoError` (openStep never errors at a realized block entry).**  The fragment
+   at a block reached under a `StateRel`/`SourceFrameFits` witness (`realizedWitness`)
+   executes its block cleanly on every answer branch — i.e. `openStep cfg label
+   state` never `Executes … (.error e)`.  This is NOT a standalone target fact
+   (an arbitrary block can error); it is the *forward totality* of a realized
+   block, and must be produced from the source coupling.  Candidate sources: the
+   forward preservation `ForwardPreservesUnder`/`ForwardRel Truncated` already in the
+   tower, and/or the block-execution facts feeding `BoundedExecPreservesUnder`.
+   The precise obligation: at each entry reached along the composite run,
+   reconstruct the child `StateRel` (already done in `if_bounded_realizing`'s
+   accumulator via `jump_state_rel_of_pure`/`_of_rel`) and use it to rule out the
+   error branch of `Executes.bind_cases` on `openStep`.
+2. **Child `RunCompletes` at the leaf** (`RunCompletes.succ`'s recursive premise).
+   Assembled from the child fragment's `.bounded` stopping (success branches,
+   `BoundedExecPreservesUnder`) + `RuntimeErrorBlockOwnerAt` (error branches) +
+   truncation, proving the child target run reaches `.stopped` on EVERY branch.
+   This is the "success+error+truncation stopping" coupling session 18 flagged; it
+   is the genuine multi-branch analysis at the anchor.  `RunCompletes.add_right`
+   then lifts it across the composite's budget slack; `of_runCompletes` promotes the
+   child's `blockBudget`-accumulator to `stmtBudget`.
+3. **`hTail` for `call`** (`of_refined`'s crossing hypothesis).  The return-dispatch
+   continuation from `ProcLabel.exit` back to `regular` is realized — supplied by
+   the OUTER fragment's `block_owner_realizing` on the post-return block sequence.
+
+### Exact next-session recipe (session 20)
+1. **Anchor a `RunCompletes` discharge**: strengthen `RealizingBlockOwnerAt` (or add
+   a sibling `CompletingBlockOwnerAt`) to additionally yield, for every
+   `StateRel`-related `target`, `RunCompletes cfg policy (blockBudget …) entry
+   target`.  Produce it by the SAME `Nat.strong_induction_on sourceFuel` as
+   `block_owner` (`:2335`), branch-by-branch via the landed `RunCompletes.succ`:
+   discharge `hNoError` from the realized block's forward totality (obligation 1
+   above — locate/extract the cleanest source: check
+   `InteractionPreservation`/`ForwardPreservesUnder` and the block-run facts behind
+   `BoundedExecPreservesUnder`), and the recursive child premise from
+   `switch_bounded`/`call_bounded`'s `.bounded` + `RuntimeErrorBlockOwnerAt`
+   (`runtime_error_bounded_succ` `:2141` is the mirror) + truncation, then
+   `add_right` for the slack.
+2. `switch_bounded_realizing`: `.bounded` = existing `switch_bounded` fed
+   `hBlockOwner.owner`; `.allEntriesRealized` = the pop;jump + `cases.length` test
+   chain via the LANDED `allEntriesRealized_pure_step` (session 16) hops, then at the
+   matched-case leaf promote the child owner's `blockBudget`-accumulator through
+   `AllEntriesRealized.of_runCompletes` (discharge `RunCompletes` from step 1).  Same
+   outer `policy`, NO refinement.  Entry witnesses from `openStep_pop_jump`/
+   `openStep_test` block shapes (`InteractionSwitchPreservation.lean:19/95`).
+3. `call_bounded_realizing`: two `allEntriesRealized_pure_step` hops (call-site +
+   proc-entry adapter, `hSplit` from `contract.fits`,
+   `InteractionCallPreservation.lean:264/336`), then the proc body under
+   `bodyStopPolicy`; bridge to outer `policy` with the LANDED
+   `AllEntriesRealized.of_refined` (`hTail` = outer owner on the return-dispatch
+   tail, obligation 3), and promote via `of_runCompletes`.
+4. `for_bounded_realizing` (loop re-entry; reuse the corrected
+   `allEntriesRealized_branch_step` on `openStep_condition`'s `Condition.DoneRel`,
+   `InteractionLoopPreservation.lean:76`; loop body/post re-enter the loop owner at
+   smaller fuel — do inside the anchor) → `bounded_succ_realizing` (dispatch over
+   `Stmt`, mirror `bounded_succ` `:2069`) → `block_owner_realizing`
+   (`Nat.strong_induction_on sourceFuel`, mirror `block_owner` `:2335`; the mutual
+   anchor — feeds each recursive call the strictly-smaller-fuel
+   `RealizingBlockOwnerAt` AND the step-1 `RunCompletes` discharge) →
+   `main_bounded_realizing` (mirror `:3121`); truncation mirror →
+   `main_prefix_forward_realizing`; then Steps B–D (add the swap arm to
+   `peepholeBody`, re-green the syntactic (b)-family, ship the measured delta).
+
+### Status handed to session 20
+The complete target-side substrate for the `RunCompletes` discharge (`succ` /
+`of_head_stops` / `add_right` / `of_le`, atop session-18's `of_runCompletes`) AND
+the `call` policy-refinement bridge (`refined_decomp` / `of_refined`) are CLOSED
+and banked green (3 commits: `8f5d29aa`, `30a1f772`, `a69acd53`).  These reduce
+`switch`/`call`/`for` and the anchor to THREE source-coupled discharges (openStep
+forward totality `hNoError`; child multi-branch `RunCompletes`; `call`'s
+return-dispatch `hTail`), all produced by the same
+`Nat.strong_induction_on sourceFuel` as `block_owner`.  Building the mutual anchor
+`block_owner_realizing` (with the RunCompletes discharge threaded through it) is the
+sole remaining obstruction — a large but now fully-scoped construction with every
+target-side tool it needs in hand.  `compile_correct` / `compile_correct_creation`
+axioms unchanged `[propext, Classical.choice, Quot.sound]`; measured delta +0
+(no arm shipped).
