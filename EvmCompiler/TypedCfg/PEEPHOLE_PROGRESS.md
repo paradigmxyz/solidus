@@ -3107,3 +3107,120 @@ banked substrate (sessions 23-24: leaf `*_exec_realizing`, `of_exec_first_jump_s
 the mutual `block_owner_exec_realizing` before landing `openStep_preserves_realizedWitness`
 — they cannot close without it (for `for`) and are redundant with it (for all).
 
+## Session-26 update (2026-07-17): the route-B MASTER LEVER landed green + axiom-clean (the uniform accumulator discharge); the invariant `openStep_preserves_realizedWitness` shown to REQUIRE per-block source provenance (NOT extractable from `realizedWitness` alone — even for the non-widening terminators), with the exact mechanism + the corrected route
+
+Session 26's mandate was `openStep_preserves_realizedWitness`, split non-widening
+first then widening.  Result: **one green, axiom-clean commit** landing the trivial
+`ReachesOpenStepAt`-induction plumbing that the whole route B turns on (mandate
+deliverable item 3 / "the uniform accumulator discharge lemma"), plus a precise,
+evidence-based correction: the invariant is **not** provable from `realizedWitness`
+standalone for ANY terminator (widening or not), because reconstructing `StateRel`
+at the jump target requires the jumped-from block's **source-construct compile-fact**,
+which `realizedWitness` (`findBlock?` + `StateRel` + `SourceFrameFits`) does not carry.
+`scripts/opt_harness.sh check` = **OK (43 public theorems, axioms contained in
+`[propext, Classical.choice, Quot.sound]`)**; `compile_correct`/`compile_correct_creation`
+unchanged; `peepholeBody`/public spine UNTOUCHED ⇒ measured delta still **+0**.
+
+### LANDED (green, axiom-clean, commit `a2f32bc6`): `EvmCompiler/TypedCfg/InteractionEntryRealized.lean`
+* **`AllEntriesRealized.realized_of_reaches_of_invariant`** (`:250`) and
+  **`AllEntriesRealized.of_openStep_invariant`** (`:271`) — the route-B master lever,
+  fully target-side over an ABSTRACT `realized : Label → EVMState → Prop`.  Given
+  `hInv : ∀ e t transcript n s, realized e t → Executes (openStep program e t) transcript
+  (.ok (.jump n s)) → realized n s` (an `openStep`-jump invariant) and a seed
+  `realized entry target`, it produces `AllEntriesRealized program stopJump fuel entry
+  target realized` at **any** fuel.  Proof = the trivial `ReachesOpenStepAt` induction
+  the session-25 recipe called for (`.start` returns the seed; each `.step` reuses `hInv`
+  on its concrete first jump, then relays the IH on the residual run — NO fuel matching,
+  NO `of_succ` branch analysis, NO per-construct recursor).  `#print axioms` on both =
+  `[propext, Classical.choice, Quot.sound]`.  This is exactly what makes route B pay off
+  the moment the invariant lands: ONE `hInv` (instantiated `realized := realizedWitness cfg`,
+  with `cfg.WellTyped`/`GeneratedContext` closed over) discharges the accumulator conjunct
+  of EVERY family (leaf / `if` / `switch` / `call` / `for`, bounded AND exec) uniformly.
+
+### THE DECISIVE FINDING: the invariant needs per-block source provenance the `realizedWitness` existential does not carry (all terminators, not just widening)
+Session-25's split assumed the NON-widening cases (fallthrough/jump/jumpi) are "tractable,
+green-able first" by "reusing the existing per-block `StateRel` step machinery."  A full
+trace shows this understates the coupling.  `openStep cfg entry target` (= `Control.Program.step
+Instr.openRunState`, `Control.lean:57`) with `findBlock? entry = some block` runs
+`Block.run block target` = `runBody block.body block.input target` → `(state'', block.output)`,
+then `runTermChecked block.output block.term state''`.  A `.jump next state'` outcome fixes
+`(next, state')` from `state''` per terminator (`Semantics.lean:112 runTerm`; the target-side
+`next`-existence is already `Semantics.lean:299 findBlock?_exists_of_type?_runTerm_jump`,
+covering fallthrough/jump/jumpi/returnDispatch — reuse it).  The obstruction is **not** the
+`next` label; it is rebuilding `realizedWitness cfg next state'`, i.e. a NEW source witness
+`∃ source' tokens' block', findBlock? next = some block' ∧ StateRel source' tokens' state' ∧
+SourceFrameFits block'.input source'.evm.stack.length`:
+
+* To get `StateRel source' … state'` you must know what SOURCE step the block performed on
+  the visible stack prefix (the body mutates `target.stack` above the hidden return-frame
+  suffix; `realizeStack`, `Core.lean:17`).  For an ARBITRARY `block.body` (list of
+  `TypedCfg.Instr`) there is no canonical source' — `StateRel` is preserved only because the
+  body is a *compiled `Code` fragment* and `openRun_toCfg` (`InteractionPreservation.lean:457`)
+  steps source and target *together*.  That theorem needs `Code.type? code block.input =
+  some block.output` for the ACTUAL source `code` the block came from.
+* The per-jump `StateRel` extraction lemmas already in the tower — `jump_state_rel_of_rel`
+  (`InteractionBranchEntryRealized.lean:55`), `jump_state_rel_of_pure`
+  (`InteractionCallEntryRealized.lean:61`) — ALL consume a source-coupled
+  `Rel (DoneRel …) srcRun (openStep …)`, produced only by the per-construct compile-fact
+  `openStep_*_of_compileStmtFuel?`.  `realizedWitness` carries `StateRel`/`SourceFrameFits`
+  but NOT that `Rel`, and not the construct identity that yields it.
+* `GeneratedContext` (`Core.lean:3387`) fixes `cfg.blocks = main.blocks ++ procBlocks ++
+  dispatchBlocks … ++ [programEnd]`; recovering, for a given `findBlock? label = some block`,
+  which category/source-construct it is (and thus its compile-fact) is a decomposition over
+  those lists — precisely the `block_owner` mutual recursion (the never-inhabited anchor
+  `RealizingBlockOwnerAt`/`block_owner_realizing`, `InteractionBoundedOwnerRealized.lean:358/355/772`).
+  There is NO standalone `findBlock? → construct `Rel`` hook (grep-confirmed, consistent with
+  sessions 10/11).
+
+**Net:** route B does not avoid the source coupling any more than route C did — it relocates
+it into the invariant's proof, where the block's source construct must be recovered from
+`GeneratedContext`.  That recovery IS the `block_owner` giant coupling.  This is NOT a claim
+the invariant is false (it is TRUE — it is compiler soundness restricted to one block step);
+it is a claim it is not GREEN-provable standalone from `realizedWitness` in a session, for the
+non-widening terminators any more than the widening one.  The widening (`returnDispatch`,
+`Semantics.lean:137`, erases the token slot and dispatches to a `.caller`-tail target) adds,
+on top, the caller-frame depth reconstruction (`SourceFrameFits` at the wider `block'.input`)
+— the frame-model step every session 5–25 punted — but even fallthrough/jump/jumpi are gated
+by the same provenance recovery.
+
+### The corrected route (what actually closes)
+The invariant must be proved as a corollary of the block-owner mutual recursion, indexed by
+`GeneratedContext`, NOT standalone from `realizedWitness`.  Two equivalent framings:
+1. **Provenance-indexed invariant.**  Prove, by the same `Nat.strong_induction_on sourceFuel`
+   as `block_owner`, that at every reachable block entry the target state carries a *source
+   witness PLUS its construct compile-fact*; the jump then feeds `jump_state_rel_of_rel`/
+   `_of_pure` to land the child witness+fact at `next`.  This inhabits `RealizingBlockOwnerAt`
+   (session-25's item-3 note that `if_exec_realizing` is presently VACUOUS because
+   `RealizingBlockOwnerAt` is never inhabited stands — inhabiting it is the same work).
+2. **Whole-run realization theorem.**  Prove directly, inside the OIC splice where the source
+   bridge `yulToNormalizedStackTypedCfgPrefixForward` is already in scope (so the running
+   `cfg = generated.cfg` HAS a `GeneratedContext` and a source `StateRel` at the entry),
+   `AllEntriesRealized cfg policy fuel cfg.entry initialState (realizedWitness cfg)` — feeding
+   `of_openStep_invariant` (LANDED this session) an `hInv` whose proof at each jump recovers
+   the construct via the source simulation already threaded there.  This is the cheaper wiring
+   because it never needs a construct-recovery hook divorced from the source run; the source
+   run supplies the construct at each entry it visits.
+
+Framing 2 is recommended: `of_openStep_invariant` reduces the ENTIRE remaining endgame to
+"produce `hInv` for `realizedWitness cfg` **with the source run in scope**", which is a
+single source-coupled preservation step (one block ⟶ one jump), not the full per-construct
+exec-recursor tower sessions 16–25 built toward.  The banked substrate (leaf `*_exec_realizing`,
+`of_bounded`, `if_exec_realizing`, `if_bounded_realizing`, the accumulator step helpers) remains
+valid and is what `hInv`'s block-step proof will reuse per construct.
+
+### Status handed to session 27
+Landed: `a2f32bc6` (`realized_of_reaches_of_invariant` + `of_openStep_invariant`,
+`InteractionEntryRealized.lean:250/271`), green, axiom-clean, wired into the tree the harness
+checks.  Frontier: the single obligation is now `hInv : realizedWitness cfg` is an
+`openStep`-jump invariant, provable ONLY with the block's source construct in scope — recover
+it via `GeneratedContext`/`block_owner` (framing 1) or, cheaper, at the OIC splice with the
+source run threaded (framing 2).  Start with framing 2: state the whole-run
+`AllEntriesRealized … (realizedWitness cfg)` at `cfg.entry` and discharge its `hInv` from the
+already-threaded source simulation, block by block; the non-widening terminators
+(fallthrough/jump/jumpi) reuse `runBody_stackRealizes` (session 6) + `openRun_toCfg` for the
+body leg and `findBlock?_exists_of_type?_runTerm_jump` for the target; the widening
+`returnDispatch` reuses `realizeStack`/`StateRel`/`ActivationExtension` (`Core.lean`) +
+`SourceFrameFits`/`returnTokenDepth?` for the caller-frame depth.  Do NOT re-attempt the
+standalone-from-`realizedWitness` proof — it is provably underdetermined (no source' without
+the construct).  `compile_correct`/`compile_correct_creation` axioms unchanged; delta +0.
+
