@@ -147,6 +147,174 @@ theorem terminal_forward_realizing
   cases hDone with
   | ok hRel => exact contract.stops hRel
 
+/-- Leaf realizing case for `break`. Same shape as `terminal_forward_realizing`,
+with the break exit label obtained from `ContextSupports`. -/
+theorem brk_forward_realizing
+    {compilerFuel sourceFuel : Nat}
+    {program : Structured.Program}
+    {ctx : TypedCfgCompiler.Context} {supply : LabelSupply}
+    {entry regular : Assembly.Label} {input : TypedCfg.Shape}
+    {result : TypedCfgCompiler.Result} {cfg : TypedCfg.Program}
+    {source : RunState} {tokens : List Word}
+    {policy : StopPolicy}
+    {canBreak canContinue canLeave : Bool}
+    {realized : Assembly.Label → EVMState → Prop}
+    (hCompile :
+      TypedCfgCompiler.compileStmtFuel? (compilerFuel + 1)
+          .brk ctx supply entry input regular =
+        some result)
+    (hBlocks : TypedCfgPreservation.BlocksInProgram result cfg)
+    (hWF : Structured.Stmt.WF canBreak canContinue canLeave .brk)
+    (hSupports :
+      TypedCfgPreservation.OutcomeSimulation.ContextSupports
+        ctx canBreak canContinue canLeave)
+    (contract :
+      StmtContract cfg result ctx supply entry regular input
+        source tokens policy)
+    (hEntry :
+      ∀ target,
+        TypedCfgPreservation.StateRel source tokens target →
+          realized entry target) :
+    RealizingForwardPreservesUnder result cfg entry ctx regular .stop
+      source tokens
+      (InteractionSemantics.Stmt.openRun program sourceFuel .brk source)
+      1 policy realized := by
+  cases hWF with
+  | brk hAllowed =>
+      obtain ⟨exitLabel, hExit⟩ := hSupports.breakLabel hAllowed
+      have hPreserves :=
+        InteractionLeafPreservation.Stmt.openRun_brk_under_of_compileStmtFuel?
+          (regularExit := .stop) (sourceProgram := program)
+          (sourceFuel := sourceFuel)
+          hExit hCompile hBlocks contract.fits contract.nonregular
+      refine
+        RealizingForwardPreservesUnder.of_forward_first_jump_stops
+          (fun target hStateRel =>
+            Simulation.Interaction.ForwardRel.ofRel (hPreserves target hStateRel))
+          hEntry ?_
+      intro target hStateRel transcript next state' hExec
+      obtain ⟨_leftOutcome, _hLeft, hDone⟩ :=
+        Simulation.Interaction.Rel.executes_right
+          (InteractionLeafPreservation.Stmt.openStep_brk_of_compileStmtFuel?
+            (sourceProgram := program) (sourceFuel := sourceFuel)
+            hExit hCompile hBlocks contract.fits hStateRel)
+          hExec
+      cases hDone with
+      | ok hRel => exact contract.stops hRel
+
+/-- Leaf realizing case for `continue`. -/
+theorem cont_forward_realizing
+    {compilerFuel sourceFuel : Nat}
+    {program : Structured.Program}
+    {ctx : TypedCfgCompiler.Context} {supply : LabelSupply}
+    {entry regular : Assembly.Label} {input : TypedCfg.Shape}
+    {result : TypedCfgCompiler.Result} {cfg : TypedCfg.Program}
+    {source : RunState} {tokens : List Word}
+    {policy : StopPolicy}
+    {canBreak canContinue canLeave : Bool}
+    {realized : Assembly.Label → EVMState → Prop}
+    (hCompile :
+      TypedCfgCompiler.compileStmtFuel? (compilerFuel + 1)
+          .cont ctx supply entry input regular =
+        some result)
+    (hBlocks : TypedCfgPreservation.BlocksInProgram result cfg)
+    (hWF : Structured.Stmt.WF canBreak canContinue canLeave .cont)
+    (hSupports :
+      TypedCfgPreservation.OutcomeSimulation.ContextSupports
+        ctx canBreak canContinue canLeave)
+    (contract :
+      StmtContract cfg result ctx supply entry regular input
+        source tokens policy)
+    (hEntry :
+      ∀ target,
+        TypedCfgPreservation.StateRel source tokens target →
+          realized entry target) :
+    RealizingForwardPreservesUnder result cfg entry ctx regular .stop
+      source tokens
+      (InteractionSemantics.Stmt.openRun program sourceFuel .cont source)
+      1 policy realized := by
+  cases hWF with
+  | cont hAllowed =>
+      obtain ⟨exitLabel, hExit⟩ := hSupports.continueLabel hAllowed
+      have hPreserves :=
+        InteractionLeafPreservation.Stmt.openRun_cont_under_of_compileStmtFuel?
+          (regularExit := .stop) (sourceProgram := program)
+          (sourceFuel := sourceFuel)
+          hExit hCompile hBlocks contract.fits contract.nonregular
+      refine
+        RealizingForwardPreservesUnder.of_forward_first_jump_stops
+          (fun target hStateRel =>
+            Simulation.Interaction.ForwardRel.ofRel (hPreserves target hStateRel))
+          hEntry ?_
+      intro target hStateRel transcript next state' hExec
+      obtain ⟨_leftOutcome, _hLeft, hDone⟩ :=
+        Simulation.Interaction.Rel.executes_right
+          (InteractionLeafPreservation.Stmt.openStep_cont_of_compileStmtFuel?
+            (sourceProgram := program) (sourceFuel := sourceFuel)
+            hExit hCompile hBlocks contract.fits hStateRel)
+          hExec
+      cases hDone with
+      | ok hRel => exact contract.stops hRel
+
+/-- Leaf realizing case for `leave`. Also consumes the live-frame witness
+`hSourceReturns` (a `leave` requires a caller frame). -/
+theorem leave_forward_realizing
+    {compilerFuel sourceFuel : Nat}
+    {program : Structured.Program}
+    {ctx : TypedCfgCompiler.Context} {supply : LabelSupply}
+    {entry regular : Assembly.Label} {input : TypedCfg.Shape}
+    {result : TypedCfgCompiler.Result} {cfg : TypedCfg.Program}
+    {source : RunState} {tokens : List Word}
+    {policy : StopPolicy}
+    {canBreak canContinue canLeave : Bool}
+    {realized : Assembly.Label → EVMState → Prop}
+    (hCompile :
+      TypedCfgCompiler.compileStmtFuel? (compilerFuel + 1)
+          .leave ctx supply entry input regular =
+        some result)
+    (hBlocks : TypedCfgPreservation.BlocksInProgram result cfg)
+    (hWF : Structured.Stmt.WF canBreak canContinue canLeave .leave)
+    (hSupports :
+      TypedCfgPreservation.OutcomeSimulation.ContextSupports
+        ctx canBreak canContinue canLeave)
+    (hSourceReturns :
+      canLeave = true →
+        ∃ frame rest, source.returns = frame :: rest)
+    (contract :
+      StmtContract cfg result ctx supply entry regular input
+        source tokens policy)
+    (hEntry :
+      ∀ target,
+        TypedCfgPreservation.StateRel source tokens target →
+          realized entry target) :
+    RealizingForwardPreservesUnder result cfg entry ctx regular .stop
+      source tokens
+      (InteractionSemantics.Stmt.openRun program sourceFuel .leave source)
+      1 policy realized := by
+  cases hWF with
+  | leave hAllowed =>
+      obtain ⟨exitLabel, hExit⟩ := hSupports.leaveLabel hAllowed
+      obtain ⟨frame, rest, hReturns⟩ := hSourceReturns hAllowed
+      have hPreserves :=
+        InteractionLeafPreservation.Stmt.openRun_leave_under_of_compileStmtFuel?
+          (regularExit := .stop) (sourceProgram := program)
+          (sourceFuel := sourceFuel)
+          hExit hReturns hCompile hBlocks contract.fits contract.nonregular
+      refine
+        RealizingForwardPreservesUnder.of_forward_first_jump_stops
+          (fun target hStateRel =>
+            Simulation.Interaction.ForwardRel.ofRel (hPreserves target hStateRel))
+          hEntry ?_
+      intro target hStateRel transcript next state' hExec
+      obtain ⟨_leftOutcome, _hLeft, hDone⟩ :=
+        Simulation.Interaction.Rel.executes_right
+          (InteractionLeafPreservation.Stmt.openStep_leave_of_compileStmtFuel?
+            (sourceProgram := program) (sourceFuel := sourceFuel)
+            hExit hReturns hCompile hBlocks contract.fits hStateRel)
+          hExec
+      cases hDone with
+      | ok hRel => exact contract.stops hRel
+
 end OpenOutcome
 end InteractionOwnerPreservation
 end Structured
