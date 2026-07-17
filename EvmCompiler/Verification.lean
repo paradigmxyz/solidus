@@ -31,6 +31,7 @@ import EvmCompiler.Structured.InteractionDispatchEntryRealized
 import EvmCompiler.Structured.InteractionBoundedOwnerRealized
 import EvmCompiler.Structured.InteractionRealizedWitnessSuccessor
 import EvmCompiler.Structured.InteractionBlockProvenance
+import EvmCompiler.Structured.InteractionConstructCoupling
 import EvmCompiler.Assembly.GasfulBridge
 import EvmCompiler.Assembly.InteractionBytecode
 import EvmCompiler.Assembly.InteractionFuelSafety

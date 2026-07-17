@@ -3556,3 +3556,130 @@ Classical.choice, Quot.sound]`); `compile_correct`/`compile_correct_creation`
 unchanged; delta +0.  Obligation (1)'s outer case split (`block_category`) + the
 programEnd arm are now banked; the three compiled-construct arms remain the frontier,
 gated on the per-block source-run coupling (route 2 above).
+
+## Session-30 update (2026-07-17): the per-construct coupling SUPPLIERS for the `if` and `call` main-body/proc-body arms landed green + axiom-clean (producer ∘ successor-leg collapse); the two remaining route-2 gates precisely isolated (the `.code` regular-jump successor leg + the provenance quantifier)
+
+Session 30's mandate was route 2: the source-run coupling for the three
+compiled-construct arms of `hInv` — supply, at each reached compiled-construct
+entry, the source coupling the session-27/28 successor legs consume, feeding
+`block_category` (session 29) ⟶ the matching leg.  **Result: one green,
+axiom-clean commit** banking the *per-construct coupling suppliers* for the `if`
+and `call` arms — the exact single-lemma form `hInv`'s per-construct case invokes
+once provenance hands it the block's compile fact.  The full `hInv` did NOT close
+(the provenance quantifier + one missing successor leg remain — see frontier); no
+red code, no sorries, `peepholeBody`/public spine UNTOUCHED ⇒ measured delta still
+**+0**.
+
+### KEY FINDING: the per-construct couplings are already produced by `openStep_*_of_compileStmtFuel?` — the arm is a two-line collapse
+A fan-out of the coupling substrate confirmed that each successor leg's *input*
+coupling is produced, from the construct's **compile fact** + the entry
+`StateRel`/`SourceFrameFits`, by an existing per-block lemma:
+* `if`/branch — `InteractionBranchPreservation.Condition.openStep_if_of_compileStmtFuel?`
+  (`InteractionBranchPreservation.lean:278`) yields
+  `Rel (Condition.DoneRel (label supply 0) regular tokens bodyInput) (openRunCondition cond source) (openStep cfg entry target)`
+  and pins `result.fallthrough? = some bodyInput` — exactly what
+  `realizedWitness_of_branch_jump` consumes.
+* `call`/pure — `InteractionCallPreservation.Call.openStep_entry_of_compileStmtFuel?`
+  (`InteractionCallPreservation.lean:264`) reduces the call-site `openStep` to the
+  silent `pure (.jump (ProcLabel.entry name) targetFinal)` and hands back the child
+  `StateRel` — exactly what `realizedWitness_of_pure_jump` consumes.
+* `returnDispatch` — `openStep_dispatch` (`InteractionCallPreservation.lean:747`);
+  its supplier (`realizedWitness_of_dispatch_jump`,
+  `InteractionRealizedWitnessSuccessor.lean:149`) *already* takes the frame-boundary
+  facts directly, so the dispatch arm was already at this level (session 28).
+So the `if`/`call` arms are each a two-line composition producer ∘ successor-leg;
+no new frame model, no backward simulation.
+
+### LANDED (green, axiom-clean): `EvmCompiler/Structured/InteractionConstructCoupling.lean`
+Both `#print axioms` = `[propext, Classical.choice, Quot.sound]`; wired into
+`EvmCompiler.Verification` (import after `InteractionBlockProvenance`).  Namespace
+`EvmCompiler.Structured.InteractionConstructCoupling`.
+* **`realizedWitness_of_if_compile`** (`:70`) — the compiled-`if` main-body/proc-body
+  arm.  From the `if` compile fact `compileStmtFuel? (n+1) (.if_ cond body) … = some
+  result`, `BlocksInProgram result cfg`, the entry `SourceFrameFits input …` +
+  `StateRel source tokens target`, a concrete first jump `(next, state')`, and the
+  target `LabelShape` at `result.fallthrough?` (the branch residual body shape),
+  concludes `realizedWitness cfg next state'`.  Proof =
+  `openStep_if_of_compileStmtFuel?` ∘ `realizedWitness_of_branch_jump`.
+* **`realizedWitness_of_call_compile`** (`:135`) — the compiled-`call` arm.  From the
+  callee lookup + the `.call name` compile fact + entry `StateRel` + arg split +
+  `proc.WF`, a concrete first jump, the target `LabelShape` at `ProcLabel.entry name`,
+  and the pushed child-frame `SourceFrameFits`, concludes `realizedWitness cfg next
+  state'`.  Proof = `openStep_entry_of_compileStmtFuel?` ∘ `realizedWitness_of_pure_jump`.
+
+These are precisely the per-construct discharges `hInv`'s proof runs at each reached
+`if`/`call` main-body or proc-body entry: they consume the *compile fact*
+(what provenance recovers at `e`) + the `realizedWitness` ingredients (`StateRel`/
+`SourceFrameFits`, carried at the entry) + the target `LabelShape`, and emit the
+child `realizedWitness`.  Together with `realizedWitness_of_dispatch_jump` (session 28,
+already compile-fact-adjacent) and `programEnd_openStep_no_jump` (session 29,
+vacuous), the per-entry ARM DISCHARGES of `block_category`'s case split are now
+banked for `if`/`call`/dispatch/programEnd.
+
+### THE FRONTIER: exactly two gates remain before `hInv` closes
+1. **The `.code` (straight-line) arm's successor leg is NOT yet banked.**  A compiled
+   `.code` statement lowers to a block with terminator `.jump regular`
+   (`openStep_code_of_compileStmtFuel?`, `InteractionControlPreservation.lean:5127`,
+   yields `Rel (OpenOutcome.OutcomeDoneRel result ctx regular source.returns tokens) …`).
+   Under the WHOLE-PROGRAM `hInv` that `.jump regular` is the *sequential
+   continuation* (not a fragment stop — the leaf `code_exec_realizing` collapses it
+   via `contract.stops`, which is a fragment-local policy, NOT valid globally), so
+   `hInv` must produce `realizedWitness cfg regular state'`.  There is currently NO
+   `realizedWitness_of_regular_jump` sibling of the branch/pure/dispatch legs, and NO
+   `jump_state_rel`-style extraction off `OutcomeDoneRel` for the regular outcome.
+   The building block exists — `Rel.regular_elim_of_required_fallthrough`
+   (`InteractionControlPreservation.lean:694`) gives, from an eliminated `OpenOutcome.Rel`
+   on a `regular` outcome, `target = .jump regular targetState ∧ StateRel source
+   tokens targetState ∧ SourceFrameFits expected …` — but it needs the `OutcomeDoneRel`
+   first pushed through `Rel.executes_right` to a concrete `regular`/`.jump` outcome,
+   i.e. a small `jump_state_rel_of_outcome` extraction (mirroring
+   `Condition.jump_state_rel_of_rel`) then a one-line `realizedWitness_of_regular_jump`
+   supplier.  CAVEAT for that extraction: `OpenOutcome.Rel` maps break/continue/leave
+   source outcomes to `.jump` too, so the `.jump next state'` target does NOT by itself
+   force a `regular` source outcome — the extraction must case on the source outcome and
+   discharge the break/continue/leave arms as VACUOUS (a straight-line `.code` run only
+   ever yields `Outcome.regular`/error — establish this from the code run's outcome
+   shape, e.g. the `OutcomeDoneRel`/`openRunCondition_returns`-family facts), leaving the
+   regular arm to `Rel.regular_elim_of_required_fallthrough`.  NEXT-SESSION FIRST STEP —
+   bank these two (self-contained, no frame model): the `.code` arm is the last missing
+   successor discharge.
+2. **The provenance quantifier (the deep, unmoved gate).**  `of_openStep_invariant`
+   needs the coupling suppliers invoked at an ARBITRARY reached `(e,t)` with only
+   `realizedWitness cfg e t` in hand — i.e. the compile fact
+   (`compileStmtFuel? … = some result` with `entry = e`) must be PRODUCED at each
+   reached entry.  `block_category` gives the outer category; recovering *which
+   statement* compiled to the block (its compile fact) is the `block_owner`
+   decomposition — route 1's `RealizingBlockOwnerAt`/`block_owner_realizing`
+   (`InteractionBoundedOwnerRealized.lean:358`), blocked since session 24 at the
+   oracle-branching heads — or route 2's OIC-splice source-run coupling
+   (`yulToNormalizedStackTypedCfgPrefixForward`,
+   `OpenInteractionComposition.lean:695`), threading the source construct at each
+   entry the run visits.  The coupling suppliers landed this session are what EITHER
+   route feeds once the compile fact is in hand; they reduce the residual bulk to
+   pure provenance (no more per-construct coupling glue for `if`/`call`, and, after
+   gate 1, none for `.code` either).
+
+### Next-session recipe
+* First close gate 1: bank `jump_state_rel_of_outcome` (extract `StateRel`/`.jump
+  regular` from `Rel (OutcomeDoneRel …) srcRun (openStep …)` + `Executes … (.jump)`,
+  via `Rel.executes_right` + `Rel.regular_elim_of_required_fallthrough`) then
+  `realizedWitness_of_regular_jump` (∘ `realizedWitness_of_stateRel`) then the
+  `.code` supplier `realizedWitness_of_code_compile` (∘ `openStep_code_of_compileStmtFuel?`),
+  mirroring this session's two suppliers.  Then the per-entry ARM discharges are
+  complete for ALL compiled-construct categories.
+* Then attack gate 2 (provenance) at the OIC splice per route 2: thread
+  `yulToNormalizedStackTypedCfgPrefixForward` so each reached entry's compile fact is
+  supplied, feeding `block_category` ⟶ the matching landed supplier
+  (`realizedWitness_of_{if,call,code}_compile` / `realizedWitness_of_dispatch_jump`).
+  Feed the resulting `hInv` to `of_openStep_invariant`; proceed to Step B.
+* Do NOT add the swap arm to `peepholeBody` until the whole invariant is green.
+
+### Status handed to session 31
+Landed: `InteractionConstructCoupling.lean` (`realizedWitness_of_if_compile` :70,
+`realizedWitness_of_call_compile` :135), green, axiom-clean, wired into
+`EvmCompiler.Verification`.  `scripts/opt_harness.sh check` = OK (43 public theorems,
+axioms ⊆ `[propext, Classical.choice, Quot.sound]`); `compile_correct`/
+`compile_correct_creation` unchanged; delta +0.  The `hInv` per-entry ARM discharges
+are now banked for `if`/`call`/dispatch/programEnd; frontier = (1) the `.code`
+regular-jump successor leg (first, self-contained, recipe above) + (2) the deep
+provenance quantifier (routes 1/2 unchanged).
