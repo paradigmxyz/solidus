@@ -412,59 +412,90 @@ block).
 
 This packages the `AllEntriesRealized.of_succ` recursion for one composite whose
 first `openStep` is a two-way branch related to the source condition run by the
-branch `DoneRel`.  It consumes:
-* `hHere` — the entry is realized (supplied by the enclosing recursion / entry
-  witness);
-* `hRel` — the branch relation exposed by `openStep_if_of_compileStmtFuel?` (or
-  `openStep_condition` for `for`);
-* `hRegularStops` — the false/exit label is policy-stopping (the composite's
-  `boundary`/`stops` fact), which rules out the non-body branch under the
-  non-stopping `hStop`;
+branch `DoneRel`.  It consumes the branch relation **strengthened with the
+source-condition returns invariant** (`Rel.strengthen_left` +
+`openRunCondition_returns`), so that both branches recover
+`afterCond.returns = sourceReturns` — the fact the child body `FragmentContract`
+reconstruction requires.  It consumes:
+* `hHere` — the entry is realized (entry witness);
+* `hStrong` — the returns-strengthened branch relation;
+* `hFalseStops` — for the false/exit label the fragment's stop policy halts,
+  proved **from the extracted child `StateRel`/returns/`SourceFrameFits`** (the
+  fragment's `contract.stops` on the reconstructed regular-exit `Rel`), which
+  rules out the non-body branch under `of_succ`'s non-stopping hypothesis.  NOTE:
+  this is a **conditional** stop obligation — the unconditional
+  `∀ state', policy falseLabel state' = true` form used in the session-16 draft is
+  *not* dischargeable, since `policy` is arbitrary and only stops for
+  frame-matching states;
 * `hBody` — for the taken (true/body) branch, the child fragment realizes every
   entry of its `bodyBudget`-fuel run from the extracted child `StateRel` /
-  `SourceFrameFits` (supplied by the child's `RealizingBlockOwnerAt`).
+  `SourceFrameFits` / returns (supplied by the child's `RealizingBlockOwnerAt`).
 
 The residual budget is exactly `bodyBudget`, matching
 `stmtBudget (.if_ cond body) = 1 + blockBudget body` (`stmtBudget_if_succ`), so no
-upward-monotone accumulator step is needed.  The child `StateRel`/label are read
-off `hExec` through the landed `jump_state_rel_of_rel`.
+upward-monotone accumulator step is needed.
 -/
 theorem allEntriesRealized_branch_step
     {cfg : TypedCfg.Program} {policy : StopPolicy}
     {entry trueLabel falseLabel : Assembly.Label} {target : EVMState}
-    {tokens : List Word} {restShape : TypedCfg.Shape}
+    {tokens : List Word} {sourceReturns : List ReturnDest}
+    {restShape : TypedCfg.Shape}
     {srcRun : Simulation.Interaction EVMException (RunState × Bool)}
     {bodyBudget : Nat}
     {realized : Assembly.Label → EVMState → Prop}
     (hHere : realized entry target)
-    (hRel :
+    (hStrong :
       Simulation.Interaction.Rel
-        (InteractionBranchPreservation.Condition.DoneRel
-          trueLabel falseLabel tokens restShape)
+        (fun leftDone rightDone =>
+          InteractionBranchPreservation.Condition.DoneRel
+              trueLabel falseLabel tokens restShape leftDone rightDone ∧
+            InteractionSemantics.Code.ConditionReturnsEq sourceReturns leftDone)
         srcRun
         (TypedCfg.InteractionSemantics.Program.openStep cfg entry target))
-    (hRegularStops : ∀ state', policy falseLabel state' = true)
-    (hBody :
-      ∀ (srcState : RunState) (state' : EVMState),
-        TypedCfgPreservation.StateRel srcState tokens state' →
+    (hFalseStops :
+      ∀ (afterCond : RunState) (state' : EVMState),
+        afterCond.returns = sourceReturns →
+        TypedCfgPreservation.StateRel afterCond tokens state' →
         TypedCfgCompiler.Shape.SourceFrameFits
-          restShape srcState.evm.stack.length →
+          restShape afterCond.evm.stack.length →
+        policy falseLabel state' = true)
+    (hBody :
+      ∀ (afterCond : RunState) (state' : EVMState),
+        afterCond.returns = sourceReturns →
+        TypedCfgPreservation.StateRel afterCond tokens state' →
+        TypedCfgCompiler.Shape.SourceFrameFits
+          restShape afterCond.evm.stack.length →
         AllEntriesRealized cfg policy bodyBudget trueLabel state' realized) :
     AllEntriesRealized cfg policy (bodyBudget + 1) entry target realized := by
   refine AllEntriesRealized.of_succ hHere ?_
   intro transcript next state' hExec hStop
-  obtain ⟨srcState, cond, hNext, hStateRel, hFits⟩ :=
-    InteractionBranchPreservation.Condition.jump_state_rel_of_rel hRel hExec
-  cases cond with
-  | false =>
-      simp only [Bool.false_eq_true, if_false] at hNext
-      subst hNext
-      rw [hRegularStops state'] at hStop
-      exact absurd hStop (by decide)
-  | true =>
-      simp only [if_true] at hNext
-      subst hNext
-      exact hBody srcState state' hStateRel hFits
+  obtain ⟨leftOutcome, _hLeftExec, hStrongDone⟩ :=
+    Simulation.Interaction.Rel.executes_right hStrong hExec
+  cases leftOutcome with
+  | error e =>
+      obtain ⟨hDone, _⟩ := hStrongDone
+      cases hDone
+  | ok conditionResult =>
+      obtain ⟨hDone, hRet⟩ := hStrongDone
+      cases hDone with
+      | ok hResultRel =>
+          obtain ⟨targetState, hEq, hAfterCondRel, hAfterCondFits⟩ := hResultRel
+          rcases conditionResult with ⟨afterCond, cond⟩
+          have hReturns : afterCond.returns = sourceReturns := by
+            simpa [InteractionSemantics.Code.ConditionReturnsEq] using hRet
+          injection hEq with hNext hState
+          cases cond with
+          | false =>
+              simp only [Bool.false_eq_true, if_false] at hNext
+              rw [hNext, hState,
+                hFalseStops afterCond targetState hReturns hAfterCondRel
+                  hAfterCondFits] at hStop
+              exact absurd hStop (by decide)
+          | true =>
+              simp only [if_true] at hNext
+              rw [hNext, hState]
+              exact
+                hBody afterCond targetState hReturns hAfterCondRel hAfterCondFits
 
 /--
 Accumulator-threading step for a `pure`-jump composite entry (`switch`'s silent
@@ -631,94 +662,74 @@ theorem if_bounded_realizing
   have hHeadWithReturns :=
     Simulation.Interaction.Rel.strengthen_left hHeadRel
       (InteractionSemantics.Code.openRunCondition_returns cond source)
-  -- Accumulator via `of_succ`: the entry witness, then per non-stopping first jump.
-  refine AllEntriesRealized.of_succ
-    ⟨source, tokens, entryBlock, hFind, hStateRel, contract.fits⟩ ?_
-  intro transcript next state' hExec hStop
-  obtain ⟨leftOutcome, _hLeftExec, hStrong⟩ :=
-    Simulation.Interaction.Rel.executes_right hHeadWithReturns hExec
-  cases leftOutcome with
-  | error e =>
-      obtain ⟨hDone, _⟩ := hStrong
-      cases hDone
-  | ok conditionResult =>
-      obtain ⟨hDone, hRet⟩ := hStrong
-      cases hDone with
-      | ok hResultRel =>
-          obtain ⟨targetState, hEq, hAfterCondRel, hAfterCondFits⟩ := hResultRel
-          rcases conditionResult with ⟨afterCond, condTrue⟩
-          have hReturns : afterCond.returns = source.returns := by
-            simpa [InteractionSemantics.Code.ConditionReturnsEq] using hRet
-          injection hEq with hNext hState
-          cases condTrue with
-          | false =>
-              simp only [Bool.false_eq_true, if_false] at hNext
-              -- The false branch jumps to the fragment boundary `regular`, which the
-              -- stop policy halts on — contradicting `hStop`.
-              have hWholeRel :
-                  InteractionControlPreservation.OpenOutcome.Rel
-                    result ctx regular source.returns tokens
-                    (Structured.Outcome.regular afterCond)
-                    (.jump regular targetState) := by
-                refine ⟨?_, ?_, ?_⟩
-                · exact
-                    TypedCfgPreservation.OutcomeSimulation.Rel.regular_iff.mpr
-                      ⟨rfl, hAfterCondRel⟩
-                · exact ⟨bodyInput, hFallthrough, hAfterCondFits⟩
-                · simpa [
-                    InteractionControlPreservation.OpenOutcome.ActivationRestored]
-                    using hReturns
-              have hStops := contract.stops hWholeRel
-              simp only [
-                InteractionControlPreservation.OpenOutcome.TargetStoppedBy]
-                at hStops
-              rw [hNext, hState, hStops] at hStop
-              exact absurd hStop (by decide)
-          | true =>
-              simp only [if_true] at hNext
-              rw [hNext, hState]
-              -- The body branch: invoke the realizing block owner at the extracted
-              -- child `StateRel`, reconstructing the body `FragmentContract`.
-              have hBodyReturns :
-                  canLeave = true →
-                    ∃ frame rest, afterCond.returns = frame :: rest := by
-                intro hCanLeave
-                obtain ⟨frame, rest, hSourceEq⟩ := hSourceReturns hCanLeave
-                exact ⟨frame, rest, hReturns.trans hSourceEq⟩
-              have bodyContract :
-                  FragmentContract cfg bodyResult ctx (supply + 1)
-                    (LabelSupply.label supply 0) regular bodyInput
-                    afterCond tokens policy :=
-                { fits := hAfterCondFits
-                  regularAt := Or.inl contract.before_succ.regular
-                  before := contract.before_succ
-                  activation :=
-                    contract.activation.stmtFallthrough
-                      hCompile hFallthrough
-                  boundary :=
-                    (contract.boundary.mono
-                      (Nat.le_succ supply)).congr_returns hReturns.symm
-                  shapes :=
-                    contract.shapes.of_required_fallthrough
-                      hBodyRequire hFallthrough
-                  stops := by
-                    intro sourceOutcome targetOutcome hRel
-                    apply contract.stops
-                    have hWhole :=
-                      InteractionControlPreservation.OpenOutcome.Rel.change_result_of_required_fallthrough
-                        hBodyRequire hFallthrough hRel
-                    simpa [hReturns] using hWhole
-                  nonregular := by
-                    intro childResult childRegular sourceOutcome
-                      targetOutcome hMode hRel
-                    apply contract.nonregular hMode
-                    simpa [hReturns] using hRel }
-              exact
-                (hBlockOwner (Nat.le_refl sourceFuel)
-                    hBodyCompile hBodyBlocks hBodyCalls
-                    hBodyWF hBodySafe hBodyCallsResolved hSupports hProcs
-                    hBodyReturns bodyContract).allEntriesRealized
-                  hAfterCondRel (Nat.le_refl _)
+  -- Accumulator via the corrected branch step (entry witness + returns-strengthened
+  -- head relation + conditional false-branch stopping + child-body realization).
+  refine allEntriesRealized_branch_step
+    ⟨source, tokens, entryBlock, hFind, hStateRel, contract.fits⟩
+    hHeadWithReturns ?_ ?_
+  · -- False/regular branch stops: reconstruct the regular-exit `Rel`, apply
+    -- `contract.stops` (the fragment halts at its boundary `regular`).
+    intro afterCond state' hReturns hAfterCondRel hAfterCondFits
+    have hWholeRel :
+        InteractionControlPreservation.OpenOutcome.Rel
+          result ctx regular source.returns tokens
+          (Structured.Outcome.regular afterCond)
+          (.jump regular state') := by
+      refine ⟨?_, ?_, ?_⟩
+      · exact
+          TypedCfgPreservation.OutcomeSimulation.Rel.regular_iff.mpr
+            ⟨rfl, hAfterCondRel⟩
+      · exact ⟨bodyInput, hFallthrough, hAfterCondFits⟩
+      · simpa [
+          InteractionControlPreservation.OpenOutcome.ActivationRestored]
+          using hReturns
+    have hStops := contract.stops hWholeRel
+    simpa only [
+      InteractionControlPreservation.OpenOutcome.TargetStoppedBy]
+      using hStops
+  · -- Body branch: invoke the realizing block owner at the extracted child
+    -- `StateRel`, reconstructing the body `FragmentContract`.
+    intro afterCond state' hReturns hAfterCondRel hAfterCondFits
+    have hBodyReturns :
+        canLeave = true →
+          ∃ frame rest, afterCond.returns = frame :: rest := by
+      intro hCanLeave
+      obtain ⟨frame, rest, hSourceEq⟩ := hSourceReturns hCanLeave
+      exact ⟨frame, rest, hReturns.trans hSourceEq⟩
+    have bodyContract :
+        FragmentContract cfg bodyResult ctx (supply + 1)
+          (LabelSupply.label supply 0) regular bodyInput
+          afterCond tokens policy :=
+      { fits := hAfterCondFits
+        regularAt := Or.inl contract.before_succ.regular
+        before := contract.before_succ
+        activation :=
+          contract.activation.stmtFallthrough
+            hCompile hFallthrough
+        boundary :=
+          (contract.boundary.mono
+            (Nat.le_succ supply)).congr_returns hReturns.symm
+        shapes :=
+          contract.shapes.of_required_fallthrough
+            hBodyRequire hFallthrough
+        stops := by
+          intro sourceOutcome targetOutcome hRel
+          apply contract.stops
+          have hWhole :=
+            InteractionControlPreservation.OpenOutcome.Rel.change_result_of_required_fallthrough
+              hBodyRequire hFallthrough hRel
+          simpa [hReturns] using hWhole
+        nonregular := by
+          intro childResult childRegular sourceOutcome
+            targetOutcome hMode hRel
+          apply contract.nonregular hMode
+          simpa [hReturns] using hRel }
+    exact
+      (hBlockOwner (Nat.le_refl sourceFuel)
+          hBodyCompile hBodyBlocks hBodyCalls
+          hBodyWF hBodySafe hBodyCallsResolved hSupports hProcs
+          hBodyReturns bodyContract).allEntriesRealized
+        hAfterCondRel (Nat.le_refl _)
 
 end Stmt
 
