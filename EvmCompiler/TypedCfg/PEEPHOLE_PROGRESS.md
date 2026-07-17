@@ -3820,3 +3820,131 @@ are complete for ALL categories; gate 2's route is DECIDED (static-provenance) w
 main root banked; the sole remaining frontier is the statement-list provenance drill
 (+ the dispatch StateRel⟶frame-facts derivation), the next-session bulk before
 `of_openStep_invariant` → Step B.
+
+## Session-32 update (2026-07-17): the DRILL substrate is COMPLETE — the one-layer membership dichotomies for ALL FIVE generation functions are banked green + axiom-clean; the assembled capstone is precisely teed up (its total-classification predicate should be co-designed with session-33's hInv case split)
+
+Session 32's mandate: build THE DRILL (the static structural induction over
+`compileStmtListFuel?`/`compileStmtFuel?`/`compileBlockFuel?` recovering the
+per-entry compile fact), banking the green pieces (per-constructor emission-set
+lemmas → membership-dichotomy lemmas → assembled drill).  **Result: three green,
+axiom-clean commits landing the COMPLETE one-layer membership-dichotomy substrate —
+12 lemmas spanning all five generation functions.**  This is the reusable engine the
+assembled descent (and `block_category`'s consumer) chains.  The assembled capstone
+theorem was scoped OUT this session on purpose (see "Why the capstone waits" below).
+`peepholeBody`/public spine UNTOUCHED ⇒ measured delta still **+0**.
+
+### LANDED (green, axiom-clean): `EvmCompiler/Structured/InteractionBlockProvenanceDrill.lean`
+All `#print axioms` = `[propext, Classical.choice, Quot.sound]`; wired into
+`EvmCompiler.Verification` (import after `InteractionBlockProvenanceRoot`).  Three
+progressive commits.  Namespace `TypedCfgPreservation.BlockProvenanceDrill`
+(`open TypedCfgCompiler`).
+
+* **`0ff8bcc8` — Phase 1a (statement-list dichotomies):**
+  - `mem_of_compileStmtListFuel?_nil` (`:50`) — the empty statement list emits the
+    single entry join block (`{label:=entry, body:=[], term:=.jump regular}`); every
+    member IS that block.
+  - `mem_of_compileStmtListFuel?_cons` (`:77`) — a member of `stmt :: rest`'s
+    emission lands in the head statement's emission OR the tail's, each with the
+    corresponding compile fact exposed for recursion.  Built on
+    `Block.components_of_compileStmtListFuel?_cons` (`Core.lean:2162`).
+* **`829008df` — Phase 1b (per-constructor statement dichotomies):**
+  - `mem_of_compileStmtFuel?_code` (`:121`), `_terminal` (`:139`) — leaf heads
+    (`block.label = entry`).
+  - `mem_of_compileStmtFuel?_if` (`:158`) — entry head vs branch-body member, the
+    latter with the `compileBlockFuel?` body fact.
+  - `mem_of_compileStmtFuel?_switch` (`:188`) — head vs `compileCasesFuel?` fragment
+    vs `compileDefaultFuel?` fragment, each with its compile fact.
+  - `mem_of_compileStmtFuel?_for` (`:234`) — `compileBlockFuel?` init fragment /
+    loop-cond head (`block.label = LabelSupply.label supply 0`) / body fragment /
+    post fragment, each recursive fragment with its `compileBlockFuel?` fact.
+  All built on the existing `TypedCfgCompilerFacts.{Stmt,Switch,Loop}.components_of_compileStmtFuel?_*`.
+* **`9d0f632b` — Phase 1c (block/cases/default connectors):**
+  - `stmtList_of_compileBlockFuel?` (`:346`) — the vertical-descent connector:
+    `compileBlockFuel? (f+1) body … = compileStmtListFuel? f body.stmts …`.
+  - `mem_of_compileCasesFuel?_nil` (`:361`) — empty case list emits no blocks
+    (membership vacuous).
+  - `mem_of_compileCasesFuel?_cons` (`:379`) — test block (`switchTestLabel base
+    idx`) / case-entry block (`switchCaseLabel base idx`) / case-body fragment /
+    remaining-cases, each recursive fragment with its compile fact.  (Takes `hHead`/
+    `hPopType` per `Switch.components_of_compileCasesFuel?_cons`.)
+  - `mem_of_compileDefaultFuel?_none` (`:416`) — absent default is the single entry
+    `pop` block.
+  - `mem_of_compileDefaultFuel?_some` (`:435`) — entry `pop` block vs compiled
+    default body fragment.
+
+**The one-layer membership dichotomy is now banked for EVERY generation function:**
+`compileStmtListFuel?` (nil/cons), `compileStmtFuel?` (code/terminal/if/switch/for —
+brk/cont/leave/call are leaf singletons already covered by
+`components_of_compileStmtFuel?_{brk,cont,leave,call}` in `TypedCfgCompilerFacts`),
+`compileBlockFuel?` (connector), `compileCasesFuel?` (nil/cons), `compileDefaultFuel?`
+(none/some).  Each recursive-fragment disjunct returns the subfragment's OWN compile
+fact, so the assembled descent chains dichotomy→fragment-fact→dichotomy with no
+re-derivation.
+
+### THE CAPSTONE frontier: the assembled descent (next-session bulk)
+The assembled drill is the strong-induction-on-fuel fixpoint of the substrate,
+mirroring the EXISTING generation skeleton `activeResult_of_compile*`
+(`TypedCfgCompilerActive.lean:77-508`) EXACTLY — a `mutual`/strong-induction over the
+five functions (`compileStmtListFuel?`/`compileStmtFuel?`/`compileBlockFuel?`/
+`compileCasesFuel?`/`compileDefaultFuel?`) with a *provenance* payload replacing
+`ActiveResult`.  At each membership split (already performed inline by `activeResult`,
+now also as the standalone Phase-1 lemmas), a block is either the ENTRY-ALIGNED HEAD of
+the current `compileStmtFuel?` (discharge with the in-scope `hCompile`) or a member of
+a named recursive subfragment (recurse via IH) or a **non-head machinery/join block**
+(for-loop-cond, switch test, switch case-entry, default `pop`, nil-join).
+
+### Why the capstone waits (design blocker, not a proof blocker)
+The descent's *proof* is mechanical from the substrate + the `activeResult` skeleton.
+The open question is the **conclusion predicate's exact shape**, and it is dictated by
+what session-33's `hInv` case split consumes, NOT by the drill:
+* The if/call/code arms want the ENTRY-ALIGNED HEAD compile fact
+  (`∃ cf stmt ctx supply input regular sub, compileStmtFuel? (cf+1) stmt ctx supply
+  block.label input regular = some sub ∧ sub.blocks.head? = some block`), then
+  `cases stmt` → `realizedWitness_of_{if,call,code}_compile`.  This is TRUE and
+  dischargeable for every `compileStmtFuel?` head (code/if/switch/call/brk/cont/leave/
+  terminal — head? = the entry block).
+* **But the for-loop-cond, switch test, switch case-entry, default-`pop`, and
+  nil-join blocks are NOT `compileStmtFuel?` heads** (their labels are
+  `LabelSupply.label supply 0/1/2`, `switchTestLabel`, `switchCaseLabel`, the default
+  entry, `restLabel`) and ARE reachable jump targets (e.g. the switch head jumps to
+  `casesEntryLabel supply 0 cases = switchTestLabel base 0`).  So the total
+  classification predicate MUST carry machinery disjuncts, and those disjuncts need
+  the ENCLOSING switch/for compile fact (to expose the successor labels the hInv's
+  successor legs consume) — i.e. their precise shape depends on the (not-yet-written)
+  switch/for successor suppliers.  Committing a guessed predicate now risks a large
+  wrong artifact; the substrate is predicate-agnostic and lands the mechanical 80%.
+
+### Next-session recipe (capstone assembly)
+1. First decide the machinery successor story: either (a) add switch/for successor
+   suppliers (analogues of `realizedWitness_of_{branch,dispatch}_jump` for the
+   `.jump`/`.jumpi` terminators of test/loop/case-entry blocks), or (b) show those
+   machinery blocks' `openStep` jumps land on blocks whose `realizedWitness` is
+   already carried — THEN the machinery disjuncts' shape is fixed.
+2. Define the total predicate `BlockGenShape block :=`
+   `IsHead block ∨ (for-loop-cond) ∨ (switch-test) ∨ (switch-case-entry) ∨
+   (default-pop) ∨ (nil-join)` with `IsHead block := ∃ cf stmt ctx supply input
+   regular sub, compileStmtFuel? (cf+1) stmt ctx supply block.label input regular =
+   some sub ∧ sub.blocks.head? = some block`; the five machinery disjuncts threaded
+   with the enclosing compile fact per step 1.
+3. Prove the 5-function `mutual` (copy `activeResult`'s structure verbatim, swap the
+   payload).  Each arm: apply the matching Phase-1 dichotomy
+   (`mem_of_compileStmtFuel?_*` / `mem_of_compileCasesFuel?_*` /
+   `mem_of_compileDefaultFuel?_*` / `stmtList_of_compileBlockFuel?` /
+   `mem_of_compileStmtListFuel?_{nil,cons}`) — head → `IsHead` from `hCompile`;
+   fragment → IH; machinery/join → the substrate lemma's own conclusion.
+   Termination is on fuel (identical to `activeResult`).
+4. Then the proc-body root (item 2, analogue of `main_stmtList_provenance` via
+   `procsCompile`/`ProcFragment`) and the dispatch StateRel⟶frame-facts residual
+   (item 3), then assemble `hInv` and feed `of_openStep_invariant` → Step B.
+
+### Status handed to session 33
+Drill substrate COMPLETE.  Landed this session:
+`InteractionBlockProvenanceDrill.lean` — 12 green, axiom-clean membership-dichotomy
+lemmas (Phase 1a/1b/1c above), wired into `EvmCompiler.Verification` after
+`InteractionBlockProvenanceRoot`.  Commits `0ff8bcc8` / `829008df` / `9d0f632b`.
+`scripts/opt_harness.sh check` = OK (43 public theorems, axioms ⊆
+`[propext, Classical.choice, Quot.sound]`); `compile_correct`/
+`compile_correct_creation` unchanged; delta +0.  The remaining frontier is the
+assembled capstone descent (mechanical from the substrate once its conclusion
+predicate is pinned to the switch/for successor story) + the proc-body root + the
+dispatch residual, before `of_openStep_invariant` → Step B.
