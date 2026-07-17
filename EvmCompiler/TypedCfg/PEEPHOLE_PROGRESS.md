@@ -2492,3 +2492,134 @@ now need only child-run **non-exhaustion** at budget, dischargeable from the exi
 `BoundedExecPreservesUnder` (success) + head error-bijection (error) — the step-1
 bridge lemma.  `compile_correct` / `compile_correct_creation` axioms unchanged
 `[propext, Classical.choice, Quot.sound]`; measured delta +0 (no arm shipped).
+
+## Session-22 update (2026-07-17): `RunSettles` bridge CORE landed green (`of_cover` + upward stop/error stability); the composite discharge is BLOCKED by a genuine source-truncation obstruction — `RunSettles`/`AllEntriesRealized` at the slack-bearing residual budget is FALSE on `OutOfFuel` branches
+
+Session 22 executed the session-21 step-1 recipe (the `RunSettles` bridge lemma).
+The reusable, `StateRel`-free target-side CORE landed green + axiom-clean; a full
+trace of the discharge then found that the session-21 success+error branch analysis
+is **incomplete** — it silently omits the SOURCE-TRUNCATION (`.error OutOfFuel`)
+branches, on which the target run genuinely reaches `.ok (.exhausted …)` and the
+composite's residual-budget accumulator is genuinely FALSE.  No composite arm was
+added (it would be red/sorry).  `scripts/opt_harness.sh check` = **OK (43 public
+theorems, axioms ⊆ [propext, Classical.choice, Quot.sound])**; `compile_correct` /
+`compile_correct_creation` unchanged; `peepholeBody`/public spine UNTOUCHED ⇒
+measured delta still **+0**.
+
+### LANDED (green, axiom-clean `[propext, Classical.choice, Quot.sound]`): `EvmCompiler/TypedCfg/InteractionSettlesBridge.lean` (commit `316f22d5`, wired into `EvmCompiler.Verification`)
+The target-side, `StateRel`-free core that turns a per-branch classification of a
+fuel-bounded run into `RunSettles`:
+* **`executes_stopped_add_right`** / **`executes_stopped_of_le`** — a `.ok (.stopped
+  remaining outcome)` leaf reached at fuel `m` persists (padded remaining) at every
+  `n ≥ m` along the SAME transcript.  Proof: `openRunNResultWithStop_add` +
+  `Executes.bind_ok` + the `continueOpenRunNResultWithStop … (.stopped …)` pure leaf.
+* **`executes_error_add_right`** / **`executes_error_of_le`** — an interaction
+  `.error err` leaf reached at fuel `m` persists verbatim at every `n ≥ m` (a
+  `.done (.error …)` is absorbing under `bind`; `Executes.bind_error`).
+* **`RunSettles.of_cover`** — *the reduction*: `RunSettles program stopJump budget
+  label state` from the hypothesis that EVERY terminal branch `(transcript, result)`
+  of the `budget`-run is *covered* — its exact transcript executes, at some `m ≤
+  budget`, to either a `.ok (.stopped …)` or a `.error …`.  Each budget-branch's
+  covering smaller-fuel leaf is promoted to `budget` (the two stability lemmas) and
+  pinned against the budget-branch's `result` by the FROZEN determinism lemma
+  `Solidus.OpenRunContainment.executes_unique` (unique terminal outcome per fixed
+  transcript).  A `.stopped`/`.error` result is not `.ok (.exhausted …)`.
+
+`of_cover` is exactly the right shape: the child `BoundedExecPreservesUnder`
+(success) supplies the `.stopped` cover, `BoundedRuntimeErrorExecPreservesUnder`
+(runtime error) supplies the `.error` cover.  It is correct and unconditional.
+
+### THE OBSTRUCTION session 21 missed: `of_cover`'s hypothesis is UNDISCHARGEABLE on `OutOfFuel` branches — and there it is not just hard but FALSE
+Discharging `hCover` quantifies over TARGET branches `(transcript, result)` of the
+`budget`-run and must classify each.  Two independent problems, both centered on the
+source-truncation (`.error OutOfFuel`, `Structured/InteractionControlPreservation.lean:1032`)
+branches that `BoundedTruncationExecPreservesUnder` (`:1035`) handles with `Follows`
+(a prefix), NOT a `.done`:
+
+1. **No backward classifier exists.**  `hCover` is stated per TARGET transcript;
+   `BoundedExec`/`BoundedRuntimeError` are FORWARD (indexed by SOURCE `Executes`).
+   Turning a target branch into a source branch needs `Rel.executes_right`
+   (`InteractionEntryRealizedForward.lean:58`), which requires a FULL
+   `Simulation.Interaction.Rel doneRel sourceRun (openRunNResultWithStop … budget …)`.
+   The fragments establish only a `ForwardRel Truncated …` (`ForwardPreservesUnder`,
+   `:1122`) — a full `Rel` does NOT hold precisely because a source `OutOfFuel`
+   branch leaves the target still running (`Follows`, not `.done`).  Grep-confirmed:
+   there is no whole-fragment full `Rel` between `sourceRun` and
+   `openRunNResultWithStop` anywhere in the tower (only single-`openStep` head
+   `Rel`s, e.g. `openStep_code_of_compileStmtFuel?`).
+
+2. **`RunSettles` at the child budget is itself FALSE on truncation branches, and so
+   is the promoted accumulator.**  `blockBudget`/`stmtBudget`
+   (`InteractionStaticCost.lean`) are *fuel-indexed* over-approximations: `levelCost
+   program F` bounds the target block-entries for a source run of ≤ `F` steps (the
+   `.loop`/`.for_` cost scales linearly in `F`).  So on a branch where the child
+   source run OUT-OF-FUELS at `blockSourceFuel` (an adversary CALL-return can drive a
+   `for`-loop past any fixed `F`), the target `blockBudget`-run keeps executing past
+   `blockBudget` entries and reaches `.ok (.exhausted …)` (`openRunNResultWithStop … 0
+   … = .done (.ok (.exhausted …))`, `InteractionSemantics.lean:857`).  Hence
+   `RunSettles cfg policy (blockBudget program F body) childLabel childState` is
+   **false in general** — `of_cover`'s stopped/error cover cannot exist on that
+   branch.  Session 21's "success ⇒ `.stopped ≤ budget`; error ⇒ `.error`" dichotomy
+   is not exhaustive: it omits `OutOfFuel`.
+
+3. **Worse — the composite's *residual-budget* accumulator is FALSE too, so
+   `of_runSettles` cannot help even granting `RunSettles`.**  `AllEntriesRealized` is
+   ANTITONE in fuel (`ReachesOpenStepAt.of_le` is monotone UP —
+   `InteractionEntryRealized.lean:105`).  `switch`/`call`/`for` carry STRICT residual
+   slack over the matched child's `blockBudget` (session-18 finding: `residual =
+   switchBodyBudget + cases.length + 1 − k > blockBudget(matchedBody)`; the slack is
+   the dispatch overhead + the `max` over the OTHER, possibly larger, cases).  On a
+   truncation branch the matched body does NOT stop, so the residual run reaches
+   entries at target-depth `(blockBudget, residual]`.  By the contrapositive of the
+   over-approximation (`source ≤ F ⇒ target-depth ≤ blockBudget`), those entries sit
+   at source-depth `> blockSourceFuel` — i.e. PAST where the source witness has
+   out-of-fueled, so **no `StateRel` witness exists for them** and `realizedWitness
+   cfg` is FALSE there.  The child owner's accumulator only covers `≤ blockBudget`;
+   promoting to `residual` crosses into witnessless territory.  So
+   `AllEntriesRealized cfg policy residual childLabel childState (realizedWitness cfg)`
+   is genuinely FALSE on truncation branches — regardless of the promotion mechanism.
+
+This is NOT unsoundness of `compile_correct` (already axiom-clean; the public spine
+handles `OutOfFuel` via `Follows`/`ForwardRel`, never claiming the target settles).
+It is the caller-frame / fuel-decoupling obstruction of **sessions 5–7 resurfacing
+one layer up**: the swap-guard realization is fundamentally tied to the SOURCE
+frame, which only exists up to the matched source fuel; the composite's extra
+budget reaches past it.
+
+### Corrected frontier / next-session options
+The upward-promotion lever (`RunCompletes`→`RunSettles` + `of_runCompletes`/
+`of_runSettles`, sessions 18–22) is the WRONG tool for the slack-bearing composites:
+it presupposes the run settles within the child budget, which fails on truncation.
+Two viable directions:
+* **(A) Eliminate the slack (budget domination, not settling).**  Realize the
+  composite accumulator at a budget with NO strict slack over the child's — i.e.
+  invoke the child owner at a fuel `F'` with `blockBudget program F' matchedBody ≥
+  residual`, so no witnessless entry is ever reached.  Requires a `blockBudget`
+  MONOTONICITY-in-fuel lemma and a way to raise the child's `RealizingBlockOwnerAt`
+  ceiling above `sourceFuel` (the current `switch`/`call` recursion fixes it AT
+  `sourceFuel`; the residual can exceed `blockBudget(sourceFuel, matchedBody)` via the
+  `max`-over-cases + `cases.length+1`, so this may need re-deriving the static cost so
+  the matched-case residual never exceeds that case's own `blockBudget` at a
+  reachable fuel).
+* **(B) A fuel-DECOUPLED target-side stack-realization invariant** (the deferred
+  procedure-calling-convention model, sessions 5–7 §4a/4b): maintain "the runtime
+  stack realizes the current block's shape (incl. the hidden caller frame)" as an
+  invariant of `openRunN` itself, so the swap depth guard is dischargeable at EVERY
+  reached entry WITHOUT a source witness — removing the dependence on `SourceFrameFits`
+  and hence on source fuel entirely.  This is the multi-hundred-line addition every
+  prior session has punted; the session-22 analysis shows it (or (A)) is unavoidable
+  — the accumulator route cannot be completed for `switch`/`call`/`for` as designed.
+
+The landed `of_cover` + stability lemmas remain the correct, reusable reduction: any
+route that establishes per-branch coverage feeds them directly.  What must change is
+the SUPPLIER of that coverage on `OutOfFuel` branches, per (A)/(B).
+
+### Status handed to session 23
+Green banked: `InteractionSettlesBridge.lean` (`of_cover` + 4 stability lemmas,
+commit `316f22d5`), harness `check` OK, axioms unchanged.  Blocker precisely located:
+the `of_runSettles` upward promotion is provably insufficient for the slack-bearing
+composites — `RunSettles`/`AllEntriesRealized` at the residual budget is false on
+source-`OutOfFuel` branches (extra reachable entries lack a `StateRel` witness).
+Recommend pivoting to (A) budget-domination or (B) the fuel-decoupled stack-realization
+invariant before adding any `switch`/`call`/`for` realizing arm.  Do NOT attempt
+`switch_bounded_realizing` via `of_runSettles`/`of_cover` alone — it cannot close green.
