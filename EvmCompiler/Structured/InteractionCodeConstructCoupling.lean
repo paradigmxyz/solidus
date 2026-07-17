@@ -148,5 +148,98 @@ theorem realizedWitness_of_regular_jump
 
 end InteractionRealizedWitnessSuccessor
 
+namespace InteractionConstructCoupling
+
+open InteractionBoundedOwnerPreservation.OpenOutcome (realizedWitness)
+open Simulation.Interaction (Executes)
+
+/--
+Any `.ok` outcome of a straight-line statement run `Stmt.openRun … (.code code)` is a
+`regular` outcome.  (A `.code` statement runs its code and wraps the final state in
+`Outcome.regular`; the only other settled outcome is an error.)  Discharges the
+`hSrcRegular` obligation of `jump_state_rel_of_outcome`/`realizedWitness_of_regular_jump`.
+-/
+theorem stmt_openRun_code_only_regular
+    {program : Structured.Program} {sourceFuel : Nat}
+    {code : Structured.Code} {source : RunState}
+    {t : Simulation.Interaction.Transcript} {o : Structured.Outcome}
+    (hExec :
+      Executes
+        (InteractionSemantics.Stmt.openRun program sourceFuel (.code code) source)
+        t (Except.ok o)) :
+    ∃ final, o = Structured.Outcome.regular final := by
+  have hEq :
+      InteractionSemantics.Stmt.openRun program sourceFuel (.code code) source =
+        Simulation.Interaction.bind
+          (InteractionSemantics.Code.openRun code source)
+          (fun final =>
+            Simulation.Interaction.pure (Structured.Outcome.regular final)) := by
+    simp only [InteractionSemantics.Stmt.openRun, EffectSemantics.Control.Stmt.run,
+      InteractionSemantics.Code.openRun]
+    rfl
+  rw [hEq] at hExec
+  rcases Simulation.Interaction.Executes.bind_cases hExec with
+    ⟨err, hOutcome, _⟩ | ⟨value, _fT, _rT, _hT, _hFirst, hRest⟩
+  · exact absurd hOutcome (by simp)
+  · change Executes (.done (Except.ok (Structured.Outcome.regular value))) _ _ at hRest
+    cases hRest
+    exact ⟨value, rfl⟩
+
+/--
+**`.code`/regular coupling supplier** (the compiled-`.code` main-body/proc-body arm
+of the `hInv` invariant).
+
+Given the source `.code`'s compile fact at a reached entry (`hCompile`), the ambient
+`BlocksInProgram` fact, and the `realizedWitness` ingredients carried at the entry
+(`SourceFrameFits input …` + `StateRel source tokens target`), any concrete first
+jump out of the entry block lands a child `realizedWitness cfg next state'`, provided
+the ambient CFG block at `next` expects the `.code`'s fallthrough shape (`expected`,
+the output shape the compile fact pins).
+
+Proof: `openStep_code_of_compileStmtFuel?` produces the outcome coupling
+`Rel (OutcomeDoneRel result ctx regular source.returns tokens) (Stmt.openRun …
+(.code code) source) (openStep …)`; `realizedWitness_of_regular_jump` reads off the
+child `StateRel`/`SourceFrameFits` (with `next = regular`) and packages it with the
+target `LabelShape`.  The `requireFallthrough?`/source-regular obligations are
+discharged from the `.code` compile fact + `stmt_openRun_code_only_regular`. -/
+theorem realizedWitness_of_code_compile
+    {compilerFuel sourceFuel : Nat}
+    {code : Structured.Code}
+    {ctx : TypedCfgCompiler.Context} {supply : LabelSupply}
+    {entry regular : Assembly.Label} {input : TypedCfg.Shape}
+    {result : TypedCfgCompiler.Result} {cfg : TypedCfg.Program}
+    {sourceProgram : Structured.Program}
+    {source : RunState} {tokens : List Word} {target : EVMState}
+    {transcript : Simulation.Interaction.Transcript}
+    {next : Assembly.Label} {expected : TypedCfg.Shape} {state' : EVMState}
+    (hCompile :
+      TypedCfgCompiler.compileStmtFuel? (compilerFuel + 1)
+          (.code code) ctx supply entry input regular = some result)
+    (hBlocks : TypedCfgPreservation.BlocksInProgram result cfg)
+    (hFits :
+      TypedCfgCompiler.Shape.SourceFrameFits input source.evm.stack.length)
+    (hRel : TypedCfgPreservation.StateRel source tokens target)
+    (hExec :
+      Executes
+        (TypedCfg.InteractionSemantics.Program.openStep cfg entry target)
+        transcript (Except.ok (TypedCfg.Outcome.jump next state')))
+    (hFallthrough : result.fallthrough? = some expected)
+    (hLabelShape : TypedCfgPreservation.LabelShape cfg next expected) :
+    realizedWitness cfg next state' := by
+  have hRequire : result.requireFallthrough? expected = some () :=
+    TypedCfgCompilerFacts.Result.requireFallthrough?_eq_some_iff.mpr
+      (Or.inr hFallthrough)
+  have hProd :=
+    InteractionControlPreservation.Stmt.openStep_code_of_compileStmtFuel?
+      (sourceProgram := sourceProgram) (sourceFuel := sourceFuel)
+      hCompile hBlocks hFits hRel
+  exact
+    InteractionRealizedWitnessSuccessor.realizedWitness_of_regular_jump
+      hRequire hProd hExec
+      (fun _t _o hExec' => stmt_openRun_code_only_regular hExec')
+      hLabelShape
+
+end InteractionConstructCoupling
+
 end Structured
 end EvmCompiler
