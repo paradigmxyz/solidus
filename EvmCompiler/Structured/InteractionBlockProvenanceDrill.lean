@@ -108,6 +108,230 @@ theorem mem_of_compileStmtListFuel?_cons
           ⟨headResult, tailInput, tailResult, hHead, hFallthrough,
             hTailCompile, hTailMem⟩
 
+/-! ### Per-constructor one-layer membership dichotomies
+
+For each `compileStmtFuel?` constructor, from `block ∈ result.blocks` recover the
+block's position in the emission: the entry-aligned head (concluded as
+`block.label = entry`, so the incoming `compileStmtFuel?` fact — at that very entry
+— is the head's compile fact the suppliers consume), or a member of a named
+recursive subfragment, returned with the subfragment's own compile fact so the
+drill recurses. -/
+
+/-- **`code` emission.**  A `.code` statement emits exactly its entry head block. -/
+theorem mem_of_compileStmtFuel?_code
+    {compilerFuel : Nat} {code : Structured.Code}
+    {ctx : Context} {supply : LabelSupply}
+    {entry regular : Assembly.Label} {input : TypedCfg.Shape}
+    {result : Result} {block : TypedCfg.Block}
+    (hCompile :
+      compileStmtFuel? (compilerFuel + 1) (.code code) ctx supply entry input
+          regular = some result)
+    (hMem : block ∈ result.blocks) :
+    block.label = entry := by
+  obtain ⟨output, _hType, rfl⟩ :=
+    TypedCfgCompilerFacts.Stmt.components_of_compileStmtFuel?_code hCompile
+  simp only [List.mem_singleton] at hMem
+  subst hMem
+  rfl
+
+/-- **`terminal` emission.**  A `.terminal` statement emits exactly its entry head
+block. -/
+theorem mem_of_compileStmtFuel?_terminal
+    {compilerFuel : Nat} {kind : Assembly.HaltKind}
+    {ctx : Context} {supply : LabelSupply}
+    {entry regular : Assembly.Label} {input : TypedCfg.Shape}
+    {result : Result} {block : TypedCfg.Block}
+    (hCompile :
+      compileStmtFuel? (compilerFuel + 1) (.terminal kind) ctx supply entry
+          input regular = some result)
+    (hMem : block ∈ result.blocks) :
+    block.label = entry := by
+  obtain ⟨_hSource, rfl⟩ :=
+    TypedCfgCompilerFacts.Stmt.components_of_compileStmtFuel?_terminal hCompile
+  simp only [List.mem_singleton] at hMem
+  subst hMem
+  rfl
+
+/-- **`if` emission dichotomy.**  A block emitted by a `.if_` is either the entry
+head (condition) block or a member of the compiled branch body — the latter with
+its `compileBlockFuel?` fact exposed for recursion. -/
+theorem mem_of_compileStmtFuel?_if
+    {compilerFuel : Nat}
+    {cond : Structured.Code} {body : Structured.Block}
+    {ctx : Context} {supply : LabelSupply}
+    {entry regular : Assembly.Label} {input : TypedCfg.Shape}
+    {result : Result} {block : TypedCfg.Block}
+    (hCompile :
+      compileStmtFuel? (compilerFuel + 1) (.if_ cond body) ctx supply entry
+          input regular = some result)
+    (hMem : block ∈ result.blocks) :
+    block.label = entry ∨
+    (∃ output bodyResult,
+      Code.type? cond input = some output ∧
+      compileBlockFuel? compilerFuel body ctx (supply + 1)
+          (LabelSupply.label supply 0)
+          { output with slots := output.slots.tail } regular =
+        some bodyResult ∧
+      block ∈ bodyResult.blocks) := by
+  obtain
+      ⟨output, _condition, bodyResult,
+        hType, _hSource, _hHead, hBody, _hRequire, rfl⟩ :=
+    TypedCfgCompilerFacts.Stmt.components_of_compileStmtFuel?_if hCompile
+  simp only [List.mem_cons] at hMem
+  rcases hMem with rfl | hBodyMem
+  · exact Or.inl rfl
+  · exact Or.inr ⟨output, bodyResult, hType, hBody, hBodyMem⟩
+
+/-- **`switch` emission dichotomy.**  A block emitted by a `.switch` is the entry
+head (scrutinee) block, a member of the compiled cases fragment, or a member of the
+compiled default fragment — the latter two with their compile facts exposed. -/
+theorem mem_of_compileStmtFuel?_switch
+    {compilerFuel : Nat} {scrutinee : Structured.Code}
+    {cases : List (Word × Structured.Block)}
+    {defaultBody : Option Structured.Block}
+    {ctx : Context} {supply : LabelSupply}
+    {entry regular : Assembly.Label} {input : TypedCfg.Shape}
+    {result : Result} {block : TypedCfg.Block}
+    (hCompile :
+      compileStmtFuel? (compilerFuel + 1) (.switch scrutinee cases defaultBody)
+          ctx supply entry input regular = some result)
+    (hMem : block ∈ result.blocks) :
+    block.label = entry ∨
+    (∃ valueShape caseResult,
+      Code.type? scrutinee input = some valueShape ∧
+      compileCasesFuel? compilerFuel cases ctx supply (supply + 1) 0 valueShape
+          { valueShape with slots := valueShape.slots.tail } regular =
+        some caseResult ∧
+      block ∈ caseResult.blocks) ∨
+    (∃ valueShape caseResult defaultResult,
+      Code.type? scrutinee input = some valueShape ∧
+      compileCasesFuel? compilerFuel cases ctx supply (supply + 1) 0 valueShape
+          { valueShape with slots := valueShape.slots.tail } regular =
+        some caseResult ∧
+      compileDefaultFuel? compilerFuel defaultBody ctx caseResult.next
+          (LabelSupply.label supply 1) valueShape
+          { valueShape with slots := valueShape.slots.tail } regular =
+        some defaultResult ∧
+      block ∈ defaultResult.blocks) := by
+  obtain
+      ⟨valueShape, _valueSlot, caseResult, defaultResult,
+        hType, _hSource, _hValue, hCases, hDefault, rfl⟩ :=
+    TypedCfgCompilerFacts.Switch.components_of_compileStmtFuel?_switch hCompile
+  simp only [List.mem_cons, List.mem_append] at hMem
+  rcases hMem with (rfl | hCaseMem) | hDefaultMem
+  · exact Or.inl rfl
+  · exact Or.inr (Or.inl ⟨valueShape, caseResult, hType, hCases, hCaseMem⟩)
+  · exact
+      Or.inr
+        (Or.inr
+          ⟨valueShape, caseResult, defaultResult, hType, hCases, hDefault,
+            hDefaultMem⟩)
+
+/-- **`for` emission dichotomy.**  A block emitted by a `.for_` lands in the
+compiled init fragment, is the loop-condition head block, lands in the compiled
+body fragment, or lands in the compiled post fragment — each recursive fragment
+returned with its `compileBlockFuel?` fact. -/
+theorem mem_of_compileStmtFuel?_for
+    {compilerFuel : Nat} {init post body : Structured.Block}
+    {cond : Structured.Code} {ctx : Context}
+    {supply : LabelSupply} {entry regular : Assembly.Label}
+    {input : TypedCfg.Shape} {result : Result} {block : TypedCfg.Block}
+    (hCompile :
+      compileStmtFuel? (compilerFuel + 1) (.for_ init cond post body) ctx
+          supply entry input regular = some result)
+    (hMem : block ∈ result.blocks) :
+    (∃ initResult,
+      compileBlockFuel? compilerFuel init
+          { ctx with
+            breakLabel? := none
+            breakShape? := none
+            continueLabel? := none
+            continueShape? := none }
+          (supply + 1) entry input (LabelSupply.label supply 0) =
+        some initResult ∧
+      block ∈ initResult.blocks) ∨
+    block.label = LabelSupply.label supply 0 ∨
+    (∃ initResult loopInput condOutput bodyResult,
+      compileBlockFuel? compilerFuel init
+          { ctx with
+            breakLabel? := none
+            breakShape? := none
+            continueLabel? := none
+            continueShape? := none }
+          (supply + 1) entry input (LabelSupply.label supply 0) =
+        some initResult ∧
+      initResult.fallthrough? = some loopInput ∧
+      Code.type? cond loopInput = some condOutput ∧
+      compileBlockFuel? compilerFuel body
+          { ctx with
+            breakLabel? := some regular
+            breakShape? :=
+              some { condOutput with slots := condOutput.slots.tail }
+            continueLabel? := some (LabelSupply.label supply 2)
+            continueShape? :=
+              some { condOutput with slots := condOutput.slots.tail } }
+          initResult.next (LabelSupply.label supply 1)
+          { condOutput with slots := condOutput.slots.tail }
+          (LabelSupply.label supply 2) =
+        some bodyResult ∧
+      block ∈ bodyResult.blocks) ∨
+    (∃ initResult loopInput condOutput bodyResult postResult,
+      compileBlockFuel? compilerFuel init
+          { ctx with
+            breakLabel? := none
+            breakShape? := none
+            continueLabel? := none
+            continueShape? := none }
+          (supply + 1) entry input (LabelSupply.label supply 0) =
+        some initResult ∧
+      initResult.fallthrough? = some loopInput ∧
+      Code.type? cond loopInput = some condOutput ∧
+      compileBlockFuel? compilerFuel body
+          { ctx with
+            breakLabel? := some regular
+            breakShape? :=
+              some { condOutput with slots := condOutput.slots.tail }
+            continueLabel? := some (LabelSupply.label supply 2)
+            continueShape? :=
+              some { condOutput with slots := condOutput.slots.tail } }
+          initResult.next (LabelSupply.label supply 1)
+          { condOutput with slots := condOutput.slots.tail }
+          (LabelSupply.label supply 2) =
+        some bodyResult ∧
+      compileBlockFuel? compilerFuel post
+          { ctx with
+            breakLabel? := none
+            breakShape? := none
+            continueLabel? := none
+            continueShape? := none }
+          bodyResult.next (LabelSupply.label supply 2)
+          { condOutput with slots := condOutput.slots.tail }
+          (LabelSupply.label supply 0) =
+        some postResult ∧
+      block ∈ postResult.blocks) := by
+  obtain
+      ⟨initResult, loopInput, condOutput, _condition,
+        bodyResult, postResult, hInit, hInitFallthrough,
+        hType, _hSource, _hHead, hBody, _hBodyRequire,
+        hPost, _hPostRequire, rfl⟩ :=
+    TypedCfgCompilerFacts.Loop.components_of_compileStmtFuel?_for hCompile
+  rcases List.mem_append.mp hMem with hBeforePost | hPostMem
+  · rcases List.mem_append.mp hBeforePost with hBeforeBody | hBodyMem
+    · rcases List.mem_append.mp hBeforeBody with hInitMem | hLoopMem
+      · exact Or.inl ⟨initResult, hInit, hInitMem⟩
+      · refine Or.inr (Or.inl ?_)
+        simp only [List.mem_singleton] at hLoopMem
+        subst hLoopMem
+        rfl
+    · exact
+        Or.inr (Or.inr (Or.inl
+          ⟨initResult, loopInput, condOutput, bodyResult,
+            hInit, hInitFallthrough, hType, hBody, hBodyMem⟩))
+  · exact
+      Or.inr (Or.inr (Or.inr
+        ⟨initResult, loopInput, condOutput, bodyResult, postResult,
+          hInit, hInitFallthrough, hType, hBody, hPost, hPostMem⟩))
+
 end BlockProvenanceDrill
 end TypedCfgPreservation
 end Structured
