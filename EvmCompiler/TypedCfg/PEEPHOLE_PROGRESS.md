@@ -3948,3 +3948,185 @@ lemmas (Phase 1a/1b/1c above), wired into `EvmCompiler.Verification` after
 assembled capstone descent (mechanical from the substrate once its conclusion
 predicate is pinned to the switch/for successor story) + the proc-body root + the
 dispatch residual, before `of_openStep_invariant` → Step B.
+
+## Session-33 update (2026-07-17): the MACHINERY successor-supplier family is COMPLETE (for-cond + switch-test + case-entry/default-pop + nil-join, all green + axiom-clean); two capstone-blocking DESIGN findings pinned — the switch head reuses the `.code` supplier (no new leg), and the proc-entry ADAPTER is a 6th reachable machinery block the §Session-32 sketch missed (needs its own shape-transporting supplier)
+
+Session 33's mandate: settle the inherited dirty file, land the remaining machinery
+successor arms, then attack the assembled capstone descent.  **Result: the machinery
+successor-supplier family is now COMPLETE — four green, axiom-clean suppliers keyed on
+each machinery block's shape** (three inherited from the session-33 worker + the
+nil-join settled this handoff), plus **two concrete design findings that correct and
+sharpen the §Session-32 capstone predicate before it is committed** (exactly the "large
+wrong artifact" the §Session-32 note warned to avoid).  The capstone mutual itself was
+NOT written this session: the second finding (the proc-entry adapter) reveals the
+predicate needs a 6th machinery disjunct + a new shape-transporting supplier, so
+committing a 5-disjunct predicate now would have been the wrong artifact.  No red code,
+no sorries, `peepholeBody`/public spine UNTOUCHED ⇒ measured delta still **+0**.
+
+### LANDED (green, axiom-clean): `EvmCompiler/Structured/InteractionMachineryCoupling.lean`
+All `#print axioms` = `[propext, Classical.choice, Quot.sound]`; the module is wired
+into `EvmCompiler.Verification` (import after `InteractionConstructCoupling`; it also
+imports `InteractionSwitchPreservation`).  Namespace
+`EvmCompiler.Structured.InteractionMachineryCoupling`
+(`open InteractionBoundedOwnerPreservation.OpenOutcome (realizedWitness
+realizedWitness_of_stateRel)`).  Every supplier consumes ONLY the block's
+static shape/type facts (its `findBlock?` or membership fact + `Instr.type?`/`head?`/
+condition facts) plus the `realizedWitness` runtime ingredients carried at the entry
+(`StateRel` + `SourceFrameFits`) + the successor `LabelShape` — i.e. exactly what the
+capstone's machinery disjuncts will hand the `hInv` case split.
+
+* **`81d18660` (inherited) — `realizedWitness_of_condBlock_jump`** (`:67`) — the
+  condition-block (`.jumpi` over `Code.toCfg cond`) supplier.  Covers the
+  **for-loop-cond** machinery block (`LabelSupply.label supply 0`) and subsumes the
+  `if`-condition head.  Keyed on `hFind` + `hType : Code.type? cond input = some output`
+  + `hSource : requireSourceWords? 1 output = some ()`.  Proof =
+  `Condition.openRunCondition_jumpi_toCfg` ∘ `realizedWitness_of_branch_jump`.
+* **`3ce4b586` (inherited) — `realizedWitness_of_test_jump`** (`:131`) — the **switch
+  test** block (`[.dup 0, .push caseValue, .prim .eq]` + `.jumpi caseLabel nextTest`).
+  The scrutinee is RETAINED (a pure target-side comparison), so the child `StateRel`
+  is at the SAME source and the child fits equal the entry fits (`hFits` reused).
+  Proof = `Switch.openStep_test` ∘ `realizedWitness_of_stateRel`.
+* **`3ce4b586` (inherited) — `realizedWitness_of_pop_jump`** (`:183`) — the **switch
+  case-entry / absent-default `pop`** block (`[.pop]` + `.jump label`).  Removes the
+  scrutinee; child `StateRel` at the popped source, child fits taken as a hypothesis
+  (mirroring `realizedWitness_of_pure_jump`).  Proof = `Switch.openStep_pop_jump` ∘
+  `realizedWitness_of_stateRel`.
+* **`25345e90` (THIS session — the settled dirty file) —
+  `realizedWitness_of_join_jump`** (`:235`) — the **nil-join** block
+  (`{ body := [], output := input, term := .jump exitLabel }`, emitted by
+  `compileStmtListFuel? … [] …`).  A pure identity jump: its `openStep` reduces to
+  `pure (.jump exitLabel target)` with state unchanged, so the child
+  `StateRel`/`SourceFrameFits` ARE the entry's.  Proof = the inline `openStep` join
+  reduction (`Control.Block.run`/`runBody` + `bind_done`) ∘
+  `InteractionRealizedWitnessSuccessor.realizedWitness_of_pure_jump`.  The prior
+  session-33 worker had left this uncommitted-but-green; reviewed, built green
+  (1159 jobs), `#print axioms` clean, committed.
+
+**The per-terminator machinery successor discharges are now banked for all five blocks
+the §Session-32 note listed** (for-loop-cond, switch-test, switch-case-entry,
+default-`pop`, nil-join), joining the compile-fact suppliers
+`realizedWitness_of_{if,call,code}_compile` (sessions 30/31) and
+`realizedWitness_of_dispatch_jump` (session 28), and the vacuous
+`programEnd_openStep_no_jump` (session 29).
+
+### KEY FINDING 1 — the switch HEAD is a `.code` block in disguise; NO new supplier needed
+The `.switch` lowering (`TypedCfgCompiler.lean:444`) emits its head as
+`mkCodeBlock? entry input scrutinee (.jump firstTest)` — **byte-for-byte the block
+`compileStmtFuel? (f+1) (.code scrutinee) ctx supply entry input firstTest` produces**
+(a code block over `Code.toCfg scrutinee` with terminator `.jump firstTest`; only the
+"regular" target differs — `firstTest` instead of the code's `regular`).  So the
+capstone's `head` arm for `.switch` synthesises a `.code scrutinee` compile fact at
+`entry = block.label` (with `regular := firstTest`) and reuses
+`realizedWitness_of_code_compile` (session 31) verbatim.  The switch head is therefore
+NOT a missing successor leg — it collapses into the `.code` supplier.  (Cross-check:
+`activeResult`'s `.switch` head case treats the head identically to a code block.)
+
+### KEY FINDING 2 — the proc-entry ADAPTER is a 6th reachable machinery block the §Session-32 sketch MISSED
+The §Session-32 machinery list (for-cond / test / case-entry / default-pop / nil-join)
+is INCOMPLETE for the proc-body category.  `ProcFragment.route`
+(`Core.lean:2969`) has TWO routes: the DIRECT route (`entry = ProcLabel.entry`, no
+adapter) and the ADAPTER route, which emits an extra block
+`mkBlock? (ProcLabel.entry proc.name) (Shape.procEntry proc) [.relabel input]
+(.jump (ProcLabel.body proc.name))` — a **`.relabel`-then-`.jump` block** at
+`ProcLabel.entry proc.name`, reachable from the call dispatch.  It is NOT part of any
+`compileBlock? proc.body …` result (it is prepended in `procFragment_of_lowerProcBodiesWithShapes?`,
+`Core.lean:3163/3290`), so the proc-body provenance drill CANNOT reach it via the
+statement-list recursion — it must be classified as its own machinery disjunct.
+
+Its successor story is ALREADY proved silent by
+`InteractionCallPreservation.openRunNResult_procEntry`
+(`InteractionCallPreservation.lean:651`): the adapter's `openStep` reduces to
+`pure (.jump (ProcLabel.body proc.name) state)` with the runtime state UNCHANGED
+(relabel is a pure retyping; `openRunBody_eq_done_of_forall_not_prim` + `runTerm`).
+So an `realizedWitness_of_adapter_jump` supplier is a `pure`-jump composition like
+`realizedWitness_of_join_jump`.  **CAVEAT (why it was NOT rushed this session):** the
+relabel changes the *shape* (`Shape.procEntry proc` → `input`), so the child
+`SourceFrameFits`/`StateRel` handed to the successor `ProcLabel.body` block must be
+transported ACROSS the relabel (the successor expects `output`/`input`, not the entry
+`blockInput`).  That shape-transport (a `SourceFrameFits`/`StateRel`-across-`.relabel`
+lemma; relabel preserves the runtime stack, so it should be a `Instr.type? .relabel`
++ `sourceLength` bookkeeping) is the one genuinely-new obligation — a self-contained
+next-session first step, NOT a rush-it-now composition.
+
+### THE REFINED CAPSTONE PREDICATE (corrected by findings 1–2; pin BEFORE writing the mutual)
+`BlockGenShape block :=`
+* `IsHead block` — `∃ cf stmt ctx supply input regular sub, compileStmtFuel? (cf+1)
+  stmt ctx supply block.label input regular = some sub ∧ block ∈ sub.blocks ∧
+  block.label = <that entry>` (covers code / terminal / call / if-head / switch-head
+  [finding 1: dispatch `.switch` head to the `.code scrutinee` fact] / brk / cont /
+  leave).  hInv arm: `cases stmt` → `realizedWitness_of_{if,call,code}_compile`
+  (`.switch` head → `_code_compile` with `regular := firstTest`; brk/cont/leave/terminal
+  emit no `.jump` successor — vacuous like programEnd), OR
+* for-loop-cond disjunct (carry `cond`/`input`/`output` + `hType`+`hSource`) →
+  `realizedWitness_of_condBlock_jump`, OR
+* switch-test disjunct (carry `valueShape`/`slot`/`caseValue`/labels + `head?`) →
+  `realizedWitness_of_test_jump`, OR
+* switch-case-entry / default-`pop` disjunct (carry `input`/`output` + `Instr.type? .pop`)
+  → `realizedWitness_of_pop_jump`, OR
+* nil-join disjunct (carry `input`/`exitLabel`) → `realizedWitness_of_join_jump`, OR
+* **proc-entry-adapter disjunct (NEW, finding 2; carry `input`/`output` +
+  `Instr.type? (.relabel input)` + the relabel shape-transport) →
+  `realizedWitness_of_adapter_jump` (to be written).**
+
+The machinery disjuncts carry only the block's OWN shape + static type facts (NOT the
+enclosing compile fact — the §Session-32 worry that they "need the enclosing switch/for
+compile fact to expose the successor labels" is resolved: the successor `LabelShape` is
+a SEPARATE `hInv` hypothesis, supplied from the destination block's `realizedWitness` /
+a static `LabelShape.of_*` lemma, so the disjuncts stay local to the block).
+
+### THE FRONTIER (sharpened)
+1. **The proc-entry-adapter supplier `realizedWitness_of_adapter_jump`** + its
+   `SourceFrameFits`/`StateRel`-across-`.relabel` transport lemma.  Self-contained;
+   the `openStep` reduction is already in `openRunNResult_procEntry`
+   (`InteractionCallPreservation.lean:696–740`).  NEXT-SESSION FIRST STEP.
+2. **The proc-body provenance ROOT + membership inversion.**  `main_stmtList_provenance`
+   (session 31) was a one-liner because `context.main` is a single result; the proc
+   analogue needs a MEMBERSHIP INVERSION over `lowerProcBodiesWithShapes?` — from
+   `block ∈ context.procBlocks` recover `∃ name proc, lookup? name source.procs =
+   some proc ∧ (block = the proc-entry adapter [finding 2] ∨ block ∈ (compileBlock?
+   proc.body …).blocks)`.  This is the reverse of `procFragment_of_lowerProcBodiesWithShapes?`
+   (`Core.lean:3049`); mirror its induction (adapter / no-adapter × shape-present /
+   absent splits) tracking `procBlocks = adapter? :: bodyResult.blocks ++ tailBlocks`.
+   The adapter member goes to the adapter disjunct; the body member feeds the drill.
+3. **The assembled capstone mutual** — the 5-function strong-induction over
+   `compileStmtListFuel?`/`compileStmtFuel?`/`compileBlockFuel?`/`compileCasesFuel?`/
+   `compileDefaultFuel?` (copy `activeResult_of_compile*`,
+   `TypedCfgCompilerActive.lean:77–508`, swap the `ActiveResult` payload for
+   `BlockGenShape`), each arm applying the matching Phase-1 dichotomy
+   (`InteractionBlockProvenanceDrill.lean`).  NOTE: the machinery arms of the mutual
+   must call `components_of_compileStmtFuel?_{for,switch}` DIRECTLY (not the lossy
+   `mem_of_compileStmtFuel?_{for,switch}`, which discard the block shape + type facts)
+   to retain the `Code.toCfg cond`/`.jumpi` shape and `hType`/`hSource` the machinery
+   disjuncts carry.  Same for the switch test/case-entry shapes via
+   `components_of_compileCasesFuel?_cons`.
+4. **The dispatch StateRel⟶frame-facts residual** (unchanged from §Session-31): the
+   dispatch arm's `hPop`/`hAttach`/`hRetc` are runtime, derived from the exit block's
+   `realizedWitness` `StateRel bodyState (site.token :: tokens) t`, or route-2 splice.
+
+### Next-session recipe
+1. Bank `realizedWitness_of_adapter_jump` (+ the `.relabel` shape-transport) — the
+   only genuinely-new supplier, self-contained (openStep reduction already proved).
+2. Bank the proc-body root membership inversion (frontier item 2).
+3. Pin `BlockGenShape` (above; six disjuncts), prove the 5-function mutual
+   (frontier item 3), banking green.
+4. Then the dispatch residual (item 4), assemble `hInv` via `block_category` →
+   {main root / proc root} → mutual → matching supplier ; dispatch → frame-facts →
+   `realizedWitness_of_dispatch_jump` ; programEnd → `programEnd_openStep_no_jump`.
+   Feed `of_openStep_invariant`; proceed to Step B
+   (`openRunNPrefix_peephole_congr_of_source`).
+* Do NOT add the swap arm to `peepholeBody` until the whole invariant is green.
+
+### Status handed to session 34
+MACHINERY successor-supplier family COMPLETE.  Landed / settled this session:
+`InteractionMachineryCoupling.lean` — `realizedWitness_of_condBlock_jump` (:67,
+`81d18660`), `_test_jump` (:131, `3ce4b586`), `_pop_jump` (:183, `3ce4b586`),
+`_join_jump` (:235, `25345e90` — dirty file settled green THIS session), all green,
+axiom-clean, wired into `EvmCompiler.Verification`.  `scripts/opt_harness.sh check` =
+OK (43 public theorems, axioms ⊆ `[propext, Classical.choice, Quot.sound]`);
+`compile_correct`/`compile_correct_creation` unchanged; delta +0.  Two design findings
+pin the capstone predicate: (1) the switch head reuses `_code_compile` (no new leg);
+(2) the proc-entry adapter is a 6th machinery block needing `realizedWitness_of_adapter_jump`
+(openStep already silent via `openRunNResult_procEntry`, caveat = `.relabel`
+shape-transport).  Frontier = adapter supplier → proc-body root inversion → the
+assembled 5-function capstone mutual → dispatch residual, before
+`of_openStep_invariant` → Step B.
