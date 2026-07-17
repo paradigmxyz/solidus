@@ -98,5 +98,55 @@ theorem jump_state_rel_of_outcome
 end OpenOutcome
 end InteractionControlPreservation
 
+namespace InteractionRealizedWitnessSuccessor
+
+open InteractionBoundedOwnerPreservation.OpenOutcome (realizedWitness realizedWitness_of_stateRel)
+open Simulation.Interaction (Executes)
+
+/--
+**Regular/`.code` leg of the `realizedWitness` `openStep`-jump invariant.**
+
+For a straight-line `.code` block whose `openStep` is source-coupled to a
+regular-only source run by `Rel (OutcomeDoneRel result ctx regular returns tokens)`,
+any concrete non-stopping first jump to `(next, state')` lands a child
+`realizedWitness cfg next state'`, provided the ambient CFG block at `next` expects
+the fallthrough shape `expected` (`LabelShape cfg next expected`).
+
+Proof: `jump_state_rel_of_outcome` reads off `next = regular` and the child
+`StateRel`/`SourceFrameFits` at `state'`; `realizedWitness_of_stateRel` packages them
+with the target `LabelShape`.  Structural sibling of `realizedWitness_of_branch_jump`.
+-/
+theorem realizedWitness_of_regular_jump
+    {cfg : TypedCfg.Program}
+    {entry : Assembly.Label} {target : EVMState}
+    {result : TypedCfgCompiler.Result} {ctx : TypedCfgCompiler.Context}
+    {regular : Assembly.Label} {returns : List ReturnDest}
+    {tokens : List Word} {expected : TypedCfg.Shape}
+    {srcRun : Simulation.Interaction EVMException Structured.Outcome}
+    {transcript : Simulation.Interaction.Transcript}
+    {next : Assembly.Label} {state' : EVMState}
+    (hRequire : result.requireFallthrough? expected = some ())
+    (hRel :
+      Simulation.Interaction.Rel
+        (InteractionControlPreservation.OpenOutcome.OutcomeDoneRel
+          result ctx regular returns tokens)
+        srcRun
+        (TypedCfg.InteractionSemantics.Program.openStep cfg entry target))
+    (hExec :
+      Executes
+        (TypedCfg.InteractionSemantics.Program.openStep cfg entry target)
+        transcript (Except.ok (TypedCfg.Outcome.jump next state')))
+    (hSrcRegular :
+      ∀ t o, Executes srcRun t (Except.ok o) →
+        ∃ final, o = Structured.Outcome.regular final)
+    (hLabelShape : TypedCfgPreservation.LabelShape cfg next expected) :
+    realizedWitness cfg next state' := by
+  obtain ⟨srcState, _hNext, hStateRel, hFits⟩ :=
+    InteractionControlPreservation.OpenOutcome.jump_state_rel_of_outcome
+      hRequire hRel hExec hSrcRegular
+  exact realizedWitness_of_stateRel hLabelShape hStateRel hFits
+
+end InteractionRealizedWitnessSuccessor
+
 end Structured
 end EvmCompiler
