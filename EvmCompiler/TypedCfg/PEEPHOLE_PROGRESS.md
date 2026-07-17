@@ -2961,3 +2961,149 @@ leg — its existential `targetFuel` is opaque and cannot feed `of_succ`.  `of_b
 is the correct tool ONLY where the bounded realizing family closes (`if` and the
 leaves); it is definitionally unavailable to `switch`/`call`/`for`.
 
+## Session-25 update (2026-07-17): the session-24 exec-recursor recipe is REFUTED for the oracle-branching heads; `realizedWitness` is existential-per-state, so the true (and only) blocker is route B (target-side decodability preservation), NOT static-budget slack. NO Lean lemma landed — this is a corrected diagnosis, not a frontier advance. Baseline reconfirmed green.
+
+Session 25's mandate was to build `openRun_if_exec_realizing_under` as the fuel-matched
+threaded template, then the `switch`/`call`/`for` analogues.  A full trace of the
+underlying definitions (`realizedWitness`, `AllEntriesRealized`, `of_succ`,
+`allEntriesRealized_branch_step`/`_pure_step`, and the four `openRun_*_exec_under_of_compileStmtFuel?`
+lemmas) shows the session-24 recipe **cannot close for the oracle-branching heads
+(`if`, `for`)** and that the reason is a target-side decodability obligation (route B)
+that route C does **not** avoid — contradicting route C's founding premise.  No new
+lemma was committed (committing red/false Lean is forbidden; no unsoundness was found —
+`compile_correct`/`compile_correct_creation` remain axiom-clean, harness `check` = **OK,
+43 theorems**, and `peepholeBody`/public spine are UNTOUCHED ⇒ measured delta still **+0**).
+
+### THE DECISIVE FACT session 22/24 misread: `realizedWitness` is EXISTENTIAL PER STATE, not tied to the actual source run
+`realizedWitness cfg label state` (`InteractionBoundedOwnerRealized.lean:313`) is
+```
+∃ source tokens block, cfg.findBlock? label = some block ∧
+  StateRel source tokens state ∧ SourceFrameFits block.input source.evm.stack.length
+```
+— i.e. "`state` DECODES to *some* source frame at `label`'s cfg block".  It is a purely
+LOCAL, per-state well-formedness/decodability predicate; it does **not** say the
+*actual* source run reached `(label, state)` at the run's fuel.  Session-22 obstruction 3
+("those entries sit at source-depth > `blockSourceFuel`, so no `StateRel` witness exists
+and `realizedWitness` is FALSE there") is therefore **imprecise**: a post-truncation
+target entry is not automatically witnessless — it is witnessless only if NO source frame
+decodes it, which is a genuine (hard) question, not a free consequence of the source run
+having out-of-fueled.  The static-budget accumulator is thus not FALSE on truncation
+branches; it is UNPROVEN — provable exactly when every entry the fuel-bounded run reaches
+is decodable.  "Every reached entry is decodable" is **route B** (the fuel-decoupled
+target-side stack-realization invariant, sessions 5-7/22 §4a/4b).
+
+### Why route C's exec recursor still needs route B for the oracle-branching heads (`if`, `for`) — precise mechanism
+Building `AllEntriesRealized cfg policy targetFuel entry target (realizedWitness cfg)` at
+the composite's settling `targetFuel` via `AllEntriesRealized.of_succ`
+(`InteractionEntryRealized.lean:173`) forces the `hNext` obligation: for EVERY concrete
+first-step jump `openStep cfg entry target ⟶ .jump next state'` that does not stop,
+supply `AllEntriesRealized cfg policy (targetFuel-1) next state' realized`.
+
+* For `if`/`for` the head is the **condition block**, whose `openStep` is a genuine
+  interaction tree branching on the condition CODE's oracle reads (`Condition.DoneRel`,
+  `InteractionBranchPreservation.lean`).  So `of_succ`'s `hNext` quantifies over MULTIPLE
+  condition-eval transcripts — one per oracle answer — each yielding a different
+  `afterCond''`/`state''` and a body-entry jump.  The child `RealizingExecPreservesUnder`
+  (uniform over `afterCond` as a recursor hypothesis) can only produce an accumulator for
+  a branch on which a full body source run `Executes (bodyRun afterCond'') _ (.ok _)` is in
+  hand — but `of_succ`'s `hNext` supplies only the HEAD transcript (up to the jump), never
+  a body outcome.  For any non-settling condition branch (and a fortiori a truncating one),
+  no body outcome is available ⇒ no child accumulator ⇒ the entry's realization can ONLY
+  come from route B (decodability of that branch's reachable entries, source-free).  This
+  is a hard refutation of the session-24 claim that the residual is "the child callback's
+  accumulator at the SAME `childFuel`" — that works for the SINGLE settling branch, but
+  `of_succ`/`allEntriesRealized_branch_step` demand ALL non-stopping first branches, and
+  the branch-step's `hBody` is **uniform** (`∀ afterCond state'`, fixed residual fuel).
+  A per-outcome exec child cannot feed a uniform, fixed-fuel `hBody`.  (Confirmed against
+  `allEntriesRealized_branch_step`, `InteractionBoundedOwnerRealized.lean:464`, whose
+  `hBody` is `∀ afterCond state', … → AllEntriesRealized cfg policy bodyBudget trueLabel
+  state' realized` — exactly the uniform form `if_bounded_realizing` supplies from the
+  BOUNDED owner and the per-outcome exec child cannot.)
+
+* `if` escapes ONLY because `if_exec_realizing` = `of_bounded if_bounded_realizing`
+  (session 24): the bounded owner already discharged the uniform coverage at the exact
+  budget `stmtBudget (.if_) = 1 + blockBudget body` (no slack).  `for` has NO closing
+  bounded realizing family (grep-confirmed absent; its `stmtBudget` scales linearly in
+  fuel — real static slack, `InteractionStaticCost`), so `of_bounded` is unavailable and
+  the direct exec route hits the route-B wall above.  **`for` is the fundamental blocker.**
+
+* `switch`/`call` heads are **deterministic dispatch** (`openStep_pop_jump`/`openStep_test`
+  — `dup;push;eq;jumpi`, resolved purely by the already-computed scrutinee, no oracle;
+  call's silent call-site).  There `of_succ`'s `hNext` has a SINGLE first branch, so the
+  per-outcome child suffices and route B is NOT needed at the switch/call dispatch level
+  (the child's own internals are handled by the child recursor).  So the switch/call exec
+  recursors ARE constructible in principle — but (i) each requires a realizing sibling of
+  the ENTIRE dispatch recursion re-derived fuel-matched (switch delegates the pop;jump + k
+  test-block chain to `openRun_cases_*_exec_under_of_compileCasesFuel?`, an inductive
+  family over the case list — see the `routeFuel + 1` bind at
+  `InteractionSwitchPreservation.lean:2822`; a `openRun_cases_*_realizing` sibling is a
+  multi-hundred-line inductive addition, not one lemma), and (ii) they are still blocked in
+  the mutual `block_owner_exec_realizing` because a switch/call CHILD may be a `for`.
+
+### Net: route C cannot close the endgame; it is blocked at `for` by the very route-B obligation it claimed to sidestep
+The mutual anchor is unbuilt: neither `block_owner_realizing` (bounded) nor
+`block_owner_exec_realizing` (exec) exists (grep-confirmed — only referenced as future in
+`InteractionBoundedOwnerRealized.lean:355/772`); `switch/call/for _exec_realizing` and
+`*_exec_realizing_under` do not exist.  What exists: the five leaf `*_exec_realizing`, the
+generic `of_exec_first_jump_stops`/`of_bounded`, and `if_exec_realizing` (all sessions
+23-24, all with the UNFULFILLED hypothesis `RealizingBlockOwnerAt`, which requires the
+never-built mutual anchor).  Because `RealizingBlockOwnerAt` is never inhabited, even
+`if_exec_realizing` is presently a vacuous implication.
+
+The route-C premise — "attach the accumulator at the per-outcome settling fuel and the
+static-budget slack (obstruction 3) dissolves" — is only HALF right: it dissolves the
+slack for pure-dispatch composites, but the underlying accumulator obligation for the
+oracle-branching composites (`if`/`for`) was never about slack; it is the target-side
+DECODABILITY of non-settling condition branches, i.e. route B, which route C does not
+touch.  `if` hid this behind `of_bounded`; `for` cannot, so it surfaces there.
+
+### Corrected recipe for the NEXT session — route B is the master key, and it discharges EVERYTHING at once
+Stop building per-construct exec recursors.  Prove the single target-side invariant:
+```
+theorem openStep_preserves_realizedWitness :
+    cfg.WellTyped →                       -- (or the concrete GeneratedContext)
+    realizedWitness cfg entry target →
+    Executes (openStep cfg entry target) transcript (.ok (.jump next state')) →
+    realizedWitness cfg next state'
+```
+i.e. `realizedWitness cfg` is an `openStep`-jump invariant.  From it,
+`AllEntriesRealized cfg policy fuel entry target (realizedWitness cfg)` follows at ANY
+fuel from `hHere = realizedWitness_of_stateRel …` by a trivial `ReachesOpenStepAt`
+induction (each `.step` reuses the invariant) — dissolving the accumulator conjunct of
+EVERY family (leaf / `if` / `switch` / `call` / `for`, bounded AND exec) UNIFORMLY, with
+no `of_succ` branch analysis, no fuel matching, no per-construct recursor, and no
+dependence on the source run's fuel.  The proof obligation splits by terminator on the
+`entry` block (from the decoded `block`):
+  * fallthrough / `jump` / `jumpi` (NON-widening: `target.input.length ≤ output.length`,
+    `Shape.compatible` with equal or shrinking length): the jump carries the block-body
+    end-state decode forward; reuse the existing per-block `StateRel` step machinery
+    (`Preservation`/`InteractionPreservation` block-step lemmas) to rebuild
+    `StateRel`+`SourceFrameFits` at `next` from the `entry` decode.  Likely the bulk of
+    the tractable part.
+  * `returnDispatch` / proc-entry (WIDENING: `Shape.compatible` permits
+    `output.length < target.input.length` for a `.caller` tail, `Syntax.lean:111`): the
+    extra depth is the hidden caller frame — decode it via the calling-convention frame
+    (`Structured/TypedCfgPreservation/Core.lean` `realizeStack`/`StateRel`/
+    `ActivationExtension`; `SourceFrameFits`/`returnTokenDepth?` in
+    `TypedCfgCompiler.lean:186`, `TypedCfgCompilerFacts.lean:76`).  This is the
+    multi-hundred-line frame-model step every session 5-24 has punted; it is UNAVOIDABLE
+    and is the real remaining cost of the whole peephole swap arm.
+This is route (B) as scoped in sessions 5-7 §4a/4b and reaffirmed in sessions 22-23 as
+"strictly larger than (C) but honest"; session 25's contribution is proving (C) does NOT
+avoid it (the oracle-branch `hNext` obligation IS route B), so (B) is not merely the
+larger option — it is the ONLY one that closes.  A partial win banks
+`openStep_preserves_realizedWitness` for the non-widening terminators first (a genuine
+green additive lemma), then the widening/caller-frame case.
+
+### Status handed to session 26
+No Lean lemma landed (per the mandate's own criterion this is a non-advancing session on
+lemma count — but committing red/false code or a vacuously-hypothesised recursor would be
+worse, and no unsoundness exists to report).  Baseline reconfirmed: harness `check` = OK,
+43 public theorems, `compile_correct`/`compile_correct_creation` = `[propext,
+Classical.choice, Quot.sound]`, `peepholeBody`/public spine untouched, delta +0.  The
+banked substrate (sessions 23-24: leaf `*_exec_realizing`, `of_exec_first_jump_stops`,
+`of_bounded`, `if_exec_realizing`) remains valid and reusable AFTER route B inhabits
+`RealizingBlockOwnerAt`.  Do NOT attempt `switch`/`call`/`for` `_exec_realizing_under` or
+the mutual `block_owner_exec_realizing` before landing `openStep_preserves_realizedWitness`
+— they cannot close without it (for `for`) and are redundant with it (for all).
+
