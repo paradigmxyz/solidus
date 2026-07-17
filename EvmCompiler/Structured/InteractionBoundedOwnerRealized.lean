@@ -1,5 +1,7 @@
 import EvmCompiler.Structured.InteractionBoundedOwnerPreservation
 import EvmCompiler.Structured.InteractionEntryRealizedBounded
+import EvmCompiler.Structured.InteractionBranchEntryRealized
+import EvmCompiler.Structured.InteractionCallEntryRealized
 
 /-!
 # Leaf realizing cases at the BOUNDED owner layer (Step A / item 3b, leaves)
@@ -402,6 +404,104 @@ theorem RealizingBlockOwnerAt.mono
   intro blockSourceFuel compilerFuel block ctx supply entry regular input
     result source tokens policy canBreak canContinue canLeave hBlockLe
   exact hOwner (Nat.le_trans hBlockLe hLe)
+
+/--
+Accumulator-threading step for a `jumpi`-branch composite entry (`if` and, via the
+shared `InteractionBranchPreservation.Condition.DoneRel`, `for`'s loop-condition
+block).
+
+This packages the `AllEntriesRealized.of_succ` recursion for one composite whose
+first `openStep` is a two-way branch related to the source condition run by the
+branch `DoneRel`.  It consumes:
+* `hHere` — the entry is realized (supplied by the enclosing recursion / entry
+  witness);
+* `hRel` — the branch relation exposed by `openStep_if_of_compileStmtFuel?` (or
+  `openStep_condition` for `for`);
+* `hRegularStops` — the false/exit label is policy-stopping (the composite's
+  `boundary`/`stops` fact), which rules out the non-body branch under the
+  non-stopping `hStop`;
+* `hBody` — for the taken (true/body) branch, the child fragment realizes every
+  entry of its `bodyBudget`-fuel run from the extracted child `StateRel` /
+  `SourceFrameFits` (supplied by the child's `RealizingBlockOwnerAt`).
+
+The residual budget is exactly `bodyBudget`, matching
+`stmtBudget (.if_ cond body) = 1 + blockBudget body` (`stmtBudget_if_succ`), so no
+upward-monotone accumulator step is needed.  The child `StateRel`/label are read
+off `hExec` through the landed `jump_state_rel_of_rel`.
+-/
+theorem allEntriesRealized_branch_step
+    {cfg : TypedCfg.Program} {policy : StopPolicy}
+    {entry trueLabel falseLabel : Assembly.Label} {target : EVMState}
+    {tokens : List Word} {restShape : TypedCfg.Shape}
+    {srcRun : Simulation.Interaction EVMException (RunState × Bool)}
+    {bodyBudget : Nat}
+    {realized : Assembly.Label → EVMState → Prop}
+    (hHere : realized entry target)
+    (hRel :
+      Simulation.Interaction.Rel
+        (InteractionBranchPreservation.Condition.DoneRel
+          trueLabel falseLabel tokens restShape)
+        srcRun
+        (TypedCfg.InteractionSemantics.Program.openStep cfg entry target))
+    (hRegularStops : ∀ state', policy falseLabel state' = true)
+    (hBody :
+      ∀ (srcState : RunState) (state' : EVMState),
+        TypedCfgPreservation.StateRel srcState tokens state' →
+        TypedCfgCompiler.Shape.SourceFrameFits
+          restShape srcState.evm.stack.length →
+        AllEntriesRealized cfg policy bodyBudget trueLabel state' realized) :
+    AllEntriesRealized cfg policy (bodyBudget + 1) entry target realized := by
+  refine AllEntriesRealized.of_succ hHere ?_
+  intro transcript next state' hExec hStop
+  obtain ⟨srcState, cond, hNext, hStateRel, hFits⟩ :=
+    InteractionBranchPreservation.Condition.jump_state_rel_of_rel hRel hExec
+  cases cond with
+  | false =>
+      simp only [Bool.false_eq_true, if_false] at hNext
+      subst hNext
+      rw [hRegularStops state'] at hStop
+      exact absurd hStop (by decide)
+  | true =>
+      simp only [if_true] at hNext
+      subst hNext
+      exact hBody srcState state' hStateRel hFits
+
+/--
+Accumulator-threading step for a `pure`-jump composite entry (`switch`'s silent
+`pop;jump`/test blocks and `call`'s silent call-site block).
+
+Packages the `AllEntriesRealized.of_succ` recursion for a composite whose first
+`openStep` reduces to a concrete `pure (.jump childLabel childState)` (as
+`openStep_pop_jump`/`openStep_test`/`openStep_entry_of_compileStmtFuel?` establish).
+The child label/`StateRel` are read off the concrete `Executes` through the landed
+`jump_state_rel_of_pure` (no backward simulation, and no branch to rule out — the
+single jump is non-stopping).  `hChild` supplies the child fragment's realization
+of its `childBudget`-fuel run at the extracted `StateRel`.
+-/
+theorem allEntriesRealized_pure_step
+    {cfg : TypedCfg.Program} {policy : StopPolicy}
+    {entry childLabel : Assembly.Label} {target childState : EVMState}
+    {childSource : RunState} {childTokens : List Word}
+    {childBudget : Nat}
+    {realized : Assembly.Label → EVMState → Prop}
+    (hHere : realized entry target)
+    (hStep :
+      TypedCfg.InteractionSemantics.Program.openStep cfg entry target =
+        Simulation.Interaction.pure
+          (TypedCfg.Outcome.jump childLabel childState))
+    (hChildRel :
+      TypedCfgPreservation.StateRel childSource childTokens childState)
+    (hChild :
+      ∀ state',
+        TypedCfgPreservation.StateRel childSource childTokens state' →
+        AllEntriesRealized cfg policy childBudget childLabel state' realized) :
+    AllEntriesRealized cfg policy (childBudget + 1) entry target realized := by
+  refine AllEntriesRealized.of_succ hHere ?_
+  intro transcript next state' hExec hStop
+  obtain ⟨hNext, hRel'⟩ :=
+    InteractionCallPreservation.Call.jump_state_rel_of_pure hStep hChildRel hExec
+  subst hNext
+  exact hChild state' hRel'
 
 end OpenOutcome
 end InteractionBoundedOwnerPreservation
