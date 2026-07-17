@@ -2246,3 +2246,121 @@ sole remaining obstruction — a large but now fully-scoped construction with ev
 target-side tool it needs in hand.  `compile_correct` / `compile_correct_creation`
 axioms unchanged `[propext, Classical.choice, Quot.sound]`; measured delta +0
 (no arm shipped).
+
+## Session-20 update (2026-07-17): the anchor's fuel-0 base case + the uniform entry-witness supplier LANDED green + axiom-clean; the `hNoError` obligation (1) precisely re-scoped as a source-block *interpreter-totality* theorem (the real remaining bulk)
+
+Session 20 attacked the mutual anchor `block_owner_realizing` per the session-19
+recipe.  Two green, axiom-clean lemmas landed (one commit, `489fe72b`, additive to
+`EvmCompiler/Structured/InteractionBoundedOwnerRealized.lean`); a full-tower design
+pass pinned down exactly where the remaining knot lives, and corrected an
+over-optimistic reading of the session-19 `RunCompletes` obligations.
+`scripts/opt_harness.sh check` = OK (43 public theorems; `compile_correct` /
+`compile_correct_creation` axioms unchanged `[propext, Classical.choice,
+Quot.sound]`); `peepholeBody`/public spine UNTOUCHED ⇒ measured delta still **+0**.
+
+### Landed commit (`489fe72b`, both in `InteractionBoundedOwnerRealized.lean`)
+- **`realizedWitness_of_stateRel`** (`[propext, Quot.sound]`) — the **uniform
+  entry-witness supplier**.  From a fragment's `LabelShape cfg entry input` (the
+  ambient cfg block at `entry` expects `input`) + `StateRel source tokens target` +
+  the contract's `SourceFrameFits input source.evm.stack.length`, produces
+  `realizedWitness cfg entry target`.  `LabelShape` is obtained generically from any
+  compile fact via `TypedCfgPreservation.LabelShape.of_compileStmtFuel?`, so this is
+  the reusable `hHere`/`hEntry` supplier at every leaf, composite head, and the
+  anchor base case — it packages, once and uniformly for every `Stmt` shape, the
+  hand-built `⟨source, tokens, entryBlock, hFind, hStateRel, contract.fits⟩` term
+  that `if_bounded_realizing` (session 17) reconstructs inline.  (Additive; the
+  existing `if_bounded_realizing` was NOT modified — frozen-adjacent green tower
+  stays green.)
+- **`Stmt.bounded_zero_realizing`** (`[propext, Classical.choice, Quot.sound]`) —
+  the **fuel-0 base arm of the mutual anchor** (mirrors `bounded_zero`
+  `InteractionBoundedOwnerPreservation.lean:2228`, the arm `block_owner` dispatches
+  to when its inner block fuel bottoms out, `:2481`).  KEY simplification found: at
+  source level 0, every *composite* statement carries
+  `stmtBudget program 0 (.if_/.switch/.for_/.call) = 0`
+  (`levelCost program 0 |>.stmt` sends all four composites to `0`,
+  `InteractionStaticCost.lean:24`), so the target-side accumulator collapses via
+  `AllEntriesRealized.of_zero` to the single entry witness — discharged uniformly by
+  `realizedWitness_of_stateRel` — while the `.bounded` leg is the existing green
+  `bounded_zero` (whose source run is empty at fuel 0).  The five *leaf* statements
+  carry budget 1 and are handled by the already-landed leaf `*_bounded_realizing`
+  recursors (uniform in `sourceFuel`), fed the same uniform entry witness.  So the
+  base case needs **no** RunCompletes and **no** source-coupled totality — it is
+  fully closed.
+
+### The corrected frontier: obligation (1) `hNoError` IS the bulk, and it is a *source-block interpreter-totality* theorem (not a relation-vacuity lemma)
+A full read of the head relations settles what obligations (1)/(2) actually require,
+and corrects the session-19 phrasings:
+
+- The leaf/head relation `openStep_code_of_compileStmtFuel?`
+  (`InteractionControlPreservation.lean:5127`, and the `if`/`switch`/`call` analogues)
+  relates the source run to `openStep` under a `doneRel` that maps **target
+  `.error` ↔ source `.error`** *bijectively* (lines 5192–5203: `sourceError`/
+  `targetError` ↦ `ExceptRel.error`; mixed ok/error ↦ `cases hOriginal`, impossible).
+  Therefore `hNoError` (`RunCompletes.succ`/`of_head_stops`, target head `openStep`
+  never `Executes … (.error e)`) is **equivalent** to the *source* block/code run
+  never raising an interaction `.error` on that answer branch.  It is NOT a
+  vacuously-dischargeable "the relation never allows a target error" fact.
+- Consequently `hNoError` reduces to: **a realized (well-typed, frame-fitting)
+  compiled block's `openStep` produces an `.ok` `Outcome` on every answer branch**
+  (a genuine EVM `revert`/`invalid` is an `.ok (.halt …)`/`.ok (.invalid …)`
+  *outcome*, settled by `afterOpenStepResultWithStop` as `.ok (.stopped …)` — NOT an
+  interaction `.error`; the interaction `.error` is reserved for `Instr.openRunState`
+  raising an `EVMException`, i.e. stack underflow / structural failure, which
+  `SourceFrameFits` + `WellTyped` rule out).  This is an *interpreter-totality*
+  theorem about `Instr.openRunState` over a well-typed block under the realizing
+  witness — the real multi-hundred-line source-coupled content.  Grep-confirmed
+  there is no standalone "well-typed block openStep never errors under `StateRel`"
+  lemma in the tower today; `openStep_code_of_compileStmtFuel?` gives the *relation*
+  but leaves the source no-error side open.
+- This resolves the apparent contradiction in session-19 obligation (2): the child
+  `RunCompletes` (strict: every branch reaches `.ok (.stopped …)`) IS true precisely
+  because, once `hNoError` holds at every realized entry, the only `.ok` outcomes are
+  `jump`/`fallthrough`/`returnDispatch`/`halt`/`invalid`, all of which
+  `afterOpenStepResultWithStop` settles to `.ok (.stopped …)` (a `revert` halts to
+  `.stopped`, it does not error).  So obligations (1) and (2) collapse to the SAME
+  interpreter-totality fact plus the child owner's stopping — there is no separate
+  "error-branch stopping" to prove.
+
+### Exact next-session recipe (session 21)
+1. **Land the interpreter-totality lemma (obligation 1, the bulk).** State and prove
+   `openStep_ok_of_stateRel` (working name): for a compiled block `generated` in
+   `cfg` with `WellTyped`/`SourceFrameFits input source.evm.stack.length` and
+   `StateRel source tokens target`, every `Executes (openStep cfg entry target)
+   transcript r` has `r = .ok outcome` (never `.error`).  Route: it is the totality
+   half of `openStep_code_of_compileStmtFuel?`'s `Rel` — prove the source
+   `Code.openRun`/`Block.openRun` never raises an interaction `.error` under the
+   frame-fit (stack ops don't underflow; reverts are `.halt` outcomes), then transfer
+   across the `Rel` via the error↔error bijection.  Check
+   `InteractionPreservation.Code.openRun_toCfg` / the block-run facts behind
+   `BoundedExecPreservesUnder`, and `runState`/`runPops` length facts in
+   `Preservation.lean` for the underflow-freeness.
+2. With (1): `RunCompletes` at every realized leaf via `RunCompletes.of_head_stops`
+   (`hNoError` from (1); `hAllStop` = the SAME first-jump-stops fact the landed leaf
+   `*_bounded_realizing` already prove, `InteractionBoundedOwnerRealized.lean:105`).
+3. `switch_bounded_realizing` / `call_bounded_realizing` / `for_bounded_realizing`:
+   mechanical per the session-19 recipe — child accumulator at `blockBudget` from
+   `hBlockOwner`, child `RunCompletes` at `blockBudget` from (2), promote to
+   `stmtBudget` via `AllEntriesRealized.of_runCompletes` (`InteractionReachesCap.lean:322`);
+   `call` bridges the stop-policy refinement via `AllEntriesRealized.of_refined`
+   (`:411`), `hTail` from the outer owner on the return-dispatch tail; entry witnesses
+   now via the landed `realizedWitness_of_stateRel`.
+4. `bounded_succ_realizing` (dispatch over `Stmt`, mirror `bounded_succ` `:2069`) —
+   now total: leaves + `if` (landed) + switch/call/for (step 3) + the fuel-0 arm is
+   `bounded_zero_realizing` (LANDED).
+5. `block_owner_realizing` (`Nat.strong_induction_on sourceFuel`, mirror `block_owner`
+   `:2335`; feed each recursive call the smaller-fuel `RealizingBlockOwnerAt` and the
+   step-1 totality) → `main_bounded_realizing` (mirror `:3121`) → truncation mirror →
+   `main_prefix_forward_realizing`; then Steps B–D (add the swap arm to `peepholeBody`,
+   re-green the syntactic (b)-family, ship the measured delta).
+
+### Status handed to session 21
+The anchor's fuel-0 base case (`bounded_zero_realizing`) and the uniform
+entry-witness supplier (`realizedWitness_of_stateRel`) are CLOSED and banked green
+(commit `489fe72b`).  The `succ`-fuel arm reduces — via the corrected analysis above
+— to ONE genuinely new source-coupled theorem: **`openStep` interpreter-totality at
+a realized entry** (obligation 1), which subsumes obligation 2 (child `RunCompletes`
+is then immediate) and is orthogonal to obligation 3 (`call` `hTail`, already served
+by the landed `of_refined`).  Everything downstream of that lemma is mechanical
+composition with tools already in hand.  `compile_correct` /
+`compile_correct_creation` axioms unchanged `[propext, Classical.choice,
+Quot.sound]`; measured delta +0 (no arm shipped).
