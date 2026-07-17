@@ -3450,3 +3450,109 @@ the SINGLE obligation (1): per-entry source-construct provenance recovery
 (`block_owner`, framing 2 at the OIC splice). The `hInv` SUCCESSOR half is now complete
 for all terminators (branch/call/returnDispatch); provenance is the only remaining gate
 before `of_openStep_invariant` → Step B.
+
+## Session-29 update (2026-07-17): the per-entry block-provenance SUBSTRATE landed green + axiom-clean (reverse `findBlock?` classification + the programEnd `hInv` arm discharged unconditionally); obligation (1) reduced from four categories to three (the compiled-construct ones still gated on the source-run coupling)
+
+Session 29's mandate was obligation (1): per-entry source-construct provenance at
+the OIC splice — build the coupled `hInv` (or its pieces) so
+`AllEntriesRealized.of_openStep_invariant` (landed session 26) can fire.  Result:
+**one green, axiom-clean commit** landing the *reverse-classification substrate* of
+the `block_owner` provenance recovery — the first, unavoidable move of `hInv`'s
+per-entry case split, absent from the tower until now (every prior `GeneratedContext`
+`findBlock?` lemma is *forward*, category ⟶ block) — PLUS the clean unconditional
+discharge of the programEnd arm.  The full `hInv` did NOT close (it cannot in one
+session; the three compiled-construct arms remain gated on the source-run coupling —
+see frontier).  No red code, no sorries, `peepholeBody`/public spine UNTOUCHED ⇒
+measured delta still **+0**.
+
+### LANDED (green, axiom-clean): `EvmCompiler/Structured/InteractionBlockProvenance.lean`
+All three `#print axioms` = `[propext, Classical.choice, Quot.sound]`; wired into
+`EvmCompiler.Verification` (import after `InteractionRealizedWitnessSuccessor`).
+Namespace `EvmCompiler.Structured.TypedCfgPreservation.Program.GeneratedContext`.
+* **`block_category`** (`:79`) — **reverse block classification under a
+  `GeneratedContext`.**  From `cfg.findBlock? label = some block`, concludes the
+  four-way disjunction
+  `block ∈ context.main.blocks ∨ block ∈ context.procBlocks ∨
+   block ∈ dispatchBlocks source.procs (main.calls ++ procCalls) ∨
+   block = context.programEndBlockOf`.
+  Proof = `List.mem_of_find?_eq_some` + `cfgEq` rewrite + `List.mem_append` split.
+  This is what tells the `hInv` proof *which* compile fact governs the jumped-from
+  block at an arbitrary reached entry `e` — the entry point of any provenance
+  recovery.
+* **`programEnd_openStep_eq`** (`:108`) — `openStep cfg ProcLabel.programEnd t =
+  .done (.ok (.halt .stop t))` (empty body, `.halt .stop` terminator; reduces via
+  `context.programEndBlock` + `Control.Block.run`/`runBody` + `bind_done_ok` +
+  `if_pos rfl`).
+* **`programEnd_openStep_no_jump`** (`:138`) — **the programEnd arm of `hInv`,
+  discharged UNCONDITIONALLY.**  Any `Executes (openStep cfg ProcLabel.programEnd t)
+  transcript (.ok (.jump next state'))` is impossible (the outcome is a completed
+  `.halt`), so the programEnd entry needs NO source coupling.  Proof = rewrite by
+  `programEnd_openStep_eq` then `cases` the `.done` `Executes` (indices `.halt` vs
+  `.jump` fail to unify).
+* **`programEndBlockOf`** (`:55`) — the explicit programEnd block (as pinned by
+  `cfgEq`), the classification's fourth disjunct.
+
+### Where this leaves obligation (1): three arms, all gated on the source-run coupling
+`of_openStep_invariant` needs the global `hInv : realizedWitness cfg e t →
+Executes (openStep cfg e t) … (.jump n s) → realizedWitness cfg n s`.  With
+`block_category`, `hInv`'s proof splits the entry `e` (via its `findBlock?` witness
+inside `realizedWitness`) into the four categories; this session closes ONE:
+* **programEnd** — `programEnd_openStep_no_jump`: vacuous, done. ✓
+* **main body block** (`∈ main.blocks`) — needs the branch/pure source coupling
+  (`Rel (DoneRel …)` / `openStep = pure …`) to feed `realizedWitness_of_branch_jump`
+  / `_of_pure_jump` (session 27).  NOT recoverable from `realizedWitness` alone.
+* **proc body block** (`∈ procBlocks`) — same as main.
+* **dispatch block** (`∈ dispatchBlocks …`) — needs the `openStep_dispatch`
+  frame-boundary facts (`hLookup`/`hSiteMem`/`hRel`/`hPop`/`hAttach`/`hRetc`) to feed
+  `realizedWitness_of_dispatch_jump` (session 28).  The `hPop`/`hAttach`/`hRetc`
+  come from the source run's `RunState.returns`/`popReturn?` — NOT recoverable from
+  `realizedWitness` alone.
+
+So `block_category` performs the case split but the three compiled-construct arms
+still require the *source construct* at `e`, which `realizedWitness`
+(`findBlock?` + `StateRel` + `SourceFrameFits`) provably does not carry (session 26
+obstruction, unmoved for those arms).  Recovering it is the deeper `block_owner`
+decomposition INSIDE each category — for `main.blocks`, *which statement* compiled
+to `block` (not merely that it is a main block); this is the source-run coupling
+`openRun_toCfg` (`InteractionPreservation.lean:457`) provides only when the source
+`Code` fragment is in scope.  `block_category` is necessary-but-not-sufficient: it is
+the outer case split; the inner per-statement coupling is the residual bulk.
+
+### THE FRONTIER (unchanged in essence; the outer split is now banked)
+The genuine remaining work is to supply, at each reached entry, the source construct
++ coupling for the three compiled-construct arms.  Two routes, both multi-session:
+1. **`block_owner`-indexed provenance** — inhabit `RealizingBlockOwnerAt` /
+   `block_owner_realizing` (`InteractionBoundedOwnerRealized.lean:358`) by the same
+   `Nat.strong_induction_on sourceFuel` as `block_owner`
+   (`InteractionOwnerPreservation.lean:1502`), threading `realizedWitness cfg` through
+   the whole recursion.  Blocked since session 24 at `switch_exec_realizing` /
+   `call_exec_realizing` / `for_exec_realizing` (the oracle-branching heads' opaque
+   exec fuel).
+2. **Source-run coupling at the OIC splice** — thread the in-scope source bridge
+   `yulToNormalizedStackTypedCfgPrefixForward`
+   (`Compiler/OpenInteractionComposition.lean:695`) so each reached entry's construct
+   (and, for dispatch, its `RunState.returns`/`popReturn?` frame facts) is supplied
+   directly, feeding `block_category` ⟶ the matching session-27/28 successor leg.
+   The remaining glue is exactly the per-construct coupling `openRun_toCfg` /
+   `Rel.regular_elim_of_required_fallthrough`
+   (`InteractionControlPreservation.lean:694`) restricted to one block step.
+
+### Next-session recipe
+* Start route 2.  In `hInv`'s proof, split `e` with `block_category`; discharge the
+  programEnd arm with `programEnd_openStep_no_jump` (landed).  For the three
+  compiled-construct arms, do NOT try to recover the construct from `realizedWitness`
+  standalone (provably underdetermined) — instead couple to the source run threaded
+  at the OIC splice and produce the branch/pure/dispatch coupling one block step at a
+  time, feeding `realizedWitness_of_{branch,pure,dispatch}_jump`.  Feed the resulting
+  `hInv` to `of_openStep_invariant`; proceed to Step B.
+* Do NOT add the swap arm to `peepholeBody` until the whole invariant is green.
+
+### Status handed to session 30
+Landed: `InteractionBlockProvenance.lean` (`block_category` :79,
+`programEnd_openStep_eq` :108, `programEnd_openStep_no_jump` :138,
+`programEndBlockOf` :55), green, axiom-clean, wired into `EvmCompiler.Verification`.
+`scripts/opt_harness.sh check` = OK (43 public theorems, axioms ⊆ `[propext,
+Classical.choice, Quot.sound]`); `compile_correct`/`compile_correct_creation`
+unchanged; delta +0.  Obligation (1)'s outer case split (`block_category`) + the
+programEnd arm are now banked; the three compiled-construct arms remain the frontier,
+gated on the per-block source-run coupling (route 2 above).
