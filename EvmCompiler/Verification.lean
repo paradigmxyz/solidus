@@ -23,6 +23,7 @@ import EvmCompiler.Structured.InteractionOwnerRealized
 import EvmCompiler.Structured.InteractionEntryRealizedBounded
 import EvmCompiler.Structured.InteractionBranchEntryRealized
 import EvmCompiler.Structured.InteractionCallEntryRealized
+import EvmCompiler.Structured.InteractionBoundedOwnerRealized
 import EvmCompiler.Assembly.GasfulBridge
 import EvmCompiler.Assembly.InteractionBytecode
 import EvmCompiler.Assembly.InteractionFuelSafety
