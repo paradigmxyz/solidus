@@ -1225,3 +1225,115 @@ Step A from "in-place conclusion bookkeeping" (all-or-nothing red) to an ADDITIV
 parallel realizing family (bankable green, still multi-session). No `peepholeBody`/
 public-spine/shared-definition change ⇒ `compile_correct` / `compile_correct_creation`
 axioms unchanged `[propext, Classical.choice, Quot.sound]`, measured delta +0.
+
+## Session-12 update (2026-07-17): FIRST CODE IN 7 SESSIONS — Step A item 1 (the target-side realizing substrate) LANDED green, axiom-clean, in 2 commits; leaf-discharge rule proved; the exec-vs-forward fuel-coupling design pinned for item 2
+
+Sessions 5–11 ended with scoping notes and zero Lean. Session 12 executed the
+session-11 recipe's **item 1** (the self-contained, source-free, target-side
+machinery) and landed it as two green, axiom-clean commits. `scripts/opt_harness.sh
+check` = OK (43 public theorems, axioms `[propext, Classical.choice, Quot.sound]`
+incl. `compile_correct` / `compile_correct_creation`). `peepholeBody`/public spine
+UNTOUCHED ⇒ measured corpus delta still definitionally **+0** (no arm shipped).
+
+### Landed commits (branch `arena-opt`)
+- **`7a0c6df8`** — NEW file `EvmCompiler/TypedCfg/InteractionEntryRealized.lean`
+  (wired into `EvmCompiler.Verification`). The step-indexed block-entry
+  reachability substrate the recipe's item 1 designates, phrased per session-11
+  Finding 2 (openStep is an interaction tree, so a `.jump` leaf is only defined
+  along a concrete `Executes` branch):
+  - `ReachesOpenStepAt program stopJump fuel entry target rLabel rState`
+    (`:60`, inductive) — `start` (reflexive) + `step` (one non-stopping openStep
+    `.jump` leaf along an `Executes` transcript extends reachability).
+  - `AllEntriesRealized program stopJump fuel entry target realized` (`:111`) —
+    quantifies an ABSTRACT `realized : Label → EVMState → Prop` over every reached
+    entry. Left abstract on purpose so this layer is source-free/green; item 2
+    instantiates it with `fun label state => ∃ source tokens block,
+    cfg.findBlock? label = some block ∧ StateRel source tokens state ∧
+    SourceFrameFits block.input state.evm.stack.length`.
+  - Structural facts: `reaches_start` (i, `:82`), `eq_of_zero` inversion (`:90`),
+    `AllEntriesRealized.realized_start` (`:123`), `.of_zero` (`:132`),
+    `.of_succ` (ii, the successor-introduction rule the recursion relays, `:150`).
+- **`5bb770ff`** — same file, `AllEntriesRealized.of_first_jump_stops` (`:179`):
+  the **leaf-discharge rule**. If every concrete first-step jump out of the entry
+  lands on a STOPPING target, the run visits no entry beyond the start, so
+  `AllEntriesRealized (fuel+1)` reduces to the single fact `realized entry target`.
+  This is exactly what the leaf `*_exec_realizing` cases (`code`/`terminal`/`brk`/
+  `cont`/`leave`) invoke: those fragments each compile to ONE block ending in a
+  `.jump` that the fragment's stop policy halts on (VERIFIED via
+  `InteractionControlPreservation.openRun_nil_under_of_compileStmtListFuel?` /
+  `openRun_code_of_compileStmtFuel?`: `.code` → single block, body = lowered code,
+  term = `.jump regular`, targetFuel = 1, `regular` a policy stop boundary).
+
+All new lemmas `#print axioms` = `[propext, Classical.choice, Quot.sound]`.
+
+### The design decision item 2 must make FIRST (pinned this session — saves the trace)
+The recipe's `RealizingForwardPreservesUnder := ForwardPreservesUnder ∧
+(∀ target, StateRel → AllEntriesRealized cfg policy entry target)` attaches the
+accumulator at the **FORWARD** level, which carries a SINGLE `targetFuel` budget
+(`InteractionControlPreservation.lean:1122 ForwardPreservesUnder`, one `targetFuel`
+arg). But the leaf theorem the recipe names is `code_exec_realizing`, and
+`code_exec` produces `ExecPreservesUnder` (`InteractionControlPreservation.lean:936`),
+whose `targetFuel` is **existential per (transcript, sourceOutcome)**. You cannot
+cleanly conjoin `AllEntriesRealized cfg policy <fuel> …` to `ExecPreservesUnder`
+because there is no single `<fuel>` to name. RESOLUTION (recommended): attach the
+realizing accumulator at the level where the budget is a single value:
+- Define `RealizingForwardPreservesUnder result cfg entry ctx regular regularExit
+  source tokens sourceRun targetFuel policy realized := ForwardPreservesUnder …
+  targetFuel … ∧ (∀ target, StateRel source tokens target → AllEntriesRealized
+  cfg policy targetFuel entry target realized)` — SAME `targetFuel`, so both legs
+  refer to one run. (Analogously add `Realizing` variants of `BoundedExec…`/
+  `BoundedForward…` where the accumulator is `∀ tf ≤ budget, AllEntriesRealized …
+  tf …`; note more fuel visits a SUPERSET of entries, but the extra entries are
+  past the policy stop, so for a fragment they never appear — prove a monotone
+  `AllEntriesRealized_of_le` if the bounded level needs it.)
+- Name the leaf `code_forward_realizing` (built on the existing `ForwardPreservesUnder`
+  leaf, not the `Exec` one) OR keep `_exec` naming but state it at the uniform-fuel
+  `UniformDoneExecPreservesUnder` level (`:1098`, single `targetFuel`) which `code`
+  already satisfies at `targetFuel = 1`. The `Exec`→`Forward` glue in the existing
+  tower (`PreservesUnder.exec`, the bounded/forward combinators) shows where the
+  single budget is chosen; mirror it for the realizing leg.
+
+### Exact next-session recipe (items landed struck through)
+1. ~~target-side `ReachesOpenStepAt`/`AllEntriesRealized` + structural facts~~ **DONE (session 12)**.
+   The leaf-discharge `of_first_jump_stops` is **also DONE** — leaf `*_exec_realizing`
+   cases consume it directly.
+2. NEW file (e.g. `Structured/InteractionEntryRealizedForward.lean`): define
+   `RealizingForwardPreservesUnder` (single-`targetFuel` form above) and prove the
+   LEAF `code_forward_realizing` / `terminal_forward_realizing`: reuse the existing
+   green `code`/`terminal` forward leaf for the `ForwardPreservesUnder` conjunct;
+   discharge the `AllEntriesRealized` conjunct with `AllEntriesRealized.of_first_jump_stops`
+   (landed) — supplying `realized entry target` from the `StmtContract`'s
+   `fits`/`activation` + the `StateRel target` hypothesis and `cfg.findBlock? entry`,
+   and the "first jump stops" hypothesis from the fragment's `stops`/boundary
+   (`TargetStoppedBy policy`). Commit green.
+3. Thread the accumulator through `if/switch/for/call/brk/cont/leave` →
+   `exec_succ_realizing` → `block_owner_realizing`, REUSING each existing `*_exec`/
+   `*_forward` for the outcome leg and relaying per-recursive-call `AllEntriesRealized`
+   via `of_succ` (composite fragments: the accumulator over the whole run is the
+   start entry realized + the recursive sub-runs' accumulators, glued at each
+   openStep jump). Commit at `block_owner_realizing` (mutual recursion).
+4. Mirror in `InteractionBoundedOwnerPreservation` then
+   `InteractionTruncationOwnerPreservation`; produce `main_prefix_forward_realizing`
+   exposing `AllEntriesRealized cfg policy targetFuel cfg.entry target realizedSrc`.
+5. Step B: `openRunNPrefix_peephole_congr_of_source` consumes
+   `main_prefix_forward_realizing`'s `AllEntriesRealized`; at each openStep discharge
+   `StackRealizes input state` via `stackRealizes_of_stateRel_of_{token_last_of_tokens_cons,
+   returnTokenDepth?_eq_none}` (landed 8/9) + feed `openRunBody_swap_swap_congr`
+   (landed 6). NO token guard (audit 9).
+6. Step C: swap the four OIC call sites (`OpenInteractionComposition.lean:909/942`
+   prefix; `:1415/1561/1688` terminal) to the `_of_source` variants.
+7. Step D: add the `swap d :: swap d :: rest → rest` arm to `peepholeBody`; re-green
+   the syntactic (b)-family + semantic congruences; `scripts/opt_harness.sh full`.
+
+### Status handed to session 13
+Foundation from sessions 1–11 UNCHANGED and green. NEW this session: the entire
+target-side realizing substrate (`InteractionEntryRealized.lean`, 8 defs/lemmas)
++ the leaf-discharge rule — i.e. item 1 of the session-11 recipe is CLOSED and
+banked green, and the leaf `*_exec_realizing` obligation is now a one-lemma
+application away. Remaining = items 2–7 (the realizing forward family + the
+per-construct threading + both mirrors + Steps B–D). The exec-vs-forward
+fuel-coupling — the one design ambiguity in the session-11 recipe — is resolved
+above (attach at the single-`targetFuel` FORWARD/uniform level, not the
+existential-fuel `ExecPreservesUnder` level). `compile_correct` /
+`compile_correct_creation` axioms unchanged `[propext, Classical.choice,
+Quot.sound]`; measured delta +0.
