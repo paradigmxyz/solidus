@@ -1751,3 +1751,128 @@ Steps B–D.  Mirror target, `StopPolicy=stopJump` identity, and the source-witn
 `realized` form are all pinned above.  `compile_correct` / `compile_correct_creation`
 axioms unchanged `[propext, Classical.choice, Quot.sound]`; measured delta +0
 (no arm shipped).
+
+## Session-16 update (2026-07-17): item-3b threading — ALL FIVE leaf `*_bounded_realizing` + the mutual-recursion anchor (`realizedWitness` + `RealizingBlockOwnerAt`) + BOTH accumulator-threading step helpers (`allEntriesRealized_branch_step` / `_pure_step`) LANDED green, axiom-clean, in three commits. The composite `*_bounded_realizing` recursors + `block_owner_realizing` mutual recursion remain — but the accumulator core they turn on is now landed and the remaining gap is precisely the child-`FragmentContract` reconstruction + entry-witness construction (located below).
+
+Session 16 executed the item-3b **threading** mandate at the bounded owner layer.
+Everything landed in ONE new file `EvmCompiler/Structured/InteractionBoundedOwnerRealized.lean`
+(wired into `EvmCompiler.Verification`), all **additive** — `peepholeBody`/public
+spine UNTOUCHED ⇒ measured delta still definitionally **+0**.  `scripts/opt_harness.sh
+check` = OK (43 public theorems, axioms `[propext, Classical.choice, Quot.sound]`
+incl. `compile_correct` / `compile_correct_creation`, unchanged).
+
+### Landed commits (branch `arena-opt`)
+- **`96f54027`** — the FIVE leaf `*_bounded_realizing` lemmas
+  (`code`/`terminal`/`brk`/`cont`/`leave`) in namespace
+  `InteractionBoundedOwnerPreservation.OpenOutcome.Stmt`.  Each mirrors the existing
+  green leaf `*_bounded` (its `.bounded` outcome conjunct is that theorem verbatim)
+  and produces `RealizingBoundedExecPreservesUnder … (stmtBudget …) policy realized`.
+  The `.allEntriesRealized` conjunct is discharged by the new helper
+  `allEntriesRealized_of_first_jump_stops` (`:65`, folds `AllEntriesRealized.of_zero`
+  + `.of_first_jump_stops` into `∀ fuel`) via `RealizingBoundedExecPreservesUnder.mk`,
+  reusing the EXACT backward-simulation stops argument from the forward leaves in
+  `InteractionOwnerRealized.lean` (`Rel.executes_right` on
+  `openStep_{code,terminal,brk,cont,leave}_of_compileStmtFuel?` → `contract.stops`).
+  `realized` is kept ABSTRACT with `hEntry : ∀ target, StateRel source tokens target →
+  realized entry target`, exactly as the forward leaves — the composites instantiate
+  it to `realizedWitness` and discharge `hEntry` from the extracted child `StateRel`.
+- **`05ffa7ee`** — the mutual-recursion anchor definitions:
+  - `realizedWitness cfg : Label → EVMState → Prop` (`:~285`) — the session-15 pinned
+    source witness `∃ source tokens block, cfg.findBlock? label = some block ∧
+    StateRel source tokens state ∧ SourceFrameFits block.input source.evm.stack.length`.
+  - `RealizingBlockOwnerAt sourceFuel program entryShapes cfg generated` — the
+    realizing counterpart of the bounded `BlockOwnerAt` (hypotheses identical),
+    yielding `RealizingBoundedExecPreservesUnder … (blockBudget program
+    blockSourceFuel block) policy (realizedWitness cfg)`.  Projections
+    `.owner` (forgets the accumulator to the existing `BlockOwnerAt` via
+    `RealizingBoundedExecPreservesUnder.bounded`) and `.mono`.
+- **`cb9ee6d4`** — the two accumulator-threading step helpers (the CORE the composite
+  recursors turn on), both `AllEntriesRealized.of_succ` packagers:
+  - `allEntriesRealized_branch_step` (`:~430`) — `jumpi`-branch composites (`if`, and
+    `for`'s loop-condition block, sharing `Condition.DoneRel`).  Consumes `hHere`, the
+    branch `Rel` (from `openStep_if_of_compileStmtFuel?` / `openStep_condition`),
+    `hRegularStops : ∀ state', policy falseLabel state' = true` (rules out the
+    non-body branch under the non-stopping `hStop`), and `hBody` (the body branch's
+    child `AllEntriesRealized` from the extracted `StateRel`/`SourceFrameFits`).
+    Residual budget = `bodyBudget`, EXACTLY matching `stmtBudget_if_succ = 1 +
+    blockBudget body`, so **no upward-monotone accumulator step is needed** (the
+    session-14 concern is void at this budget).  Turns on `jump_state_rel_of_rel`.
+  - `allEntriesRealized_pure_step` (`:~475`) — `pure`-jump composites (`switch`
+    pop/test, `call`).  Turns on `jump_state_rel_of_pure`; single non-stopping jump,
+    no branch to rule out.
+
+### The remaining gap for `if_bounded_realizing` (and the other composites), precisely located
+The composite `*_bounded_realizing` recursors are `RealizingBoundedExecPreservesUnder.mk
+(if_bounded … (hBlockOwner.owner) …) (accumulator)` where the accumulator is
+`allEntriesRealized_branch_step`/`_pure_step`.  Two obligations remain per composite
+(both mechanical but non-trivial; each needs the construct-specific compiler facts):
+1. **Entry witness `hHere : realizedWitness cfg entry target`.**  Needs
+   `cfg.findBlock? entry = some block ∧ block.input = input` for the composite's
+   OWN entry block, then `realizedWitness = ⟨source, tokens, block, hFind, hStateRel,
+   contract.fits⟩` (`contract.fits : SourceFrameFits input source.evm.stack.length`,
+   and `block.input = input`).  There is **no general** entry-block lemma — each
+   construct builds its entry block inside its `components_of_compileStmtFuel?_X`
+   (`if`: `openStep_if_of_compileStmtFuel?`'s internal `hFind` on `generated` with
+   `input := input`, `InteractionBranchPreservation.lean:326`; NOT exposed by the
+   lemma conclusion, so re-derive from `components_of_compileStmtFuel?_if` +
+   `BlocksInProgram`).  Alternatively keep `hHere` a hypothesis `hEntry` (as the
+   leaves do) and construct it once, centrally, in `block_owner_realizing` when it
+   dispatches each block — likely the cleaner factoring (write a single
+   `realizedWitness_of_entry` per construct, or a `BlocksInProgram`-based entry-block
+   extractor).
+2. **Body branch `hBody`.**  Inside `allEntriesRealized_branch_step`'s `hBody`
+   (given `srcState state'`, `StateRel srcState tokens state'`, `SourceFrameFits
+   bodyInput srcState.evm.stack.length`), invoke the child owner
+   `(hBlockOwner : RealizingBlockOwnerAt sourceFuel …) (Nat.le_refl sourceFuel)
+   hBodyCompile hBodyBlocks hBodyCalls hBodyWF hBodySafe hBodyCallsResolved hSupports
+   hProcs hReturns' bodyContract` and project `.allEntriesRealized hStateRel
+   (le_refl)`.  The `bodyContract : FragmentContract cfg bodyResult ctx (supply+1)
+   (LabelSupply.label supply 0) regular bodyInput srcState tokens policy` and the
+   compile facts (`hBodyCompile`, `hBodyBlocks`, `hBodyCalls`, `hReturns'`) are
+   **exactly** the record `if_bounded` builds internally at
+   `InteractionBoundedOwnerPreservation.lean:270-294` — but there they are threaded
+   through `openRun_if_bounded_under_of_compileStmtFuel?`'s callback; in the separate
+   `mk` accumulator they must be re-derived from `openStep_if_of_compileStmtFuel?`'s
+   outputs (`bodyResult`, `hBody`-compile, `hRequire`, `hResult`, the branch `Rel`)
+   plus `contract`/`hWF`/`hFrameSafe`/`hCalls` cases.  This is the ~90-line
+   contract-reconstruction bulk, done once for `if` (template) then adapted for
+   `switch`/`for`/`call`.
+   - `hRegularStops` for the `if`/`for` false branch = `contract.boundary.fresh`
+     (`RecursiveBoundary.fresh : ActivationFreshExcept cfg returns tokens policy
+     supply regular`, `InteractionBoundaryPreservation.lean:533`) — the regular label
+     is freshly allocated and policy-stopping, exactly the existing preservation's
+     regular-fallthrough discharge.
+
+### Exact next-session recipe (item 3b threading — leaves + anchor + accumulator core landed)
+1. Write the entry-witness extractor (per construct, or a `BlocksInProgram`-based
+   `realizedWitness_of_entry`), and factor whether `hHere` is reconstructed in each
+   composite or centrally in `block_owner_realizing`.
+2. `if_bounded_realizing`: `.bounded` = `if_bounded … hBlockOwner.owner …`;
+   `.allEntriesRealized` via `mk` + `allEntriesRealized_branch_step` (rewrite
+   `stmtBudget_if_succ` to `blockBudget body + 1`), reconstructing `bodyContract` +
+   compile facts as `if_bounded` does (`:270-294`) and invoking the child
+   `RealizingBlockOwnerAt.allEntriesRealized`.  `hRegularStops` from
+   `contract.boundary.fresh`.  Commit.
+3. `for_bounded_realizing` (reuse `allEntriesRealized_branch_step` on
+   `openStep_condition`'s `Condition.DoneRel`; note the loop cycle re-enters — the
+   `for` residual budget uses `loopBudget_succ`, check the `of_succ`/`of_le` glue for
+   the cond→body→post→cond re-entry, likely needs the child owner at each phase),
+   then `switch_bounded_realizing` / `call_bounded_realizing` (both
+   `allEntriesRealized_pure_step` on `openStep_pop_jump`/`openStep_test` /
+   `openStep_entry_of_compileStmtFuel?`).  Bank each green.
+4. `bounded_succ_realizing` (dispatch over `Stmt`, mirror `bounded_succ` `:2069`) →
+   `block_owner_realizing` (same `Nat.strong_induction_on sourceFuel`, mirror `:2335`;
+   the mutual anchor — feeds each recursive call the strictly-smaller-fuel
+   `RealizingBlockOwnerAt`) → `main_bounded_realizing` (mirror `:3121`).
+5. Truncation mirror → `main_prefix_forward_realizing`; then Steps B–D unchanged.
+
+### Status handed to session 17
+Item-3b threading leaves + the mutual-recursion anchor + the accumulator-threading
+core are CLOSED and banked green (3 commits).  Remaining = the composite
+`*_bounded_realizing` recursors (each = `mk` of the existing `*_bounded` + the landed
+step helper, gated on the per-construct child-`FragmentContract` reconstruction and
+entry-witness extraction located above) → `bounded_succ_realizing` →
+`block_owner_realizing` (mutual anchor) → `main_bounded_realizing`, then the
+truncation mirror and Steps B–D.  `compile_correct` / `compile_correct_creation`
+axioms unchanged `[propext, Classical.choice, Quot.sound]`; measured delta +0
+(no arm shipped).
