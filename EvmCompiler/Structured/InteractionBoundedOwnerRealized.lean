@@ -319,6 +319,32 @@ def realizedWitness (cfg : TypedCfg.Program) :
       TypedCfgCompiler.Shape.SourceFrameFits block.input source.evm.stack.length
 
 /--
+**Uniform entry-witness discharge.**  The starting entry of any compiled fragment
+is `realizedWitness`-realized at every `StateRel`-related target, given only the
+fragment's `LabelShape` (the ambient cfg block at `entry` expects `input`) and the
+contract's frame fit (`SourceFrameFits input source.evm.stack.length`).
+
+This packages — once, uniformly for every statement shape — the entry-witness
+construction that the composite realizing recursors previously reconstructed by
+hand (cf. the `⟨source, tokens, entryBlock, hFind, hStateRel, contract.fits⟩` term
+inside `if_bounded_realizing`).  `LabelShape` is obtained generically from the
+fragment's compile fact via `LabelShape.of_compileStmtFuel?`, so this lemma is the
+reusable `hHere`/`hEntry` supplier at every leaf, composite head, and the anchor's
+base case. -/
+theorem realizedWitness_of_stateRel
+    {cfg : TypedCfg.Program} {entry : Assembly.Label} {input : TypedCfg.Shape}
+    {source : RunState} {tokens : List Word} {target : EVMState}
+    (hLabelShape : TypedCfgPreservation.LabelShape cfg entry input)
+    (hStateRel : TypedCfgPreservation.StateRel source tokens target)
+    (hFits :
+      TypedCfgCompiler.Shape.SourceFrameFits input source.evm.stack.length) :
+    realizedWitness cfg entry target := by
+  obtain ⟨block, hFind, hInputEq⟩ := hLabelShape
+  refine ⟨source, tokens, block, hFind, hStateRel, ?_⟩
+  rw [hInputEq]
+  exact hFits
+
+/--
 Realizing counterpart of `BlockOwnerAt`: the source-budgeted recursive block
 capability, strengthened so every recursively executed block additionally yields
 the target-side per-entry accumulator at the concrete source witness
@@ -730,6 +756,98 @@ theorem if_bounded_realizing
           hBodyWF hBodySafe hBodyCallsResolved hSupports hProcs
           hBodyReturns bodyContract).allEntriesRealized
         hAfterCondRel (Nat.le_refl _)
+
+/--
+Realizing base case of the mutual anchor (mirrors `bounded_zero`).
+
+At source fuel `0` the composite statements (`if`/`switch`/`for`/`call`) carry
+`stmtBudget program 0 · = 0` (their `levelCost` at level `0` is `0`), so the
+target-side accumulator collapses — by `AllEntriesRealized.of_zero` — to the single
+entry witness, discharged uniformly by `realizedWitness_of_stateRel`; the `.bounded`
+leg is the existing green `bounded_zero` (whose source run is empty at fuel `0`).
+The leaf statements (`code`/`terminal`/`brk`/`cont`/`leave`) carry budget `1` and are
+handled by the already-landed leaf `*_bounded_realizing` recursors (uniform in
+`sourceFuel`), fed the same uniform entry witness.
+
+This is the fuel-`0` arm the anchor `block_owner_realizing` dispatches to when its
+inner block fuel bottoms out (mirroring `block_owner`'s `innerFuel = 0` branch that
+calls `bounded_zero`). -/
+theorem bounded_zero_realizing
+    {compilerFuel : Nat}
+    {program : Structured.Program} {stmt : Structured.Stmt}
+    {ctx : TypedCfgCompiler.Context} {supply : LabelSupply}
+    {entry regular : Assembly.Label} {input : TypedCfg.Shape}
+    {result : TypedCfgCompiler.Result} {cfg : TypedCfg.Program}
+    {source : RunState} {tokens : List Word} {policy : StopPolicy}
+    {canBreak canContinue canLeave : Bool}
+    (hCompile :
+      TypedCfgCompiler.compileStmtFuel? (compilerFuel + 1)
+          stmt ctx supply entry input regular = some result)
+    (hBlocks : TypedCfgPreservation.BlocksInProgram result cfg)
+    (hWF : Structured.Stmt.WF canBreak canContinue canLeave stmt)
+    (hSupports :
+      TypedCfgPreservation.OutcomeSimulation.ContextSupports
+        ctx canBreak canContinue canLeave)
+    (hSourceReturns :
+      canLeave = true →
+        ∃ frame rest, source.returns = frame :: rest)
+    (contract :
+      StmtContract cfg result ctx supply entry regular input
+        source tokens policy) :
+    RealizingBoundedExecPreservesUnder result cfg entry ctx regular source tokens
+      (InteractionSemantics.Stmt.openRun program 0 stmt source)
+      (InteractionStaticCost.stmtBudget program 0 stmt)
+      policy (realizedWitness cfg) := by
+  have hLabelShape : TypedCfgPreservation.LabelShape cfg entry input :=
+    TypedCfgPreservation.LabelShape.of_compileStmtFuel? hCompile hBlocks
+  have hEntry :
+      ∀ target, TypedCfgPreservation.StateRel source tokens target →
+        realizedWitness cfg entry target :=
+    fun target hSR => realizedWitness_of_stateRel hLabelShape hSR contract.fits
+  cases stmt with
+  | code code => exact code_bounded_realizing hCompile hBlocks contract hEntry
+  | terminal kind => exact terminal_bounded_realizing hCompile hBlocks contract hEntry
+  | brk => exact brk_bounded_realizing hCompile hBlocks hWF hSupports contract hEntry
+  | cont => exact cont_bounded_realizing hCompile hBlocks hWF hSupports contract hEntry
+  | leave =>
+      exact
+        leave_bounded_realizing hCompile hBlocks hWF hSupports hSourceReturns
+          contract hEntry
+  | if_ cond body =>
+      refine RealizingBoundedExecPreservesUnder.mk
+        (bounded_zero hCompile hBlocks hWF hSupports hSourceReturns contract) ?_
+      intro target hStateRel
+      have hb : InteractionStaticCost.stmtBudget program 0 (.if_ cond body) = 0 := by
+        simp [InteractionStaticCost.stmtBudget, InteractionStaticCost.levelCost]
+      rw [hb]
+      exact AllEntriesRealized.of_zero (hEntry target hStateRel)
+  | switch scrutinee caseList defaultBody =>
+      refine RealizingBoundedExecPreservesUnder.mk
+        (bounded_zero hCompile hBlocks hWF hSupports hSourceReturns contract) ?_
+      intro target hStateRel
+      have hb :
+          InteractionStaticCost.stmtBudget program 0
+            (.switch scrutinee caseList defaultBody) = 0 := by
+        simp [InteractionStaticCost.stmtBudget, InteractionStaticCost.levelCost]
+      rw [hb]
+      exact AllEntriesRealized.of_zero (hEntry target hStateRel)
+  | for_ init cond post body =>
+      refine RealizingBoundedExecPreservesUnder.mk
+        (bounded_zero hCompile hBlocks hWF hSupports hSourceReturns contract) ?_
+      intro target hStateRel
+      have hb :
+          InteractionStaticCost.stmtBudget program 0 (.for_ init cond post body) = 0 := by
+        simp [InteractionStaticCost.stmtBudget, InteractionStaticCost.levelCost]
+      rw [hb]
+      exact AllEntriesRealized.of_zero (hEntry target hStateRel)
+  | call name =>
+      refine RealizingBoundedExecPreservesUnder.mk
+        (bounded_zero hCompile hBlocks hWF hSupports hSourceReturns contract) ?_
+      intro target hStateRel
+      have hb : InteractionStaticCost.stmtBudget program 0 (.call name) = 0 := by
+        simp [InteractionStaticCost.stmtBudget, InteractionStaticCost.levelCost]
+      rw [hb]
+      exact AllEntriesRealized.of_zero (hEntry target hStateRel)
 
 end Stmt
 
