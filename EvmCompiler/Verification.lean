@@ -18,6 +18,7 @@ import EvmCompiler.TypedCfg.PeepholeStackRealizes
 import EvmCompiler.TypedCfg.PeepholeSwapOpen
 import EvmCompiler.Structured.TypedCfgPreservation.StackRealizesEntry
 import EvmCompiler.TypedCfg.InteractionEntryRealized
+import EvmCompiler.TypedCfg.InteractionReachesCap
 import EvmCompiler.Structured.InteractionEntryRealizedForward
 import EvmCompiler.Structured.InteractionOwnerRealized
 import EvmCompiler.Structured.InteractionEntryRealizedBounded
