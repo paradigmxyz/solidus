@@ -332,6 +332,129 @@ theorem mem_of_compileStmtFuel?_for
         ⟨initResult, loopInput, condOutput, bodyResult, postResult,
           hInit, hInitFallthrough, hType, hBody, hPost, hPostMem⟩))
 
+/-! ### Block / cases / default connectors
+
+The remaining three generation functions of the mutual: `compileBlockFuel?` (the
+vertical descent into `if`/`for` bodies) unfolds to a `compileStmtListFuel?`, and
+`compileCasesFuel?` / `compileDefaultFuel?` (the horizontal descent within a
+`switch`) split off their machinery blocks (test / case-entry / default `pop`
+blocks) from the recursive case-body fragments. -/
+
+/-- **`compileBlockFuel?` connector.**  A successful block compilation is exactly a
+statement-list compilation of the block's statements at one less fuel — the vertical
+descent step through `if` / `for` / case bodies. -/
+theorem stmtList_of_compileBlockFuel?
+    {compilerFuel : Nat} {body : Structured.Block}
+    {ctx : Context} {supply : LabelSupply}
+    {entry regular : Assembly.Label} {input : TypedCfg.Shape}
+    {result : Result}
+    (hCompile :
+      compileBlockFuel? (compilerFuel + 1) body ctx supply entry input
+          regular = some result) :
+    compileStmtListFuel? compilerFuel body.stmts ctx supply entry input
+        regular = some result := by
+  unfold compileBlockFuel? at hCompile
+  exact hCompile
+
+/-- **`compileCasesFuel?` nil emission.**  Compiling an empty case list emits no
+blocks; membership is vacuous. -/
+theorem mem_of_compileCasesFuel?_nil
+    {compilerFuel : Nat} {ctx : Context}
+    {base supply idx : Nat} {regular : Assembly.Label}
+    {valueShape bodyShape : TypedCfg.Shape}
+    {result : Result} {block : TypedCfg.Block}
+    (hCompile :
+      compileCasesFuel? (compilerFuel + 1) [] ctx base supply idx valueShape
+          bodyShape regular = some result)
+    (hMem : block ∈ result.blocks) :
+    False := by
+  simp only [compileCasesFuel?] at hCompile
+  cases hCompile
+  simp at hMem
+
+/-- **`compileCasesFuel?` cons membership dichotomy.**  A block emitted for a
+non-empty case list is the case's test-comparison block, its case-entry (`pop`)
+block, a member of the compiled case body, or a member of the remaining cases —
+each recursive fragment returned with its compile fact. -/
+theorem mem_of_compileCasesFuel?_cons
+    {compilerFuel : Nat} {caseValue : Word} {body : Structured.Block}
+    {rest : List (Word × Structured.Block)}
+    {ctx : Context} {base supply idx : Nat} {regular : Assembly.Label}
+    {valueShape bodyShape : TypedCfg.Shape} {slot : TypedCfg.Slot}
+    {result : Result} {block : TypedCfg.Block}
+    (hHead : valueShape.slots.head? = some slot)
+    (hPopType : TypedCfg.Instr.type? .pop valueShape = some bodyShape)
+    (hCompile :
+      compileCasesFuel? (compilerFuel + 1) ((caseValue, body) :: rest) ctx
+          base supply idx valueShape bodyShape regular = some result)
+    (hMem : block ∈ result.blocks) :
+    block.label = switchTestLabel base idx ∨
+    block.label = switchCaseLabel base idx ∨
+    (∃ bodyResult,
+      compileBlockFuel? compilerFuel body ctx supply
+          (switchBodyLabel base idx) bodyShape regular = some bodyResult ∧
+      block ∈ bodyResult.blocks) ∨
+    (∃ bodyResult tail,
+      compileBlockFuel? compilerFuel body ctx supply
+          (switchBodyLabel base idx) bodyShape regular = some bodyResult ∧
+      compileCasesFuel? compilerFuel rest ctx base bodyResult.next (idx + 1)
+          valueShape bodyShape regular = some tail ∧
+      block ∈ tail.blocks) := by
+  obtain ⟨bodyResult, tail, hBody, _hRequire, hTail, rfl⟩ :=
+    TypedCfgCompilerFacts.Switch.components_of_compileCasesFuel?_cons hHead hPopType
+      hCompile
+  rcases List.mem_cons.mp hMem with hTest | hMem1
+  · exact Or.inl (by rw [hTest])
+  rcases List.mem_cons.mp hMem1 with hCase | hMem2
+  · exact Or.inr (Or.inl (by rw [hCase]))
+  rcases List.mem_append.mp hMem2 with hBodyMem | hTailMem
+  · exact Or.inr (Or.inr (Or.inl ⟨bodyResult, hBody, hBodyMem⟩))
+  · exact Or.inr (Or.inr (Or.inr ⟨bodyResult, tail, hBody, hTail, hTailMem⟩))
+
+/-- **`compileDefaultFuel?` (no default) emission.**  An absent default emits the
+single entry `pop` block. -/
+theorem mem_of_compileDefaultFuel?_none
+    {compilerFuel : Nat} {ctx : Context} {supply : LabelSupply}
+    {entry regular : Assembly.Label} {valueShape bodyShape : TypedCfg.Shape}
+    {result : Result} {block : TypedCfg.Block}
+    (hPopType : TypedCfg.Instr.type? .pop valueShape = some bodyShape)
+    (hCompile :
+      compileDefaultFuel? (compilerFuel + 1) none ctx supply entry valueShape
+          bodyShape regular = some result)
+    (hMem : block ∈ result.blocks) :
+    block.label = entry := by
+  rw [TypedCfgCompilerFacts.Switch.components_of_compileDefaultFuel?_none hPopType
+      hCompile] at hMem
+  simp only [List.mem_singleton] at hMem
+  subst hMem
+  rfl
+
+/-- **`compileDefaultFuel?` (with default) membership dichotomy.**  A present
+default is the entry `pop` block or a member of the compiled default body — the
+latter with its compile fact. -/
+theorem mem_of_compileDefaultFuel?_some
+    {compilerFuel : Nat} {body : Structured.Block} {ctx : Context}
+    {supply : LabelSupply} {entry regular : Assembly.Label}
+    {valueShape bodyShape : TypedCfg.Shape}
+    {result : Result} {block : TypedCfg.Block}
+    (hPopType : TypedCfg.Instr.type? .pop valueShape = some bodyShape)
+    (hCompile :
+      compileDefaultFuel? (compilerFuel + 1) (some body) ctx supply entry
+          valueShape bodyShape regular = some result)
+    (hMem : block ∈ result.blocks) :
+    block.label = entry ∨
+    (∃ bodyResult,
+      compileBlockFuel? compilerFuel body ctx (supply + 1)
+          (.generated supply 2000) bodyShape regular = some bodyResult ∧
+      block ∈ bodyResult.blocks) := by
+  obtain ⟨bodyResult, hBody, _hRequire, rfl⟩ :=
+    TypedCfgCompilerFacts.Switch.components_of_compileDefaultFuel?_some hPopType
+      hCompile
+  simp only [List.mem_cons] at hMem
+  rcases hMem with rfl | hBodyMem
+  · exact Or.inl rfl
+  · exact Or.inr ⟨bodyResult, hBody, hBodyMem⟩
+
 end BlockProvenanceDrill
 end TypedCfgPreservation
 end Structured
