@@ -27,6 +27,7 @@ import EvmCompiler.Structured.InteractionOwnerExecRealized
 import EvmCompiler.Structured.InteractionEntryRealizedBounded
 import EvmCompiler.Structured.InteractionBranchEntryRealized
 import EvmCompiler.Structured.InteractionCallEntryRealized
+import EvmCompiler.Structured.InteractionDispatchEntryRealized
 import EvmCompiler.Structured.InteractionBoundedOwnerRealized
 import EvmCompiler.Structured.InteractionRealizedWitnessSuccessor
 import EvmCompiler.Assembly.GasfulBridge
