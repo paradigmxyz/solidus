@@ -20,6 +20,7 @@ import EvmCompiler.Structured.TypedCfgPreservation.StackRealizesEntry
 import EvmCompiler.TypedCfg.InteractionEntryRealized
 import EvmCompiler.Structured.InteractionEntryRealizedForward
 import EvmCompiler.Structured.InteractionOwnerRealized
+import EvmCompiler.Structured.InteractionEntryRealizedBounded
 import EvmCompiler.Assembly.GasfulBridge
 import EvmCompiler.Assembly.InteractionBytecode
 import EvmCompiler.Assembly.InteractionFuelSafety
