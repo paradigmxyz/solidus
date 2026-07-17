@@ -1101,3 +1101,127 @@ the specific `*_exec` case family that must gain the entry-invariant bookkeeping
 
 Landed this session: this note. Foundation from sessions 1–9 unchanged and green;
 `peepholeBody`/public spine UNTOUCHED; measured delta +0.
+
+## Session-11 update (2026-07-17): Step A scoped to the exact shared carried relations; in-place strengthening quantitatively shown ungreenable in one session (490 `ExecPreservesUnder` sites / 13 files); the green-preserving route is an ADDITIVE parallel "realizing" relation family. No code landed (greenness protected); baseline re-verified green.
+
+Session 11 took the session-10 directive (Step A: expose a per-entry `StateRel`/
+`SourceFrameFits` invariant from the source→cfg simulation so `main_prefix_forward`
+hands out `main_prefix_forward_realizing`). After a full read of the carrying
+relations I confirm — now with a **quantitative blast-radius measurement and the
+interaction-monad subtlety pinned** — that Step A is NOT a localized bookkeeping
+pass and cannot start-and-finish green in one session. The inherited tower is
+UNCHANGED and green: `scripts/opt_harness.sh check` = OK (43 public theorems,
+axioms `[propext, Classical.choice, Quot.sound]` incl. `compile_correct` /
+`compile_correct_creation`). `peepholeBody`/public spine UNTOUCHED ⇒ measured
+corpus delta definitionally **+0 bytes / +0.00%** (no re-bench needed).
+
+### Finding 1 (NEW, decisive): the per-entry invariant is carried by SHARED abbrevs threaded through all 13 Structured files — in-place strengthening reddens ~17k lines at once
+Session 10 called Step A "a bookkeeping strengthening of the conclusion … but it
+touches every `*_exec` case and both mirror files." The stronger, measured truth:
+the conclusion is not a bespoke relation per theorem — it is a **shared relation
+abbrev** reused pervasively, so strengthening it *in place* is not 4 files, it is
+the whole preservation stack.
+- `ExecPreservesUnder result cfg entry ctx regular source tokens sourceRun policy`
+  (`InteractionControlPreservation.lean:1043`, actually the `Exec…`/`Forward…`
+  family) unfolds to `∀ target, StateRel source tokens target → ForwardRel
+  Truncated (SegmentDoneRel …) sourceRun (openRunNResultWithStop policy cfg …)`.
+  **`ExecPreservesUnder` occurs 490 times across 13 files** (`InteractionControl-
+  Preservation` 116, `InteractionTruncationOwnerPreservation` 100, `Bounded-
+  BlockPreservation` 18, `BoundedLoopPreservation` 47, `BoundedSwitchPreservation`
+  49, `BoundedOwnerPreservation` 52, `CallPreservation` 26, `LoopPreservation` 34,
+  `SwitchPreservation` 24, `OwnerPreservation` 16, `BranchPreservation`/`Bounded-
+  BranchPreservation`/`TerminalPreservation`/`BoundedBranchPreservation` the
+  remainder). `SegmentDoneRel` (`:552`, `= ExceptRel _ (SegmentRunRel …)`) occurs
+  ~30×; `ForwardPreservesUnder` (`:1122`), `PrefixDoneRel` (`Truncation…:4613`,
+  `= ExceptRel StructuralErrorRel (PrefixOutcomeRel)`), `PrefixOutcomeRel`
+  (`:4594`) are the whole-program endpoints.
+- Adding an entry-accumulator FIELD to `ExecPreservesUnder`/`SegmentDoneRel`
+  changes the type at all 490 sites; each of the ~200 theorems producing/consuming
+  it (the `*_exec` family + `if/switch/for/call/bounded_*` recursors + `block_owner`
+  + both `*OwnerPreservation` mirrors) must be re-proved to establish/relay the new
+  field. This reddens the entire tower simultaneously and is unre-greenable inside
+  one session's build budget. (This is the concrete reason sessions 5–10 each
+  deferred it; session 11 measures it.)
+
+### Finding 2 (NEW): even the SOURCE-FREE half of the strengthened conclusion is a real interaction-tree induction, not plain plumbing
+"Every block entry visited by the cfg `openRunNPrefix`" is a statement about
+`openRunNResultWithStop policy cfg fuel entry target` (`InteractionSemantics.lean:772`
+→ `Control.Program.runNWithStopAs`, `Control.lean:70`), which is an **interaction
+tree** in `M = Simulation.Interaction EVMException`, not a linear trace: each
+`openStep program label state` (`:759`) is itself an interaction tree whose
+`.jump next state'` leaves depend on the environment's responses. So "visited
+entry" is only well-defined **along an `Executes`/`Follows` branch** (or as a
+step-indexed openStep invariant), never as a plain fuel fold over states. The
+target-side accumulator must therefore be phrased as
+`AllEntriesRealized cfg policy entry target := ∀ label state,
+  «(entry,target) reaches an openStep at (label,state) before stopping» →
+  ∃ source tokens block, cfg.findBlock? label = some block ∧
+  StateRel source tokens state ∧ SourceFrameFits block.input state.evm.stack.length`
+with a new step-indexed "reaches an openStep at" predicate over
+`openRunNResultWithStop_succ` (`:863`). This is genuine interaction-tree
+machinery — session 10's "expose an `openRunNResultWithStop` invariant" one-liner
+hides a real sub-development.
+
+### Recommended architecture (revised): ADDITIVE parallel "realizing" family, NOT in-place strengthening
+To keep the tower green at every intermediate commit (the hard constraint), do
+NOT edit `ExecPreservesUnder`/`SegmentDoneRel`/`ForwardPreservesUnder` in place.
+Instead, in a NEW file (`Structured/InteractionEntryRealized.lean` or under
+`TypedCfgPreservation/`), define a PARALLEL family that CONJOINS the existing
+relation with the entry accumulator, and prove parallel `*_exec_realizing`
+theorems that REUSE the existing (green, unchanged) `*_exec` for the outcome leg
+and only ADD the accumulator leg:
+- `RealizingForwardPreservesUnder … := ForwardPreservesUnder … ∧
+   (∀ target, StateRel source tokens target → AllEntriesRealized cfg policy entry target)`
+  (or fold the invariant into a `RealizingSegmentDoneRel = SegmentDoneRel ∧
+  AllEntriesRealized-at-the-run-that-produced-this-done`).
+- `code_exec_realizing`/`if_exec_realizing`/…/`block_owner_realizing` each take the
+  same `FragmentContract` (whose `fits`/`activation` fields at `OwnerPreservation.
+  lean:38,46` ALREADY supply the entry `SourceFrameFits`/`ActivationInput`, and the
+  `StateRel` arrives as the `ExecPreservesUnder` hypothesis) and discharge the new
+  accumulator by relaying the per-recursive-call entry witnesses. Because the
+  existing `*_exec` stays byte-identical and green, the additive layer can be
+  landed and committed **one file at a time, bottom-up**
+  (`InteractionOwnerPreservation` → `block_owner` → `InteractionBoundedOwner-
+  Preservation` mirror → `InteractionTruncationOwnerPreservation` mirror →
+  `main_prefix_forward_realizing`), so partial progress is bankable green — unlike
+  the in-place edit which is all-or-nothing red.
+
+This is still the full recursion (every `*_exec` case + both mirrors + the
+target-side interaction-tree invariant), i.e. genuinely multi-session, but it is
+green-preserving at each step, which the in-place strengthening is not.
+
+### Exact next-session recipe (green-preserving, bankable)
+1. NEW file: define `ReachesOpenStepAt cfg policy entry target label state` (step-
+   indexed over `openRunNResultWithStop_succ`) and `AllEntriesRealized` as above;
+   prove the two structural facts: (i) the START entry `(entry,target)` is reached;
+   (ii) reached-entries are closed under one non-stopping `openStep .jump` leaf.
+   Prove `AllEntriesRealized` at fuel 0 / at a stop, trivially. [target-side only,
+   NO source — self-contained green.]
+2. NEW file: `RealizingForwardPreservesUnder` + `code_exec_realizing` (leaf; the
+   straight-line `openRun_toCfg` at `InteractionPreservation.lean:457` already
+   emits `StateRel`+`SourceFrameFits` at exit — relay them as the single-block
+   entry witness). Commit green.
+3. Thread the accumulator through `if/switch/for/call/brk/cont/leave/terminal_exec`
+   → `exec_succ_realizing` → `block_owner_realizing`, REUSING each existing `*_exec`
+   for the outcome. Commit per construct where the mutual recursion allows (likely
+   one commit at `block_owner_realizing` since the recursion is mutual).
+4. Mirror in `InteractionBoundedOwnerPreservation` then
+   `InteractionTruncationOwnerPreservation`; produce `main_prefix_forward_realizing`.
+5. Step B: `openRunNPrefix_peephole_congr_of_source` consumes `main_prefix_forward_
+   realizing`'s `AllEntriesRealized`; at each openStep discharge `StackRealizes
+   input state` via `stackRealizes_of_stateRel_of_{token_last_of_tokens_cons,
+   returnTokenDepth?_eq_none}` (landed sessions 8/9, NO token guard — audit
+   session 9) and feed `openRunBody_swap_swap_congr` (landed session 6).
+6. Step C: swap the four OIC call sites (`OpenInteractionComposition.lean:909/942`
+   prefix; `:1415/1561/1688` terminal) to the `_of_source` variants.
+7. Step D: add the `swap d :: swap d :: rest → rest` arm to `peepholeBody`; re-green
+   the syntactic (b)-family + semantic congruences; `scripts/opt_harness.sh full`.
+
+### Status handed to session 12
+Foundation from sessions 1–10 UNCHANGED and green. Landed this session: this note
++ the quantitative ripple measurement (490 `ExecPreservesUnder` sites / 13 files)
+and the interaction-tree phrasing of the target-side invariant, which redefine
+Step A from "in-place conclusion bookkeeping" (all-or-nothing red) to an ADDITIVE
+parallel realizing family (bankable green, still multi-session). No `peepholeBody`/
+public-spine/shared-definition change ⇒ `compile_correct` / `compile_correct_creation`
+axioms unchanged `[propext, Classical.choice, Quot.sound]`, measured delta +0.
