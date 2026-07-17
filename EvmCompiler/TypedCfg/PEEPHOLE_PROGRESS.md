@@ -2623,3 +2623,147 @@ source-`OutOfFuel` branches (extra reachable entries lack a `StateRel` witness).
 Recommend pivoting to (A) budget-domination or (B) the fuel-decoupled stack-realization
 invariant before adding any `switch`/`call`/`for` realizing arm.  Do NOT attempt
 `switch_bounded_realizing` via `of_runSettles`/`of_cover` alone — it cannot close green.
+
+## Session-23 update (2026-07-17): ROUTE DECISION — obstruction 3 is an artifact of STATIC-BUDGET indexing; the fix is the per-outcome EXISTENTIAL-FUEL realizing family (route C, corrected). Decision written with file:line evidence; first substrate commit attempted below.
+
+Session 23's mandate was a rigorous route decision between (A) budget-domination,
+(B) the fuel-decoupled target-side stack-realization invariant, and any justified
+third route, then execution.  A full trace of the preservation family definitions
+(`InteractionControlPreservation.lean`) against the session-22 obstruction shows
+that **(A) is dead, (B) is the deferred multi-hundred-line frame model, and there
+is a THIRD route that dissolves obstruction 3 by REUSING the entire sessions 12-22
+investment** — changing only the *fuel index* at which the accumulator is attached.
+
+### Why (A) budget-domination is DEAD (not just hard)
+(A) proposes realizing the composite accumulator at a budget with no strict slack
+over the matched child, so no witnessless entry is reached.  But the composite's
+`openRunNResultWithStop` runs at the *static* `stmtBudget` fuel
+(`InteractionStaticCost.lean`, `stmtBudget_switch_succ`/`_call_succ`), and the
+accumulator must cover the fuel the run actually uses.  On a source-`OutOfFuel`
+(truncation) branch the matched body does NOT stop
+(`BoundedTruncationExecPreservesUnder`, `InteractionControlPreservation.lean:1035`,
+uses `Follows`, not `.stopped`), so the residual run keeps stepping past
+`blockBudget(matchedBody)` and reaches entries with no `StateRel` witness.
+"Raising the child owner's ceiling above `sourceFuel`" (session-22 (A) sketch)
+requires a source run of MORE than `sourceFuel` steps, which does not exist on a
+truncation branch — the source out-of-fuels AT `sourceFuel`.  So (A) cannot
+eliminate the witnessless entries.  Confirmed dead for the same reason obstruction
+3 bites.
+
+### Why (B) is the honest-but-enormous route
+(B) maintains "the runtime stack realizes the current block's shape" as a
+target-side invariant of `openRunN` itself, discharging the swap depth guard at
+every reached entry WITHOUT a source witness.  Sessions 8-9 already PROVED the
+per-entry reduction collapses for compiler shapes — the return token sits at the
+bottom of every procedure input shape
+(`TypedCfgCompiler.lean:147/153/160/935`; audit in session-9 §(1)), so
+`stackRealizes_of_stateRel_of_{token_last_of_tokens_cons,returnTokenDepth?_eq_none}`
+(`Structured/TypedCfgPreservation/StackRealizesEntry.lean`) discharges the guard
+from the SOURCE `StateRel`/`SourceFrameFits`.  What (B) still lacks is a
+source-FREE version of that invariant maintained across `openStep` — and
+sessions 5-7 proved it is NOT derivable from CFG typing (`Shape.compatible`
+permits `left.length < right.length` for caller tails; the missing depth is a
+runtime call-convention property).  A genuinely source-free frame model is the
+multi-hundred-line addition every session has punted.  (B) remains viable but is
+strictly larger than (C) and does not reuse the sessions 12-22 owner-recursor
+tower.
+
+### THE DECISION — route (C), corrected: attach `AllEntriesRealized` at the per-outcome EXISTENTIAL settling fuel, not the static budget
+The mandate's third-route hint ("index by the concrete `Executes` branch rather
+than all branches ≤ budget; truncated branches may be irrelevant to the single
+spliced execution") is CORRECT, and the exact mechanism is now pinned:
+
+`ExecPreservesUnder` (`InteractionControlPreservation.lean:936`) is stated
+per `(transcript, sourceOutcome)` and binds
+`∃ targetFuel remaining targetOutcome, Executes (openRunNResultWithStop policy cfg
+targetFuel entry target) transcript (.ok (.stopped remaining targetOutcome)) ∧ Rel …`.
+That existential `targetFuel` is the run's ACTUAL SETTLING fuel — the run at it
+produces `.stopped`, never `.exhausted`.  Sessions 12-22 instead moved to
+`RealizingBoundedExecPreservesUnder`
+(`Structured/InteractionEntryRealizedBounded.lean:62`), which conjoins
+`∀ tf ≤ targetBudget, AllEntriesRealized cfg policy tf entry target realized` at
+the STATIC `targetBudget = stmtBudget`.  That static budget is a fuel-indexed
+over-approximation (`InteractionStaticCost.lean`, linear in `F` for loops), so on
+truncation branches `AllEntriesRealized … targetBudget …` quantifies over entries
+the actual run never settles into — precisely the witnessless entries of
+obstruction 3.  **The slack is entirely an artifact of the static-budget index.**
+
+Route (C) defines the parallel family at the EXEC (existential-fuel) level:
+```
+def RealizingExecPreservesUnder … realized :=
+  ∀ target, StateRel source tokens target →
+    ∀ transcript sourceOutcome, Executes sourceRun transcript (.ok sourceOutcome) →
+      ∃ targetFuel remaining targetOutcome,
+        Executes (openRunNResultWithStop policy cfg targetFuel entry target)
+          transcript (.ok (.stopped remaining targetOutcome)) ∧
+        Rel result ctx regular source.returns tokens sourceOutcome targetOutcome ∧
+        AllEntriesRealized cfg policy targetFuel entry target realized     -- SAME existential targetFuel
+```
+The accumulator rides the SAME `targetFuel` the outcome leg produces.  At a
+SETTLING fuel the run visits only entries of the settled run, all of which the
+source simulation covers (each backward-simulates via `Rel.executes_right`,
+`InteractionEntryRealizedForward.lean:56`, to a source step with a `StateRel`
+witness).  There is no static over-approximation, hence NO witnessless entry, hence
+obstruction 3 does not arise.
+
+Session 13's objection ("`ExecPreservesUnder`'s `targetFuel` is existential
+per-outcome, so there is no single fuel to name for the `AllEntriesRealized`
+conjunct", `InteractionOwnerRealized` docstring / session-13 note) is ANSWERED:
+put `AllEntriesRealized` UNDER the same per-outcome existential.  The reason
+session 13 could not do this was that the flat `RealizingBounded…` hypothesis was
+meant to feed a whole-program peephole congruence running at the static budget.
+Route (C) also restates the CONSUMER per-outcome (a swap peephole `Executes`/
+`Follows` transfer that consumes `AllEntriesRealized cfg policy targetFuel …` at
+the outcome's own fuel — an induction on the `openRunNResultWithStop targetFuel`
+recursion mirroring `Rel.executes`, `Interaction.lean:1871`, discharging the swap
+guard per block-entry from the accumulator), so the flat static-budget hypothesis
+is never needed.
+
+### Why (C) dissolves the composite slack that killed sessions 16-22
+`if_bounded_realizing` closed (session 17) because `stmtBudget (.if_ …) = 1 +
+blockBudget body` (exact match, no slack).  `switch`/`call`/`for` failed
+(sessions 18-22) because `stmtBudget` carries strict slack over the matched
+child's `blockBudget` and `AllEntriesRealized` is antitone in fuel, so the slack
+cannot be bridged upward.  Under (C) the composite's `targetFuel` is the ACTUAL
+run fuel = dispatch-steps + child's actual settling fuel (the `Executes.bind_ok`,
+`Interaction.lean:1144`, decomposition inherent in `if_exec`/`switch_exec`/
+`call_exec`/`for_exec`, `InteractionOwnerPreservation.lean:580/674/1078/…`).
+Gluing the accumulator is `AllEntriesRealized.of_succ` (`InteractionEntryRealized.
+lean:173`) chained across the dispatch jumps, landing each child's accumulator at
+its own actual fuel — NO budget arithmetic, NO `max`-over-cases slack, because
+there is no static budget in the index at all.  The child-entry `StateRel` needed
+at each `of_succ` step is already exposed by the per-block
+`openStep_*_of_compileStmtFuel?` relations (session-14 KEY finding), so the
+composites do not need the 16.7k-line giant-sim re-threading.
+
+### Route (C) plan (dependency order)
+1. **[substrate, self-contained]** Define `RealizingExecPreservesUnder` + projections
+   (`.exec`, `.allEntriesRealized`) + the generic single-block constructor
+   `of_exec_first_jump_stops` (exec leg + start realization + "first jump stops"
+   ⇒ family, discharging the accumulator at the existential `targetFuel` via
+   `AllEntriesRealized.of_first_jump_stops`; `targetFuel ≥ 1` from `.stopped ≠
+   .exhausted`).  Then the FIVE exec leaves (`code`/`terminal`/`brk`/`cont`/`leave`
+   `_exec_realizing`) mirroring `InteractionOwnerRealized.lean` but on `*_exec`.
+2. Composite realizing recursors `if`/`switch`/`call`/`for` `_exec_realizing`
+   reusing the existing `*_exec` outcome leg and gluing the accumulator via
+   `of_succ` at the actual per-outcome fuels + the child-entry `StateRel` from the
+   `openStep_*_of_compileStmtFuel?` extraction lemmas (sessions 14-15).  →
+   `block_owner_exec_realizing` mutual recursion.
+3. Mirror to `main_prefix_exec_realizing` / the prefix + truncation owners
+   (`BoundedTruncationExecPreservesUnder` gets a `Follows`-indexed realizing
+   sibling at its own `targetFuel`; on truncation the accumulator covers only the
+   `Follows`-prefix entries, all source-covered).
+4. **Consumer:** a per-outcome swap peephole transfer
+   (`openRunNResultWithStop`-level `Executes`/`Follows` congruence guarded by
+   `AllEntriesRealized cfg policy targetFuel …`), replacing the flat full-`Rel`
+   consumer for the swap arm.  Discharge the swap guard per entry via
+   `stackRealizes_of_stateRel_of_{token_last_of_tokens_cons,returnTokenDepth?_eq_none}`
+   (landed 8/9) — the accumulator's per-entry `realized` IS the source witness.
+5. Wire at the four OIC call sites; add the `swap d :: swap d :: rest → rest` arm
+   to `peepholeBody`; re-green the syntactic (b)-family; `scripts/opt_harness.sh full`.
+
+The landed `of_cover` + stability lemmas (session 22) and the ENTIRE sessions 12-22
+owner tower remain valid and reused; only the accumulator's FUEL INDEX changes
+(static budget → per-outcome existential settling fuel).  `RealizingBounded…`
+stays as-is for the leaf/if path already closed; the exec family is additive.
+
