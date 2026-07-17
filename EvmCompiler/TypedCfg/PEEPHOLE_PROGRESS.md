@@ -2767,3 +2767,78 @@ owner tower remain valid and reused; only the accumulator's FUEL INDEX changes
 (static budget → per-outcome existential settling fuel).  `RealizingBounded…`
 stays as-is for the leaf/if path already closed; the exec family is additive.
 
+### LANDED (green, axiom-clean `[propext, Classical.choice, Quot.sound]`): `EvmCompiler/Structured/InteractionOwnerExecRealized.lean` (commit `fbe40999`, wired into `EvmCompiler.Verification`)
+Route (C)'s substrate — the plan step-1 family + all five single-block leaves:
+* **`RealizingExecPreservesUnder`** (`:60`) — the per-outcome existential-fuel
+  realizing family (body = `ExecPreservesUnder`'s per-`(transcript, sourceOutcome)`
+  `∃ targetFuel remaining targetOutcome, Executes … (.stopped …) ∧ Rel …` with the
+  added conjunct `AllEntriesRealized cfg policy targetFuel entry target realized`
+  UNDER the same existential `targetFuel`).
+* **`RealizingExecPreservesUnder.exec`** (`:99`) — projection to the unchanged
+  `ExecPreservesUnder` (feeds the spine).
+* **`RealizingExecPreservesUnder.of_exec_first_jump_stops`** (`:127`) — the generic
+  single-block constructor: `ExecPreservesUnder` leg + start realization + "every
+  first jump stops" ⇒ the family.  Discharges the accumulator at the existential
+  `targetFuel` via `AllEntriesRealized.of_first_jump_stops`; `targetFuel ≥ 1` is
+  forced from the `.stopped ≠ .exhausted` result (`openRunNResultWithStop_zero`,
+  `InteractionSemantics.lean:857`).
+* **`code_exec_realizing`** / **`terminal_exec_realizing`** / **`brk_exec_realizing`**
+  / **`cont_exec_realizing`** / **`leave_exec_realizing`** — the five leaves, each
+  one `of_exec_first_jump_stops` application reusing the existing `*_exec`
+  (`InteractionOwnerPreservation.OpenOutcome.Stmt.*_exec`) for the outcome leg and
+  the `openStep_*_of_compileStmtFuel?` relation + `Rel.executes_right` + `contract.stops`
+  for the "first jump stops" fact (identical structure to session 13's
+  `*_forward_realizing`, but on the existential-fuel `*_exec` leg).
+
+`scripts/opt_harness.sh check` = **OK (43 public theorems, axioms contained in
+[propext, Classical.choice, Quot.sound])**; `compile_correct` /
+`compile_correct_creation` unchanged.  `peepholeBody`/public spine UNTOUCHED ⇒
+measured delta still **+0** (no arm shipped).
+
+### Remaining frontier (route C, plan steps 2-5)
+The leaves are landed on the correct index; the OPEN work is the composites and
+the consumer:
+1. **Composite exec recursors** `if`/`switch`/`call`/`for` `_exec_realizing`
+   → `block_owner_exec_realizing` (mutual recursion).  Each reuses the existing
+   `*_exec` outcome leg (`InteractionOwnerPreservation.OpenOutcome.Stmt.*_exec`,
+   `:580/674/1078/…`) and glues the accumulator via `AllEntriesRealized.of_succ`
+   (`InteractionEntryRealized.lean:173`) across the composite's dispatch jumps at
+   the ACTUAL per-outcome fuels.  The child-entry `StateRel` each `of_succ` step
+   needs is exposed by the per-block `openStep_*_of_compileStmtFuel?` extraction
+   lemmas (sessions 14-15; the `if`/`call` extractions collapse to two reusable
+   lemmas, session 15).  KEY: because the index is the actual run fuel
+   (dispatch-steps + child settling fuel, from the `Executes.bind_ok` decomposition
+   inside `*_exec`), there is NO static-budget slack — the `switch`/`call`/`for`
+   wall of sessions 18-22 does not recur.  The one genuine obligation per construct:
+   relate `ReachesOpenStepAt` of the composite's first `openStep` to the child's
+   reachability (the `of_succ` `hNext`), discharged by the child's own
+   `*_exec_realizing`.
+2. **Mirrors** to `main_prefix_exec_realizing` + the truncation owner: give
+   `BoundedTruncationExecPreservesUnder` (`InteractionControlPreservation.lean:1035`)
+   a `Follows`-indexed realizing sibling at its own `targetFuel` (on truncation the
+   accumulator covers only the `Follows`-prefix entries, all source-covered).
+3. **Consumer:** a per-outcome swap peephole transfer at the
+   `openRunNResultWithStop`-level — an induction mirroring `Rel.executes`
+   (`Interaction.lean:1871`) that transfers the source-established `Executes`/
+   `Follows` to the peepholed program, consuming `AllEntriesRealized cfg policy
+   targetFuel …` at the outcome's own fuel and discharging the swap guard per
+   block-entry via `stackRealizes_of_stateRel_of_{token_last_of_tokens_cons,
+   returnTokenDepth?_eq_none}` (landed 8/9) — the accumulator's per-entry `realized`
+   is instantiated to the source witness there.  This replaces the flat full-`Rel`
+   consumer for the swap arm (avoids needing realization at all branches ≤ budget).
+4. Wire the four OIC sites to the `_of_source` variants; add the `swap d :: swap d
+   :: rest → rest` arm to `peepholeBody`; re-green the syntactic (b)-family;
+   `scripts/opt_harness.sh full`.
+
+### Next-session recipe (start here)
+Build `if_exec_realizing` first (the `if` composite has exact single-openStep
+dispatch, cf. `if_bounded_realizing` session 17): reuse `if_exec` for the leg;
+for the accumulator, `of_succ` at the composite entry — the single dispatch
+`openStep` jumps to the chosen branch's child, whose `*_exec_realizing` supplies
+the residual `AllEntriesRealized` at the child's actual fuel.  Then `switch`
+(the pop;jump + k test blocks chain — `of_succ` k+1 times, each test block realized
+via its retained-scrutinee `StateRel`), then `call`/`for`.  The exec index removes
+the budget arithmetic that blocked these; the extraction lemmas (sessions 14-15)
+supply every child-entry `StateRel`.  Do NOT reintroduce a static `targetBudget`
+into the accumulator — that is exactly what obstruction 3 punishes.
+
