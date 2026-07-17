@@ -23,6 +23,7 @@ import EvmCompiler.TypedCfg.InteractionSettlesCap
 import EvmCompiler.TypedCfg.InteractionSettlesBridge
 import EvmCompiler.Structured.InteractionEntryRealizedForward
 import EvmCompiler.Structured.InteractionOwnerRealized
+import EvmCompiler.Structured.InteractionOwnerExecRealized
 import EvmCompiler.Structured.InteractionEntryRealizedBounded
 import EvmCompiler.Structured.InteractionBranchEntryRealized
 import EvmCompiler.Structured.InteractionCallEntryRealized
