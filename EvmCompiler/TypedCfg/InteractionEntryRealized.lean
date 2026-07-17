@@ -229,6 +229,59 @@ theorem of_le {program : TypedCfg.Program}
   intro label state hReach
   exact h label state (hReach.of_le hmn)
 
+/--
+**Uniform accumulator discharge from an `openStep`-jump invariant.**
+
+If the abstract realizing predicate `realized` is preserved by every non-stopping
+`openStep .jump` transition (an `openStep`-jump *invariant*), then a single
+starting witness `realized entry target` propagates to **every** reached entry, at
+**any** fuel, with no fuel matching, no successor branch analysis, and no
+per-construct recursor.  The proof is the trivial `ReachesOpenStepAt` induction:
+`.start` returns the seed witness; each `.step` reuses the invariant on its
+concrete first jump, then relays the induction hypothesis on the residual run.
+
+This is the route-B master lever (session 26): once
+`openStep_preserves_realizedWitness` supplies `hInv` for `realized :=
+realizedWitness cfg`, `AllEntriesRealized cfg policy fuel entry target
+(realizedWitness cfg)` follows uniformly for every leaf / `if` / `switch` /
+`call` / `for` family (bounded and exec), dissolving the accumulator conjunct the
+whole tower had turned on.  The invariant itself (the genuine remaining work) is
+its own theorem; this lemma is the fuel/reachability plumbing that consumes it. -/
+theorem realized_of_reaches_of_invariant {program : TypedCfg.Program}
+    {stopJump : Label → EVMState → Bool} {realized : Label → EVMState → Prop}
+    (hInv : ∀ (e : Label) (t : EVMState)
+        (transcript : Interaction.Transcript) (n : Label) (s : EVMState),
+      realized e t →
+      Interaction.Executes (openStep program e t) transcript
+        (Except.ok (TypedCfg.Outcome.jump n s)) →
+      realized n s)
+    {fuel : Nat} {entry : Label} {target : EVMState}
+    {label : Label} {state : EVMState}
+    (hReach : ReachesOpenStepAt program stopJump fuel entry target label state) :
+    realized entry target → realized label state := by
+  induction hReach with
+  | start _ _ _ => exact fun h => h
+  | step hExec _hStop _hRest ih =>
+      exact fun hHere => ih (hInv _ _ _ _ _ hHere hExec)
+
+/--
+Consequence of `realized_of_reaches_of_invariant`: an `openStep`-jump invariant
+plus a starting witness yields `AllEntriesRealized` at any fuel.  This is the
+form the realizing families consume. -/
+theorem of_openStep_invariant {program : TypedCfg.Program}
+    {stopJump : Label → EVMState → Bool} {fuel : Nat}
+    {entry : Label} {target : EVMState} {realized : Label → EVMState → Prop}
+    (hInv : ∀ (e : Label) (t : EVMState)
+        (transcript : Interaction.Transcript) (n : Label) (s : EVMState),
+      realized e t →
+      Interaction.Executes (openStep program e t) transcript
+        (Except.ok (TypedCfg.Outcome.jump n s)) →
+      realized n s)
+    (hHere : realized entry target) :
+    AllEntriesRealized program stopJump fuel entry target realized :=
+  fun _label _state hReach =>
+    realized_of_reaches_of_invariant hInv hReach hHere
+
 end AllEntriesRealized
 
 end Program
