@@ -164,6 +164,32 @@ theorem of_succ {program : TypedCfg.Program}
   | step hExec hStop hRest =>
       exact hNext _ _ _ hExec hStop _ _ hRest
 
+/--
+Leaf-discharge rule.  When every concrete first-step jump out of the starting
+entry lands on a **stopping** target (`stopJump = true`) — the situation for a
+single-block fragment whose terminator jumps straight to a recursive boundary
+(`code` / `terminal` / `brk` / `cont` / `leave`, all of which compile to one
+block ending in a `.jump` that the fragment's stop policy halts on) — the run
+visits no entry beyond the start, so realizing the start entry realizes them all.
+
+This is the target-side lemma the leaf `*_exec_realizing` cases invoke: it turns
+the added accumulator obligation into the single fact `realized entry target`,
+which the source contract (`StateRel` + `SourceFrameFits`) already supplies.
+-/
+theorem of_first_jump_stops {program : TypedCfg.Program}
+    {stopJump : Label → EVMState → Bool} {fuel : Nat}
+    {entry : Label} {target : EVMState} {realized : Label → EVMState → Prop}
+    (hHere : realized entry target)
+    (hStops : ∀ (transcript : Interaction.Transcript) (next : Label)
+        (state' : EVMState),
+      Interaction.Executes (openStep program entry target) transcript
+        (Except.ok (TypedCfg.Outcome.jump next state')) →
+      stopJump next state' = true) :
+    AllEntriesRealized program stopJump (fuel + 1) entry target realized := by
+  refine of_succ hHere ?_
+  intro transcript next state' hExec hStop
+  exact absurd (hStops transcript next state' hExec) (by rw [hStop]; simp)
+
 end AllEntriesRealized
 
 end Program
