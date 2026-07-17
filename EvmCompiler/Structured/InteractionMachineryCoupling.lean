@@ -212,6 +212,78 @@ theorem realizedWitness_of_pop_jump
   cases hExec
   exact realizedWitness_of_stateRel hLabelShape hFinalRel hFits
 
+/--
+**Nil-join block successor supplier.**
+
+The empty statement-list join block `{ input, body := [], output := input, term :=
+.jump exitLabel }` (emitted by `compileStmtListFuel? … [] …`) is a pure identity jump:
+its `openStep` reduces silently to `pure (.jump exitLabel target)` with the state
+unchanged, so its child `StateRel`/`SourceFrameFits` are exactly the entry's (`hRel`,
+`hFits`).  The successor `exitLabel` expects the join's `input` (its fallthrough
+shape).
+
+Given the join block's `findBlock?` fact, the entry `realizedWitness` ingredients
+(`hFits` + `hRel`), and any concrete first jump, this lands the child
+`realizedWitness cfg next state'`, provided the ambient block at `exitLabel` expects
+`input`.
+
+Proof: the empty-body block's `openStep` reduces to `pure (.jump exitLabel target)`
+(the join is the compiler's identity fallthrough); `realizedWitness_of_pure_jump`
+(session 27) forces `next = exitLabel`, keeps the child `StateRel` at `target`, and
+packages it with the target `LabelShape`.  This is the `.jump`/join sibling of the
+call `pure`-jump leg. -/
+theorem realizedWitness_of_join_jump
+    {cfg : TypedCfg.Program}
+    {entry exitLabel next : Assembly.Label} {input : TypedCfg.Shape}
+    {source : RunState} {tokens : List Word}
+    {target state' : EVMState}
+    {transcript : Simulation.Interaction.Transcript}
+    (hFind :
+      cfg.findBlock? entry =
+        some
+          { label := entry
+            input := input
+            body := []
+            output := input
+            term := .jump exitLabel })
+    (hFits :
+      TypedCfgCompiler.Shape.SourceFrameFits input source.evm.stack.length)
+    (hRel : TypedCfgPreservation.StateRel source tokens target)
+    (hExec :
+      Simulation.Interaction.Executes
+        (TypedCfg.InteractionSemantics.Program.openStep cfg entry target)
+        transcript (Except.ok (TypedCfg.Outcome.jump next state')))
+    (hLabelShape : TypedCfgPreservation.LabelShape cfg exitLabel input) :
+    realizedWitness cfg next state' := by
+  have hStep :
+      TypedCfg.InteractionSemantics.Program.openStep cfg entry target =
+        Simulation.Interaction.pure
+          (TypedCfg.Outcome.jump exitLabel target) := by
+    simp only [
+      TypedCfg.InteractionSemantics.Program.openStep,
+      TypedCfg.Control.Program.step, hFind,
+      TypedCfg.Control.Block.run, TypedCfg.Control.Block.runBody]
+    change
+      Simulation.Interaction.bind
+          (Simulation.Interaction.done
+            (Except.ok (target, input)))
+          (fun result =>
+            if result.2 = input then
+              Simulation.Interaction.done
+                (Except.ok
+                  (TypedCfg.Outcome.jump exitLabel result.1))
+            else
+              Simulation.Interaction.done
+                (Except.error
+                  (.InvalidInstruction : EVMException))) =
+        Simulation.Interaction.done
+          (Except.ok
+            (TypedCfg.Outcome.jump exitLabel target))
+    simp [Simulation.Interaction.bind]
+  exact
+    InteractionRealizedWitnessSuccessor.realizedWitness_of_pure_jump
+      hStep hRel hExec hLabelShape hFits
+
 end InteractionMachineryCoupling
 end Structured
 end EvmCompiler
