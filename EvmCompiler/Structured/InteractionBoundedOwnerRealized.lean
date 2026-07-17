@@ -503,6 +503,225 @@ theorem allEntriesRealized_pure_step
   subst hNext
   exact hChild state' hRel'
 
+namespace Stmt
+
+/--
+Composite realizing recursor for `if`.
+
+`.bounded` conjunct is the existing green `if_bounded` (fed the realizing owner's
+forgetful `.owner` projection); `.allEntriesRealized` conjunct threads the
+target-side per-entry accumulator through the `if`-head's first `openStep`
+(`AllEntriesRealized.of_succ`).  The child (body) branch discharges its residual
+`AllEntriesRealized` by invoking the realizing block owner at the extracted child
+`StateRel`; the false/regular branch is ruled out because the fragment's stop
+policy halts there (`contract.stops` on the reconstructed regular-exit `Rel`),
+contradicting `of_succ`'s non-stopping hypothesis.
+
+The entry witness and body `FragmentContract` are reconstructed here additively
+(mirroring the plumbing inside `if_bounded` / `openRun_if_bounded_under_of_compileStmtFuel?`);
+the returns equality `afterCond.returns = source.returns` is threaded via
+`Rel.strengthen_left` + `openRunCondition_returns`, as the underlying preservation
+does.
+-/
+theorem if_bounded_realizing
+    {compilerFuel sourceFuel : Nat}
+    {program : Structured.Program}
+    {entryShapes : TypedCfgCompiler.ProcEntryShapes}
+    {cfg : TypedCfg.Program}
+    {generated :
+      TypedCfgPreservation.Program.GeneratedContext
+        program entryShapes cfg}
+    {cond : Structured.Code} {body : Structured.Block}
+    {ctx : TypedCfgCompiler.Context} {supply : LabelSupply}
+    {entry regular : Assembly.Label} {input : TypedCfg.Shape}
+    {result : TypedCfgCompiler.Result}
+    {source : RunState} {tokens : List Word} {policy : StopPolicy}
+    {canBreak canContinue canLeave : Bool}
+    (hCompile :
+      TypedCfgCompiler.compileStmtFuel? (compilerFuel + 1)
+          (.if_ cond body) ctx supply entry input regular = some result)
+    (hBlocks : TypedCfgPreservation.BlocksInProgram result cfg)
+    (hResultCalls :
+      TypedCfgPreservation.CallsInProgram result generated.calls)
+    (hWF :
+      Structured.Stmt.WF canBreak canContinue canLeave (.if_ cond body))
+    (hFrameSafe : Structured.Stmt.FrameSafe (.if_ cond body))
+    (hCalls :
+      Structured.ProcList.StmtCallsResolved program.procs (.if_ cond body))
+    (hSupports :
+      TypedCfgPreservation.OutcomeSimulation.ContextSupports
+        ctx canBreak canContinue canLeave)
+    (hProcs : ctx.procs = program.procs)
+    (hSourceReturns :
+      canLeave = true →
+        ∃ frame rest, source.returns = frame :: rest)
+    (hBlockOwner :
+      RealizingBlockOwnerAt sourceFuel program entryShapes cfg generated)
+    (contract :
+      StmtContract cfg result ctx supply entry regular input
+        source tokens policy) :
+    RealizingBoundedExecPreservesUnder result cfg entry ctx regular source tokens
+      (InteractionSemantics.Stmt.openRun
+        program (sourceFuel + 1) (.if_ cond body) source)
+      (InteractionStaticCost.stmtBudget
+        program (sourceFuel + 1) (.if_ cond body))
+      policy (realizedWitness cfg) := by
+  -- Body-local well-formedness facts (extracted without consuming the whole hyps,
+  -- which `if_bounded` still needs).
+  have hBodyWF : Structured.Block.WF canBreak canContinue canLeave body := by
+    cases hWF with | if_ h => exact h
+  have hBodySafe : body.FrameSafe := by
+    cases hFrameSafe with | if_ _ h => exact h
+  have hBodyCallsResolved :
+      Structured.ProcList.BlockCallsResolved program.procs body := by
+    cases hCalls with | if_ h => exact h
+  refine RealizingBoundedExecPreservesUnder.mk
+    (if_bounded hCompile hBlocks hResultCalls hWF hFrameSafe hCalls hSupports
+      hProcs hSourceReturns hBlockOwner.owner contract) ?_
+  intro target hStateRel
+  -- Rewrite the budget so the head's single `openStep` fits `of_succ`.
+  have hBudgetEq :
+      InteractionStaticCost.stmtBudget program (sourceFuel + 1) (.if_ cond body) =
+        InteractionStaticCost.blockBudget program sourceFuel body + 1 := by
+    rw [InteractionStaticCost.stmtBudget_if_succ]; omega
+  rw [hBudgetEq]
+  -- Reconstruct the compiler-owned entry block and body compile facts.
+  obtain
+      ⟨output, _condition, bodyResult,
+        hType, hSource, _hHead, hBodyCompile,
+        hBodyRequire, hResult⟩ :=
+    TypedCfgCompilerFacts.Stmt.components_of_compileStmtFuel?_if hCompile
+  set bodyInput : TypedCfg.Shape :=
+    { output with slots := output.slots.tail } with hBodyInput
+  have hFallthrough : result.fallthrough? = some bodyInput := by
+    simp [bodyInput, hResult]
+  have hBodyBlocks :
+      TypedCfgPreservation.BlocksInProgram bodyResult cfg := by
+    intro block hMem
+    apply hBlocks block
+    simp [hResult, hMem]
+  have hBodyCalls :
+      TypedCfgPreservation.CallsInProgram bodyResult generated.calls := by
+    intro site hMem
+    apply hResultCalls site
+    simp [hResult, hMem]
+  set entryBlock : TypedCfg.Block :=
+    { label := entry
+      input := input
+      body := TypedCfgCompiler.Code.toCfg cond
+      output := output
+      term := .jumpi (LabelSupply.label supply 0) regular } with hEntryBlock
+  have hFind : cfg.findBlock? entry = some entryBlock := by
+    exact hBlocks entryBlock (by simp [entryBlock, hResult])
+  have hHeadRel :
+      Simulation.Interaction.Rel
+        (InteractionBranchPreservation.Condition.DoneRel
+          (LabelSupply.label supply 0) regular tokens bodyInput)
+        (InteractionSemantics.Code.openRunCondition cond source)
+        (TypedCfg.InteractionSemantics.Program.openStep cfg entry target) := by
+    simp only [
+      TypedCfg.InteractionSemantics.Program.openStep,
+      TypedCfg.Control.Program.step, hFind]
+    simpa [entryBlock, bodyInput] using
+      (InteractionBranchPreservation.Condition.openRunCondition_jumpi_toCfg
+        (entry := entry)
+        (trueLabel := LabelSupply.label supply 0)
+        (falseLabel := regular)
+        hType hSource contract.fits hStateRel)
+  have hHeadWithReturns :=
+    Simulation.Interaction.Rel.strengthen_left hHeadRel
+      (InteractionSemantics.Code.openRunCondition_returns cond source)
+  -- Accumulator via `of_succ`: the entry witness, then per non-stopping first jump.
+  refine AllEntriesRealized.of_succ
+    ⟨source, tokens, entryBlock, hFind, hStateRel, contract.fits⟩ ?_
+  intro transcript next state' hExec hStop
+  obtain ⟨leftOutcome, _hLeftExec, hStrong⟩ :=
+    Simulation.Interaction.Rel.executes_right hHeadWithReturns hExec
+  cases leftOutcome with
+  | error e =>
+      obtain ⟨hDone, _⟩ := hStrong
+      cases hDone
+  | ok conditionResult =>
+      obtain ⟨hDone, hRet⟩ := hStrong
+      cases hDone with
+      | ok hResultRel =>
+          obtain ⟨targetState, hEq, hAfterCondRel, hAfterCondFits⟩ := hResultRel
+          rcases conditionResult with ⟨afterCond, condTrue⟩
+          have hReturns : afterCond.returns = source.returns := by
+            simpa [InteractionSemantics.Code.ConditionReturnsEq] using hRet
+          injection hEq with hNext hState
+          cases condTrue with
+          | false =>
+              simp only [Bool.false_eq_true, if_false] at hNext
+              -- The false branch jumps to the fragment boundary `regular`, which the
+              -- stop policy halts on — contradicting `hStop`.
+              have hWholeRel :
+                  InteractionControlPreservation.OpenOutcome.Rel
+                    result ctx regular source.returns tokens
+                    (Structured.Outcome.regular afterCond)
+                    (.jump regular targetState) := by
+                refine ⟨?_, ?_, ?_⟩
+                · exact
+                    TypedCfgPreservation.OutcomeSimulation.Rel.regular_iff.mpr
+                      ⟨rfl, hAfterCondRel⟩
+                · exact ⟨bodyInput, hFallthrough, hAfterCondFits⟩
+                · simpa [
+                    InteractionControlPreservation.OpenOutcome.ActivationRestored]
+                    using hReturns
+              have hStops := contract.stops hWholeRel
+              simp only [
+                InteractionControlPreservation.OpenOutcome.TargetStoppedBy]
+                at hStops
+              rw [hNext, hState, hStops] at hStop
+              exact absurd hStop (by decide)
+          | true =>
+              simp only [if_true] at hNext
+              rw [hNext, hState]
+              -- The body branch: invoke the realizing block owner at the extracted
+              -- child `StateRel`, reconstructing the body `FragmentContract`.
+              have hBodyReturns :
+                  canLeave = true →
+                    ∃ frame rest, afterCond.returns = frame :: rest := by
+                intro hCanLeave
+                obtain ⟨frame, rest, hSourceEq⟩ := hSourceReturns hCanLeave
+                exact ⟨frame, rest, hReturns.trans hSourceEq⟩
+              have bodyContract :
+                  FragmentContract cfg bodyResult ctx (supply + 1)
+                    (LabelSupply.label supply 0) regular bodyInput
+                    afterCond tokens policy :=
+                { fits := hAfterCondFits
+                  regularAt := Or.inl contract.before_succ.regular
+                  before := contract.before_succ
+                  activation :=
+                    contract.activation.stmtFallthrough
+                      hCompile hFallthrough
+                  boundary :=
+                    (contract.boundary.mono
+                      (Nat.le_succ supply)).congr_returns hReturns.symm
+                  shapes :=
+                    contract.shapes.of_required_fallthrough
+                      hBodyRequire hFallthrough
+                  stops := by
+                    intro sourceOutcome targetOutcome hRel
+                    apply contract.stops
+                    have hWhole :=
+                      InteractionControlPreservation.OpenOutcome.Rel.change_result_of_required_fallthrough
+                        hBodyRequire hFallthrough hRel
+                    simpa [hReturns] using hWhole
+                  nonregular := by
+                    intro childResult childRegular sourceOutcome
+                      targetOutcome hMode hRel
+                    apply contract.nonregular hMode
+                    simpa [hReturns] using hRel }
+              exact
+                (hBlockOwner (Nat.le_refl sourceFuel)
+                    hBodyCompile hBodyBlocks hBodyCalls
+                    hBodyWF hBodySafe hBodyCallsResolved hSupports hProcs
+                    hBodyReturns bodyContract).allEntriesRealized
+                  hAfterCondRel (Nat.le_refl _)
+
+end Stmt
+
 end OpenOutcome
 end InteractionBoundedOwnerPreservation
 end Structured
