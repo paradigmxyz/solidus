@@ -1481,3 +1481,135 @@ B–D. The composite cases require the bounded/forward budget-selection layer (t
 cannot reuse the single-`targetFuel` leaf constructor), re-scoped precisely above.
 `compile_correct` / `compile_correct_creation` axioms unchanged
 `[propext, Classical.choice, Quot.sound]`; measured delta +0.
+
+## Session-14 update (2026-07-17): item 3a (the bounded realizing family) LANDED + fuel monotonicity + the KEY composite unblock — the per-block `openStep_*_of_compileStmtFuel?` relations ALREADY expose the child-entry `StateRel`, so the composites do NOT need the 16.7k-line giant-sim re-threading sessions 10/11 feared. Three green, axiom-clean commits; the `if` child-`StateRel` extraction landed and validated. The remaining composite recursors are now a bounded, de-risked build (recipe rewritten below), not an open-ended re-threading.
+
+Session 14 executed item 3a of the session-13 recipe and, in the course of it,
+found that the composite obstruction sessions 5–13 had scoped as "requires
+strengthening the giant Structured→cfg simulation to expose a per-entry
+`StateRel`" is **already discharged by existing per-block machinery**.  Three
+commits, all green; `scripts/opt_harness.sh check` = OK (43 public theorems,
+axioms `[propext, Classical.choice, Quot.sound]` incl. `compile_correct` /
+`compile_correct_creation`).  `peepholeBody`/public spine UNTOUCHED ⇒ measured
+delta still definitionally **+0**.
+
+### Landed commits (branch `arena-opt`)
+- **`1c5dc20d`** — target-side fuel monotonicity, additive in
+  `EvmCompiler/TypedCfg/InteractionEntryRealized.lean`:
+  - `ReachesOpenStepAt.of_le` (`:105`) — reachable block-entry set is **monotone**
+    in fuel (`m ≤ n → reaches m → reaches n`; induction on the derivation, each
+    `.step` re-applies one level higher, `.start` holds at any fuel).
+  - `AllEntriesRealized.of_le` (`:223`) — realization is **antitone** in fuel
+    (`m ≤ n → AllEntriesRealized n → AllEntriesRealized m`).  This is the fact the
+    bounded family's `∀ tf ≤ budget` quantifier rests on: it is *equivalent* to the
+    single `AllEntriesRealized … budget …`, so a budget-level realization spreads
+    to every shorter run the existential-fuel composite might actually take.
+  Axioms `[propext, Classical.choice, Quot.sound]`.
+- **`73539c93`** — **item 3a**, NEW file
+  `EvmCompiler/Structured/InteractionEntryRealizedBounded.lean` (wired into
+  `EvmCompiler.Verification`).  `RealizingBoundedExecPreservesUnder` (`:62`): the
+  additive parallel family conjoining the existing (unchanged)
+  `BoundedExecPreservesUnder` outcome leg with
+  `∀ tf ≤ targetBudget, AllEntriesRealized cfg policy tf entry target realized`.
+  This is the vehicle the composites need — unlike the single-`targetFuel`
+  `RealizingForwardPreservesUnder` (session 13, leaves only), the bounded budget +
+  `∀tf≤budget` accommodates the **existential** `targetFuel` a composite
+  `ExecPreservesUnder`/`BoundedExecPreservesUnder` selects.  Projections
+  `.bounded` (`:91`) / `.exec` (`:103`, forgets to plain `ExecPreservesUnder` via
+  `BoundedExecPreservesUnder.exec`) / `.allEntriesRealized` (`:113`); builder
+  `.mk` (`:132`, budget-level accumulator ⇒ `∀tf≤` via `AllEntriesRealized.of_le`);
+  `.mono_budget` (`:155`, note: the accumulator is genuinely STRONGER at a larger
+  budget, so it is supplied afresh — there is deliberately no upward-monotone
+  accumulator lemma).  Axioms `[propext, Classical.choice, Quot.sound]`.
+- **`6ebe2ceb`** — the composite UNBLOCK, NEW file
+  `EvmCompiler/Structured/InteractionBranchEntryRealized.lean` (wired into
+  Verification).  `jump_state_rel_of_rel` (`:55`, namespace
+  `Structured.InteractionBranchPreservation.Condition`): from the `if`-entry
+  block's branch relation `Rel (DoneRel trueLabel falseLabel tokens restShape)
+  srcRun targetRun` and a concrete target first-step jump
+  `Executes targetRun transcript (.ok (.jump next state'))`, extract
+  `next = (if cond then trueLabel else falseLabel)`,
+  `StateRel srcState tokens state'`, and
+  `SourceFrameFits restShape state'.evm.stack.length`.  Axioms `[propext, Quot.sound]`.
+
+### THE KEY DISCOVERY (rewrites the composite scoping): child `StateRel` is already exposed
+Sessions 10/11 concluded the composite accumulator was blocked because
+`main_prefix_forward` / `ExecPreservesUnder` collapse intermediate block-entry
+jumps and expose no per-entry `StateRel`, so they framed step 4/A as a
+multi-session strengthening of the whole ~16.7k-line source→cfg simulation.  That
+framing is **too pessimistic at the owner-preservation layer**.  The composite
+recursors do not go through `main_prefix_forward`; they go through the per-block
+`openStep_*_of_compileStmtFuel?` relations, and those **already carry the child
+`StateRel`**:
+- `InteractionBranchPreservation.Condition.openStep_if_of_compileStmtFuel?`
+  (`InteractionBranchPreservation.lean:278`) returns
+  `Rel (DoneRel trueLabel falseLabel tokens bodyInput) (openRunCondition cond
+  source) (openStep cfg entry target)`, where `DoneRel = ExceptRel _ (ResultRel …)`
+  and `ResultRel` (`:95`) is literally
+  `∃ targetState, target = .jump (if cond then trueLabel else falseLabel)
+  targetState ∧ StateRel source.1 tokens targetState ∧ SourceFrameFits restShape
+  source.1.evm.stack.length`.
+- So a composite's non-stopping **first** openStep jump, backward-simulated by
+  `Rel.executes_right` (landed session 13), yields the source `StateRel` +
+  `SourceFrameFits` for the jumped-to child state directly (this is exactly
+  `jump_state_rel_of_rel`, landed).  The child fragment's realizing lemma then
+  supplies the residual `AllEntriesRealized`, glued by `AllEntriesRealized.of_succ`
+  (landed session 12).  **No giant-sim re-threading is required.**
+
+Consequence for the `realized` abstraction: at the composite level `realized`
+must be **instantiated to (or side-conditioned as derivable-from) the source
+witness** `fun label state => ∃ src tks blk, cfg.findBlock? label = some blk ∧
+StateRel src tks state ∧ SourceFrameFits blk.input state.evm.stack.length`,
+because the child entry's `hEntry` is discharged from the extracted `StateRel`
+(the abstract-`realized` pass-through only works at the leaves, where the first
+jump stops).  Equivalently, add a uniform side hypothesis
+`hRealizedOfStateRel : ∀ label state src tks blk, cfg.findBlock? label = some blk →
+StateRel src tks state → SourceFrameFits blk.input state.evm.stack.length →
+realized label state` to the composite recursors; the leaves already satisfy it
+vacuously via `hEntry`.
+
+### Exact next-session recipe (item 3b — now bounded and de-risked)
+Leaves (item 2) + item 3a bounded family + fuel monotonicity + the `if`
+child-`StateRel` extraction are DONE and banked green.  Remaining:
+1. **Realizing block owner.**  Define `RealizingBlockOwnerAt` mirroring
+   `BlockOwnerAt` (`InteractionOwnerPreservation.lean:155`) but yielding
+   `RealizingBoundedExecPreservesUnder` (with the source-witness `realized`).
+   Prove `block_owner_realizing` by the SAME `Nat.strong_induction_on sourceFuel`
+   as `block_owner` (`:1502`), feeding each recursive call the strictly-smaller-fuel
+   realizing owner.  This is the mutual-recursion anchor; the per-construct cases
+   are its body.
+2. **Per-construct realizing recursors**, each REUSING the existing (green)
+   `*_exec` for the outcome leg (`.bounded` conjunct via
+   `BoundedExecPreservesUnder`, obtained from the existing owner-preservation
+   `openRun_*_exec_under` at its bounded budget) and discharging the accumulator by:
+   `AllEntriesRealized.of_succ` on the composite entry's first jump →
+   `jump_state_rel_of_rel` (for `if`; write the `switch`/`for`/`call` analogues —
+   `switch` selects one of N case labels, `for` enters the cond/body/post cycle,
+   `call` pushes a frame — each has its own `openStep_*` relation exposing the child
+   `StateRel`, mirror `openStep_if`) → the child's realizing lemma from
+   `RealizingBlockOwnerAt` at the extracted `StateRel`.  Rule out the non-body
+   branch (e.g. `if` false → `regular`) under `hStop` via `contract`'s boundary
+   stop fact (`policy regular _ = true` contradicts `hStop = false`).  Order:
+   `if` → `switch` → `for` → `call` (dependency = none between them; do `if` first
+   as the template).  Commit per construct where the mutual recursion allows
+   (likely one commit at `block_owner_realizing`).
+3. `exec_succ_realizing` (dispatch over `Stmt`, mirroring `exec_succ` `:1370`) then
+   the mirrors in `InteractionBoundedOwnerPreservation` /
+   `InteractionTruncationOwnerPreservation` → `main_prefix_forward_realizing`.
+4. Steps B–D (unchanged): `openRunNPrefix_peephole_congr_of_source` consumes
+   `main_prefix_forward_realizing`'s `AllEntriesRealized`, discharges
+   `StackRealizes` via `stackRealizes_of_stateRel_of_*` (landed 8/9) + feeds
+   `openRunBody_swap_swap_congr` (landed 6); swap the four OIC call sites
+   (`OpenInteractionComposition.lean:909/942` prefix; `:1415/1561/1688` terminal) to
+   `_of_source`; add the `swap d :: swap d :: rest → rest` arm to `peepholeBody`;
+   re-green the syntactic (b)-family + semantic congruences; `scripts/opt_harness.sh full`.
+
+### Status handed to session 15
+Item 3a (bounded realizing family) + fuel monotonicity + the `if` child-`StateRel`
+extraction are CLOSED and banked green.  The composite obstruction is **downgraded
+from "re-thread the 16.7k-line giant sim" (sessions 10/11) to "build a realizing
+block owner + four per-construct recursors that read the child `StateRel` off the
+existing `openStep_*` relations"** — a bounded, mechanical build with the `if`
+template already landed.  `compile_correct` / `compile_correct_creation` axioms
+unchanged `[propext, Classical.choice, Quot.sound]`; measured delta +0 (no arm
+shipped).
