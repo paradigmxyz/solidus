@@ -17,6 +17,7 @@ import EvmCompiler.TypedCfg.PeepholeSwapKernel
 import EvmCompiler.TypedCfg.PeepholeStackRealizes
 import EvmCompiler.TypedCfg.PeepholeSwapOpen
 import EvmCompiler.Structured.TypedCfgPreservation.StackRealizesEntry
+import EvmCompiler.TypedCfg.InteractionEntryRealized
 import EvmCompiler.Assembly.GasfulBridge
 import EvmCompiler.Assembly.InteractionBytecode
 import EvmCompiler.Assembly.InteractionFuelSafety
