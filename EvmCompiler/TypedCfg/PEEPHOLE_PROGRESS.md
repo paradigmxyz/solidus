@@ -1337,3 +1337,147 @@ above (attach at the single-`targetFuel` FORWARD/uniform level, not the
 existential-fuel `ExecPreservesUnder` level). `compile_correct` /
 `compile_correct_creation` axioms unchanged `[propext, Classical.choice,
 Quot.sound]`; measured delta +0.
+
+## Session-13 update (2026-07-17): item 2 CLOSED — the `RealizingForwardPreservesUnder` family + the backward simulation bridge + ALL FIVE single-block leaf realizing lemmas landed green in 3 commits. The exec-vs-forward fuel-coupling limits the leaf pattern to single-block (`targetFuel = 1`) fragments; the composite cases (if/switch/for/call) genuinely need the bounded/forward budget-selection layer (the deferred Step-A bulk), precisely re-scoped below.
+
+Session 13 executed the session-11/12 recipe's **item 2** and the leaf half of
+**item 3**, landing three green, axiom-clean commits. Foundation from sessions
+1–12 UNCHANGED and green; `peepholeBody`/public spine UNTOUCHED ⇒ measured corpus
+delta still definitionally **+0** (no arm shipped). All new lemmas
+`#print axioms` = `[propext, Classical.choice, Quot.sound]` (`Rel.executes_right`
+needs only `[propext, Quot.sound]`).
+
+### Landed commits (branch `arena-opt`)
+- **`19ca2221`** (item 2a) — NEW file
+  `EvmCompiler/Structured/InteractionEntryRealizedForward.lean` (wired into
+  `EvmCompiler.Verification`). Three things, all ADDITIVE (no existing abbrev or
+  lemma statement touched):
+  - `Simulation.Interaction.Rel.executes_right` (`:56`) — the **backward companion
+    of the package's `Rel.executes`**: `Rel doneRel left right` +
+    `Executes right transcript rightOutcome` → `∃ leftOutcome, Executes left
+    transcript leftOutcome ∧ doneRel leftOutcome rightOutcome`. Mirror induction
+    on the RIGHT execution (the interaction-tree `Rel.request` aligns queries, so
+    the same transcript replays on the left). This is the bridge that turns an
+    `openStep` execution into the source-side `Rel` the fragment contract's `stops`
+    field constrains. `[propext, Quot.sound]`.
+  - `RealizingForwardPreservesUnder result cfg entry ctx regular regularExit
+    source tokens sourceRun targetFuel policy realized` (`:100`) — the parallel
+    family: `ForwardPreservesUnder … targetFuel policy ∧ (∀ target, StateRel →
+    AllEntriesRealized cfg policy targetFuel entry target realized)`, at the SAME
+    single `targetFuel`. Projections `.forward` / `.allEntriesRealized`.
+  - `RealizingForwardPreservesUnder.of_forward_first_jump_stops` (`:186`) — the
+    **generic single-block leaf constructor** at budget `fuel + 1`: given the
+    forward outcome leg, the start-entry realization `hRealized`, and that every
+    first-step jump out of the entry lands on a policy-stopping target `hStops`
+    (∀ target/StateRel, ∀ transcript/next/state', `Executes (openStep cfg entry
+    target) transcript (.ok (jump next state'))` → `policy next state' = true`),
+    it produces the family by discharging `AllEntriesRealized` through the landed
+    `of_first_jump_stops`. This is the reusable heart; each leaf proves its own
+    `hStops`/`hRealized`.
+- **`32970a18`** (item 2b) — NEW file
+  `EvmCompiler/Structured/InteractionOwnerRealized.lean` (wired into Verification).
+  The two leaves the recipe names:
+  - `code_forward_realizing` (`:44`) / `terminal_forward_realizing` (`:104`)
+    (namespace `Structured.InteractionOwnerPreservation.OpenOutcome`). Each is one
+    application of `of_forward_first_jump_stops`:
+    - forward leg = the EXISTING single-`targetFuel` leaf `PreservesUnder … 1
+      policy` (`openRun_{code,terminal}_under_of_compileStmtFuel?`) weakened via
+      `Simulation.Interaction.ForwardRel.ofRel`;
+    - `hStops` = the fragment's single `openStep` relation
+      (`openStep_{code,terminal}_of_compileStmtFuel?` : `Rel (OutcomeDoneRel …)
+      sourceRun (openStep cfg entry target)`) backward-simulated by
+      `Rel.executes_right`; the resulting `Rel result … srcOut (jump next state')`
+      is fed to `contract.stops`, whose `TargetStoppedBy policy (jump next state')`
+      is **defeq** `policy next state' = true`.
+  - The start-entry realization `realized entry target` is taken as the hypothesis
+    `hEntry : ∀ target, StateRel source tokens target → realized entry target`,
+    keeping `realized` ABSTRACT at this layer (the concrete source-witness
+    instantiation is a spine-level concern; sessions 7/8 showed the
+    `SourceFrameFits`-on-target shortcut is unsound, so `realized` will be the
+    `∃ src tks blk, findBlock? label = blk ∧ StateRel src tks state ∧
+    SourceFrameFits blk.input src.evm.stack.length` witness, discharged at each
+    entry by `stackRealizes_of_stateRel_of_{token_last_of_tokens_cons,
+    returnTokenDepth?_eq_none}`).
+- **`05db85a4`** (item 2c) — same file, the other three single-block leaves
+  `brk_forward_realizing` (`:181`) / `cont_forward_realizing` /
+  `leave_forward_realizing`. Identical `of_forward_first_jump_stops` shape, with
+  the break/continue/leave exit label obtained from `ContextSupports` (and leave's
+  live-frame witness `hSourceReturns`) exactly as `brk_exec`/`cont_exec`/`leave_exec`.
+
+**All five single-block leaf constructs now have realizing forward lemmas.** The
+existing `code_exec`/`terminal_exec`/`brk_exec`/`cont_exec`/`leave_exec`
+(producing `ExecPreservesUnder`) are UNTOUCHED and sit beside these.
+
+### The exec-vs-forward fuel-coupling, re-confirmed at the composite boundary
+The leaf pattern works because a single-block fragment lowers at a FIXED
+`targetFuel = 1` (`of_openStep` gives `PreservesUnder … 1`), so `AllEntriesRealized
+cfg policy 1 …` names one concrete run and `of_first_jump_stops` (fuel `0 + 1`)
+applies. The composite recursors `if_exec`/`switch_exec`/`for_exec`/`call_exec`
+(`InteractionOwnerPreservation.lean`) produce `ExecPreservesUnder` — whose
+`targetFuel` is **existential per (transcript, sourceOutcome)** — NOT a single-fuel
+`PreservesUnder`. So `RealizingForwardPreservesUnder` (which fixes ONE `targetFuel`)
+cannot be conjoined to a composite `*_exec` directly; there is no single `<fuel>`
+to name for its `AllEntriesRealized` conjunct. This is exactly the design tension
+session 12 pinned, and it stops cleanly at the leaf boundary: the leaves are the
+fragments with a canonical single target budget.
+
+### Exact next-session recipe (leaves landed struck through)
+1. ~~target-side `ReachesOpenStepAt`/`AllEntriesRealized` + `of_first_jump_stops`~~
+   **DONE (session 12)**.
+2. ~~`RealizingForwardPreservesUnder` family + generic constructor + the five
+   single-block leaf `*_forward_realizing` lemmas~~ **DONE (session 13)**.
+3. **Composite threading (the Step-A bulk — genuinely multi-session).** The
+   composite cases cannot reuse `of_forward_first_jump_stops` (existential fuel,
+   above). Two sub-routes, in dependency order:
+   - **3a. Bounded realizing family.** Define `RealizingBoundedForwardPreservesUnder`
+     (or `…BoundedExec…`) conjoining the existing bounded exec/forward leg with
+     `∀ tf ≤ budget, AllEntriesRealized cfg policy tf entry target realized`
+     (`AllEntriesRealized` is MONOTONE in fuel only up to the policy stop — more
+     fuel past a stop visits no new entries; prove `AllEntriesRealized_of_le` or,
+     better, note the composite's own stop policy bounds the reachable set). The
+     accumulator over the WHOLE composite run is the start entry realized + the
+     recursive sub-runs' accumulators, glued at each `openStep` jump via
+     `AllEntriesRealized.of_succ` (landed session 12): each `ReachesOpenStepAt`
+     `.step` leaf out of the composite entry lands in a sub-fragment whose
+     realizing lemma supplies the residual `AllEntriesRealized`.
+   - **3b. Per-construct realizing recursors.** `if_forward_realizing` /
+     `switch_forward_realizing` / `for_forward_realizing` / `call_forward_realizing`
+     → `exec_succ_realizing` → `block_owner_realizing`, each REUSING the existing
+     (green, unchanged) `*_exec` for the outcome leg and relaying per-recursive-call
+     `AllEntriesRealized` via `of_succ`. The mutual recursion likely forces one
+     commit at `block_owner_realizing`. The key new obligation per construct: relate
+     `ReachesOpenStepAt` of the composite `openStep`/`openRunNResultWithStop` to the
+     sub-fragments' reachability (the composite's first `openStep` jumps into a
+     child block; `of_succ`'s `hNext` is discharged by the child's realizing lemma).
+4. Mirror in `InteractionBoundedOwnerPreservation` then
+   `InteractionTruncationOwnerPreservation`; produce `main_prefix_forward_realizing`
+   exposing `AllEntriesRealized cfg policy targetFuel cfg.entry target realizedSrc`.
+5. Step B: `openRunNPrefix_peephole_congr_of_source` consumes
+   `main_prefix_forward_realizing`'s `AllEntriesRealized`; at each openStep discharge
+   `StackRealizes input state` via `stackRealizes_of_stateRel_of_{token_last_of_tokens_cons,
+   returnTokenDepth?_eq_none}` (landed 8/9) + feed `openRunBody_swap_swap_congr`
+   (landed 6). NO token guard (audit 9). Here the abstract `realized` is instantiated
+   to the source witness and `hEntry` at each leaf is discharged from the threaded
+   `StateRel`/`SourceFrameFits`.
+6. Step C: swap the four OIC call sites (`OpenInteractionComposition.lean:909/942`
+   prefix; `:1415/1561/1688` terminal) to the `_of_source` variants.
+7. Step D: add the `swap d :: swap d :: rest → rest` arm to `peepholeBody`; re-green
+   the syntactic (b)-family + semantic congruences; `scripts/opt_harness.sh full`.
+
+### Files/lemmas landed this session (all absolute-buildable, wired into Verification)
+- `EvmCompiler/Structured/InteractionEntryRealizedForward.lean` — `Rel.executes_right`,
+  `RealizingForwardPreservesUnder` (+ `.forward` / `.allEntriesRealized` /
+  `.of_forward_first_jump_stops`).
+- `EvmCompiler/Structured/InteractionOwnerRealized.lean` — `code_forward_realizing`,
+  `terminal_forward_realizing`, `brk_forward_realizing`, `cont_forward_realizing`,
+  `leave_forward_realizing`.
+
+### Status handed to session 14
+Item 2 (the realizing forward family) and ALL FIVE single-block leaves are CLOSED
+and banked green. Remaining = item 3's composite cases (the genuine Step-A bulk:
+bounded realizing family + `if`/`switch`/`for`/`call`/`exec_succ`/`block_owner`
+realizing recursors + both mirrors → `main_prefix_forward_realizing`) then Steps
+B–D. The composite cases require the bounded/forward budget-selection layer (they
+cannot reuse the single-`targetFuel` leaf constructor), re-scoped precisely above.
+`compile_correct` / `compile_correct_creation` axioms unchanged
+`[propext, Classical.choice, Quot.sound]`; measured delta +0.
