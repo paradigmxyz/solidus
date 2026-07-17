@@ -3683,3 +3683,140 @@ axioms ⊆ `[propext, Classical.choice, Quot.sound]`); `compile_correct`/
 are now banked for `if`/`call`/dispatch/programEnd; frontier = (1) the `.code`
 regular-jump successor leg (first, self-contained, recipe above) + (2) the deep
 provenance quantifier (routes 1/2 unchanged).
+
+## Session-31 update (2026-07-17): gate 1 CLOSED — the `.code` regular-jump leg trio landed green + axiom-clean (ALL per-arm suppliers now complete); gate 2 route DECIDED (static-provenance map) with evidence + first ROOT lemma banked
+
+Session 31's mandate: (1) close gate 1 (the `.code` leg trio per §Session-30), then
+(2) evaluate the two gate-2 provenance routes, write the choice + evidence, and land
+what is cleanly greenable.  **Result: four green, axiom-clean commits closing gate 1
+(`.code` extraction / successor / supplier + the source-regular helper), plus the
+gate-2 route decision and its first green ROOT lemma.**  Gate 1 is DONE — the per-entry
+ARM discharges of `block_category`'s case split are banked for ALL compiled-construct
+categories.  Gate 2 (the deep provenance quantifier) remains the sole frontier before
+`of_openStep_invariant` fires; its engine (the statement-list drill) is the next-session
+bulk.  No red code, no sorries, `peepholeBody`/public spine UNTOUCHED ⇒ measured delta
+still **+0**.
+
+### GATE 1 CLOSED (green, axiom-clean): `EvmCompiler/Structured/InteractionCodeConstructCoupling.lean`
+All `#print axioms` = `[propext, Classical.choice, Quot.sound]`; wired into
+`EvmCompiler.Verification` (import after `InteractionConstructCoupling`).  Three
+progressive commits (one per lemma) per the mandate:
+* **`0dee8c29` — `jump_state_rel_of_outcome`** (`:64`, namespace
+  `InteractionControlPreservation.OpenOutcome`) — the `.code`/regular extraction off
+  the outcome-indexed `Rel (OutcomeDoneRel result ctx regular returns tokens) srcRun
+  targetRun`.  Proof = `Rel.executes_right` → `cases`-`ok` →
+  `Rel.regular_elim_of_required_fallthrough`.  CAVEAT discharged as designed: the
+  break/continue/leave source outcomes also map to `.jump` under `OpenOutcome.Rel`,
+  so the extraction takes `hSrcRegular : ∀ t o, Executes srcRun t (.ok o) → ∃ final,
+  o = Outcome.regular final` (a straight-line `.code` run is regular-or-error) and the
+  non-regular arms are vacuous.  The `.code`/regular sibling of
+  `Condition.jump_state_rel_of_rel`.
+* **`edd64915` — `realizedWitness_of_regular_jump`** (`:119`, namespace
+  `InteractionRealizedWitnessSuccessor`) — the `.code` **successor leg**, sibling of
+  `realizedWitness_of_{branch,pure,dispatch}_jump`.  Proof =
+  `jump_state_rel_of_outcome` ∘ `realizedWitness_of_stateRel`.
+* **`47e12553` — `realizedWitness_of_code_compile`** (`:205`, namespace
+  `InteractionConstructCoupling`) + helper **`stmt_openRun_code_only_regular`**
+  (`:162`) — the `.code` **supplier**, sibling of `realizedWitness_of_{if,call}_compile`.
+  Proof = `Stmt.openStep_code_of_compileStmtFuel?`
+  (`InteractionControlPreservation.lean:5127`) ∘ `realizedWitness_of_regular_jump`,
+  discharging `requireFallthrough?` from the `.code` compile fact
+  (`components_of_compileStmtFuel?_code` ⟶ `fallthrough? = some output`, then
+  `requireFallthrough?_eq_some_iff.mpr`) and `hSrcRegular` from the helper.  The
+  helper proves any `.ok` outcome of `Stmt.openRun … (.code code)` is `Outcome.regular`
+  (`Stmt.openRun` unfolds to `bind (Code.openRun code source) (fun final => pure
+  (.regular final))`; `Executes.bind_cases` + the `pure`-done leaf).
+
+**The per-entry ARM discharges of `block_category`'s case split are now complete for
+ALL categories:** `realizedWitness_of_if_compile` / `_call_compile` / `_code_compile`
+(main-body / proc-body compiled constructs), `realizedWitness_of_dispatch_jump`
+(dispatch), `programEnd_openStep_no_jump` (programEnd, vacuous).  Every arm now
+consumes ONLY the block's *compile fact* (+ the `realizedWitness` `StateRel`/
+`SourceFrameFits` carried at the entry + the successor `LabelShape`).
+
+### GATE 2 ROUTE DECISION (evidence-backed): the STATIC-PROVENANCE map for the compile-fact recovery
+The mandate asked to evaluate two routes and pick before implementing.
+
+* **Route 2 (source-run coupling at the OIC splice).** Thread
+  `yulToNormalizedStackTypedCfgPrefixForward`
+  (`Compiler/OpenInteractionComposition.lean:695`) — which yields a
+  `ForwardRel … (Yul exec …) (openRunNPrefix cfg … entryLabel …)` *and the
+  `GeneratedContext generated`* in scope — so each reached entry's construct + compile
+  fact (and, for dispatch, its `RunState.returns`/`popReturn?` frame facts) is supplied
+  from the source run.  Naturally supplies the dispatch runtime frame facts (as
+  `openRun_call_exec_under` does via `Rel.regular_elim_of_required_fallthrough`), but
+  couples the whole `AllEntriesRealized` proof to the giant source→cfg simulation.
+* **Route static (induction over the GENERATION, not the run).** Every block in the cfg
+  is generated from some construct; a static map «cfg block label ↦ its compile fact»
+  is derived from `GeneratedContext.mainCompile`/`procsCompile`
+  (`Core.lean:3395/3400`) + a structural drill over
+  `compileBlock?`→`compileStmtListFuel?`→`compileStmtFuel?`
+  (`TypedCfgCompiler.lean:377/383/407`).  Decoupled from the run and from fuel; reused
+  at EVERY reached entry via `block_category`'s `findBlock?` witness.
+
+**Chosen: static-provenance for the compile-fact recovery.**  Evidence it is strictly
+easier for the compile-fact part: the if/call/code suppliers need only the compile
+fact + the entry `StateRel`/`SourceFrameFits` (both carried by `realizedWitness`) +
+the successor `LabelShape` (already static via `LabelShape.of_compileStmtFuel?` /
+`_of_compileStmtListFuel?`, used at `InteractionOwnerPreservation.lean:1575`).  None of
+those need the run.  **Residual (deferred, NOT static): the DISPATCH arm's frame-boundary
+facts** `hPop`/`hAttach`/`hRetc` are runtime (`bodyState.popReturn?` etc.) and are NOT
+derivable from the cfg generation; they must come from the `realizedWitness` `StateRel
+bodyState (site.token :: tokens) t` at the exit block (a StateRel⟶frame-facts
+derivation), or fall back to route 2 for that single arm.  So the plan is: static
+provenance for main/proc/code/if/call; a localized StateRel⟶frame-facts derivation
+(or route-2 splice) for dispatch.
+
+### LANDED (green, axiom-clean): `EvmCompiler/Structured/InteractionBlockProvenanceRoot.lean`
+`#print axioms` = `[propext, Classical.choice, Quot.sound]`; wired into
+`EvmCompiler.Verification` (import after `InteractionCodeConstructCoupling`).
+* **`c93ffaf5` — `main_stmtList_provenance`** (`:52`, namespace
+  `TypedCfgPreservation.Program.GeneratedContext`) — the ROOT of the static drill for
+  the main-body category.  From `block ∈ context.main.blocks` (the first arm of
+  `block_category`) concludes `compileStmtListFuel? (blockFuel source.body)
+  source.body.stmts { procs := source.procs } 0 entryLabel Shape.caller
+  ProcLabel.programEnd = some context.main ∧ block ∈ context.main.blocks` — the exact
+  entry point the eventual statement-list provenance drill inducts on.  Proof =
+  `context.mainCompile` + the `compileBlock?`/`compileBlockFuel?` unfold.
+
+### THE FRONTIER: gate 2's ENGINE — the statement-list provenance drill (next-session bulk)
+With `main_stmtList_provenance` (main root) landed, the remaining gate-2 work is the
+**structural drill** that, from `compileStmtListFuel? fuel stmts ctx supply entry input
+regular = some result` and `block ∈ result.blocks`, recovers the *specific* source
+statement whose `compileStmtFuel?` has `entry = block.label` (drilling through nested
+`if`/`switch`/`for`/`call` bodies via `compileBlockFuel?`/`compileStmtListFuel?` until
+the entry aligns).  It is a mutual induction mirroring `block_owner`'s generation
+skeleton (`InteractionOwnerPreservation.lean:1502`) MINUS the semantic content — the
+`head :: bodyResult.blocks` / `head.append tail` cases split block membership across the
+head construct and its compiled tail/body.  Once it lands, `hInv`'s proof is:
+`block_category` → (main) `main_stmtList_provenance` → drill → `compileStmtFuel?` fact →
+`realizedWitness_of_{if,call,code}_compile`; (proc) proc root (analogous, via
+`procsCompile`) → drill → same suppliers; (dispatch) the localized StateRel⟶frame-facts
+derivation → `realizedWitness_of_dispatch_jump`; (programEnd) `programEnd_openStep_no_jump`.
+Feed the resulting `hInv` to `of_openStep_invariant`; then Step B.
+
+### Next-session recipe
+* Land the statement-list provenance drill (structural induction over
+  `compileStmtListFuel?`/`compileStmtFuel?`/`compileBlockFuel?`), concluding the
+  entry-aligned `compileStmtFuel? … entry = block.label … = some subResult` with
+  `block = subResult.blocks.head`.  Bank the proc-body root
+  (`proc_*_provenance` via `procsCompile`/`ProcFragment`) alongside.
+* Then assemble `hInv` per the case split above (dispatch: add the
+  `StateRel (…, site.token :: tokens, …) ⟶ popReturn?/attachReturns?/retc` derivation,
+  or splice route 2 for that arm only), feed `of_openStep_invariant`, proceed to Step B
+  (`openRunNPrefix_peephole_congr_of_source`).
+* Do NOT add the swap arm to `peepholeBody` until the whole invariant is green.
+
+### Status handed to session 32
+Gate 1 CLOSED.  Landed this session: `InteractionCodeConstructCoupling.lean`
+(`jump_state_rel_of_outcome` :64, `realizedWitness_of_regular_jump` :119,
+`stmt_openRun_code_only_regular` :162, `realizedWitness_of_code_compile` :205) +
+`InteractionBlockProvenanceRoot.lean` (`main_stmtList_provenance` :52), all green,
+axiom-clean, wired into `EvmCompiler.Verification`.  Commits `0dee8c29` / `edd64915`
+/ `47e12553` / `c93ffaf5`.  `scripts/opt_harness.sh check` = OK (43 public theorems,
+axioms ⊆ `[propext, Classical.choice, Quot.sound]`); `compile_correct`/
+`compile_correct_creation` unchanged; delta +0.  The `hInv` per-entry ARM discharges
+are complete for ALL categories; gate 2's route is DECIDED (static-provenance) with the
+main root banked; the sole remaining frontier is the statement-list provenance drill
+(+ the dispatch StateRel⟶frame-facts derivation), the next-session bulk before
+`of_openStep_invariant` → Step B.
