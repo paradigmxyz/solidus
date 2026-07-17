@@ -3224,3 +3224,100 @@ body leg and `findBlock?_exists_of_type?_runTerm_jump` for the target; the widen
 standalone-from-`realizedWitness` proof — it is provably underdetermined (no source' without
 the construct).  `compile_correct`/`compile_correct_creation` axioms unchanged; delta +0.
 
+## Session-27 update (2026-07-17): the two NON-widening `realizedWitness` successor legs (branch/if + call/pure) LANDED green + axiom-clean as direct compositions; the sole remaining hInv frontier isolated to (a) per-entry source-construct provenance recovery and (b) the widening `returnDispatch` caller-frame extraction (no green-able returnDispatch child-`StateRel` lemma exists yet)
+
+Session 27's mandate was framing 2: state and prove, at the OIC splice, the
+`openStep`-jump invariant `hInv` for `realized := realizedWitness cfg`, then feed
+`AllEntriesRealized.of_openStep_invariant` (landed session 26,
+`InteractionEntryRealized.lean:271`).  Result: **one green, axiom-clean commit**
+(`e93600d1`) banking the two per-jump *successor legs* the invariant's proof invokes
+at every `if`/branch and `call` entry — the non-widening, non-provenance part of
+`hInv`, isolated so the remaining frontier is exactly two named obligations.  The
+full `hInv` did NOT close (it cannot in one session — see frontier below); no red
+code, no sorries, `peepholeBody`/public spine UNTOUCHED ⇒ measured delta still **+0**.
+
+### LANDED (green, axiom-clean, commit `e93600d1`): `EvmCompiler/Structured/InteractionRealizedWitnessSuccessor.lean`
+Both `#print axioms` = `[propext, Classical.choice, Quot.sound]`; wired into
+`EvmCompiler.Verification` (import after `InteractionBoundedOwnerRealized`).
+* **`realizedWitness_of_branch_jump`** (`:62`) — the **branch/`if` leg** of the
+  invariant.  From the source-coupling `Rel (InteractionBranchPreservation.Condition.DoneRel
+  trueLabel falseLabel tokens restShape) srcRun (openStep cfg entry target)`, a concrete
+  non-stopping `Executes … (.ok (.jump next state'))`, and the target `LabelShape cfg
+  next restShape`, concludes `realizedWitness cfg next state'`.  Proof = the existing
+  child-`StateRel` extraction `InteractionBranchPreservation.Condition.jump_state_rel_of_rel`
+  (`InteractionBranchEntryRealized.lean:55`) ∘ the uniform entry-witness supplier
+  `realizedWitness_of_stateRel` (`InteractionBoundedOwnerRealized.lean:334`).
+* **`realizedWitness_of_pure_jump`** (`:100`) — the **`call` leg**.  From the silent
+  call-site `openStep cfg entry target = pure (.jump childLabel childState)`, the child
+  `StateRel childSource childTokens childState`, a concrete `Executes … (.ok (.jump next
+  state'))`, the target `LabelShape cfg childLabel childInput`, and `SourceFrameFits
+  childInput childSource.evm.stack.length`, concludes `realizedWitness cfg next state'`.
+  Proof = `InteractionCallPreservation.Call.jump_state_rel_of_pure`
+  (`InteractionCallEntryRealized.lean:61`) ∘ `realizedWitness_of_stateRel`.
+
+These are the exact per-jump discharges framing 2's `hInv` proof runs at each
+`if`/branch and `call` entry: they consume precisely the source-coupling
+(`DoneRel` `Rel` / silent `pure`-jump equation) + the target `LabelShape`, and emit the
+child `realizedWitness`.  They confirm the non-widening successor step is a clean
+green composition once the coupling is in hand.
+
+### THE FRONTIER, now isolated to exactly two named obligations
+`of_openStep_invariant` needs a GLOBAL `hInv : ∀ e t transcript n s, realizedWitness
+cfg e t → Executes (openStep cfg e t) transcript (.ok (.jump n s)) → realizedWitness cfg
+n s`.  The successor legs above discharge the *conclusion* GIVEN the source coupling at
+`e`; what remains is:
+
+1. **Per-entry source-construct provenance recovery (the session-26 obstruction, unmoved).**
+   To invoke `realizedWitness_of_branch_jump`/`_of_pure_jump` at an ARBITRARY reached
+   `(e, t)` with only `realizedWitness cfg e t` in hand, one must first PRODUCE the
+   source coupling at `e` — the `Rel (DoneRel …)` (branch) or the `openStep = pure …`
+   equation (call) — which requires knowing `e`'s source construct.  `realizedWitness`
+   carries `StateRel`/`SourceFrameFits` but NOT the coupling nor the construct identity.
+   Recovering it from `GeneratedContext` (`Core.lean:3387`, `cfg.blocks = main ++ procs ++
+   dispatch ++ [programEnd]`) is the `block_owner` decomposition — the never-inhabited
+   `RealizingBlockOwnerAt`/`block_owner_realizing` anchor
+   (`InteractionBoundedOwnerRealized.lean:358`).  Framing 2's intended fix: at the OIC
+   splice, do NOT prove a global `hInv` from `realizedWitness` alone; instead STRENGTHEN
+   the carried predicate to bundle the construct compile-fact (so `hInv` becomes
+   self-contained), OR couple the `AllEntriesRealized` proof to the actual source run
+   `yulToNormalizedStackTypedCfgPrefixForward` so the construct is supplied at each entry
+   it visits.  Both routes inhabit the same `block_owner`-indexed provenance; the
+   successor legs landed here are what that proof calls once provenance is in hand.
+2. **The widening `returnDispatch` caller-frame leg (deferred since session 5, still absent).**
+   There is NO `returnDispatch` analogue of `jump_state_rel_of_rel`/`_of_pure` — grep-confirmed:
+   the only child-`StateRel` extractions are the branch and call ones.  `returnDispatch`
+   (`Semantics.lean:137`, erases the token slot, dispatches to a `.caller`-tail target
+   whose `input.length` may EXCEED the pre-jump `output.length`) needs the hidden
+   caller-frame depth reconstructed via `realizeStack`/`StateRel`/`ActivationExtension`
+   (`Structured/TypedCfgPreservation/Core.lean:17/51/285`) + `SourceFrameFits`/
+   `returnTokenDepth?` (`TypedCfgCompiler.lean:186`, `TypedCfgCompilerFacts.lean:76`).
+   Writing that `returnDispatch` extraction is the genuine multi-hundred-line frame-model
+   step; it is a prerequisite for a `realizedWitness_of_dispatch_jump` sibling of the two
+   legs banked this session.
+
+### Next-session recipe
+* First bank the **`returnDispatch` child-`StateRel` extraction** (obligation 2) as a new
+  `jump_state_rel_of_dispatch`-style lemma in the `Structured/Interaction*EntryRealized`
+  family, mirroring `jump_state_rel_of_rel` but reading the caller frame off
+  `realizeStack`/`ActivationExtension`; then a `realizedWitness_of_dispatch_jump` leg is a
+  one-line composition with `realizedWitness_of_stateRel` (as the two landed legs are).
+  This closes the *successor* half of `hInv` for ALL terminators.
+* Then attack obligation 1 (provenance) at the OIC splice: state
+  `AllEntriesRealized cfg policy fuel cfg.entry initialState (realizedWitness cfg)` where
+  the source bridge is in scope; build the global `hInv` by the `block_owner`
+  `Nat.strong_induction_on sourceFuel`, feeding each terminator's landed successor leg
+  (`realizedWitness_of_{branch,pure,dispatch}_jump`) with the construct recovered from
+  `GeneratedContext`.  Feed the result to `of_openStep_invariant`; proceed to Step B.
+* Do NOT add the swap arm to `peepholeBody` until the whole invariant is green (adding it
+  reddens every `peepholeBody_cons` split, per session 5).
+
+### Status handed to session 28
+Landed: `e93600d1` (`realizedWitness_of_branch_jump` + `realizedWitness_of_pure_jump`,
+`InteractionRealizedWitnessSuccessor.lean:62/100`), green, axiom-clean, wired into
+`EvmCompiler.Verification`.  `scripts/opt_harness.sh check` = PASS (43 public theorems,
+axioms ⊆ `[propext, Classical.choice, Quot.sound]`); `compile_correct`/
+`compile_correct_creation` unchanged; delta +0.  Frontier = (1) per-entry provenance
+recovery (`block_owner`, framing 2 at the OIC splice) + (2) the widening `returnDispatch`
+caller-frame extraction (write `jump_state_rel_of_dispatch` first).  The two successor
+legs banked here are the reusable per-jump discharges those two obligations feed into.
+
