@@ -34,6 +34,7 @@ import EvmCompiler.Structured.InteractionBlockProvenance
 import EvmCompiler.Structured.InteractionConstructCoupling
 import EvmCompiler.Structured.InteractionCodeConstructCoupling
 import EvmCompiler.Structured.InteractionBlockProvenanceRoot
+import EvmCompiler.Structured.InteractionBlockProvenanceDrill
 import EvmCompiler.Assembly.GasfulBridge
 import EvmCompiler.Assembly.InteractionBytecode
 import EvmCompiler.Assembly.InteractionFuelSafety
