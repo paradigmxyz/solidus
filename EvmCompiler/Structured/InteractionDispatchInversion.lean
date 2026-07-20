@@ -136,6 +136,103 @@ theorem get_retc_of_stateRel_procExit
               simp [hLen]
 
 /--
+**`attachReturns?` succeeds at a procedure exit whose popped frame matches the proc.**
+
+At a `procExit proc` shape the source stack has length `proc.retc` (from the exit
+`SourceFrameFits`).  If the popped return frame's `retc` equals `proc.retc` then the return
+vector length matches `frame.retc`, so `attachReturns?` reattaches it onto the recorded
+caller stack — the computational core of the dispatch finisher's frame-reattachment
+obligation (`hFinish` part (a)).  The residual `frame.retc = proc.retc` is the genuine
+source-frame-safety atom (see `dispatch_hFinish_of_frameConsistent`). -/
+theorem attachReturns?_of_procExit_fit
+    {bodyState : RunState} {proc : Structured.Proc} {frame : ReturnDest}
+    (hFits :
+      TypedCfgCompiler.Shape.SourceFrameFits
+        (TypedCfgCompiler.Shape.procExit proc) bodyState.evm.stack.length)
+    (hRetc : frame.retc = proc.retc) :
+    Structured.StackFrame.attachReturns? frame bodyState.evm.stack =
+      some (bodyState.evm.stack ++ frame.callerStack) := by
+  have hLen : bodyState.evm.stack.length = proc.retc :=
+    hFits.2 proc.retc (TypedCfgCompilerFacts.Call.returnTokenDepth?_procExit proc)
+  have hCond : bodyState.evm.stack.length = frame.retc := by rw [hLen, hRetc]
+  unfold Structured.StackFrame.attachReturns?
+  rw [if_pos hCond]
+
+/--
+**The dispatch finisher `hFinish` reduces to two clean source-frame-safety atoms.**
+
+`realizedWitness_of_dispatch_arm` leaves the finisher `hFinish` as its sole additive
+hypothesis — an existential over `attachReturns?`/`retc`/`LabelShape`/`SourceFrameFits`.
+This lemma discharges its *computational* content (the `attachReturns?` success and the
+`stack.length` bookkeeping) via `attachReturns?_of_procExit_fit`, reducing `hFinish` to the
+two irreducible **source-frame-safety atoms** the popped frame must satisfy:
+
+* `frame.retc = proc.retc` — the popped return frame belongs to the procedure whose exit
+  we are at (procedure-identity), and
+* `∃ callerInput, LabelShape cfg site.returnLabel callerInput ∧ SourceFrameFits callerInput
+  (bodyState.evm.stack.length + frame.callerStack.length)` — the recorded caller
+  continuation `site.returnLabel` expects a shape the restored caller frame (return vector
+  reattached onto `frame.callerStack`) fits.
+
+**Design note (session 45): these atoms are NOT derivable from the `realizedWitness`
+predicate as currently defined.**  `realizedWitness cfg (ProcLabel.exit proc.name) target`
+only supplies *some* source witness `bodyState` with `StateRel bodyState tokens target` and
+`SourceFrameFits (procExit proc) …`, and `StateRel`/`realizeStack` place **no** constraint
+on `frame.retc` (the ghost frame's `retc`/`callerStack` are erased by realization — only the
+head token and `callerStack` *contents* appear, never a length or `retc` law).  Concretely,
+the witness `bodyState.returns = [{ callerStack := [], retc := proc.retc + 1 }]`,
+`bodyState.evm.stack` of length `proc.retc`, `tokens = [site.token]` satisfies both
+`StateRel` (with `target.stack = bodyState.evm.stack ++ [site.token]`) and the `procExit`
+`SourceFrameFits`, yet `attachReturns? frame bodyState.evm.stack = none`.  Hence the eventual
+`hInv` assembly must carry these atoms in a **strengthened realized predicate** (a per-witness
+source frame-consistency invariant), not merely a program-level `hSourceFrameSafe` threaded at
+the composite — the composite `hInv` quantifies over `realizedWitness cfg` whose existential
+witness a program-level fact cannot constrain.  This lemma is the clean interface the
+strengthened predicate plugs into. -/
+theorem dispatch_hFinish_of_frameConsistent
+    {source : Structured.Program}
+    {entryShapes : TypedCfgCompiler.ProcEntryShapes}
+    {cfg : TypedCfg.Program}
+    (context :
+      TypedCfgPreservation.Program.GeneratedContext source entryShapes cfg)
+    {proc : Structured.Proc}
+    {bodyState : RunState} {tokens : List Word}
+    (hFits :
+      TypedCfgCompiler.Shape.SourceFrameFits
+        (TypedCfgCompiler.Shape.procExit proc) bodyState.evm.stack.length)
+    (hCons :
+      ∀ (site : TypedCfgCompiler.DispatchSite) (rest : List Word)
+        (frame : ReturnDest) (returns : List ReturnDest),
+        site ∈ context.calls →
+        site.procName = proc.name →
+        tokens = site.token :: rest →
+        bodyState.returns = frame :: returns →
+        frame.retc = proc.retc ∧
+          ∃ callerInput : TypedCfg.Shape,
+            TypedCfgPreservation.LabelShape cfg site.returnLabel callerInput ∧
+            TypedCfgCompiler.Shape.SourceFrameFits callerInput
+              (bodyState.evm.stack.length + frame.callerStack.length)) :
+    ∀ (site : TypedCfgCompiler.DispatchSite) (rest : List Word)
+      (frame : ReturnDest) (returns : List ReturnDest),
+      site ∈ context.calls →
+      site.procName = proc.name →
+      tokens = site.token :: rest →
+      bodyState.returns = frame :: returns →
+      ∃ (stack : EvmYul.Stack Word) (callerInput : TypedCfg.Shape),
+        Structured.StackFrame.attachReturns? frame bodyState.evm.stack = some stack ∧
+        frame.retc = proc.retc ∧
+        TypedCfgPreservation.LabelShape cfg site.returnLabel callerInput ∧
+        TypedCfgCompiler.Shape.SourceFrameFits callerInput stack.length := by
+  intro site rest frame returns hMem hSiteProc hTok hReturns
+  obtain ⟨hRetc, callerInput, hLabelShape, hFit⟩ :=
+    hCons site rest frame returns hMem hSiteProc hTok hReturns
+  refine
+    ⟨bodyState.evm.stack ++ frame.callerStack, callerInput,
+      attachReturns?_of_procExit_fit hFits hRetc, hRetc, hLabelShape, ?_⟩
+  rw [List.length_append]
+  exact hFit
+
+/--
 **The dispatch `openStep`-jump inversion (source-run-free core).**
 
 At a procedure-exit (return-dispatch) block, whose `openStep` is the silent `runTerm` of
@@ -357,3 +454,51 @@ theorem realizedWitness_of_dispatch_arm
     InteractionRealizedWitnessSuccessor.realizedWitness_of_dispatch_jump
       context hLookup hSiteProc hMem hRel hPop hAttach hRetc hExec
       hLabelShape (callerInput := callerInput) hFitsCaller
+
+/--
+**The dispatch arm consuming only the two source-frame-safety atoms** (clean interface).
+
+Composes `realizedWitness_of_dispatch_arm` with the finisher reducer
+`dispatch_hFinish_of_frameConsistent`, so the dispatch arm of the eventual `hInv` case split
+consumes — instead of the awkward `attachReturns?`-existential `hFinish` — exactly the two
+atoms the strengthened realized predicate must carry per return frame (`frame.retc =
+proc.retc` and the caller-continuation `LabelShape` + restored-frame `SourceFrameFits`).  This
+is the plug-in point for the source-frame-consistency invariant (see the design note on
+`dispatch_hFinish_of_frameConsistent`): once that invariant is threaded into `realizedWitness`,
+the entry witness at `ProcLabel.exit proc.name` supplies `hCons` directly and this lands the
+successor `realizedWitness cfg next state'` with no residual. -/
+theorem realizedWitness_of_dispatch_arm_of_frameConsistent
+    {source : Structured.Program}
+    {entryShapes : TypedCfgCompiler.ProcEntryShapes}
+    {cfg : TypedCfg.Program}
+    (context :
+      TypedCfgPreservation.Program.GeneratedContext source entryShapes cfg)
+    {proc : Structured.Proc}
+    (hLookup :
+      Structured.ProcList.lookup? proc.name source.procs = some proc)
+    {bodyState : RunState} {tokens : List Word} {target state' : EVMState}
+    {next : Assembly.Label} {transcript : Simulation.Interaction.Transcript}
+    (hRel : TypedCfgPreservation.StateRel bodyState tokens target)
+    (hFits :
+      TypedCfgCompiler.Shape.SourceFrameFits
+        (TypedCfgCompiler.Shape.procExit proc) bodyState.evm.stack.length)
+    (hExec :
+      Simulation.Interaction.Executes
+        (TypedCfg.InteractionSemantics.Program.openStep
+          cfg (ProcLabel.exit proc.name) target)
+        transcript (Except.ok (TypedCfg.Outcome.jump next state')))
+    (hCons :
+      ∀ (site : TypedCfgCompiler.DispatchSite) (rest : List Word)
+        (frame : ReturnDest) (returns : List ReturnDest),
+        site ∈ context.calls →
+        site.procName = proc.name →
+        tokens = site.token :: rest →
+        bodyState.returns = frame :: returns →
+        frame.retc = proc.retc ∧
+          ∃ callerInput : TypedCfg.Shape,
+            TypedCfgPreservation.LabelShape cfg site.returnLabel callerInput ∧
+            TypedCfgCompiler.Shape.SourceFrameFits callerInput
+              (bodyState.evm.stack.length + frame.callerStack.length)) :
+    realizedWitness cfg next state' :=
+  realizedWitness_of_dispatch_arm context hLookup hRel hFits hExec
+    (dispatch_hFinish_of_frameConsistent context hFits hCons)
