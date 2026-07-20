@@ -6774,3 +6774,38 @@ New non-frozen leaf `EvmCompiler/TypedCfg/PeepholeSeamCancelEff.lean` (imported 
 
 ### Files touched (session 70)
 `EvmCompiler/TypedCfg/PEEPHOLE_PROGRESS.md` (this note), NEW `EvmCompiler/TypedCfg/PeepholeSeamCancelEff.lean` (static-half leaf, imported by nobody). No frozen file touched. No splice ⟹ emitted bytes UNCHANGED (byte-identical to §59/§69: 8557/8591·3, 2791/2825·61, 1991/2234·15, 923/957·15). `compile_correct`/`compile_correct_creation` axioms UNCHANGED = `[propext, Classical.choice, Quot.sound]`.
+
+## Session-71 update (2026-07-20): **§70's premise was INCOMPLETE — the sound Route-α needs NAME-CONJUGATION + CLEAN-SEAM disjointness, not just an output re-typing. The corrected transform is now proven WELL-TYPED and axiom-clean; the gate `seamCancelProgramEff_wellTyped` is GREEN.** No live byte delta yet (runtime bisimulation + splice remain the frontier). Five green, axiom-clean commits on `arena-opt`. `compile_correct`/`compile_correct_creation` axioms UNCHANGED. No frozen file touched.
+
+### THE CORRECTION (empirical, decisive — three uncommitted probes on ExternalCallBox, solc 0.8.26 via-IR + Yul optimizer, runtime)
+§70 proposed "drop the tail swap, retain the trailing binds, re-type `output` by re-running `bodyType?`" (the `getD` fix, commit `e2836628`). Probes show this is **UNSOUND at the type level**:
+* The getD fix makes `(seamCancelProgramEff finalCfg).lower? = some` (lowered len 3733 vs 3851) **BUT** `eff.wellTyped? = false` — **termFail = 61**. `lower?` does *not* check inter-block terminator compatibility; `WellTyped` does, and it fails at every source block.
+* Root cause (`probe_shapes`): every source block is **exactly** `A.body = [swap d, bindLocals 0 names]` (`d = 0`, `names.length ∈ {3,4}`, `d+1 < names.length`, `61/61`). The trailing `bindLocals` **relabels** the swapped slots — it names position 0 `param` when after the swap the value there is `param_1`. Merely dropping the swap makes the bind *mislabel the runtime values*. The sound edit must **conjugate the bind's names** through the `0↔d+1` transposition (`bindLocals 0 names ↦ bindLocals 0 (swapPos 0 (d+1) names)`) and re-type `output := remapShape d output` (exactly the shipped `seamCancelProgram` formula — so the terminator obligation reuses `compatible_remapShape_eq` verbatim; only the body-typing is new). `bindLocals` is a runtime identity for *any* names, so the runtime is untouched by the permutation.
+* Second hazard: these blocks emit a **single** swap (head = emitted-tail), so a swap shared by a chain `C→A→B` is double-claimed (probe: **4** blocks are both raw-source and raw-target). The shipped `2≤length`-distinct-index disjointness does NOT hold here. A seam now fires only when **both endpoint swaps are private** (`cleanSrc?`/`cleanTgt?`: source is not a target, its target is not a source), proven disjoint (`cleanSrc?_cleanTgt?_disjoint`). On ECB this fires **53/61** seams (8 dropped to the overlap guard) and yields `eff.wellTyped? = TRUE`, `eff.lower? = some` (lowered len **3745** vs 3851, **−106 = 53 seams × 2 swaps** pre-compaction).
+
+### WHAT LANDED (green, axiom-clean — commits `e2836628` `51e1e7d3` `4352b253` `34d5d38e` `f61d7495`)
+All in the non-frozen orphan leaf `EvmCompiler/TypedCfg/PeepholeSeamCancelEff.lean` (imported by **nobody** ⟹ cannot touch the `compile_correct` cone).
+1. **Corrected transform** (`51e1e7d3`, supersedes getD `e2836628`): `conjBind`; `srcRaw?`/`tgtRaw?`/`cleanSrc?`/`cleanTgt?` (exact `[swap d, bindLocals 0 names]` source shape); `seamBlockEff` (source: conjugate the bind + `remapShape d output`; target: drop head swap + `remapShape d input`); `seamCancelProgramEff`. Structural preservation + `cleanSrc?_cleanTgt?_disjoint`.
+2. **Body-conjugation kernel** (`4352b253`, the crux): `swapPos_map`/`_append_left`/`_drop`/`_eq_of_oob`; `type?_bindLocals0`/`_of_le`; **`bodyType?_conj`** = `bodyType? [bindLocals 0 (swapPos 0 (d+1) names)] input = some (remapShape d output)`. Expressible as a single permuted `bindLocals` since the swap positions lie inside the offset-0 name range (the §57 `remapZeroWidth`/`RemapSafe` machinery does NOT cover multi-name binds — `RemapSafe` requires `names.length = 1`).
+3. **Specs + field descriptions** (`34d5d38e`): `srcRaw?_spec`, `cleanSrc?_spec`, `cleanTgt?_spec`, `seamBlockEff_{output,input,body}`.
+4. **The WellTyped gate** (`f61d7495`): `cleanTgt_head_swap`, `cleanTgt?_of_cleanSrc?`, `cleanTgt?_none_of_cleanSrc?_none` (non-source terminator invariance via `refCount=1` / `two_le_refCount`), `output_bound_of_cleanSrc`/`input_bound_of_cleanTgt`, `labelShape?_seamCancelProgramEff`, `seamBlockEff_term_type?`, `seamBlockEff_bodyType?`, `seamBlockEff_wellTyped`, and **`seamCancelProgramEff_wellTyped : program.WellTyped → (seamCancelProgramEff program).WellTyped`**. `#print axioms` = `[propext, Classical.choice, Quot.sound]`.
+
+### THE MEASUREMENT (probe, OUTSIDE the repo commit; ECB runtime)
+| quantity | value |
+|---|---|
+| `cleanSrc?` / `cleanTgt?` fires | **53 / 53** (disjoint; 8 dropped to overlap vs the 61 raw seams) |
+| `finalCfg.wellTyped?` | true |
+| `(seamCancelProgramEff finalCfg).wellTyped?` | **true** |
+| `finalCfg.lower?` len (pre-compaction) | 3851 |
+| `(seamCancelProgramEff finalCfg).lower?` len | **3745** (**−106** = 53 × 2 swaps) |
+
+**EMITTED-BYTES DELTA = 0 (no splice this session).** `seamCancelProgramEff` is imported by nobody, so ASP/ECB/MiniToken/LoopBox are byte-identical to §59/§69 (8557/8591·3, 2791/2825·61, 1991/2234·15, 923/957·15). Determinism: N/A (no changed contracts). The −106 is a *probe* of the transform on the lowered (pre-compaction) CFG; expected live ECB runtime once spliced ≈ 2791 − 2·53 ≈ **2685** (to be confirmed post-compaction).
+
+### THE REMAINING FRONTIER (runtime bisimulation + splice)
+Type layer closed; remaining:
+1. **Runtime birth kernel (Eff variant).** Source `A`: original `[swap d, bindLocals 0 names]`, edited `[bindLocals 0 (swapPos…)]`. Swap is the HEAD (not the shipped trailing-swap) and the (conjugated) bind is a runtime identity for any names (`Semantics.lean:78-83`), so running the original from `s_o` ≡ running the edited from an `s_c` one `swap (d+1)` behind — `PendingSwap d` born by the *head* swap through a runtime-identity bind. Target arm = shipped exactly.
+2. Port `SeamStepRel`/`SeamOutcomeRel` congruence, fuel bound, entry seed (`cleanTgt?` at entry = none via the `≠ entry` guard), PCI preservation — mechanical over the shipped tower with `sourceFire?→cleanSrc?`, `targetFire?→cleanTgt?`.
+3. **Splice** `seamCancelProgram → seamCancelProgramEff` at the §69 StackArtifact/OIC sites (banked plumbing), then `scripts/opt_harness.sh check` + LIVE delta + double-compile determinism.
+
+### Files touched (session 71)
+`EvmCompiler/TypedCfg/PEEPHOLE_PROGRESS.md` (this note); `EvmCompiler/TypedCfg/PeepholeSeamCancelEff.lean` (rewritten to the correct conjugating clean-seam transform + WellTyped tower, still imported by nobody). No frozen file touched. No splice ⟹ emitted bytes UNCHANGED. `compile_correct`/`compile_correct_creation` axioms UNCHANGED = `[propext, Classical.choice, Quot.sound]`.
