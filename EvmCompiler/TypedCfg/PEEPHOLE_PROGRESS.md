@@ -5316,3 +5316,93 @@ dispatch openStep-jump inversion (frontier item 1); then the `hInv` glue (item 2
 Full `lake build` green; `scripts/opt_harness.sh check` = OK (43 theorems, axioms ⊆
 `[propext, Classical.choice, Quot.sound]`); `compile_correct`/`compile_correct_creation`
 axioms UNCHANGED; delta +0.
+
+## Session-44 update (2026-07-20): the dispatch `openStep`-jump INVERSION is DONE (frontier item 1) and the dispatch arm PACKAGED (item 2) — all green + axiom-clean in 2 commits; new leaf module `InteractionDispatchInversion.lean`
+
+Session 44's mandate (per §Session-43 frontier): (1) the dispatch openStep-jump inversion via
+the recommended intermediate banks; (2) the dispatch-arm packaging; (3) the `hInv` case-split
+(all-or-nothing, only after 1+2); (4) Step B.  **Result: TWO green, axiom-clean commits**
+landing items 1 and 2 in full.  The inversion — §Session-43's "genuine frontier … budget it as
+its own session" — is **closed**.  Item 3 (`hInv`) and Step B remain blocked ONLY on the
+dispatch arm's residual *finisher* (`hFinish`, isolated below): the `source.FrameSafe`-dependent
+frame facts + the return-site provenance, exactly the two obligations §Session-43 flagged as not
+carried by `realizedWitness`.  `peepholeBody`/public spine UNTOUCHED ⇒ delta **+0**; full
+`lake build` green; `scripts/opt_harness.sh check` = OK (43 theorems, axioms ⊆ `[propext,
+Classical.choice, Quot.sound]`); `compile_correct`/`compile_correct_creation` axioms UNCHANGED.
+
+### KEY DESIGN FINDING (the inversion is source-run-free; only the finisher needs FrameSafe)
+§Session-43 framed the inversion as needing the "StateRel ghost/runtime token correspondence"
+and "`findTarget?`-some inversion", with `hRetc` "likely needing `source.FrameSafe`".  The clean
+split confirmed: the *core* inversion (recovering `site`/`procName`/membership + `tokens =
+site.token :: rest` + `next = site.returnLabel`) is entirely **source-run-free** — it composes
+two pure banks.  The single elegant load-bearer is **`get_retc_of_stateRel_procExit`**:
+`target.stack[proc.retc]? = tokens.head?`.  This ONE equation does double duty — it pins the
+runtime `returnDispatch` token to the ghost head token AND (since a jump forces the slot
+populated) forces the token list non-empty — so the whole `runTerm`-of-`returnDispatch` case
+analysis (empty table → `.invalid`; empty tokens → out-of-range slot → `.invalid`; no match →
+`.invalid`; match → `.jump`) collapses to the one jump branch, discharged by
+`findTarget?_returnSitesFor_inv`.  `hPop` then falls out of `dispatch_popReturn?_of_stateRel`.
+The ONLY residue needing `source.FrameSafe` is the *finisher*: `attachReturns?`/`frame.retc =
+proc.retc` (frame safety) and `LabelShape`/`SourceFrameFits` at `site.returnLabel` (return-site
+provenance).  Packaged additively as `hFinish`, exactly the threaded-finisher discipline of the
+`caseEntryPop`/`procAdapter` legs.
+
+### LANDED (green, axiom-clean) — all in `InteractionDispatchInversion.lean` (imported into `Verification`)
+* **`ee493d26`** — inversion substrate (§Session-43 recommended banks (a)+(b)):
+  * **`findTarget?_returnSitesFor_inv`** (`:49`) — the reverse of
+    `findTarget?_returnSitesFor_of_mem`: a successful `findTarget?` over `returnSitesFor name
+    calls` exposes the owning `DispatchSite ∈ calls` with matching `procName`/`token`/
+    `returnLabel`.  Pure `filterMap` induction.
+  * **`get_retc_of_stateRel_procExit`** (`:91`) — the `StateRel`-at-`procExit` runtime/ghost
+    token correspondence `target.stack[proc.retc]? = tokens.head?` (via `realizeStack_append_prefix`
+    + `SourceFrameFits.2` at depth `proc.retc` from `returnTokenDepth?_procExit`).
+* **`<pending-hash>`** — the inversion core + arm packaging (items 1 core + 2):
+  * **`dispatch_openStep_jump_inv`** (`:158`) — THE inversion.  From `hExec` (exit-block
+    `openStep` jumped) recover `∃ site ∈ context.calls, site.procName = proc.name ∧ tokens =
+    site.token :: rest ∧ next = site.returnLabel ∧ state' = {target with stack :=
+    target.stack.eraseIdx proc.retc}`.  Reduces the empty-body dispatch block's `openStep` to
+    `pure (runTerm procExit term target)` (explicit-record `findBlock?` via
+    `context.dispatchBlock` + `change`/`runTermChecked` mirror of the `LeafPreservation`
+    private reductions), splits `sites.isEmpty`, then the token/`findTarget?` case analysis.
+  * **`realizedWitness_of_dispatch_arm`** (`:316`) — the dispatch arm (`block_category`'s third
+    arm).  Composes `dispatch_openStep_jump_inv` (site recovery) + `dispatch_popReturn?_of_stateRel`
+    (`hPop`) + `realizedWitness_of_dispatch_jump` (caller `StateRel` relay), leaving `hFinish`
+    (the FrameSafe/return-site obligations) as the sole additive hypothesis.
+
+### THE FRONTIER (session 45) — discharge `hFinish`, then `hInv`, then Step B
+The dispatch arm now lands `realizedWitness cfg next state'` modulo `hFinish` — the SAME shape as
+the eight machinery/head legs land modulo their threaded fields.  So the residual work before
+`hInv` is purely the per-leg field/`hFinish` suppliers, all at the capstone assembly:
+
+1. **Discharge `hFinish`** (the dispatch arm's residual).  For the recovered `site`/`rest`/
+   `frame`/`returns`, supply from the in-scope source run + `source.FrameSafe` (thread it as an
+   additive `hSourceFrameSafe` hypothesis at the composite level, mirroring how `hSourceWF` was
+   threaded through main/proc composites — the OIC splice has it in scope):
+   (a) `attachReturns? frame bodyState.evm.stack = some stack` and `frame.retc = proc.retc` — the
+       popped frame's `retc` equals the proc's `retc` (procedure-identity / frame-safety);
+       `bodyState.evm.stack.length = proc.retc` is already in hand from the `procExit`
+       `SourceFrameFits` (`hFits.2`), which makes `attachReturns?` succeed once `frame.retc =
+       proc.retc`.
+   (b) `LabelShape cfg site.returnLabel callerInput` + `SourceFrameFits callerInput stack.length`
+       — the caller-continuation shape at the registered return label.  `site.returnLabel` is the
+       call site's `regular` label; recover its compiled block's `LabelShape` via the call-site
+       provenance (the `DispatchSite` came from a `compileStmtFuel?_call` whose `regular` block is
+       in-program), and the restored-frame fit from the caller `SourceFrameFits` transported
+       across the one-activation peel.
+2. **`hInv` assembly** (item 3, all-or-nothing).  Unchanged from §Session-43's recipe, now with a
+   COMPLETE dispatch arm: `block_category context hFind` → 4 arms; main/proc → the 9
+   `BlockGenShapeReg` legs; dispatch → `realizedWitness_of_dispatch_arm` (feed `hFinish` from
+   item 1); programEnd → `programEnd_openStep_no_jump`.  Then
+   `AllEntriesRealized.of_openStep_invariant` with `realized := realizedWitness cfg`, entry
+   witness `realizedWitness_of_stateRel`.
+3. Then Step B (`openRunNPrefix_peephole_congr_of_source`).
+
+### Status handed to session 45
+Landed (all green + axiom-clean): the dispatch openStep-jump inversion in full
+(`findTarget?_returnSitesFor_inv`, `get_retc_of_stateRel_procExit`, `dispatch_openStep_jump_inv`)
++ the dispatch arm packaged (`realizedWitness_of_dispatch_arm`), all in the new leaf module
+`InteractionDispatchInversion.lean`.  The dispatch arm lands its successor `realizedWitness`
+modulo the single additive `hFinish` (FrameSafe frame facts + return-site provenance) — the last
+piece before the `hInv` case-split.  Full `lake build` green; `scripts/opt_harness.sh check` = OK
+(43 theorems, axioms ⊆ `[propext, Classical.choice, Quot.sound]`);
+`compile_correct`/`compile_correct_creation` axioms UNCHANGED; delta +0.
