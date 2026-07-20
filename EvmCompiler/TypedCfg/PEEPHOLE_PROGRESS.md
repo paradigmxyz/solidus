@@ -6342,3 +6342,33 @@ The purely-syntactic `peepholeBody : List Instr → List Instr` is congruence-pr
 
 ### Files touched this session
 Documentation only (`PEEPHOLE_PROGRESS.md`). No `.lean` change; the two `lake env lean` probes were run from the scratchpad and are not committed. `compile_correct`/`compile_correct_creation` axioms unchanged = `[propext, Classical.choice, Quot.sound]`.
+
+## Session-57 update (2026-07-20): the Route-3 variant-B TRANSFORM + its SYNTACTIC lemmas + the SEMANTIC-CORE **type (shape) half** are LANDED green + axiom-clean across SIX commits.  Steps 1–2 of the §Session-56 recipe are COMPLETE; step 3 is closed on its *type-transposition* half for the remap-safe cases (`bindScratch`, `relabel`, single-name `bindLocals`).  The transform is a standalone leaf (imported by nobody in the certified spine), so it is NOT yet spliced — steps 3-runtime / 4 / 5 / 6 remain the frontier.  `compile_correct` / `compile_correct_creation` axioms **UNCHANGED** = `[propext, Classical.choice, Quot.sound]` (verified by `#print axioms`; the new modules cannot affect them since the spine does not import them).  No byte measurement (no live splice ⟹ codegen unchanged ⟹ no determinism double-compile).
+
+### What landed (two new NON-FROZEN modules)
+**`EvmCompiler/TypedCfg/PeepholeNoopSwap.lean`** — the transform + syntactic lemmas (steps 1–2):
+* `swapPos`/`remapDepth`/`remapShape` (`:39`/`:46`/`:50`) — the `0↔d+1` position transposition on lists / indices / shapes.
+* `isZeroWidth` (`:55`), `remapZeroWidth` (`:63`) — the `0↔d+1` conjugation of a zero-width instr's position params (identity on non-zero-width).
+* `leadingZeroWidth` (`:71`) + `leadingZeroWidth_length`/`_snd_length_le` (`:80`/`:94`) — maximal zero-width-prefix splitter for the window scan.
+* `normalizeBody` (`:105`) — the **well-founded** (`termination_by body.length`) transform cancelling `swap d ; z* ; swap d` windows: drops both swaps, remaps the intervening zero-width run.
+* Syntactic family: `isZeroWidth_remapZeroWidth` (`:131`), `remapZeroWidth_of_not_zeroWidth` (`:136`), `leadingZeroWidth_fst_all_zeroWidth` (`:141`), `leadingZeroWidth_append` (`:159`), the four WF-unfolding lemmas `normalizeBody_fire`/`_keep_swap`/`_keep_noTail`/`_cons_generic` (`:172`/`:179`/`:185`/`:194`), and `normalizeBody_length_le` (`:202`, via `normalizeBody.induct`).
+
+**`EvmCompiler/TypedCfg/PeepholeNoopSwapType.lean`** — the `type?`-preservation core (step 3, type half):
+* `swapPos` calculus: `swapPos_getElem?` (`:43`, pointwise), `swapPos_involutive` (`:55`), `swapPos_set_comm` (`:69`, `set` commutes through the transposition via `transpIdx`).
+* `type?_swap_eq` (`:89`) — **the swap bridge**: `Instr.type? (.swap d) s = some s'` ⟹ `s'.slots = swapPos 0 (d+1) s.slots ∧ s'.tail = s.tail`.
+* `getElem?_swapPos_remapDepth` (`:118`), `swap_bounds` (`:134`) — index-transfer + the two-exchanged-positions-exist bound.
+* `type?_window_bindScratch` (`:144`), `type?_window_relabel` (`:259`), `type?_window_bindLocals_single` (`:345`) — the three per-constructor **window `type?`-preservation** lemmas: `swap d ; z ; swap d` ↦ `remapZeroWidth d z` reaches the *identical output shape*.
+* `slotsAgree` machinery for `relabel`: `pairAgree`/`pairAgree?` (`:198`/`:204`), `slotsAgree_cons` (`:208`), `slotsAgree_iff_pointwise` (`:214`, `slotsAgree` = pairwise agreement on the common prefix), `slotsAgree_swapPos` (`:241`, transposition invariance).
+* `bindLocals`-single support: `take_append_single_drop` (`:322`), `type?_bindLocals_single` (`:334`, single-name `bindLocals` = a `set`).
+* **Capstone** `type?_remapZeroWidth_window` (`:411`) guarded by `RemapSafe` (`:398`) = `bindScratch | relabel | single-name bindLocals`.
+
+### KEY FINDING — `remapZeroWidth`'s `bindLocals` arm is only a single-instruction residue for `names.length ≤ 1` (or non-straddling ranges)
+The naive `remapZeroWidth d (.bindLocals offset names) = .bindLocals (remapDepth d offset) names` is **shape-correct only when the bound range `[offset, offset+len)` does not straddle exactly one of the transposed positions `{0, d+1}`**.  A single-name bind (`len = 1`) is always a single position, so it is always safe (and is exactly the §Session-56 empirical case `bindLocals 0 ["x"]`).  For a multi-name range straddling one endpoint the transposition image is **non-contiguous**, so it cannot be any single `bindLocals` with the same name list.  This is the precise reason `RemapSafe` gates `bindLocals` to `names.length = 1`.
+
+### FRONTIER for the next session (in priority order)
+1. **Multi-name `bindLocals`** — decide between (a) a *firing guard* on `normalizeBody` (only fire the window when every zero-width instr is `RemapSafe`; skip otherwise — soundness-preserving, loses the rare straddling win), or (b) a *multi-instruction residue* (emit ≥2 `bindLocals`/`set` instrs for the non-contiguous image).  (a) is far smaller; recommend scoping (a) first, which also makes `normalizeBody` sound-by-construction (currently `remapZeroWidth`'s multi-name arm is unsound-in-definition — harmless while unspliced, MUST be gated before splice).
+2. **Runtime half of step 3** — `runBody (normalizeBody body input) input state ≈ runBody body input state` up to `eraseFst`/`SameRuntimeData`.  Ingredients ready: the swap-involution kernel `PeepholeSwapKernel.swap_swap_sameRuntimeData` + every zero-width `runState = .ok state` (`Semantics.lean:78-83`).  The residue `remapZeroWidth d z` is still `runState = .ok state` (`isZeroWidth_remapZeroWidth` + the `runState` zero-width arms), so the window's runtime collapses to `SameRuntimeData`.  This half is **gated on the type half** (which is now done) because `runBody` threads `type?` through `runAt` and errors on a `none` — the shapes must match, which the window `type?`-lemmas now supply.
+3. **`lower?`-shrink (step 4)** + **splice (steps 5–6)** — compose `normalizeBody` at the block level, re-green the 4 `fuelBudget` + 5 OIC sites, splice `peepholeProgram (normalizeProgram cfg)` at `StackArtifact.compile?:60`, then re-scan ASP/ExternalCallBox/MiniToken/LoopBox (`swapN;swapN adj` targets 3/61/15/15; ASP 8557/8591, ECB 2791/2825 baselines) + determinism double-compile the movers.
+
+### Files touched this session
+Two NEW non-frozen modules: `EvmCompiler/TypedCfg/PeepholeNoopSwap.lean`, `EvmCompiler/TypedCfg/PeepholeNoopSwapType.lean`.  No frozen file touched; no existing file modified; the certified spine is byte-identical.  Six green, axiom-clean commits (step1 / step2 / step3a swapPos+bridge / step3b bindScratch / step3c relabel / step3d bindLocals-single / step3e capstone — banked incrementally).
