@@ -272,10 +272,6 @@ SOLC_VERSION="$OPENZEPPELIN_SOLC_VERSION" "$PYTHON_BIN" "$ROOT/scripts/solidity_
 
 "$PYTHON_BIN" "$ROOT/scripts/validate_bridge_json.py" --quiet "$STRINGS_BACKEND_CHECK"
 
-printf 'openzeppelin_bridge_smoke=pass\n'
-printf 'repo_ref=%s\n' "$ACTUAL_REF"
-printf 'bridge_json_files=%s\n' "$bridge_json_files"
-printf 'safecast_fallback_compare_calls=%s\n' "$(sed -n 's/^calls=//p' "$SAFECAST_COMPARE")"
 "$PYTHON_BIN" - "$OZ_BATCH_CHECK" "$OZ_MANIFEST_CHECK" "$OZ_BRIDGE_DIR/manifest.json" \
   "$OZ_SUMMARY" "$OZ_BACKEND_CHECK" <<'PY'
 import json
@@ -482,3 +478,17 @@ print(f"strings_runtime_backend_check={runtime_backend_status}")
 print(f"strings_runtime_backend_first_none={runtime_first_none}")
 print("strings_runtime_summary_primitives=yes")
 PY
+
+# SafeCast differential: assert the comparator's verdict and call count
+# explicitly (previously only its exit code gated this leg, and the call
+# count was printed without being checked).
+grep -qx 'contract_call_compare=pass' "$SAFECAST_COMPARE"
+grep -qx 'calls=4' "$SAFECAST_COMPARE"
+
+# Summary AFTER every verifier: the pass token must never precede the
+# checks it reports on (a stdout consumer grepping for '=pass' would
+# otherwise see a false pass even when a verifier aborts the script).
+printf 'openzeppelin_bridge_smoke=pass\n'
+printf 'repo_ref=%s\n' "$ACTUAL_REF"
+printf 'bridge_json_files=%s\n' "$bridge_json_files"
+printf 'safecast_fallback_compare_calls=%s\n' "$(sed -n 's/^calls=//p' "$SAFECAST_COMPARE")"
