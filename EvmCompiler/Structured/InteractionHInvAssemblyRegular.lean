@@ -44,20 +44,25 @@ theorem genShapeReg_of_compileBlock?
     {ctx : TypedCfgCompiler.Context} {supply : LabelSupply}
     {entry regular : Assembly.Label} {input : TypedCfg.Shape}
     {result : TypedCfgCompiler.Result} {cfg : TypedCfg.Program}
+    {sourceProgram : Structured.Program}
+    {calls : List TypedCfgCompiler.DispatchSite}
     (hCompile :
       TypedCfgCompiler.compileBlock? block ctx
           supply entry input regular = some result)
     (hBlocks : BlocksInProgram result cfg)
     (hRegular : HRegular result cfg regular)
     (hCtx : CtxExitsShaped cfg ctx)
-    (hProcs : ProcsShaped cfg ctx) :
-    GenShapeResultReg result cfg := by
+    (hProcs : ProcsShaped cfg ctx)
+    (hProcsEq : ctx.procs = sourceProgram.procs)
+    (hCalls : TypedCfgPreservation.CallsInProgram result calls) :
+    GenShapeResultReg result cfg sourceProgram calls := by
   have hFuel :
       TypedCfgCompiler.compileBlockFuel?
           (TypedCfgCompiler.blockFuel block + 1) block ctx
           supply entry input regular = some result := by
     simpa [TypedCfgCompiler.compileBlock?] using hCompile
   exact genShapeReg_of_compileBlockFuel? hFuel hBlocks hRegular hCtx hProcs
+    hProcsEq hCalls
 
 /--
 **Main-body arm: block ⟶ `BlockGenShapeReg` composite.**  The strengthened sibling of
@@ -74,13 +79,13 @@ theorem main_blockGenShapeReg
     (hSourceWF : source.WF)
     {block : TypedCfg.Block}
     (hMem : block ∈ context.main.blocks) :
-    BlockGenShapeReg cfg block := by
+    BlockGenShapeReg cfg source context.calls block := by
   obtain ⟨hCompile, hMem'⟩ :=
     TypedCfgPreservation.Program.GeneratedContext.main_stmtList_provenance
       context hMem
   refine
-    genShapeReg_of_compileStmtListFuel? hCompile context.mainBlocks ?_ ?_ ?_ block
-      hMem'
+    genShapeReg_of_compileStmtListFuel? hCompile context.mainBlocks ?_ ?_ ?_ rfl
+      context.mainCalls block hMem'
   · exact fun out hout =>
       TypedCfgPreservation.LabelShape.main_regular_labelShape context hout
   · exact
@@ -110,16 +115,18 @@ theorem proc_blockGenShapeReg
     (hSourceWF : source.WF)
     {block : TypedCfg.Block}
     (hMem : block ∈ context.procBlocks) :
-    BlockGenShapeReg cfg block := by
+    BlockGenShapeReg cfg source context.calls block := by
   obtain ⟨proc, bsupply, entry, input, bodyResult,
-      hProcMem, hCompile, hReq, hBlocks, hDisj⟩ :=
+      hProcMem, hCompile, hReq, hBlocks, hBodyCalls, hDisj⟩ :=
     context.procBlocks_provenance_inProgram_fallthrough hMem
   have hLookup :
       Structured.ProcList.lookup? proc.name source.procs = some proc :=
     Structured.ProcList.lookup?_eq_some_of_mem hSourceWF.1 hProcMem rfl
   rcases hDisj with hBody | ⟨hEntry, hDepth, hAdapter⟩
   · -- body case: feed the strengthened body drill with the proc-boundary seeds.
-    refine genShapeReg_of_compileBlock? hCompile hBlocks ?_ ?_ ?_ block hBody
+    refine
+      genShapeReg_of_compileBlock? hCompile hBlocks ?_ ?_ ?_ rfl hBodyCalls
+        block hBody
     · exact fun out hout =>
         TypedCfgPreservation.LabelShape.proc_regular_labelShape
           context hLookup hReq hout

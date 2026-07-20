@@ -411,6 +411,7 @@ theorem mem_procBlocks_provenance_subset_fallthrough
       bodyResult.requireFallthrough?
           (TypedCfgCompiler.Shape.procExit proc) = some () ∧
       (∀ b, b ∈ bodyResult.blocks → b ∈ procBlocks) ∧
+      (∀ s, s ∈ bodyResult.calls → s ∈ procCalls) ∧
       (block ∈ bodyResult.blocks ∨
         (entry = ProcLabel.body proc.name ∧
           input.returnTokenDepth? = some proc.argc ∧
@@ -463,15 +464,17 @@ theorem mem_procBlocks_provenance_subset_fallthrough
                             TypedCfgCompiler.Shape.procEntry head, compiled,
                             List.mem_cons_self, hBody, hRequire,
                             (fun b hb => List.mem_append_left _ hb),
+                            (fun s hs => List.mem_append_left _ hs),
                             Or.inl hHere⟩
                       · obtain
                           ⟨proc, bsupply, e, input, bodyResult,
-                            hProcMem, hCompile, hReq, hSub, hDisj⟩ :=
+                            hProcMem, hCompile, hReq, hSub, hSubCalls, hDisj⟩ :=
                           ih hTail hThere
                         exact
                           ⟨proc, bsupply, e, input, bodyResult,
                             List.mem_cons_of_mem head hProcMem, hCompile, hReq,
                             (fun b hb => List.mem_append_right _ (hSub b hb)),
+                            (fun s hs => List.mem_append_right _ (hSubCalls s hs)),
                             hDisj⟩
       | some bodyInput =>
           cases hFrame :
@@ -531,6 +534,7 @@ theorem mem_procBlocks_provenance_subset_fallthrough
                                     (fun b hb =>
                                       List.mem_cons_of_mem _
                                         (List.mem_append_left _ hb)),
+                                    (fun s hs => List.mem_append_left _ hs),
                                     Or.inr
                                       ⟨rfl,
                                        TypedCfgCompilerFacts.Shape.requireReturnTokenDepth?_eq_some_iff.mp
@@ -543,10 +547,12 @@ theorem mem_procBlocks_provenance_subset_fallthrough
                                     (fun b hb =>
                                       List.mem_cons_of_mem _
                                         (List.mem_append_left _ hb)),
+                                    (fun s hs => List.mem_append_left _ hs),
                                     Or.inl hIn⟩
                               · obtain
                                   ⟨proc, bsupply, e, input, bodyResult,
-                                    hProcMem, hCompile, hReq, hSub, hDisj⟩ :=
+                                    hProcMem, hCompile, hReq, hSub, hSubCalls,
+                                    hDisj⟩ :=
                                   ih hTail hThere
                                 exact
                                   ⟨proc, bsupply, e, input, bodyResult,
@@ -555,6 +561,8 @@ theorem mem_procBlocks_provenance_subset_fallthrough
                                     (fun b hb =>
                                       List.mem_cons_of_mem _
                                         (List.mem_append_right _ (hSub b hb))),
+                                    (fun s hs =>
+                                      List.mem_append_right _ (hSubCalls s hs)),
                                     hDisj⟩
 
 namespace GeneratedContext
@@ -658,6 +666,7 @@ theorem procBlocks_provenance_inProgram_fallthrough
       bodyResult.requireFallthrough?
           (TypedCfgCompiler.Shape.procExit proc) = some () ∧
       BlocksInProgram bodyResult cfg ∧
+      TypedCfgPreservation.CallsInProgram bodyResult context.calls ∧
       (block ∈ bodyResult.blocks ∨
         (entry = ProcLabel.body proc.name ∧
           input.returnTokenDepth? = some proc.argc ∧
@@ -665,16 +674,19 @@ theorem procBlocks_provenance_inProgram_fallthrough
               (TypedCfgCompiler.Shape.procEntry proc) [.relabel input]
               (.jump (ProcLabel.body proc.name)) = some block)) := by
   obtain ⟨proc, bsupply, entry, input, bodyResult,
-      hProcMem, hCompile, hReq, hSub, hDisj⟩ :=
+      hProcMem, hCompile, hReq, hSub, hSubCalls, hDisj⟩ :=
     mem_procBlocks_provenance_subset_fallthrough context.procsCompile hMem
   refine ⟨proc, bsupply, entry, input, bodyResult, hProcMem, hCompile, hReq,
-    ?_, hDisj⟩
-  intro b hb
-  refine TypedCfg.Program.findBlock?_eq_some_of_mem context.wellTyped.1 ?_
-  rw [context.cfgEq]
-  simp only [List.append_assoc, List.mem_append]
-  have hbProc : b ∈ context.procBlocks := hSub b hb
-  tauto
+    ?_, ?_, hDisj⟩
+  · intro b hb
+    refine TypedCfg.Program.findBlock?_eq_some_of_mem context.wellTyped.1 ?_
+    rw [context.cfgEq]
+    simp only [List.append_assoc, List.mem_append]
+    have hbProc : b ∈ context.procBlocks := hSub b hb
+    tauto
+  · intro s hs
+    show s ∈ context.main.calls ++ context.procCalls
+    exact List.mem_append.mpr (Or.inr (hSubCalls s hs))
 
 end GeneratedContext
 end Program
