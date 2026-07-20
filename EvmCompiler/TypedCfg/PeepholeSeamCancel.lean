@@ -134,6 +134,43 @@ theorem findBlock?_seamCancelProgram (program : Program) (label : Label) :
       · simp [h]
       · simp only [h, Bool.false_eq_true, if_false]; exact ih
 
+/-- Seam cancellation preserves the emitted-label multiset (each block's label
+and terminator — hence its `definedLabels` — are untouched). -/
+theorem emittedLabels_seamCancelProgram (program : Program) :
+    (seamCancelProgram program).EmittedLabels = program.EmittedLabels := by
+  unfold Program.EmittedLabels
+  rw [seamCancelProgram_blocks, List.flatMap_map]
+  apply List.flatMap_congr
+  intro b _
+  simp only [seamBlock_label, seamBlock_term]
+
+/-- Seam cancellation preserves whole-program `LabelsUnique`. -/
+theorem labelsUnique_seamCancelProgram {program : Program}
+    (h : program.LabelsUnique) :
+    (seamCancelProgram program).LabelsUnique := by
+  unfold Program.LabelsUnique at h ⊢
+  rw [seamCancelProgram_blocks, List.pairwise_map]
+  refine h.imp ?_
+  intro a b hab
+  simpa only [seamBlock_label] using hab
+
+/-- Seam cancellation preserves `EmittedLabelsUnique`. -/
+theorem emittedLabelsUnique_seamCancelProgram {program : Program}
+    (h : program.EmittedLabelsUnique) :
+    (seamCancelProgram program).EmittedLabelsUnique := by
+  unfold Program.EmittedLabelsUnique
+  rw [emittedLabels_seamCancelProgram]
+  exact h
+
+/-- Seam cancellation preserves the existence of the entry block. -/
+theorem entry_findBlock?_seamCancelProgram {program : Program}
+    (h : program.findBlock? program.entry ≠ none) :
+    (seamCancelProgram program).findBlock? (seamCancelProgram program).entry ≠ none := by
+  rw [seamCancelProgram_entry, findBlock?_seamCancelProgram]
+  cases hFind : program.findBlock? program.entry with
+  | none => exact absurd hFind h
+  | some block => simp
+
 end Peephole
 end TypedCfg
 end EvmCompiler
