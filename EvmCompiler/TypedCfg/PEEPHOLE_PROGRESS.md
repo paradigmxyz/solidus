@@ -5356,7 +5356,7 @@ provenance).  Packaged additively as `hFinish`, exactly the threaded-finisher di
   * **`get_retc_of_stateRel_procExit`** (`:91`) — the `StateRel`-at-`procExit` runtime/ghost
     token correspondence `target.stack[proc.retc]? = tokens.head?` (via `realizeStack_append_prefix`
     + `SourceFrameFits.2` at depth `proc.retc` from `returnTokenDepth?_procExit`).
-* **`<pending-hash>`** — the inversion core + arm packaging (items 1 core + 2):
+* **`2eb2686b`** — the inversion core + arm packaging (items 1 core + 2):
   * **`dispatch_openStep_jump_inv`** (`:158`) — THE inversion.  From `hExec` (exit-block
     `openStep` jumped) recover `∃ site ∈ context.calls, site.procName = proc.name ∧ tokens =
     site.token :: rest ∧ next = site.returnLabel ∧ state' = {target with stack :=
