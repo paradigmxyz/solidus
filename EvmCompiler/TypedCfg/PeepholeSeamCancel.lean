@@ -792,6 +792,151 @@ theorem sameRuntimeData_next_of_pendingSwap
   subst h
   exact hsync
 
+/-! ### Open-body `StackRealizes` propagation (source-side depth supply)
+
+The SOURCE-side birth kernel below needs the runtime stack to be deep enough for
+the trailing `swap d` at the (internal) point where the dropped-tail body `pre`
+has finished — i.e. `StackRealizes mid`, `mid` the shape after `pre`.  The
+existing per-instruction `openRunAt_stackRealizes` propagates the realizes fact
+one instruction at a time; these two lemmas lift it to the WHOLE open body run
+as an `AllDone` invariant (shape-tagged), so `Rel.strengthen_right` can carry it
+into the append kernel's bind continuation. -/
+
+/-- Every `ok` leaf of the open one-instruction step reports the typed output
+shape AND a state realizing it.  (`StackRealizes` half is `openRunAt_stackRealizes`;
+the shape half is the `runAt` `type?`-tagging.) -/
+theorem openRunAt_realizes_shape
+    {instr : Instr} {input output : Shape} {state : EVMState}
+    (hType : instr.type? input = some output)
+    (hReal : StackRealizes input state) :
+    Simulation.Interaction.AllDone
+      (fun o : Except EVMException (EVMState × Shape) =>
+        match o with
+        | .error _ => True
+        | .ok pair => pair.2 = output ∧ StackRealizes output pair.1)
+      (InteractionSemantics.Instr.openRunAt instr input state) := by
+  have hState := openRunState_stackRealizes hType hReal
+  have hMapped :
+      Simulation.Interaction.AllDone
+        (fun o : Except EVMException (EVMState × Shape) =>
+          match o with
+          | .error _ => True
+          | .ok pair => pair.2 = output ∧ StackRealizes output pair.1)
+        (Simulation.Interaction.map (fun final => (final, output))
+          (InteractionSemantics.Instr.openRunState instr input state)) := by
+    refine Simulation.Interaction.AllDone.map (fun final => (final, output)) hState
+      ?_ ?_
+    · intro err _; exact True.intro
+    · intro final hFinal; exact ⟨rfl, hFinal⟩
+  simpa [InteractionSemantics.Instr.openRunAt, TypedCfg.Control.Instr.runAt, hType,
+    Simulation.Interaction.map] using hMapped
+
+/-- **Open-body `StackRealizes` propagation.**  If the body types `input` to
+`output` and the entry state realizes `input`, then every `ok` leaf of the open
+body run reports shape `output` and a state realizing it.  Lifts
+`openRunAt_realizes_shape` across the list via `AllDone.bind`. -/
+theorem openRunBody_stackRealizes :
+    ∀ (body : List Instr) {input output : Shape} {state : EVMState},
+      Block.bodyType? body input = some output →
+      StackRealizes input state →
+      Simulation.Interaction.AllDone
+        (fun o : Except EVMException (EVMState × Shape) =>
+          match o with
+          | .error _ => True
+          | .ok pair => pair.2 = output ∧ StackRealizes output pair.1)
+        (InteractionSemantics.Block.openRunBody body input state)
+  | [], input, output, state, hType, hReal => by
+      simp only [Block.bodyType?, Option.some.injEq] at hType
+      subst hType
+      exact Simulation.Interaction.AllDone.done ⟨rfl, hReal⟩
+  | instr :: rest, input, output, state, hType, hReal => by
+      cases hHeadType : instr.type? input with
+      | none => simp [Block.bodyType?, hHeadType] at hType
+      | some middle =>
+          have hTailType : Block.bodyType? rest middle = some output := by
+            simpa [Block.bodyType?, hHeadType] using hType
+          rw [openRunBody_cons_eq]
+          refine Simulation.Interaction.AllDone.bind
+            (openRunAt_realizes_shape hHeadType hReal) ?_ ?_
+          · intro err _; exact True.intro
+          · intro pair hPair
+            obtain ⟨hShape, hRealMid⟩ := hPair
+            rw [hShape]
+            exact openRunBody_stackRealizes rest hTailType hRealMid
+
+/-! ### Source-side pending-swap birth kernel (gate 2, session 64)
+
+The dual of `openRunBody_swap_cons_resync`.  A fired seam SOURCE `A` runs the
+dropped-tail body `A.body = pre ++ [swap d]`; the cancelled `A'` runs only `pre`.
+Running from `SameRuntimeData` entry states, the two bodies' results desync by
+exactly one `swap (d+1)` — i.e. the ORIGINAL result state is `PendingSwap`
+w.r.t. the CANCELLED one.  This is §Session-63 frontier step (b)'s "trailing-swap
+outcome IS `PendingSwap`", now green Lean.
+
+`openRunBody_append` splits off the trailing swap; `openRunBody_runtimeRel`
+handles `pre` up to `SameRuntimeData`; `openRunBody_stackRealizes` supplies the
+depth for the trailing swap; `swap_swap_sameRuntimeData` (involution) closes the
+`PendingSwap` witness (the second swap of the pair lands `SameRuntimeData`). -/
+
+/-- **Source-side birth kernel.**  Running the original source body
+`pre ++ [swap d]` from `s_o` is `Rel`-related to running the cancelled body `pre`
+from a `SameRuntimeData` state `s_c`, with the results in `PendingSwap d` (the
+original result is one `swap (d+1)` ahead of `SameRuntimeData` to the cancelled
+one).  `output`/`mid` are the post-swap / pre-swap shapes; `mid` is the cancelled
+block's output. -/
+theorem openRunBody_dropLast_swap_pending
+    {d : Nat} {pre : List Instr} {input mid output : Shape} {s_o s_c : EVMState}
+    (hpre : Block.bodyType? pre input = some mid)
+    (hswapType : Instr.type? (.swap d) mid = some output)
+    (hIndPre : pre.Forall Instr.ProgramCounterIndependent)
+    (hRel : SameRuntimeData s_o s_c)
+    (hReal_c : StackRealizes input s_c) :
+    Simulation.Interaction.Rel
+      (Simulation.Interaction.ExceptRel (fun a b : EVMException => a = b)
+        (fun lp rp : EVMState × Shape =>
+          PendingSwap d rp.1 lp.1 ∧ lp.2 = output ∧ rp.2 = mid))
+      (InteractionSemantics.Block.openRunBody (pre ++ [Instr.swap d]) input s_o)
+      (InteractionSemantics.Block.openRunBody pre input s_c) := by
+  obtain ⟨hd16, hDepthMid, _⟩ := Instr.length_of_type?_swap hswapType
+  rw [openRunBody_append]
+  -- Rewrite the RHS as a trivial `bind … pure` so `Rel.bind` applies.
+  rw [← Simulation.Interaction.bind_pure
+    (InteractionSemantics.Block.openRunBody pre input s_c)]
+  -- Base congruence on `pre`, strengthened with the RIGHT-tree depth witness.
+  have hPre := InteractionCongruence.Block.openRunBody_runtimeRel hpre hIndPre hRel
+  have hReal := openRunBody_stackRealizes pre hpre hReal_c
+  have hStrong := Simulation.Interaction.Rel.strengthen_right hPre hReal
+  refine Simulation.Interaction.Rel.bind
+    (errorRel := fun a b : EVMException => a = b)
+    (sourceRel := fun lp rp : EVMState × Shape =>
+      (SameRuntimeData lp.1 rp.1 ∧ lp.2 = mid ∧ rp.2 = mid) ∧
+        (rp.2 = mid ∧ StackRealizes mid rp.1))
+    (Simulation.Interaction.Rel.mono hStrong ?_) ?_
+  · -- Re-seat the `strengthen_right` conjunction into the source relation.
+    rintro l r ⟨hER, hProp⟩
+    cases hER with
+    | error he => exact .error he
+    | ok hSS => exact .ok ⟨hSS, hProp⟩
+  · -- Continuation: fire the trailing swap on the left, `pure` on the right.
+    rintro lp rp ⟨⟨hSameStack, hLmid, hRmid⟩, _hRmid2, hRealMid⟩
+    -- Depth for the trailing swap on `lp.1` (stacks equal via `SameRuntimeData`).
+    have hStackEq : lp.1.stack = rp.1.stack := SameRuntimeData.stack_eq hSameStack
+    have hDepth1 : (d + 1) + 1 ≤ lp.1.stack.length := by
+      have h1 : mid.length ≤ rp.1.stack.length := hRealMid
+      have h2 : mid.slots.length = mid.length := rfl
+      rw [hStackEq]; omega
+    obtain ⟨s1, s2, hE1, hE2, hSame2⟩ :=
+      swap_swap_sameRuntimeData lp.1 (d + 1) (by omega) hDepth1
+    have hRun1 : Instr.runState (.swap d) mid lp.1 = .ok s1 := by
+      rw [runState_swap_eq hd16]; exact hE1
+    show Simulation.Interaction.Rel _
+      (InteractionSemantics.Block.openRunBody [Instr.swap d] lp.2 lp.1)
+      (Simulation.Interaction.pure rp)
+    rw [hLmid, openRunBody_swap_cons_ok hswapType hRun1]
+    -- `openRunBody [] output s1 = .done (.ok (s1, output))`; RHS `pure rp`.
+    refine Simulation.Interaction.Rel.done (.ok ⟨⟨s2, hE2, ?_⟩, rfl, hRmid⟩)
+    exact SameRuntimeData.trans hSame2 hSameStack
+
 end Peephole
 end TypedCfg
 end EvmCompiler
