@@ -77,7 +77,7 @@ them, delete them, replace them, as long as the frozen theorems still prove.
    plausible, a maintainer labels the PR for private scoring.
 5. The private runner (sandboxed, offline) verifies the frozen hashes
    independently, re-runs the proof gate, compiles the private suite, and
-   reports one number: total bytes.
+   reports one number: total gas.
 6. Beat the record by the threshold → your PR is merged to `arena`, tagged
    `record-NNN+1`, and you enter the leaderboard permanently. The
    leaderboard records every holder chronologically, with the lineage of
