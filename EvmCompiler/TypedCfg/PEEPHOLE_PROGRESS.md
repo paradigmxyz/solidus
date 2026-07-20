@@ -4657,3 +4657,153 @@ external-successor upgrade is the isolated residual for session 38.  `scripts/op
 check` = OK (43 public theorems, axioms ⊆ `[propext, Classical.choice, Quot.sound]`);
 `compile_correct`/`compile_correct_creation` UNCHANGED (frozen `Correctness.lean`
 untouched); delta +0.
+
+## Session-38 update (2026-07-19): option-B threading toolkit COMPLETE — boundary seeds + the two regular-thread combinators banked; the strengthened-mutual recipe fully worked out (every case, incl. `for_`/`switch`) and pinned for mechanical assembly
+
+Session 38's mandate (per §Session-37): (1) the boundary-threaded strengthened mutual —
+enrich the capstone so each disjunct also carries the EXACT `LabelShape` for its external
+`regular` successor, threaded from the programEnd/procExit seeds; (2) assemble `hInv`;
+(3) Step B.  **Result: FOUR green, axiom-clean lemmas banked — the COMPLETE option-B
+threading toolkit** (the two boundary seeds + the two per-recursive-call regular-thread
+combinators), plus the strengthened-mutual recipe worked out to the case level (every
+construct, including the two hard ones — `for_`'s ctx-modification and the `switch` head's
+internal `firstTest`).  The full 10-constructor enriched inductive + 5-function mutual was
+NOT assembled this session (a large mechanical body whose `switch`-head `base/idx`
+bookkeeping and per-case shape-equalities are build-iteration-heavy) — but every obligation
+it raises now reduces to one of the four banked lemmas + `of_hasEntry`, so session 39's
+assembly is mechanical.  No red code, no sorries; `peepholeBody`/public spine UNTOUCHED ⇒
+delta **+0**.
+
+### LANDED (green, axiom-clean) — all in `InteractionLabelShapeTransport.lean`
+* **`318302f1`** — the two **option-B boundary seeds** (external `regular` in threaded form):
+  * **`LabelShape.main_regular_labelShape`** (`:116`) — `main.fallthrough? = some out →
+    LabelShape cfg ProcLabel.programEnd out`.  From `LabelShape.programEnd` (input =
+    `main.fallthrough?.getD caller`) rewritten under the fallthrough hyp.  Axioms
+    `[propext, Classical.choice, Quot.sound]`.
+  * **`LabelShape.proc_regular_labelShape`** (`:136`) — `bodyResult.requireFallthrough?
+    (procExit proc) = some () → bodyResult.fallthrough? = some out → LabelShape cfg
+    (ProcLabel.exit proc.name) out`.  `requireFallthrough?_eq_some_iff` forces `out =
+    procExit proc`; then `LabelShape.procExit`.  Axiom-clean.
+* **`2b166df0`** — the two **regular-thread combinators** (applied at every recursive descent):
+  * **`LabelShape.regularThread_of_requireFallthrough`** (`:195`) — SAME-`regular`
+    inheritance: `(hRegular : ∀ out, result.fallthrough? = some out → LabelShape cfg regular
+    out) → result.fallthrough? = some expected → subResult.requireFallthrough? expected =
+    some () → ∀ out, subResult.fallthrough? = some out → LabelShape cfg regular out`.  Axioms
+    `[propext]`.  **This is the `if`-body / `switch` case-body / loop-body/post transporter**
+    (all compiled with a shared continuation shape).
+  * **`LabelShape.regularThread_tail_of_cons`** (`:219`) — SEQUENTIAL threading: head of a
+    `stmt :: rest` list is compiled with `regular := restLabel supply` (the tail's entry) and
+    falls through to `tailInput` = the tail entry block's input, so `of_compileStmtListFuel?
+    hTailCompile hTailBlocks` discharges the head's regular-thread with NO boundary appeal.
+    Axiom-clean.  **The "sequential continuation" core of option B.**
+
+### KEY RECON FINDINGS (the design closures sessions 26–37 lacked)
+1. **The supplier interface IS the threaded predicate.**  `realizedWitness_of_if_compile`
+   (`InteractionConstructCoupling.lean:94`) consumes the external successor as
+   `∀ restShape, result.fallthrough? = some restShape → LabelShape cfg next restShape`, and
+   `realizedWitness_of_code_compile` (`InteractionCodeConstructCoupling.lean:226`) as
+   `hFallthrough : result.fallthrough? = some expected` + `hLabelShape : LabelShape cfg next
+   expected`.  Both are EXACTLY the option-B regular-thread `∀ out, result.fallthrough? =
+   some out → LabelShape cfg regular out`.  No reshaping — the enriched disjunct stores this
+   predicate verbatim and hInv feeds it straight in.  (For the internal `next = trueLabel`
+   arm of `if`, hInv derives `LabelShape cfg (label supply 0) bodyInput` itself via
+   `of_compileBlockFuel?` on the `if` body sub-fact — a 2-line inline, not a threaded field.)
+2. **`callHead` needs NO regular enrichment.**  A compiled `call`'s DIRECT successor is
+   `ProcLabel.entry name` (`realizedWitness_of_call_compile` wants `LabelShape cfg
+   (ProcLabel.entry name) childInput`), which is the boundary seed `LabelShape.procEntry`
+   (`GeneratedBoundary.lean:112`) — hInv supplies it directly from `GeneratedContext`.  The
+   call's `regular` (return continuation) is reached via the return-DISPATCH block, not the
+   call block, and is handled by the dispatch arm.  So `callHead` stays a base disjunct.
+3. **`for_` threads cleanly** (`components_of_compileStmtFuel?_for`,
+   `TypedCfgCompilerFacts.lean:1302`).  Body is compiled with `breakLabel? := some regular`
+   (the loop's OWN `regular`!), `breakShape? := some {condOutput.tail}`, `continueLabel? :=
+   some (label supply 2)` (= post entry), both continue/break shape `= {condOutput.tail}` =
+   the loop's fallthrough; leave inherited.  So the body's break-LabelShape comes from the
+   loop's own `hRegular {condOutput.tail}`, its continue-LabelShape from `of_hasEntry` on
+   `postResult` (internal), and leave from the enclosing ctx-exit thread.  init/post are
+   compiled with break/continue CLEARED (vacuous) — leave inherited.
+4. **`nilJoin` must split by exit target.**  The base capstone emits `BlockGenShape.nilJoin`
+   for BOTH the empty-list join (`.jump regular`, enrich via `hRegular`) AND `brk`/`cont`/
+   `leave` (`.jump breakLabel?`/`continueLabel?`/`leaveLabel?`).  The enriched inductive
+   splits it: `nilJoinRegular` (regular-thread field) for the nil-list case, `nilJoinExit`
+   (a ctx-exit `LabelShape` field) for brk/cont/leave — the latter fed by a threaded
+   **ctx-exit bundle** `CtxExitsShaped cfg ctx` (LabelShapes for ctx's break/continue/leave
+   labels), which is unchanged through `if`/`code`/`call`/`switch`, re-established for the
+   body in `for_` (finding 3), and seeded at the proc body with `leaveLabel? = exit`,
+   `leaveShape? = procExit` ⟹ `LabelShape.procExit` (main body has all three None ⟹ vacuous).
+
+### THE STRENGTHENED-MUTUAL RECIPE (pinned for session 39 — mechanical)
+Define, in a NEW module `InteractionBlockGenShapeRegular.lean` (import
+`InteractionBlockGenShape` + `InteractionLabelShapeTransport`):
+* `abbrev HRegular result cfg regular := ∀ out, result.fallthrough? = some out →
+  LabelShape cfg regular out`.
+* `structure CtxExitsShaped cfg ctx : Prop` with fields `brk`/`cont`/`leave` (each
+  `∀ lbl shp, ctx.<x>Label? = some lbl → ctx.<x>Shape? = some shp → LabelShape cfg lbl shp`).
+* `inductive BlockGenShapeReg cfg : Block → Prop` — mirror the 9 `BlockGenShape` disjuncts
+  but: `codeHead`/`ifHead` add `hReg : HRegular result cfg regular`; `forCond` adds
+  `hFalseShape : LabelShape cfg falseLabel {output with slots := output.slots.tail}`; split
+  `nilJoin` into `nilJoinRegular` (+ `hReg` at `regular`) and `nilJoinExit` (+ `hExit :
+  LabelShape cfg exitLabel input`); `callHead`/`switchTest`/`caseEntryPop`/`procAdapter`/
+  `terminalHalt` stay base.
+* `def GenShapeResultReg result cfg := ∀ block ∈ result.blocks, BlockGenShapeReg cfg block`
+  (+ `append` mirroring `GenShapeResult.append`; NB `(a.append b).fallthrough? =
+  b.fallthrough?` by `TypedCfgCompiler.Result.append`).
+* 5-function mutual `genShapeReg_of_compile*`, each ADD `(hRegular : HRegular result cfg
+  regular) (hCtx : CtxExitsShaped cfg ctx)` beside the existing `hBlocks`, concluding
+  `GenShapeResultReg result cfg`.  Per-case threading (all obligations reduce to the four
+  banked lemmas + `of_hasEntry`):
+  - **stmtList nil** → `nilJoinRegular hFind (hRegular)`.
+  - **stmtList cons no-tail** (`result = headResult`) → recurse head with the SAME `hRegular`
+    (`result = headResult`) + `hCtx`.
+  - **stmtList cons tail** (`result = headResult.append tailResult`): tail recursion gets
+    `hRegular` verbatim (append fallthrough = tail's) ; head recursion gets
+    `regularThread_tail_of_cons hHeadFall hTailCompile hTailBlocks` for its `restLabel supply`
+    regular-thread; both get `hCtx`.
+  - **stmt code** → `codeHead hCompile hBlocks hRegular` (result.fallthrough? = some output).
+  - **stmt if** → `ifHead hCompile hBlocks hRegular`; body recursion gets
+    `regularThread_of_requireFallthrough hRegular (result.fallthrough? = some {output.tail})
+    (bodyResult.requireFallthrough? {output.tail})` + `hCtx` (body compiled with SAME ctx,
+    same regular).
+  - **stmt switch** → head is `codeHead` via `codeFact_of_switchHead` with `regular :=
+    casesEntryLabel supply 0 cases`; its `hReg` needs `LabelShape cfg (casesEntryLabel supply
+    0 cases) valueShape` = `of_hasEntry` on the cases/default sub-result
+    (`cases_cons_test_hasEntry` at `switchTestLabel supply 0` for nonempty, else
+    `default_hasEntry` at `label supply 1`; `casesEntryLabel` splits on `cases`).  Case bodies
+    & default body recurse with `regularThread_of_requireFallthrough` (they require-fallthrough
+    to `{valueShape.tail}` = the switch's fallthrough) + `hCtx`.
+  - **stmt for_** → the cond block is `forCond`; its `hFalseShape` = `hRegular {condOutput.tail}`
+    (loop fallthrough).  init recurse: `hRegular_init` = `LabelShape cfg (label supply 0)
+    loopInput` (the cond block is a listed member of `result.blocks`) via membership+`hBlocks`;
+    `hCtx` with break/continue CLEARED (vacuous), leave inherited.  body recurse: `hRegular_body`
+    = `regularThread_of_requireFallthrough`-style at `label supply 2` (post entry, via
+    `of_hasEntry` on `postResult`); `hCtx_body` from finding 3.  post recurse: `hRegular_post`
+    = the cond-block LabelShape again; `hCtx` cleared/leave inherited.
+  - **stmt brk/cont/leave** → `nilJoinExit hFind (hCtx.<x> …)` (input = the checked
+    break/continue/leave shape).
+  - **stmt call** → `callHead hLookup hCompile hBlocks` (base).
+  - **stmt terminal** → `terminalHalt hFind` (base).
+  - **cases cons** → `switchTest`/`caseEntryPop` base; body recurse with
+    `regularThread_of_requireFallthrough` + `hCtx`; tail recurse with same `hRegular`/`hCtx`.
+  - **default none/some** → `caseEntryPop` base; body recurse as case bodies.
+Then `main`/`proc` composites: seed with `main_regular_labelShape` / `proc_regular_labelShape`
+(regular-thread) and `CtxExitsShaped` (main: all-None-vacuous; proc: leave = `LabelShape.procExit`).
+
+### THE FRONTIER (session 39)
+1. **Assemble the strengthened mutual** per the recipe above (mechanical; the four banked
+   combinators + `of_hasEntry`/`cases_*_hasEntry`/`default_hasEntry` discharge every case).
+   Bank green.
+2. **Assemble `hInv`** — with the enriched classification, each per-disjunct supplier gets:
+   internal `LabelShape` inline (`of_compileBlockFuel?`/`of_hasEntry`), external regular-thread
+   from the enriched field, dispatch `popReturn?` from `dispatch_popReturn?_of_stateRel`
+   (banked s36) + site provenance.  Then `AllEntriesRealized.of_openStep_invariant`.
+3. Then Step B (`openRunNPrefix_peephole_congr_of_source`); no swap arm on `peepholeBody` yet.
+
+### Status handed to session 39
+Landed: `InteractionLabelShapeTransport.lean` — `main_regular_labelShape`,
+`proc_regular_labelShape` (`318302f1`); `regularThread_of_requireFallthrough`,
+`regularThread_tail_of_cons` (`2b166df0`).  All green + axiom-clean.  **The option-B
+threading toolkit is COMPLETE** (two boundary seeds + two per-descent combinators) and the
+strengthened-mutual recipe is worked to the case level (incl. `for_`/`switch`), so session
+39's assembly is mechanical.  `scripts/opt_harness.sh check` status: see run below.
+`compile_correct`/`compile_correct_creation` UNCHANGED (frozen `Correctness.lean` untouched);
+delta +0.
