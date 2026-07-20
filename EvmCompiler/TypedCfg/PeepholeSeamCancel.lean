@@ -1294,6 +1294,37 @@ theorem openStep_seamCancel_congr {program : Program} {label : Label}
       simp only [SeamStepRel, hFind] at hStep
       exact openRun_seamCancel_congr hUnique hTyped hMem hb0Indep hStep (hReal_c b0 hFind)
 
+/-! ### Structural preservation for the splice (PCI) -/
+
+/-- Seam cancellation preserves per-block `ProgramCounterIndependent` (the edited
+body is a sub-list — `dropLast` / `tail` — of the original). -/
+theorem seamBlock_programCounterIndependent {program : Program} {block : Block}
+    (h : block.ProgramCounterIndependent) :
+    (seamBlock program block).ProgramCounterIndependent := by
+  have hBody : block.body.Forall Instr.ProgramCounterIndependent := h
+  unfold Block.ProgramCounterIndependent
+  rw [seamBlock_body]
+  cases sourceFire? program block <;> cases targetFire? program block
+  · exact hBody
+  · exact forall_sub (List.tail_subset _) hBody
+  · exact forall_sub (List.dropLast_subset _) hBody
+  · exact forall_sub
+      (List.Subset.trans (List.tail_subset _) (List.dropLast_subset _)) hBody
+
+/-- **Whole-program `ProgramCounterIndependent` preservation** under seam
+cancellation.  Needed at the splice for the seam-cancelled program's runtime
+guards. -/
+theorem seamCancelProgram_programCounterIndependent {program : Program}
+    (h : program.ProgramCounterIndependent) :
+    (seamCancelProgram program).ProgramCounterIndependent := by
+  unfold Program.ProgramCounterIndependent at h ⊢
+  rw [List.forall_iff_forall_mem] at h
+  rw [seamCancelProgram_blocks, List.forall_iff_forall_mem]
+  intro b hb
+  rw [List.mem_map] at hb
+  obtain ⟨b0, hb0mem, rfl⟩ := hb
+  exact seamBlock_programCounterIndependent (h b0 hb0mem)
+
 end Peephole
 end TypedCfg
 end EvmCompiler
