@@ -292,6 +292,219 @@ theorem openRunNPrefix_seamCombined_congr_of_source
         | halt kind hSt => exact .done (.ok (Outcome.RuntimeRel.halt kind hSt))
         | invalid hSt => exact .done (.error rfl)
 
+/-! ## Item 3: the seam-cancel fuel bound
+
+`fuelBudget (seamCancelProgram P) ≤ fuelBudget P`.  Reduces (via
+`seamCancelProgram_blocks` + `CompiledProgram.fuelBudget = (blocks.map
+CompiledBlock.fuelBudget).sum`) to the per-block bound
+`CompiledBlock.fuelBudget (seamBlock P b) ≤ CompiledBlock.fuelBudget b`.  In every
+firing case the edited body is a `dropLast` / `tail` sub-list whose lowering has no
+more bytes than the original (the dropped `swap` fragments are appended back on the
+original side), and the terminator code length is unchanged (a source-firing block
+has `term = .fallthrough B`, which lowers shape-independently to `[.jump B]`; a
+target-only-firing block keeps its output). -/
+
+/-- General append decomposition of `lowerBodyFrom?`. -/
+theorem lowerBodyFrom?_append (A B : List Instr) (input : Shape) :
+    Block.lowerBodyFrom? (A ++ B) input =
+      (Block.lowerBodyFrom? A input).bind (fun p =>
+        (Block.lowerBodyFrom? B p.2).bind (fun q => some (p.1 ++ q.1, q.2))) := by
+  induction A generalizing input with
+  | nil =>
+      show Block.lowerBodyFrom? B input
+          = (Block.lowerBodyFrom? B input).bind (fun q => some (q.1, q.2))
+      cases Block.lowerBodyFrom? B input with
+      | none => rfl
+      | some q => rfl
+  | cons a as ih =>
+      rw [List.cons_append, lowerBodyFrom?_cons, lowerBodyFrom?_cons]
+      cases Instr.lowerAt? a input with
+      | none => rfl
+      | some p =>
+          simp only [Option.bind_some]
+          rw [ih]
+          cases Block.lowerBodyFrom? as p.2 with
+          | none => rfl
+          | some r =>
+              simp only [Option.bind_some]
+              cases Block.lowerBodyFrom? B r.2 with
+              | none => rfl
+              | some s => simp [List.append_assoc]
+
+/-- The output shape of a successful lowering equals the `bodyType?` output. -/
+theorem bodyType?_of_lowerBodyFrom? :
+    ∀ (body : List Instr) {input : Shape} {code : Assembly.Program} {out : Shape},
+      Block.lowerBodyFrom? body input = some (code, out) →
+      Block.bodyType? body input = some out
+  | [], input, code, out, h => by
+      simp only [Block.lowerBodyFrom?, Option.some.injEq, Prod.mk.injEq] at h
+      simp only [Block.bodyType?, h.2]
+  | i :: rest, input, code, out, h => by
+      rw [lowerBodyFrom?_cons, Option.bind_eq_some_iff] at h
+      obtain ⟨p, hp, h2⟩ := h
+      rw [Option.bind_eq_some_iff] at h2
+      obtain ⟨q, hq, h3⟩ := h2
+      simp only [Option.some.injEq, Prod.mk.injEq] at h3
+      rw [bodyType?_cons, Preservation.Instr.type?_eq_some_of_lowerAt? hp,
+        Option.bind_some, bodyType?_of_lowerBodyFrom? rest hq, h3.2]
+
+/-- `lowerBodyFrom?` of a single well-typed `swap` from its typed input. -/
+theorem lowerBodyFrom?_singleton_swap {e : Nat} {input output : Shape}
+    (hType : Instr.type? (.swap e) input = some output) :
+    ∃ sc, Block.lowerBodyFrom? [Instr.swap e] input = some (sc, output) := by
+  obtain ⟨sc, hsc⟩ := lowerAt?_swap_of_type? hType
+  refine ⟨sc, ?_⟩
+  rw [lowerBodyFrom?_cons, hsc]
+  simp [Block.lowerBodyFrom?, Option.bind]
+
+/-- **Per-block seam fuel bound.**  The seam-edited block lowers to no more bytes
+than the original.  Four firing cases; the dropped head/tail swap fragments only
+add bytes on the original side, and the fallthrough terminator (source-fire) lowers
+shape-independently. -/
+theorem compiledBlock_fuelBudget_seamBlock_le {program : Program} {b0 : Block}
+    (hUnique : program.LabelsUnique) (hAll : program.AllBlocksTyped)
+    (hmem : b0 ∈ program.blocks) :
+    InteractionSemantics.CompiledBlock.fuelBudget (seamBlock program b0) ≤
+      InteractionSemantics.CompiledBlock.fuelBudget b0 := by
+  have hTyped := blockWellTyped_of_mem hAll hmem
+  have hBodyEq := seamBlock_body program b0
+  have hInEq := seamBlock_input program b0
+  have hOutEq := seamBlock_output program b0
+  have hTermEq := seamBlock_term program b0
+  cases hs : sourceFire? program b0 with
+  | none =>
+      cases ht : targetFire? program b0 with
+      | none =>
+          -- identity: seamBlock is `b0`.
+          have : seamBlock program b0 = b0 := by
+            unfold seamBlock; rw [hs, ht]
+          rw [this]
+      | some d =>
+          -- target only: drop the head swap, re-type the input.
+          obtain ⟨hdecomp, htype, hrest, hd16⟩ :=
+            targetFire_body_facts hUnique hmem hTyped ht
+          unfold InteractionSemantics.CompiledBlock.fuelBudget
+          simp only [hBodyEq, hInEq, hOutEq, hTermEq, hs, ht]
+          -- edited body = b0.body.tail, edited input = remapShape d b0.input,
+          -- edited output = b0.output.
+          cases hLowEdit : Block.lowerBodyFrom? b0.body.tail (remapShape d b0.input) with
+          | none => simp
+          | some pair =>
+              obtain ⟨bc, o⟩ := pair
+              have hoEq : o = b0.output := by
+                have := bodyType?_of_lowerBodyFrom? b0.body.tail hLowEdit
+                rw [hrest] at this; exact (Option.some.inj this).symm
+              subst hoEq
+              -- original: b0.body = swap d :: tail, lowers with the extra head fragment
+              obtain ⟨hc, hhc⟩ := lowerAt?_swap_of_type? htype
+              have hLowOrig : Block.lowerBodyFrom? b0.body b0.input
+                  = some (hc ++ bc, b0.output) := by
+                conv_lhs => rw [hdecomp]
+                rw [lowerBodyFrom?_cons, hhc]
+                simp [Option.bind, hLowEdit]
+              simp only [hLowOrig, ↓reduceIte]
+              cases hTerm : b0.term.lowerAt? b0.output with
+              | none => simp
+              | some tc => simp only [List.length_append]; omega
+  | some e =>
+      obtain ⟨hpreDrop, hswapType, hsplit⟩ := sourceFire_body_facts hTyped hs
+      obtain ⟨bLabel, B, hterm, href, hfind, hla, hhd, hal, hbl⟩ := sourceFire?_spec hs
+      have hTermJump : ∀ s : Shape, b0.term.lowerAt? s = some [Assembly.Instr.jump bLabel] := by
+        intro s; rw [hterm]; rfl
+      cases ht : targetFire? program b0 with
+      | none =>
+          -- source only: drop the trailing swap, re-type the output.
+          unfold InteractionSemantics.CompiledBlock.fuelBudget
+          simp only [hBodyEq, hInEq, hOutEq, hTermEq, hs, ht]
+          cases hLowEdit : Block.lowerBodyFrom? b0.body.dropLast b0.input with
+          | none => simp
+          | some pair =>
+              obtain ⟨bc, o⟩ := pair
+              have hoEq : o = remapShape e b0.output := by
+                have := bodyType?_of_lowerBodyFrom? b0.body.dropLast hLowEdit
+                rw [hpreDrop] at this; exact (Option.some.inj this).symm
+              subst hoEq
+              obtain ⟨sc, hsc⟩ := lowerBodyFrom?_singleton_swap hswapType
+              have hLowOrig : Block.lowerBodyFrom? b0.body b0.input
+                  = some (bc ++ sc, b0.output) := by
+                conv_lhs => rw [← hsplit]
+                rw [lowerBodyFrom?_append, hLowEdit]
+                simp [Option.bind, hsc]
+              simp only [hLowOrig, ↓reduceIte, hTermJump, List.length_append]
+              omega
+      | some d =>
+          -- both: drop head and tail swap.
+          obtain ⟨hdecompH, htypeH, hrestH, hd16⟩ :=
+            targetFire_body_facts hUnique hmem hTyped ht
+          have hlen : 2 ≤ b0.body.length := hal
+          have hhdSwap : b0.body.head? = some (Instr.swap d) :=
+            head_swap_of_targetFire hUnique hmem ht
+          have hd2 : b0.body.dropLast = Instr.swap d :: b0.body.dropLast.tail :=
+            dropLast_head_tail hhdSwap hlen
+          have hbeq : b0.body =
+              Instr.swap d :: (b0.body.dropLast.tail ++ [Instr.swap e]) := by
+            conv_lhs => rw [← hsplit, hd2]; rw [List.cons_append]
+          have hpreP : Block.bodyType? b0.body.dropLast.tail (remapShape d b0.input)
+              = some (remapShape e b0.output) := by
+            have hh := hpreDrop; rw [hd2] at hh; exact bodyType?_dropHead_swap hh
+          unfold InteractionSemantics.CompiledBlock.fuelBudget
+          simp only [hBodyEq, hInEq, hOutEq, hTermEq, hs, ht]
+          cases hLowEdit : Block.lowerBodyFrom? b0.body.dropLast.tail
+              (remapShape d b0.input) with
+          | none => simp
+          | some pair =>
+              obtain ⟨bc, o⟩ := pair
+              have hoEq : o = remapShape e b0.output := by
+                have := bodyType?_of_lowerBodyFrom? b0.body.dropLast.tail hLowEdit
+                rw [hpreP] at this; exact (Option.some.inj this).symm
+              subst hoEq
+              obtain ⟨hc, hhc⟩ := lowerAt?_swap_of_type? htypeH
+              obtain ⟨sc, hsc⟩ := lowerBodyFrom?_singleton_swap hswapType
+              have hLowOrig : Block.lowerBodyFrom? b0.body b0.input
+                  = some (hc ++ (bc ++ sc), b0.output) := by
+                conv_lhs => rw [hbeq]
+                rw [lowerBodyFrom?_cons, hhc]
+                simp only [Option.bind, lowerBodyFrom?_append, hLowEdit, hsc]
+              simp only [hLowOrig, ↓reduceIte, hTermJump, List.length_append]
+              omega
+
+/-- Whole-block-list seam fuel-budget monotonicity. -/
+theorem fuelBudget_seamBlocks_le {program : Program}
+    (hUnique : program.LabelsUnique) (hAll : program.AllBlocksTyped) :
+    ∀ (blocks : List Block), (∀ b ∈ blocks, b ∈ program.blocks) →
+      (blocks.map fun b =>
+          InteractionSemantics.CompiledBlock.fuelBudget (seamBlock program b)).sum ≤
+        (blocks.map InteractionSemantics.CompiledBlock.fuelBudget).sum
+  | [], _ => by simp
+  | b :: bs, hAllMem => by
+      simp only [List.map_cons, List.sum_cons]
+      exact Nat.add_le_add
+        (compiledBlock_fuelBudget_seamBlock_le hUnique hAll
+          (hAllMem b (List.mem_cons_self ..)))
+        (fuelBudget_seamBlocks_le hUnique hAll bs
+          (fun b' hb' => hAllMem b' (List.mem_cons_of_mem _ hb')))
+
+/-- **The seam cancellation does not increase the whole-program fuel budget.** -/
+theorem fuelBudget_seamCancelProgram_le {program : Program}
+    (hWT : program.WellTyped) :
+    InteractionSemantics.CompiledProgram.fuelBudget (seamCancelProgram program) ≤
+      InteractionSemantics.CompiledProgram.fuelBudget program := by
+  unfold InteractionSemantics.CompiledProgram.fuelBudget
+  rw [seamCancelProgram_blocks, List.map_map]
+  obtain ⟨hUnique, hAll, _, _⟩ := hWT
+  exact fuelBudget_seamBlocks_le hUnique hAll program.blocks (fun b hb => hb)
+
+/-- **Combined seam fuel bound.**  `seamCancelProgram (peepholeProgram
+(normalizeProgram cfg))` lowers to at most `cfg`'s whole-program fuel budget. -/
+theorem fuelBudget_seamCombined_le (program : Program) (hWT : program.WellTyped) :
+    InteractionSemantics.CompiledProgram.fuelBudget
+        (seamCancelProgram (peepholeProgram (normalizeProgram program))) ≤
+      InteractionSemantics.CompiledProgram.fuelBudget program :=
+  le_trans
+    (fuelBudget_seamCancelProgram_le
+      (peepholeProgram_wellTyped (normalizeProgram_wellTyped hWT)))
+    (fuelBudget_combined_le program hWT)
+
 end Peephole
 end TypedCfg
 end EvmCompiler
