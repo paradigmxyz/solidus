@@ -7,6 +7,7 @@ import EvmCompiler.Structured.InteractionTruncationOwnerPreservation
 import EvmCompiler.TypedCfg.InteractionPreservation
 import EvmCompiler.TypedCfg.InteractionPrefixPreservation
 import EvmCompiler.TypedCfg.PeepholeTransfer
+import EvmCompiler.Structured.PeepholeSourceCongr
 import EvmCompiler.Assembly.InteractionBytecode
 import EvmCompiler.Assembly.InteractionConcreteResources
 import EvmCompiler.Solidity.VerifiedStackObjectArtifact
@@ -894,6 +895,23 @@ theorem yulToNormalizedStackAssemblyPrefixForward
           TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget cfg :=
     Nat.mul_le_mul_left _
       (TypedCfg.Peephole.fuelBudget_peepholeProgram_le cfg)
+  have hEntryReturns : expressionsState.returns = [] := hStackInitial.returns
+  have hEntryInit :
+      expressionsState = Structured.RunState.initial expressionsState.evm := by
+    rcases expressionsState with ⟨evm, returns⟩
+    simp only [Structured.RunState.initial]
+    simp only at hEntryReturns
+    subst returns
+    rfl
+  have hEntrySeedRel :
+      Structured.TypedCfgPreservation.StateRel expressionsState []
+        expressionsState.evm := by
+    rw [hEntryInit]
+    exact Structured.TypedCfgPreservation.StateRel.initial _
+  have hEntrySeed :
+      Structured.InteractionFrameConsistent.realizedWitnessFC
+        expressions.toStructured cfg generated.calls cfg.entry expressionsState.evm :=
+    TypedCfg.Peephole.realizedWitnessFC_entry_of_generated generated hEntrySeedRel
   refine ⟨structuredFuel, generated, ?_⟩
   apply Simulation.Interaction.ForwardRel.of_executes_or_follows
   intro transcript sourceDone hSourceExec
@@ -907,8 +925,10 @@ theorem yulToNormalizedStackAssemblyPrefixForward
         transcript := by
       simpa [hEntry] using hCfgFollow
     have hCongr :=
-      TypedCfg.Peephole.openRunNPrefix_peephole_congr hWellTyped hIndependent
+      TypedCfg.Peephole.openRunNPrefix_peephole_congr_of_source generated
+        hStructuredWF hWellTyped hIndependent
         budget cfg.entry expressionsState.evm expressionsState.evm
+        hEntrySeed
         (Assembly.SameRuntimeData.refl _)
     obtain ⟨suffix, cfgDone, hCfgExec⟩ :=
       hCfgFollowAtEntry.exists_executes_extension
@@ -940,8 +960,10 @@ theorem yulToNormalizedStackAssemblyPrefixForward
       Structured.InteractionTruncationOwnerPreservation.OpenOutcome.GeneratedProgram.PrefixDoneRel.targetSafe
         hPrefix
     have hCongr :=
-      TypedCfg.Peephole.openRunNPrefix_peephole_congr hWellTyped hIndependent
+      TypedCfg.Peephole.openRunNPrefix_peephole_congr_of_source generated
+        hStructuredWF hWellTyped hIndependent
         budget cfg.entry expressionsState.evm expressionsState.evm
+        hEntrySeed
         (Assembly.SameRuntimeData.refl _)
     obtain ⟨peepDone, hPeepExec, hRuntimeRel⟩ :=
       Simulation.Interaction.Rel.executes hCongr hCfgExecAtEntry
@@ -1412,8 +1434,12 @@ theorem structuredToEncodedBytecode
     rw [hEntry]
     simpa [cfgFuel] using hCfgSafe
   have hBridge :=
-    TypedCfg.Peephole.openRunN_peephole_congr hWellTyped hIndependent
-      cfgFuel cfg.entry cfgState cfgState (Assembly.SameRuntimeData.refl _)
+    TypedCfg.Peephole.openRunN_peephole_congr_of_source generated hSourceWF
+      hWellTyped hIndependent
+      cfgFuel cfg.entry cfgState cfgState
+      (TypedCfg.Peephole.realizedWitnessFC_entry_of_generated generated
+        hStructuredInitial)
+      (Assembly.SameRuntimeData.refl _)
   have hCfgSafeAtEntryPeep : Simulation.Interaction.AllDone
       TypedCfg.InteractionSemantics.Program.AssemblySafeHalted
       (TypedCfg.InteractionSemantics.Program.openRunN
@@ -1558,8 +1584,12 @@ theorem structuredToAssemblySource
     rw [hEntry]
     simpa [cfgFuel] using hCfgSafe
   have hBridge :=
-    TypedCfg.Peephole.openRunN_peephole_congr hWellTyped hIndependent
-      cfgFuel cfg.entry cfgState cfgState (Assembly.SameRuntimeData.refl _)
+    TypedCfg.Peephole.openRunN_peephole_congr_of_source generated hSourceWF
+      hWellTyped hIndependent
+      cfgFuel cfg.entry cfgState cfgState
+      (TypedCfg.Peephole.realizedWitnessFC_entry_of_generated generated
+        hStructuredInitial)
+      (Assembly.SameRuntimeData.refl _)
   have hCfgSafeAtEntryPeep : Simulation.Interaction.AllDone
       TypedCfg.InteractionSemantics.Program.AssemblySafeHalted
       (TypedCfg.InteractionSemantics.Program.openRunN
@@ -1685,8 +1715,12 @@ theorem structuredToAssemblySourceFinished
     rw [hEntry]
     simpa [cfgFuel] using hCfgSafe
   have hBridge :=
-    TypedCfg.Peephole.openRunN_peephole_congr hWellTyped hIndependent
-      cfgFuel cfg.entry cfgState cfgState (Assembly.SameRuntimeData.refl _)
+    TypedCfg.Peephole.openRunN_peephole_congr_of_source generated hSourceWF
+      hWellTyped hIndependent
+      cfgFuel cfg.entry cfgState cfgState
+      (TypedCfg.Peephole.realizedWitnessFC_entry_of_generated generated
+        hStructuredInitial)
+      (Assembly.SameRuntimeData.refl _)
   have hCfgSafeAtEntryPeep : Simulation.Interaction.AllDone
       TypedCfg.InteractionSemantics.Program.AssemblySafeFinished
       (TypedCfg.InteractionSemantics.Program.openRunN

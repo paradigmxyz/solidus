@@ -211,6 +211,52 @@ theorem openRunNPrefix_peephole_congr_of_source
   | invalid hState =>
       exact .done (.error rfl)
 
+/-- **`tokens = []` forces `returns = []` under a `StateRel`.**  `realizeStack`
+pairs each ghost return frame with a concrete token; with no tokens the source
+activation must already be empty. -/
+theorem returns_nil_of_stateRel_nil
+    {sourceState : Structured.RunState} {target : EVMState}
+    (h : Structured.TypedCfgPreservation.StateRel sourceState [] target) :
+    sourceState.returns = [] := by
+  rcases h with ⟨stack, hRealize, _hSame⟩
+  cases hr : sourceState.returns with
+  | nil => rfl
+  | cons frame returns =>
+      rw [hr] at hRealize
+      simp [Structured.TypedCfgPreservation.realizeStack] at hRealize
+
+/-- **Step-C entry seed.**  The strengthened entry witness at the program entry,
+built from the generated-context provenance plus the entry `StateRel`.  The entry
+block's input shape is `Shape.caller` (`GeneratedContext.mainCompile`), which is
+token-free (`returnTokenDepth? = none`) with `sourceLength 0`, so the frame-fit and
+depth side-conditions are trivial and the empty source activation makes the
+frame-consistency conjunct vacuous.  Applied at all five OIC consumption sites to
+seed the source-threaded runners. -/
+theorem realizedWitnessFC_entry_of_generated
+    {source : Structured.Program}
+    {entryShapes : Structured.TypedCfgCompiler.ProcEntryShapes}
+    {cfg : TypedCfg.Program}
+    (context :
+      Structured.TypedCfgPreservation.Program.GeneratedContext source entryShapes cfg)
+    {sourceState : Structured.RunState} {target : EVMState}
+    (hStateRel : Structured.TypedCfgPreservation.StateRel sourceState [] target) :
+    realizedWitnessFC source cfg context.calls cfg.entry target := by
+  have hReturns : sourceState.returns = [] := returns_nil_of_stateRel_nil hStateRel
+  have hLabelShape :
+      Structured.TypedCfgPreservation.LabelShape cfg cfg.entry TypedCfg.Shape.caller := by
+    rw [context.entry_eq]
+    exact Structured.TypedCfgPreservation.LabelShape.of_compileBlock?
+      context.mainCompile context.mainBlocks
+  refine Structured.InteractionFrameConsistent.realizedWitnessFC_of_stateRel_nil
+    hLabelShape hStateRel ?_ hReturns rfl ?_
+  · simp [Structured.TypedCfgCompiler.Shape.SourceFrameFits,
+      Structured.TypedCfgCompiler.Shape.sourceLength,
+      Structured.TypedCfgCompiler.Shape.sourceView,
+      TypedCfg.Shape.caller, TypedCfg.Shape.length,
+      TypedCfg.Shape.returnTokenDepth?, TypedCfg.Shape.returnTokenDepthList?]
+  · simp [TypedCfg.Shape.returnTokenDepth?, TypedCfg.Shape.returnTokenDepthList?,
+      TypedCfg.Shape.caller]
+
 end Peephole
 end TypedCfg
 end EvmCompiler
