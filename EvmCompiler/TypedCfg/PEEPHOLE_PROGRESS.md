@@ -5584,3 +5584,111 @@ preserved by every jump.  **Remaining:** the `hInv` case-split assembly (item 3 
 proof, blocked only on the `callHead`/`hReg` disjunct gap above) then Step B.  Full
 `scripts/opt_harness.sh check` = OK (43 theorems, axioms ⊆ `[propext, Classical.choice,
 Quot.sound]`); `compile_correct`/`compile_correct_creation` axioms UNCHANGED; delta +0.
+
+## Session-47 update (2026-07-20): the `hInv` ASSEMBLY is DONE — the campaign's convergence point is closed; Step B STARTED (token-free entry bridge). Four green, axiom-clean commits; the `callHead` gap was bigger than §Session-46 flagged (needed calls-registration + source-lookup threading, not just `hReg`)
+
+Session 47's mandate (per §Session-46 frontier): (1) the `callHead` disjunct fix; (2) assemble
+`hInv`; (3) start Step B; (4) stop at the green frontier.  **Result: items 1, 2, and 3-start all
+landed — four green, axiom-clean commits `8983c368`→`2201e558`.**  `peepholeBody`/public spine
+UNTOUCHED ⇒ delta **+0**.  Full `scripts/opt_harness.sh check` = OK (43 theorems, axioms ⊆
+`[propext, Classical.choice, Quot.sound]`); `compile_correct`/`compile_correct_creation` axioms
+UNCHANGED.
+
+### KEY DESIGN FINDING (corrects §Session-46 frontier item 1): the `callHead` gap was NOT just `hReg`
+§Session-46 framed the `hInv`-blocking gap as the single missing `hReg` field on
+`BlockGenShapeReg.callHead`.  Adding `hReg` alone is insufficient: `realizedWitnessFC_of_callHead_dispatch`
+ALSO consumes **`hProcs : ctx.procs = sourceProgram.procs`** (to resolve the callee in the source
+proc list) and **`hResultCalls : CallsInProgram result context.calls`** (to pin the pushed frame's
+return site via `context.tokensUnique`).  Neither is `cfg`-derivable at the assembly site — the
+call's local `ctx`/`result` are existentially bound in the disjunct, and `S ∈ context.calls`
+requires provenance through the compilation, not the CFG.  So `BlockGenShapeReg` had to be
+**parameterized by `(sourceProgram, calls)`** and both facts threaded (the full §Session-42
+disjunct-strengthening move, applied to two more fields).  This is why item 1 became a substantial
+mutual/provenance change rather than a one-field edit.
+
+### LANDED (green, axiom-clean) — four commits
+* **`8983c368`** — `BlockGenShapeReg.callHead` gains the `hReg : HRegular result cfg regular` field
+  (`InteractionBlockGenShapeRegular.lean:229`); supplied at the construction site from the mutual's
+  threaded `hRegular`.
+* **`1e3cfcbc`** — the calls-registration + source-lookup thread (the real enabler):
+  * `BlockGenShapeReg` parameterized `(cfg) (sourceProgram) (calls)`
+    (`InteractionBlockGenShapeRegular.lean:188`); `callHead` disjunct gains
+    `hProcs` (`:218`) + `hResultCalls` (`:224`).
+  * the 5-function `genShapeReg_of_compile*` mutual threads `hProcsEq : ctx.procs =
+    sourceProgram.procs` (trivially — procs preserved by every `for_` ctx update) and
+    `hCalls : CallsInProgram result calls` (parallel to `hBlocks`, via
+    `CallsInProgram.left/right_of_append` for the stmt-list append and the per-construct
+    `.calls`-record splits `if`=`bodyResult.calls`, `switch`=`caseResult.calls ++ defaultResult.calls`,
+    `for`=`init ++ body ++ post`, `cases`=`bodyResult.calls ++ tail.calls`, `default_some`=`bodyResult.calls`,
+    `call`=`[S]`).  `GenShapeResultReg` gains `(sourceProgram, calls)`.
+  * `main_blockGenShapeReg` seeds calls from `GeneratedContext.mainCalls` + `hProcsEq := rfl`;
+    the proc arm needed the proc-body result's calls registered, so
+    `mem_procBlocks_provenance_subset_fallthrough` (`InteractionProcBlockProvenance.lean:390`)
+    was strengthened with a **calls-subset** `∀ s, s ∈ bodyResult.calls → s ∈ procCalls`
+    (`procCalls = compiled.calls ++ tailCalls`, mirroring the block-subset), and
+    `procBlocks_provenance_inProgram_fallthrough` (`:650`) now exposes
+    `CallsInProgram bodyResult context.calls` (via that subset + `procCalls ⊆ context.calls`).
+* **`84324951`** — `InteractionHInvClose.lean`, the `hInv` assembly (THE convergence point):
+  * `realizedWitnessFC_of_blockGenShapeReg` (`:48`) — the nine-disjunct case split, shared by the
+    main and proc arms; each disjunct dispatches to its `realizedWitnessFC_of_*_dispatch` leg.
+    (`codeHead` pins the leg's free `codeSourceProgram`/`sourceFuel` implicits to `source`/`0` — the
+    leg is proven ∀ those, so any values work.)
+  * `openStep_preserves_realizedWitnessFC` (`:106`) — the global `openStep`-jump invariant at
+    `realizedWitnessFC`.  Recovers the block at the reached entry from the witness (pins
+    `block.label = e` via `List.find?_some`), `subst e`, classifies with `block_category`, and
+    discharges all four arms: main/proc via the case-split helper, dispatch via
+    `realizedWitnessFC_of_dispatch_arm`, `programEnd` vacuously via `programEnd_openStep_no_jump`.
+    After `subst e` every hypothesis lands at `block.label`, so `cases` on the concrete-record
+    disjuncts unifies the entry/exec labels automatically — no per-disjunct label rewriting.
+  * `allEntriesRealized_realizedWitness_of_context` (`:150`) — feeds the invariant to the route-B
+    master lever `AllEntriesRealized.of_openStep_invariant`, seeds it, and weakens back to the bare
+    `realizedWitness cfg` (`allEntriesRealized_realizedWitness_of_FC`) for Step B.
+  * imported into `Verification.lean`.
+* **`2201e558`** — Step B started: `stackRealizes_of_realizedWitness_of_returnTokenDepth?_eq_none`
+  (`InteractionHInvClose.lean:186`) — the token-FREE half of the per-entry `StackRealizes`
+  discharge, dischargeable outright from the unpacked `realizedWitness` (via
+  `stackRealizes_of_stateRel_of_returnTokenDepth?_eq_none`).
+
+### STEP-B DESIGN FINDING (the frontier for session 48): the token-BEARING entry is NOT bridgeable from bare `realizedWitness`
+`stackRealizes_of_stateRel` reduces the token-owning case (`block.input.returnTokenDepth? =
+some (length-1)`, every proc-internal block) to **`source.returns ≠ []`** (equivalently a
+non-empty realization token list `token :: tokens`, via
+`stackRealizes_of_stateRel_of_token_last_of_tokens_cons`).  `realizedWitness cfg` (=
+`∃ source tokens block, findBlock? ∧ StateRel ∧ SourceFrameFits`) carries NO token/frame coupling,
+so `returns ≠ []` at a token-owning entry is genuinely not derivable from it.  The needed fact is a
+whole-run invariant: token-owning blocks are only reached with a live activation
+(`returns ≠ []`).  **CORRECTION to §Session-46's Step-B recipe** ("weaken to the bare
+`realizedWitness cfg`"): Step B must instead consume the FC-carrying / returns-nonempty-coupled
+`AllEntriesRealized` at token-owning entries.  Concretely, either
+(a) keep `AllEntriesRealized … (realizedWitnessFC …)` un-weakened and prove the token-owning bridge
+    from `realizedWitnessFC` — but note `FrameConsistent (source.returns, tokens)` does NOT by
+    itself forbid `returns = []` at a token-owning block, so this needs an additional
+    shape-token ⟶ `returns ≠ []` coupling lemma; or
+(b) add a per-witness `returnTokenDepth?(block.input) = some _ → source.returns ≠ []` conjunct to a
+    (further) strengthened realized predicate and re-run the 9 legs + dispatch (the token-owning
+    entries are exactly the proc-body / dispatch categories, where the push/pop legs already track
+    the frame).  Option (b) is the clean §Session-42 move and is recommended.
+
+### THE FRONTIER (session 48) — finish Step B
+1. Close the **token-owning** block-entry `StackRealizes` bridge per the design finding above
+   (recommended: strengthen the realized predicate with the token ⟶ `returns ≠ []` conjunct, or a
+   dedicated coupling lemma), giving a total `stackRealizes_of_realizedWitness` at every entry.
+2. Assemble `openRunNPrefix_peephole_congr_of_source` — the source-carrying peephole congruence by
+   the same fuel induction as `openRunNPrefix_peephole_congr` (`PeepholeProgram.lean:174`),
+   discharging `StackRealizes` at each entry via the total bridge (fed from
+   `allEntriesRealized_realizedWitness_of_context`) and `openRunBody_swap_swap_congr`
+   (`PeepholeSwapOpen.lean:64`, session 6) for the swap arm.
+3. Then (Steps C+) add the swap arm to `peepholeBody`.  **Do NOT** add the swap arm until Step B
+   is green.
+
+### Status handed to session 48
+Landed (green + axiom-clean, four commits `8983c368`→`2201e558`): the `callHead` disjunct fix, the
+calls-registration + source-lookup thread through `BlockGenShapeReg`, **the `hInv` assembly (the
+strengthened `openStep`-jump invariant `openStep_preserves_realizedWitnessFC` + the
+`AllEntriesRealized … (realizedWitness cfg)` production `allEntriesRealized_realizedWitness_of_context`)**,
+and the token-free Step-B entry bridge.  The campaign's convergence point is CLOSED — every
+`block_category` arm and all nine `BlockGenShapeReg` disjuncts + dispatch + `programEnd` are wired.
+**Remaining:** the token-owning Step-B bridge (design finding above), then
+`openRunNPrefix_peephole_congr_of_source`, then the swap arm.  Full `scripts/opt_harness.sh check`
+= OK (43 theorems, axioms ⊆ `[propext, Classical.choice, Quot.sound]`);
+`compile_correct`/`compile_correct_creation` axioms UNCHANGED; delta +0.
