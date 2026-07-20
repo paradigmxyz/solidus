@@ -5692,3 +5692,88 @@ and the token-free Step-B entry bridge.  The campaign's convergence point is CLO
 `openRunNPrefix_peephole_congr_of_source`, then the swap arm.  Full `scripts/opt_harness.sh check`
 = OK (43 theorems, axioms ⊆ `[propext, Classical.choice, Quot.sound]`);
 `compile_correct`/`compile_correct_creation` axioms UNCHANGED; delta +0.
+
+## Session-48 update (2026-07-20): STEP 1 CLOSED — the token-owning block-entry `StackRealizes` bridge lands, via strengthening `realizedWitnessFC` with a local liveness conjunct + a `FrameContinuationLive` coupling on `FrameConsistent`; all nine legs + dispatch + callHead re-run, all green + axiom-clean
+
+Session 48's mandate (per §Session-47 frontier): (1) strengthen `realizedWitnessFC` with the
+token ⟶ liveness conjunct and re-run the legs; (2) prove the token-owning entry `StackRealizes`
+bridge; (3) start Step B if reached; (4) stop at the green frontier.  **Result: item 1 + item 2
+LANDED, green + axiom-clean.**  `peepholeBody`/public spine UNTOUCHED ⇒ delta **+0**.
+`compile_correct`/`compile_correct_creation` axioms UNCHANGED.
+
+### KEY DESIGN FINDING (corrects §Session-47's "add the conjunct, re-run the 9 legs one-line" estimate)
+The bare `∀ d, block.input.returnTokenDepth? = some d → tokens ≠ []` conjunct (call it `hLive`) is
+NOT one-line-transportable through every leg, because two transitions cross the token boundary:
+
+* **dispatch (pop):** the child is the caller continuation `callerInput` with residual tokens
+  `rest`; `hLive` there (`callerInput owns → rest ≠ []`) is a genuine **below-token coupling**
+  not derivable from `FrameConsistent` alone (which places no non-emptiness constraint on the
+  tail).  **Fix:** a new per-frame coupling `FrameContinuationLive cfg calls token tokens` folded
+  into `FrameConsistent`'s cons case (alongside `FrameHeadConsistent`): "for every registered site
+  sharing `token` whose return continuation owns a token, `tokens ≠ []`."  The dispatch arm READS
+  it off the popped head frame; the callHead arm PROVES it for the pushed frame from the caller's
+  own `hLive` + the reverse afterCall-transport `returnTokenDepth?_some_of_afterCall_some`.
+* **procAdapter (relabel):** `relabelCompatible` allows `.word ↔ .returnPC` per `slotsAgree`, so
+  `output owns → blockInput owns` is generically FALSE.  BUT the single construction site
+  (`InteractionHInvAssemblyRegular.lean:166`) always has `blockInput = procEntry proc`, which owns
+  the token.  **Fix:** one new field `hInputActive : blockInput.returnTokenDepth?.isSome` on
+  `BlockGenShapeReg.procAdapter`, supplied trivially there; the leg then gets `tokens ≠ []` from
+  the entry's own `hLive` and the child obligation is trivial (conclusion always holds).
+
+The other seven legs ARE cheap: nilJoin / switchTest (child input = entry input ⇒ `hLive`
+directly); caseEntryPop (child = `.pop` tail ⇒ `returnTokenDepth?_some_of_tail_some`); codeHead /
+ifHead / forCond (child = code output / its tail ⇒ the reverse code lemma
+`BasicInstr.Code.input_returnTokenDepth?_eq_some_of_output`, Core.lean:1053); callHead (child
+tokens `callToken :: tokens` non-empty ⇒ trivial).
+
+### LANDED (green, axiom-clean) — two commits
+* **COMMIT 1 (`8371d931`) — the predicate strengthening + all legs:**
+  * `InteractionFrameConsistent.lean`: new `FrameContinuationLive` (`:71`); `FrameConsistent` cons
+    case gains it (`:103`); `FrameConsistent_cons_cons`/`.tail`/`.cons` updated (`.cons` gains an
+    `hLive` arg); `realizedWitnessFC` gains the `hLive` conjunct (`:148`); projection /
+    `realizedWitnessFC_of_stateRel` (gains `hLive` arg) / `_of_stateRel_nil` (gains
+    `hDepthNone`) updated.
+  * the nine legs re-run per the design finding above (`InteractionFrameConsistentLegs.lean`,
+    `…BranchLegs.lean`, `…CodeLeg.lean`, `…DispatchLeg.lean`, `…CallLeg.lean`).
+  * `BlockGenShapeReg.procAdapter` gains `hInputActive` (`InteractionBlockGenShapeRegular.lean:340`),
+    supplied at `InteractionHInvAssemblyRegular.lean:184`; consumed in
+    `realizedWitnessFC_of_blockGenShapeReg` (`InteractionHInvClose.lean:72`);
+    `openStep_preserves_realizedWitnessFC` unpacks the extra conjunct.
+* **COMMIT 2 (`db0ca6ac`) — the bridge + un-weakened production, `InteractionHInvClose.lean`:**
+  * `allEntriesRealized_realizedWitnessFC_of_context` (`:200`) — the un-weakened
+    `AllEntriesRealized … (realizedWitnessFC …)` production (keeps `hLive` for the token-owning
+    consumer; the earlier `…_realizedWitness_of_context` still weakens for the token-free half).
+  * `stackRealizes_of_realizedWitnessFC_of_token_last` (`:227`) — **the token-owning bridge**:
+    from the strengthened witness + `block.input.returnTokenDepth? = some (block.input.length - 1)`,
+    `hLive` yields the non-empty token list and
+    `stackRealizes_of_stateRel_of_token_last_of_tokens_cons` (session 8/9) discharges
+    `StackRealizes block.input state`.
+
+### THE FRONTIER (session 49) — finish Step B
+Both per-entry `StackRealizes` bridges now exist (token-free + token-owning).  Remaining before the
+congruence:
+1. **The token-at-bottom static fact** — `∀ reached block, block.input.returnTokenDepth? = none ∨
+   = some (block.input.length - 1)` — so the token-owning bridge's `hLast` hypothesis can be
+   discharged at an arbitrary reached entry (needed to case-split the total bridge).  Provable from
+   the `BlockGenShape`/`BlockGenShapeReg` disjuncts (each disjunct's input shape has its token at
+   the bottom or none); the `procEntry`/`procExit`/`afterCall`/`tail`/`pop` depth lemmas already
+   used this session supply the per-disjunct arithmetic.
+2. **The total bridge** `stackRealizes_of_realizedWitnessFC` — case on `block.input.returnTokenDepth?`:
+   `none` ⇒ project to `realizedWitness` + token-free bridge; `some _` ⇒ (1) pins it to
+   `some (length-1)` ⇒ token-owning bridge.
+3. **`openRunNPrefix_peephole_congr_of_source`** (`PeepholeProgram.lean:174` sibling) — fuel
+   induction like `openRunNPrefix_peephole_congr`, discharging `StackRealizes` at each `openStep`
+   entry from `allEntriesRealized_realizedWitnessFC_of_context` (fed at the seed) + the total
+   bridge, feeding `openRunBody_swap_swap_congr` (`PeepholeSwapOpen.lean:64`, session 6) for the
+   swap arm.  Then (Step C) swap the OIC call sites; then (Step D) add the swap arm to
+   `peepholeBody`.
+
+### Status handed to session 49
+Landed (green + axiom-clean, two commits): the `realizedWitnessFC` liveness strengthening +
+`FrameContinuationLive` coupling + all nine legs + dispatch + callHead + the `procAdapter`
+`hInputActive` field, and **the token-owning block-entry `StackRealizes` bridge**
+`stackRealizes_of_realizedWitnessFC_of_token_last` + the un-weakened FC `AllEntriesRealized`
+production.  The per-entry `StackRealizes` discharge is now TOTAL modulo the token-at-bottom static
+fact (frontier item 1).  Full `scripts/opt_harness.sh check` = OK (43 theorems, axioms ⊆
+`[propext, Classical.choice, Quot.sound]`); `compile_correct`/`compile_correct_creation` axioms
+UNCHANGED; delta +0.
