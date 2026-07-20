@@ -1103,6 +1103,197 @@ theorem seamBlock_body_rel {program : Program} {b0 : Block}
           -- Now birth the trailing pending swap from the resynced state.
           exact openRunBody_dropLast_swap_pending hpreP hswapType hIndP hsyncNext hReal_c
 
+/-! ### The carried invariant + disjunctive outcome relation -/
+
+/-- A found return-dispatch target is one of the terminator's static targets. -/
+theorem findTarget?_mem {token : Word} {sites : List TypedCfg.ReturnSite}
+    {target : Label} (h : TypedCfg.Block.ReturnSite.findTarget? token sites = some target) :
+    target ∈ sites.map TypedCfg.ReturnSite.target := by
+  induction sites with
+  | nil => simp [TypedCfg.Block.ReturnSite.findTarget?] at h
+  | cons site rest ih =>
+      simp only [TypedCfg.Block.ReturnSite.findTarget?] at h
+      split at h
+      · simp only [Option.some.injEq] at h
+        subst h; simp only [List.map_cons]; exact List.mem_cons_self
+      · simp only [List.map_cons]; exact List.mem_cons_of_mem _ (ih h)
+
+/-- The inter-block state invariant carried across a fired seam.  At the entry of
+block `label`, the ORIGINAL and CANCELLED states are `SameRuntimeData` UNLESS the
+block tails a fired seam (`targetFire? = some d`), in which case they are one
+`swap (d+1)` apart (`PendingSwap d`). -/
+def SeamStepRel (program : Program) (label : Label) (s_o s_c : EVMState) : Prop :=
+  match program.findBlock? label with
+  | none => SameRuntimeData s_o s_c
+  | some b =>
+      match targetFire? program b with
+      | none => SameRuntimeData s_o s_c
+      | some d => PendingSwap d s_c s_o
+
+/-- The disjunctive one-step outcome relation.  Either the two outcomes are a
+`.jump` to the same successor carrying `SeamStepRel` there (this includes the
+`SameRuntimeData` jumps, whose successor is `targetFire? = none`), or they are
+plain `RuntimeOutcomeRel` (the only source of halts / fallthroughs / errors —
+always from re-synced states). -/
+def SeamOutcomeRel (program : Program) :
+    Except EVMException TypedCfg.Outcome →
+      Except EVMException TypedCfg.Outcome → Prop :=
+  fun a b =>
+    (∃ (next : Label) (so sc : EVMState),
+      a = .ok (.jump next so) ∧ b = .ok (.jump next sc) ∧
+        SeamStepRel program next so sc)
+    ∨ InteractionCongruence.Block.RuntimeOutcomeRel a b
+
+/-- Every `.jump` produced by a terminator lands at one of its static targets. -/
+theorem runTerm_jump_mem_targets {shape : Shape} {term : TypedCfg.Terminator}
+    {state final : EVMState} {next : Label}
+    (h : TypedCfg.Block.runTerm shape term state = .jump next final) :
+    next ∈ term.targets := by
+  cases term with
+  | fallthrough t =>
+      rw [TypedCfg.Block.runTerm] at h
+      simp only [TypedCfg.Outcome.jump.injEq] at h
+      simp [Terminator.targets, h.1]
+  | jump t =>
+      rw [TypedCfg.Block.runTerm] at h
+      simp only [TypedCfg.Outcome.jump.injEq] at h
+      simp [Terminator.targets, h.1]
+  | jumpi t f =>
+      rw [TypedCfg.Block.runTerm] at h
+      split at h
+      · simp at h
+      · split at h <;>
+          (simp only [TypedCfg.Outcome.jump.injEq] at h; simp [Terminator.targets, h.1])
+  | returnDispatch rc sites =>
+      rw [TypedCfg.Block.runTerm] at h
+      split at h
+      · simp at h
+      · split at h
+        · simp at h
+        · split at h
+          · simp at h
+          · split at h
+            · simp at h
+            · rename_i hfind
+              simp only [TypedCfg.Outcome.jump.injEq] at h
+              rw [← h.1]
+              simpa [Terminator.targets] using findTarget?_mem hfind
+  | halt kind => rw [TypedCfg.Block.runTerm] at h; simp at h
+  | invalid => rw [TypedCfg.Block.runTerm] at h; simp at h
+
+/-- **Block-level seam-cancel congruence.**  Running the original block from `s_o`
+is `Rel (SeamOutcomeRel program)`-related to running the seam-edited block from
+`s_c`, given the entry invariant `hRin`.  The body kernel supplies the internal
+state relation; the terminator forwards it to the produced `.jump` (source-fire ⟹
+`.fallthrough` ⟹ pending jump) or discharges the invariant at a non-firing
+successor (`targetFire? = none`). -/
+theorem openRun_seamCancel_congr {program : Program} {b0 : Block}
+    (hUnique : program.LabelsUnique) (hTyped : program.WellTyped)
+    (hmem : b0 ∈ program.blocks) (hIndep : b0.ProgramCounterIndependent)
+    {s_o s_c : EVMState}
+    (hRin : match targetFire? program b0 with
+            | none => SameRuntimeData s_o s_c
+            | some d => PendingSwap d s_c s_o)
+    (hReal_c : StackRealizes (seamBlock program b0).input s_c) :
+    Simulation.Interaction.Rel (SeamOutcomeRel program)
+      (InteractionSemantics.Block.openRun b0 s_o)
+      (InteractionSemantics.Block.openRun (seamBlock program b0) s_c) := by
+  have hb0Typed : b0.WellTyped program := blockWellTyped_of_mem hTyped.2.1 hmem
+  have hbody := seamBlock_body_rel hUnique hmem hb0Typed hIndep hRin hReal_c
+  unfold InteractionSemantics.Block.openRun Control.Block.run
+  simp only [seamBlock_term]
+  refine Simulation.Interaction.Rel.bind_custom hbody ?_
+  intro leftDone rightDone hDone
+  cases hDone with
+  | error he => exact Simulation.Interaction.Rel.done (Or.inr (.error he))
+  | ok hpair =>
+      rename_i lpair rpair
+      obtain ⟨hrel, hlp2, hrp2⟩ := hpair
+      simp only [hlp2, hrp2, ↓reduceIte]
+      cases hsrc : sourceFire? program b0 with
+      | none =>
+          simp only [hsrc] at hrel
+          have hsoeq : (seamBlock program b0).output = b0.output := by
+            rw [seamBlock_output, hsrc]
+          rw [hsoeq]
+          have hChecked := InteractionCongruence.Block.runTermChecked_runtimeRel
+            (shape := b0.output) (term := b0.term) hrel
+          cases hL : TypedCfg.Block.runTermChecked b0.output b0.term lpair.1 with
+          | error eL =>
+              cases hR : TypedCfg.Block.runTermChecked b0.output b0.term rpair.1 with
+              | error eR =>
+                  simp only [hL, hR] at hChecked
+                  cases hChecked with
+                  | error he => exact Simulation.Interaction.Rel.done (Or.inr (.error he))
+              | ok oR => simp only [hL, hR] at hChecked; cases hChecked
+          | ok oL =>
+              cases hR : TypedCfg.Block.runTermChecked b0.output b0.term rpair.1 with
+              | error eR => simp only [hL, hR] at hChecked; cases hChecked
+              | ok oR =>
+                  simp only [hL, hR] at hChecked
+                  refine Simulation.Interaction.Rel.done ?_
+                  cases hChecked with
+                  | ok hrr =>
+                      cases hrr with
+                      | jump lbl hSt =>
+                          have hmemT : lbl ∈ b0.term.targets :=
+                            runTerm_jump_mem_targets
+                              (TypedCfg.Block.runTerm_eq_of_runTermChecked_eq_ok hL)
+                          refine Or.inl ⟨lbl, _, _, rfl, rfl, ?_⟩
+                          unfold SeamStepRel
+                          cases hfindL : program.findBlock? lbl with
+                          | none => exact hSt
+                          | some bL =>
+                              simp only [targetFire?_none_of_sourceFire_none hmem hmemT hsrc hfindL]
+                              exact hSt
+                      | fallthrough hSt => exact Or.inr (.ok (.fallthrough hSt))
+                      | returnDispatch hSt => exact Or.inr (.ok (.returnDispatch hSt))
+                      | halt kind hSt => exact Or.inr (.ok (.halt kind hSt))
+                      | invalid hSt => exact Or.inr (.ok (.invalid hSt))
+      | some e =>
+          obtain ⟨bLabel, B, hterm, href, hfind, hla, hhd, hal, hbl⟩ :=
+            sourceFire?_spec hsrc
+          simp only [hsrc] at hrel
+          rw [hterm]
+          simp only [TypedCfg.Block.runTermChecked_fallthrough, TypedCfg.Block.runTerm]
+          refine Simulation.Interaction.Rel.done ?_
+          refine Or.inl ⟨bLabel, lpair.1, rpair.1, rfl, rfl, ?_⟩
+          have htf : targetFire? program B = some e :=
+            targetFire?_target_of_sourceFire hmem hterm hfind href hsrc
+          unfold SeamStepRel
+          simp only [hfind, htf]
+          exact hrel
+
+/-- **Whole-program one-step seam-cancel congruence.**  Lifts the block-level
+congruence across `openStep` (block lookup), threading the `SeamStepRel` entry
+invariant to the `SeamOutcomeRel` step outcome. -/
+theorem openStep_seamCancel_congr {program : Program} {label : Label}
+    {s_o s_c : EVMState}
+    (hUnique : program.LabelsUnique) (hTyped : program.WellTyped)
+    (hIndependent : program.ProgramCounterIndependent)
+    (hReal_c : ∀ b0, program.findBlock? label = some b0 →
+      StackRealizes (seamBlock program b0).input s_c)
+    (hStep : SeamStepRel program label s_o s_c) :
+    Simulation.Interaction.Rel (SeamOutcomeRel program)
+      (InteractionSemantics.Program.openStep program label s_o)
+      (InteractionSemantics.Program.openStep (seamCancelProgram program) label s_c) := by
+  unfold InteractionSemantics.Program.openStep Control.Program.step
+  rw [findBlock?_seamCancelProgram]
+  cases hFind : program.findBlock? label with
+  | none =>
+      simp only [hFind, Option.map_none]
+      simp only [SeamStepRel, hFind] at hStep
+      exact Simulation.Interaction.Rel.done (Or.inr (.ok (Outcome.RuntimeRel.invalid hStep)))
+  | some b0 =>
+      simp only [hFind, Option.map_some]
+      have hMem : b0 ∈ program.blocks := by
+        unfold TypedCfg.Program.findBlock? at hFind
+        exact List.mem_of_find?_eq_some hFind
+      have hb0Indep : b0.ProgramCounterIndependent :=
+        (List.forall_iff_forall_mem.mp hIndependent) b0 hMem
+      simp only [SeamStepRel, hFind] at hStep
+      exact openRun_seamCancel_congr hUnique hTyped hMem hb0Indep hStep (hReal_c b0 hFind)
+
 end Peephole
 end TypedCfg
 end EvmCompiler
