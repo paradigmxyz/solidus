@@ -84,14 +84,14 @@ sources = {
     "RevertReason.sol": {"content": Path(sys.argv[10]).read_text()},
     "BytesBox.sol": {"content": Path(sys.argv[11]).read_text()},
     "AbiBox.sol": {"content": Path(sys.argv[12]).read_text()},
-    "ArrayBox.sol": {"content": Path(sys.argv[12]).read_text()},
-    "EnvBox.sol": {"content": Path(sys.argv[13]).read_text()},
-    "StringBox.sol": {"content": Path(sys.argv[14]).read_text()},
-    "LoopBox.sol": {"content": Path(sys.argv[15]).read_text()},
-    "StructBox.sol": {"content": Path(sys.argv[16]).read_text()},
-    "BitwiseBox.sol": {"content": Path(sys.argv[17]).read_text()},
-    "ModifierBox.sol": {"content": Path(sys.argv[18]).read_text()},
-    "InlineAssemblyBox.sol": {"content": Path(sys.argv[19]).read_text()},
+    "ArrayBox.sol": {"content": Path(sys.argv[13]).read_text()},
+    "EnvBox.sol": {"content": Path(sys.argv[14]).read_text()},
+    "StringBox.sol": {"content": Path(sys.argv[15]).read_text()},
+    "LoopBox.sol": {"content": Path(sys.argv[16]).read_text()},
+    "StructBox.sol": {"content": Path(sys.argv[17]).read_text()},
+    "BitwiseBox.sol": {"content": Path(sys.argv[18]).read_text()},
+    "ModifierBox.sol": {"content": Path(sys.argv[19]).read_text()},
+    "InlineAssemblyBox.sol": {"content": Path(sys.argv[20]).read_text()},
 }
 with open(sys.argv[21], "w") as handle:
     json.dump(
