@@ -113,6 +113,85 @@ theorem type?_swap_eq {d : Nat} {s s' : Shape}
       rw [e0, ed]
       rfl
 
+/-- Reading position `b` after the transposition equals reading the
+`remapDepth`-image position before it. -/
+theorem getElem?_swapPos_remapDepth {α : Type _} (d : Nat) (l : List α) (b : Nat)
+    (h0 : 0 < l.length) (hd : d + 1 < l.length) :
+    (swapPos 0 (d + 1) l)[b]? = l[remapDepth d b]? := by
+  rw [swapPos_getElem? 0 (d + 1) l b h0 hd]
+  unfold remapDepth
+  by_cases hb0 : b = 0
+  · subst hb0; simp
+  · by_cases hbd : b = d + 1
+    · subst hbd; simp
+    · have hne1 : ¬ (d + 1 = b) := fun h => hbd h.symm
+      have hne2 : ¬ (0 = b) := fun h => hb0 h.symm
+      rw [if_neg hne1, if_neg hne2, if_neg hb0, if_neg hbd]
+
+/-! ## Per-constructor window `type?`-preservation -/
+
+/-- Bounds carried by a well-typed `swap d`: the two exchanged positions exist. -/
+theorem swap_bounds {d : Nat} {s s' : Shape}
+    (hType : Instr.type? (.swap d) s = some s') :
+    0 < s.slots.length ∧ d + 1 < s.slots.length := by
+  obtain ⟨_, hdepth, _⟩ := Instr.length_of_type?_swap hType
+  have : d + 2 ≤ s.slots.length := hdepth
+  omega
+
+/-- **`bindScratch` window preservation.**  Cancelling `swap d ; bindScratch b ;
+swap d` in favour of the remapped `bindScratch (remapDepth d b)` reaches the same
+output shape. -/
+theorem type?_window_bindScratch {d baseDepth : Nat} {name : String} {slot : Nat}
+    {s0 s1 s2 s3 : Shape}
+    (h1 : Instr.type? (.swap d) s0 = some s1)
+    (h2 : Instr.type? (.bindScratch baseDepth name slot) s1 = some s2)
+    (h3 : Instr.type? (.swap d) s2 = some s3) :
+    Instr.type? (remapZeroWidth d (.bindScratch baseDepth name slot)) s0
+      = some s3 := by
+  obtain ⟨h0, hd1⟩ := swap_bounds h1
+  obtain ⟨hs1slots, hs1tail⟩ := type?_swap_eq h1
+  obtain ⟨hs3slots, hs3tail⟩ := type?_swap_eq h3
+  -- unfold bindScratch's typing
+  simp only [Instr.type?, Shape.bindScratch?] at h2
+  cases hLook : s1.slots[baseDepth]? with
+  | none => rw [hLook] at h2; simp at h2
+  | some existing =>
+      rw [hLook] at h2
+      simp only [Option.some.injEq] at h2
+      -- s2 = { s1 with slots := s1.slots.set baseDepth .scratchBase }
+      subst h2
+      -- rewrite s2's slots in h3-derived facts
+      simp only at hs3slots hs3tail
+      -- side condition (a): s0 has a slot at remapDepth d baseDepth
+      have hSide : s0.slots[remapDepth d baseDepth]? = some existing := by
+        rw [← getElem?_swapPos_remapDepth d s0.slots baseDepth h0 hd1,
+          ← hs1slots]; exact hLook
+      -- compute the goal shape
+      simp only [remapZeroWidth, Instr.type?, Shape.bindScratch?, hSide]
+      -- goal: some { s0 with slots := s0.slots.set (remapDepth d baseDepth) .scratchBase } = some s3
+      refine congrArg some ?_
+      -- lengths for involution / set-comm on l = swapPos 0 (d+1) s0.slots
+      have hlen : (swapPos 0 (d + 1) s0.slots).length = s0.slots.length :=
+        swapPos_length 0 (d + 1) s0.slots
+      have h0' : 0 < (swapPos 0 (d + 1) s0.slots).length := by rw [hlen]; exact h0
+      have hd1' : d + 1 < (swapPos 0 (d + 1) s0.slots).length := by
+        rw [hlen]; exact hd1
+      -- s3.slots = s0.slots.set (remapDepth d baseDepth) scratchBase
+      have hslots : s3.slots = s0.slots.set (remapDepth d baseDepth) .scratchBase := by
+        rw [hs3slots]
+        simp only [hs1slots]
+        rw [swapPos_set_comm 0 (d + 1) (swapPos 0 (d + 1) s0.slots) baseDepth
+            .scratchBase h0' hd1',
+          swapPos_involutive 0 (d + 1) s0.slots h0 hd1,
+          ← remapDepth_eq_transpIdx]
+      -- tail
+      have htail : s3.tail = s0.tail := by rw [hs3tail, hs1tail]
+      -- assemble Shape equality
+      obtain ⟨sl3, tl3⟩ := s3
+      simp only at hslots htail
+      subst hslots htail
+      rfl
+
 end Peephole
 end TypedCfg
 end EvmCompiler
