@@ -284,6 +284,105 @@ theorem realizedWitness_of_join_jump
     InteractionRealizedWitnessSuccessor.realizedWitness_of_pure_jump
       hStep hRel hExec hLabelShape hFits
 
+/--
+**Proc-entry adapter (`.relabel`-then-`.jump`) block successor supplier.**
+
+The procedure-entry ADAPTER block
+`{ input := blockInput, body := [.relabel relabelTarget], output := output,
+   term := .jump bodyLabel }` (emitted at `ProcLabel.entry proc.name` by the
+adapter route of `ProcFragment.route`, `Core.lean:2969`, with
+`blockInput = Shape.procEntry proc`, `relabelTarget = fragment.input`,
+`bodyLabel = ProcLabel.body proc.name`) is a pure retyping jump: `.relabel` runs
+no primitive and leaves the runtime state UNCHANGED, so its `openStep` reduces
+silently to `pure (.jump bodyLabel target)` (exactly the reduction inside
+`InteractionCallPreservation.openRunNResult_procEntry`, `:696–740`), and its child
+`StateRel` is the entry's (`hRel`, state unchanged — `StateRel` mentions no shape,
+so it needs no relabel transport).
+
+The relabel DOES change the block's static shape (`blockInput → output`, where
+`output = relabelTarget` when the relabel type-checks, `Typing.lean:51`), and
+`SourceFrameFits` is not preserved across a relabel in general (`relabelCompatible`
+lets a `.word` slot match any slot, so `sourceView`/`returnTokenDepth?` may differ).
+So — exactly as `realizedWitness_of_pop_jump` / `realizedWitness_of_pure_jump` take
+their child fits as a hypothesis — this supplier takes the child fits at the
+successor shape (`hFits : SourceFrameFits output …`) rather than transporting the
+entry fits; the concrete transport (when `output = relabelTarget = fragment.input`)
+is discharged at the capstone assembly, where the proc's entry/body shapes are known.
+
+Given the adapter's `findBlock?` fact (`hFind`), the relabel type fact (`hType`),
+the entry `realizedWitness` `StateRel` (`hRel`), the child fits (`hFits`), and any
+concrete first jump (`hExec`), this lands the child `realizedWitness cfg next state'`,
+provided the ambient block at `bodyLabel` expects `output`.
+
+Proof: the relabel-body block's `openStep` reduces to `pure (.jump bodyLabel target)`
+(the relabel is a no-op on the runtime state, mirroring the reduction in
+`openRunNResult_procEntry`); `realizedWitness_of_pure_jump` (session 27) forces
+`next = bodyLabel`, keeps the child `StateRel` at `target`, and packages it with the
+target `LabelShape`.  This is the `.relabel`/adapter sibling of the nil-join leg. -/
+theorem realizedWitness_of_adapter_jump
+    {cfg : TypedCfg.Program}
+    {entry bodyLabel next : Assembly.Label}
+    {blockInput relabelTarget output : TypedCfg.Shape}
+    {source : RunState} {tokens : List Word}
+    {target state' : EVMState}
+    {transcript : Simulation.Interaction.Transcript}
+    (hFind :
+      cfg.findBlock? entry =
+        some
+          { label := entry
+            input := blockInput
+            body := [.relabel relabelTarget]
+            output := output
+            term := .jump bodyLabel })
+    (hType :
+      TypedCfg.Instr.type? (.relabel relabelTarget) blockInput = some output)
+    (hFits :
+      TypedCfgCompiler.Shape.SourceFrameFits output source.evm.stack.length)
+    (hRel : TypedCfgPreservation.StateRel source tokens target)
+    (hExec :
+      Simulation.Interaction.Executes
+        (TypedCfg.InteractionSemantics.Program.openStep cfg entry target)
+        transcript (Except.ok (TypedCfg.Outcome.jump next state')))
+    (hLabelShape : TypedCfgPreservation.LabelShape cfg bodyLabel output) :
+    realizedWitness cfg next state' := by
+  have hStep :
+      TypedCfg.InteractionSemantics.Program.openStep cfg entry target =
+        Simulation.Interaction.pure
+          (TypedCfg.Outcome.jump bodyLabel target) := by
+    have hOpenBody :
+        TypedCfg.InteractionSemantics.Block.openRunBody
+            [.relabel relabelTarget] blockInput target =
+          Simulation.Interaction.pure (target, output) := by
+      rw [
+        TypedCfg.InteractionSemantics.Block.openRunBody_eq_done_of_forall_not_prim]
+      · simp [
+          TypedCfg.Block.runBody, TypedCfg.Instr.runAt,
+          hType, TypedCfg.Instr.runState]
+        rfl
+      · intro instr hMem op hEq
+        simp only [List.mem_singleton] at hMem
+        exact TypedCfg.Instr.noConfusion (hMem.symm.trans hEq)
+    simp only [
+      TypedCfg.InteractionSemantics.Program.openStep,
+      TypedCfg.Control.Program.step, hFind,
+      TypedCfg.Control.Block.run]
+    change
+      (do
+        let result ←
+          TypedCfg.InteractionSemantics.Block.openRunBody
+            [.relabel relabelTarget] blockInput target
+        if result.2 = output then
+          pure (TypedCfg.Block.runTerm output (.jump bodyLabel) result.1)
+        else
+          throw .InvalidInstruction) =
+        Simulation.Interaction.pure (.jump bodyLabel target)
+    rw [hOpenBody]
+    simp [TypedCfg.Block.runTerm]
+    rfl
+  exact
+    InteractionRealizedWitnessSuccessor.realizedWitness_of_pure_jump
+      hStep hRel hExec hLabelShape hFits
+
 end InteractionMachineryCoupling
 end Structured
 end EvmCompiler
