@@ -195,7 +195,10 @@ run_compare() {
     --evm-version "$AAVE_V3_EVM_VERSION" \
     "$@" > "$report"
   grep -qx 'contract_call_compare=pass' "$report"
-  sed -n 's/^\(contract\|calls\|full_runtime_bytes\|lean_runtime_bytes\)=/\0/p' "$report" \
+  # Address-match print (portable): the previous substitution used the GNU-only
+  # BRE '\|' alternation and '\0' whole-match escape, so on BSD/macOS sed the
+  # informational summary lines printed nothing / a corrupted literal '0'.
+  sed -nE '/^(contract|calls|full_runtime_bytes|lean_runtime_bytes)=/p' "$report" \
     | sed "s|^|$contract: |"
 }
 
