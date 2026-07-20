@@ -347,6 +347,136 @@ theorem realizedWitness_of_caseEntryPop_dispatch
   cases hExec
   exact realizedWitness_of_stateRel hExit hFinalRel hPopFits
 
+/--
+**`forCond` disjunct `hInv` leg.**  The for-loop condition block
+`{ body := Code.toCfg cond, term := .jumpi trueLabel falseLabel }` (`trueLabel = body`,
+`falseLabel = loop exit`) exposes `next = if cond then trueLabel else falseLabel` via
+`jump_state_rel_of_rel` over the condition `DoneRel` (built by
+`openRunCondition_jumpi_toCfg`).  Both targets expect the residual shape
+`{ output with slots := output.slots.tail }`: the `falseLabel` case is the enriched
+`hFalseShape` field, the `trueLabel` (loop body) case is taken here as `hTrueShape` — the
+`forCond` field, unlike `ifHead`, does NOT carry the body compile fact, so the body-entry
+`LabelShape` is supplied by the capstone assembly from the loop body compile. -/
+theorem realizedWitness_of_forCond_dispatch
+    {cfg : TypedCfg.Program} {cond : Structured.Code}
+    {input output : TypedCfg.Shape}
+    {label trueLabel falseLabel next : Assembly.Label}
+    {target state' : EVMState}
+    {transcript : Simulation.Interaction.Transcript}
+    (hReal : realizedWitness cfg label target)
+    (hType : TypedCfgCompiler.Code.type? cond input = some output)
+    (hSource : TypedCfgCompiler.Shape.requireSourceWords? 1 output = some ())
+    (hFind :
+      cfg.findBlock? label =
+        some
+          { label := label
+            input := input
+            body := TypedCfgCompiler.Code.toCfg cond
+            output := output
+            term := .jumpi trueLabel falseLabel })
+    (hFalseShape :
+      TypedCfgPreservation.LabelShape cfg falseLabel
+        { output with slots := output.slots.tail })
+    (hTrueShape :
+      TypedCfgPreservation.LabelShape cfg trueLabel
+        { output with slots := output.slots.tail })
+    (hExec :
+      Simulation.Interaction.Executes
+        (TypedCfg.InteractionSemantics.Program.openStep cfg label target)
+        transcript (Except.ok (TypedCfg.Outcome.jump next state'))) :
+    realizedWitness cfg next state' := by
+  obtain ⟨source, tokens, block, hFindReal, hStateRel, hFits⟩ := hReal
+  have hBlockEq :
+      block =
+        { label := label
+          input := input
+          body := TypedCfgCompiler.Code.toCfg cond
+          output := output
+          term := .jumpi trueLabel falseLabel } :=
+    Option.some.inj (hFindReal.symm.trans hFind)
+  subst hBlockEq
+  have hDoneRel :
+      Simulation.Interaction.Rel
+        (InteractionBranchPreservation.Condition.DoneRel trueLabel falseLabel tokens
+          { output with slots := output.slots.tail })
+        (InteractionSemantics.Code.openRunCondition cond source)
+        (TypedCfg.InteractionSemantics.Program.openStep cfg label target) := by
+    simp only [TypedCfg.InteractionSemantics.Program.openStep,
+      TypedCfg.Control.Program.step, hFind]
+    simpa using
+      InteractionBranchPreservation.Condition.openRunCondition_jumpi_toCfg
+        (entry := label) (trueLabel := trueLabel) (falseLabel := falseLabel)
+        hType hSource hFits hStateRel
+  obtain ⟨srcState, cnd, hNext, hStateRel2, hFits'⟩ :=
+    InteractionBranchPreservation.Condition.jump_state_rel_of_rel hDoneRel hExec
+  have hLS :
+      TypedCfgPreservation.LabelShape cfg next
+        { output with slots := output.slots.tail } := by
+    rw [hNext]
+    cases cnd with
+    | false => simp only [Bool.false_eq_true, if_false]; exact hFalseShape
+    | true => simp only [if_true]; exact hTrueShape
+  exact realizedWitness_of_stateRel hLS hStateRel2 hFits'
+
+/--
+**`switchTest` disjunct `hInv` leg.**  The switch test block
+`{ body := [.dup 0, .push caseValue, .prim .eq], term := .jumpi caseLabel nextTest }`
+performs a target-only scrutinee comparison WITHOUT consuming the source (its child
+`StateRel`/fits are the entry's), settling `openStep` to `.jump (if caseValue = value then
+caseLabel else nextTest) targetFinal` (`openStep_test`).  Both targets expect `valueShape`,
+supplied here as `hCaseShape`/`hNextShape` (the `switchTest` field carries only the test
+block itself) and the scrutinee-pop existence as `hPopExists`, all discharged at the
+capstone assembly from the switch structure. -/
+theorem realizedWitness_of_switchTest_dispatch
+    {result : TypedCfgCompiler.Result} {cfg : TypedCfg.Program}
+    {testLabel caseLabel nextTest next : Assembly.Label}
+    {valueShape : TypedCfg.Shape} {slot : TypedCfg.Slot} {caseValue : Word}
+    {target state' : EVMState}
+    {transcript : Simulation.Interaction.Transcript}
+    (hReal : realizedWitness cfg testLabel target)
+    (hBlocks : TypedCfgPreservation.BlocksInProgram result cfg)
+    (hMem :
+      { label := testLabel
+        input := valueShape
+        body := [.dup 0, .push caseValue, .prim .eq]
+        output := TypedCfgCompilerFacts.Switch.testOutput valueShape
+        term := .jumpi caseLabel nextTest } ∈ result.blocks)
+    (hHead : valueShape.slots.head? = some slot)
+    (hPopExists :
+      ∀ source : RunState,
+        TypedCfgCompiler.Shape.SourceFrameFits valueShape source.evm.stack.length →
+        ∃ (stack : EvmYul.Stack Word) (value : Word),
+          source.evm.stack.pop = some (stack, value))
+    (hCaseShape : TypedCfgPreservation.LabelShape cfg caseLabel valueShape)
+    (hNextShape : TypedCfgPreservation.LabelShape cfg nextTest valueShape)
+    (hExec :
+      Simulation.Interaction.Executes
+        (TypedCfg.InteractionSemantics.Program.openStep cfg testLabel target)
+        transcript (Except.ok (TypedCfg.Outcome.jump next state'))) :
+    realizedWitness cfg next state' := by
+  obtain ⟨source, tokens, block, hFindReal, hStateRel, hFits⟩ := hReal
+  have hFindTest := hBlocks _ hMem
+  have hBlockEq :
+      block =
+        { label := testLabel
+          input := valueShape
+          body := [.dup 0, .push caseValue, .prim .eq]
+          output := TypedCfgCompilerFacts.Switch.testOutput valueShape
+          term := .jumpi caseLabel nextTest } :=
+    Option.some.inj (hFindReal.symm.trans hFindTest)
+  subst hBlockEq
+  obtain ⟨stack, value, hPop⟩ := hPopExists source hFits
+  obtain ⟨targetFinal, hStep, hFinalRel⟩ :=
+    InteractionSwitchPreservation.Switch.openStep_test
+      hBlocks hMem hHead hStateRel hPop
+  rw [hStep] at hExec
+  cases hExec
+  by_cases hEq : caseValue = value
+  · rw [if_pos hEq]
+    exact realizedWitness_of_stateRel hCaseShape hFinalRel hFits
+  · rw [if_neg hEq]
+    exact realizedWitness_of_stateRel hNextShape hFinalRel hFits
+
 end InteractionHInvDispatch
 end Structured
 end EvmCompiler
