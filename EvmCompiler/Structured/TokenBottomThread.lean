@@ -444,6 +444,324 @@ theorem tbResult_of_compileDefaultFuel?
 
 end
 
+/-- **`compileBlock?`-level wrapper.**  The token-at-bottom drill inherited by `compileBlock?`
+(the fuel-saturated `compileBlockFuel?`), exactly as `genShapeReg_of_compileBlock?` wraps the
+strengthened capstone. -/
+theorem tbResult_of_compileBlock?
+    {block : Structured.Block}
+    {ctx : TypedCfgCompiler.Context} {supply : LabelSupply}
+    {entry regular : Assembly.Label} {input : TypedCfg.Shape}
+    {result : TypedCfgCompiler.Result}
+    (hCompile :
+      TypedCfgCompiler.compileBlock? block ctx supply entry input regular = some result)
+    (hInput : TokenBottomOrNone input) :
+    TbResult result := by
+  have hFuel :
+      TypedCfgCompiler.compileBlockFuel?
+          (TypedCfgCompiler.blockFuel block + 1) block ctx
+          supply entry input regular = some result := by
+    simpa [TypedCfgCompiler.compileBlock?] using hCompile
+  exact tbResult_of_compileBlockFuel? hFuel hInput
+
+/-! ## Program-boundary seeds and the per-entry static fact -/
+
+/-- `Shape.caller` (the main-body root input) carries no return token, hence is
+`TokenBottomOrNone`. -/
+theorem tokenBottomOrNone_caller :
+    TokenBottomOrNone TypedCfg.Shape.caller :=
+  Or.inl rfl
+
+/-- **Adapter-route seed is token-at-bottom.**  A proc-entry ADAPTER relabels `procEntry proc`
+(length `argc + 1`, token at the bottom) to `bodyInput`; the relabel is length-preserving, and
+`bodyInput` owns its return token at depth `argc`, so `bodyInput` is token-at-bottom. -/
+theorem tokenBottomOrNone_of_adapter_frame
+    {proc : Structured.Proc} {bodyInput : TypedCfg.Shape} {adapter : TypedCfg.Block}
+    {entryLbl bodyLbl : Assembly.Label}
+    (hFrame : bodyInput.returnTokenDepth? = some proc.argc)
+    (hAdapter :
+      TypedCfgCompiler.mkBlock? entryLbl (TypedCfgCompiler.Shape.procEntry proc)
+        [.relabel bodyInput] (.jump bodyLbl) = some adapter) :
+    TokenBottomOrNone bodyInput := by
+  unfold TypedCfgCompiler.mkBlock? at hAdapter
+  cases hBT :
+      TypedCfg.Block.bodyType? [TypedCfg.Instr.relabel bodyInput]
+        (TypedCfgCompiler.Shape.procEntry proc) with
+  | none => simp [hBT] at hAdapter
+  | some output =>
+      have hType :
+          TypedCfg.Instr.type? (.relabel bodyInput)
+            (TypedCfgCompiler.Shape.procEntry proc) = some output := by
+        simpa [TypedCfg.Block.bodyType?] using hBT
+      have hOutInput : output = bodyInput := by
+        simp only [TypedCfg.Instr.type?] at hType
+        split at hType
+        · exact (Option.some.inj hType).symm
+        · exact absurd hType (by simp)
+      have hLen : output.length = (TypedCfgCompiler.Shape.procEntry proc).length :=
+        TypedCfg.Instr.length_of_type?_relabel hType
+      have hProcLen :
+          (TypedCfgCompiler.Shape.procEntry proc).length = proc.argc + 1 := by
+        simp [TypedCfgCompiler.Shape.procEntry, TypedCfg.Shape.length]
+      rw [hOutInput] at hLen
+      right
+      rw [hFrame]
+      congr 1
+      omega
+
+/-- `mkBlock?` records its `input` argument verbatim as the emitted block's input shape. -/
+theorem input_of_mkBlock?
+    {label : Assembly.Label} {input : TypedCfg.Shape}
+    {body : List TypedCfg.Instr} {term : TypedCfg.Terminator}
+    {blk : TypedCfg.Block}
+    (h : TypedCfgCompiler.mkBlock? label input body term = some blk) :
+    blk.input = input := by
+  unfold TypedCfgCompiler.mkBlock? at h
+  cases hBT : TypedCfg.Block.bodyType? body input with
+  | none => rw [hBT] at h; exact absurd h (by simp)
+  | some output =>
+      rw [hBT] at h
+      have h2 :
+          (some
+            { label := label, input := input, body := body,
+              output := output, term := term } : Option TypedCfg.Block) = some blk :=
+        h
+      rw [← Option.some.inj h2]
+
+/-- **Proc-body membership inversion, token-at-bottom form.**  The additive mirror of
+`mem_procBlocks_provenance` (`InteractionProcBlockProvenance.lean`) emitting `TokenBottomOrNone
+input` on the recovered body-compile seed: `procEntry proc` (no-adapter route) or the relabel
+target `bodyInput` (adapter route), both token-at-bottom. -/
+theorem mem_procBlocks_tokenBottom
+    {entryShapes : TypedCfgCompiler.ProcEntryShapes}
+    {allProcs procs : List Structured.Proc}
+    {supply next : LabelSupply}
+    {procBlocks : List TypedCfg.Block}
+    {procCalls : List TypedCfgCompiler.DispatchSite}
+    (hLower :
+      TypedCfgCompiler.lowerProcBodiesWithShapes? entryShapes allProcs procs
+          supply =
+        some (procBlocks, next, procCalls))
+    {block : TypedCfg.Block}
+    (hMem : block ∈ procBlocks) :
+    ∃ (proc : Structured.Proc) (bsupply : LabelSupply)
+      (entry : Assembly.Label) (input : TypedCfg.Shape)
+      (bodyResult : TypedCfgCompiler.Result),
+      TypedCfgCompiler.compileBlock? proc.body
+          { procs := allProcs
+            leaveLabel? := some (ProcLabel.exit proc.name)
+            leaveShape? := some (TypedCfgCompiler.Shape.procExit proc) }
+          bsupply entry input (ProcLabel.exit proc.name) = some bodyResult ∧
+      TokenBottomOrNone input ∧
+      (block ∈ bodyResult.blocks ∨ block.input = TypedCfgCompiler.Shape.procEntry proc) := by
+  induction procs generalizing supply next procBlocks procCalls with
+  | nil =>
+      simp only [TypedCfgCompiler.lowerProcBodiesWithShapes?, Option.some.injEq,
+        Prod.mk.injEq] at hLower
+      obtain ⟨hb, -, -⟩ := hLower
+      subst hb
+      simp at hMem
+  | cons head rest ih =>
+      unfold TypedCfgCompiler.lowerProcBodiesWithShapes? at hLower
+      cases hShape : entryShapes.find? head.name with
+      | none =>
+          cases hBody :
+              TypedCfgCompiler.compileBlock? head.body
+                { procs := allProcs
+                  leaveLabel? := some (ProcLabel.exit head.name)
+                  leaveShape? :=
+                    some (TypedCfgCompiler.Shape.procExit head) }
+                supply (ProcLabel.entry head.name)
+                (TypedCfgCompiler.Shape.procEntry head)
+                (ProcLabel.exit head.name) with
+          | none =>
+              simp [hShape, hBody] at hLower
+          | some compiled =>
+              cases hRequire :
+                  compiled.requireFallthrough?
+                    (TypedCfgCompiler.Shape.procExit head) with
+              | none =>
+                  simp [hShape, hBody, hRequire] at hLower
+              | some unit =>
+                  cases unit
+                  cases hTail :
+                      TypedCfgCompiler.lowerProcBodiesWithShapes?
+                        entryShapes allProcs rest compiled.next with
+                  | none =>
+                      simp [hShape, hBody, hRequire, hTail] at hLower
+                  | some tailResult =>
+                      rcases tailResult with ⟨tailBlocks, tailNext, tailCalls⟩
+                      simp [hShape, hBody, hRequire, hTail] at hLower
+                      rcases hLower with ⟨rfl, rfl, rfl⟩
+                      simp only [List.mem_append] at hMem
+                      rcases hMem with hHere | hThere
+                      · exact
+                          ⟨head, supply, ProcLabel.entry head.name,
+                            TypedCfgCompiler.Shape.procEntry head, compiled,
+                            hBody,
+                            TokenBottomShape.tokenBottomOrNone_procEntry head,
+                            Or.inl hHere⟩
+                      · obtain
+                          ⟨proc, bsupply, e, input, bodyResult,
+                            hCompile, hTB, hDisj⟩ :=
+                          ih hTail hThere
+                        exact
+                          ⟨proc, bsupply, e, input, bodyResult,
+                            hCompile, hTB, hDisj⟩
+      | some bodyInput =>
+          cases hFrame :
+              TypedCfgCompiler.Shape.requireReturnTokenDepth?
+                head.argc bodyInput with
+          | none =>
+              simp [hShape, hFrame] at hLower
+          | some unit =>
+              cases unit
+              cases hAdapter :
+                  TypedCfgCompiler.mkBlock?
+                    (ProcLabel.entry head.name)
+                    (TypedCfgCompiler.Shape.procEntry head)
+                    [.relabel bodyInput]
+                    (.jump (ProcLabel.body head.name)) with
+              | none =>
+                  simp [hShape, hFrame, hAdapter] at hLower
+              | some adapter =>
+                  cases hBody :
+                      TypedCfgCompiler.compileBlock? head.body
+                        { procs := allProcs
+                          leaveLabel? := some (ProcLabel.exit head.name)
+                          leaveShape? :=
+                            some (TypedCfgCompiler.Shape.procExit head) }
+                        supply (ProcLabel.body head.name) bodyInput
+                        (ProcLabel.exit head.name) with
+                  | none =>
+                      simp [hShape, hFrame, hAdapter, hBody] at hLower
+                  | some compiled =>
+                      cases hRequire :
+                          compiled.requireFallthrough?
+                            (TypedCfgCompiler.Shape.procExit head) with
+                      | none =>
+                          simp [hShape, hFrame, hAdapter, hBody, hRequire]
+                            at hLower
+                      | some unit =>
+                          cases unit
+                          cases hTail :
+                              TypedCfgCompiler.lowerProcBodiesWithShapes?
+                                entryShapes allProcs rest compiled.next with
+                          | none =>
+                              simp [hShape, hFrame, hAdapter, hBody, hRequire,
+                                hTail] at hLower
+                          | some tailResult =>
+                              rcases tailResult with
+                                ⟨tailBlocks, tailNext, tailCalls⟩
+                              simp [hShape, hFrame, hAdapter, hBody, hRequire,
+                                hTail] at hLower
+                              rcases hLower with ⟨rfl, rfl, rfl⟩
+                              have hTBbody : TokenBottomOrNone bodyInput :=
+                                tokenBottomOrNone_of_adapter_frame
+                                  (TypedCfgCompilerFacts.Shape.requireReturnTokenDepth?_eq_some_iff.mp
+                                    hFrame)
+                                  hAdapter
+                              simp only [List.cons_append, List.mem_cons,
+                                List.mem_append] at hMem
+                              rcases hMem with hEq | hIn | hThere
+                              · refine
+                                  ⟨head, supply, ProcLabel.body head.name,
+                                    bodyInput, compiled, hBody, hTBbody,
+                                    Or.inr ?_⟩
+                                subst hEq
+                                exact input_of_mkBlock? hAdapter
+                              · exact
+                                  ⟨head, supply, ProcLabel.body head.name,
+                                    bodyInput, compiled, hBody, hTBbody,
+                                    Or.inl hIn⟩
+                              · obtain
+                                  ⟨proc, bsupply, e, input, bodyResult,
+                                    hCompile, hTB, hDisj⟩ :=
+                                  ih hTail hThere
+                                exact
+                                  ⟨proc, bsupply, e, input, bodyResult,
+                                    hCompile, hTB, hDisj⟩
+
+open TypedCfgPreservation (BlocksInProgram)
+open TypedCfgPreservation.Program (GeneratedContext)
+
+/-- **Main-body arm.**  Every main-category block input is token-at-bottom: the main body is
+compiled from the token-free root `Shape.caller`, so the threading mutual carries
+`TokenBottomOrNone` to every emitted block. -/
+theorem main_tbResult
+    {source : Structured.Program}
+    {entryShapes : TypedCfgCompiler.ProcEntryShapes}
+    {cfg : TypedCfg.Program}
+    (context : GeneratedContext source entryShapes cfg) :
+    TbResult context.main :=
+  tbResult_of_compileBlock? context.mainCompile tokenBottomOrNone_caller
+
+/-- **Proc-body arm.**  Every proc-category block input is token-at-bottom: either it is a body
+block of some proc (drilled by the threading mutual from the token-at-bottom seed) or it is a
+proc-entry adapter whose input is `procEntry proc`. -/
+theorem proc_tokenBottom
+    {source : Structured.Program}
+    {entryShapes : TypedCfgCompiler.ProcEntryShapes}
+    {cfg : TypedCfg.Program}
+    (context : GeneratedContext source entryShapes cfg)
+    {block : TypedCfg.Block}
+    (hMem : block ∈ context.procBlocks) :
+    TokenBottomOrNone block.input := by
+  obtain ⟨proc, bsupply, entry, input, bodyResult, hCompile, hTB, hDisj⟩ :=
+    mem_procBlocks_tokenBottom context.procsCompile hMem
+  rcases hDisj with hBody | hAdapterInput
+  · exact (tbResult_of_compileBlock? hCompile hTB).1 block hBody
+  · rw [hAdapterInput]
+    exact TokenBottomShape.tokenBottomOrNone_procEntry proc
+
+/-- **The per-entry static token-at-bottom fact** (frontier item 1).  At an arbitrary reached
+entry, the block found there has a token-at-bottom input shape.  Classifies the block with
+`block_category` and dispatches: main / proc bodies via the threading arms, dispatch blocks are
+`procExit` (token at bottom), the programEnd block's input is the main fallthrough (token-free or
+token-at-bottom). -/
+theorem tokenBottomOrNone_of_findBlock?
+    {source : Structured.Program}
+    {entryShapes : TypedCfgCompiler.ProcEntryShapes}
+    {cfg : TypedCfg.Program}
+    (context : GeneratedContext source entryShapes cfg)
+    (hSourceWF : source.WF)
+    {label : Assembly.Label} {block : TypedCfg.Block}
+    (hFind : cfg.findBlock? label = some block) :
+    TokenBottomOrNone block.input := by
+  rcases context.block_category hFind with hMain | hProc | hDispatch | hEnd
+  · exact (main_tbResult context).1 block hMain
+  · exact proc_tokenBottom context hProc
+  · obtain ⟨proc, _hProcMem, _hLookup, rfl⟩ :=
+      dispatchBlock_provenance context hSourceWF hDispatch
+    exact TokenBottomShape.tokenBottomOrNone_procExit proc
+  · subst hEnd
+    show TokenBottomOrNone (context.main.fallthrough?.getD TypedCfg.Shape.caller)
+    cases hF : context.main.fallthrough? with
+    | none =>
+        simp only [hF, Option.getD_none]
+        exact tokenBottomOrNone_caller
+    | some ft =>
+        simp only [hF, Option.getD_some]
+        exact (main_tbResult context).2 ft hF
+
+/-- **The total block-entry `StackRealizes` bridge, fully discharged** (frontier items 1 + 2).
+Combines the total bridge `stackRealizes_of_realizedWitnessFC` (`InteractionHInvClose.lean`, total
+modulo the `TokenBottomOrNone` premise) with the per-entry static fact
+`tokenBottomOrNone_of_findBlock?`: at any reached entry whose strengthened witness holds, the
+target stack realizes the block's input shape — no side condition. -/
+theorem stackRealizes_of_realizedWitnessFC_total
+    {source : Structured.Program}
+    {entryShapes : TypedCfgCompiler.ProcEntryShapes}
+    {cfg : TypedCfg.Program}
+    (context : GeneratedContext source entryShapes cfg)
+    (hSourceWF : source.WF)
+    {label : Assembly.Label} {state : EVMState} {block : TypedCfg.Block}
+    (hReal :
+      InteractionFrameConsistent.realizedWitnessFC source cfg context.calls label state)
+    (hFind : cfg.findBlock? label = some block) :
+    TypedCfg.StackRealizes block.input state :=
+  InteractionFrameConsistent.stackRealizes_of_realizedWitnessFC hReal hFind
+    (tokenBottomOrNone_of_findBlock? context hSourceWF hFind)
+
 end TokenBottomThread
 end Structured
 end EvmCompiler
