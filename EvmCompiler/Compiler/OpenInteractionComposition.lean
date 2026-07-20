@@ -8,6 +8,7 @@ import EvmCompiler.TypedCfg.InteractionPreservation
 import EvmCompiler.TypedCfg.InteractionPrefixPreservation
 import EvmCompiler.TypedCfg.PeepholeTransfer
 import EvmCompiler.Structured.PeepholeSourceCongr
+import EvmCompiler.Structured.PeepholeNoopSwapCombined
 import EvmCompiler.Assembly.InteractionBytecode
 import EvmCompiler.Assembly.InteractionConcreteResources
 import EvmCompiler.Solidity.VerifiedStackObjectArtifact
@@ -849,7 +850,7 @@ theorem yulToNormalizedStackAssemblyPrefixForward
     (hWellTyped : cfg.WellTyped)
     (hStructuredWF : expressions.toStructured.WF)
     (hFrameSafe : expressions.toStructured.FrameSafe)
-    (hCompile : (TypedCfg.Peephole.peepholeProgram cfg).compileCertified? =
+    (hCompile : (TypedCfg.Peephole.peepholeProgram (TypedCfg.Peephole.normalizeProgram cfg)).compileCertified? =
       some artifact)
     (hIndependent : cfg.ProgramCounterIndependent)
     (hAssemblyPc : assemblyState.pc = EvmYul.UInt256.ofNat 0)
@@ -881,8 +882,8 @@ theorem yulToNormalizedStackAssemblyPrefixForward
   have hEntry : cfg.entry = Structured.TypedCfgCompiler.entryLabel := by
     simpa using congrArg TypedCfg.Program.entry generated.cfgEq
   have hIndepPeep :
-      (TypedCfg.Peephole.peepholeProgram cfg).ProgramCounterIndependent :=
-    TypedCfg.Peephole.peepholeProgram_programCounterIndependent hIndependent
+      (TypedCfg.Peephole.peepholeProgram (TypedCfg.Peephole.normalizeProgram cfg)).ProgramCounterIndependent :=
+    TypedCfg.Peephole.combined_programCounterIndependent hIndependent
   set budget :=
     Structured.InteractionStaticCost.blockBudget
         expressions.toStructured structuredFuel
@@ -890,11 +891,11 @@ theorem yulToNormalizedStackAssemblyPrefixForward
   have hFuelLe :
       budget *
           TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
-            (TypedCfg.Peephole.peepholeProgram cfg) ≤
+            (TypedCfg.Peephole.peepholeProgram (TypedCfg.Peephole.normalizeProgram cfg)) ≤
         budget *
           TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget cfg :=
     Nat.mul_le_mul_left _
-      (TypedCfg.Peephole.fuelBudget_peepholeProgram_le cfg hWellTyped)
+      (TypedCfg.Peephole.fuelBudget_combined_le cfg hWellTyped)
   have hEntryReturns : expressionsState.returns = [] := hStackInitial.returns
   have hEntryInit :
       expressionsState = Structured.RunState.initial expressionsState.evm := by
@@ -925,7 +926,7 @@ theorem yulToNormalizedStackAssemblyPrefixForward
         transcript := by
       simpa [hEntry] using hCfgFollow
     have hCongr :=
-      TypedCfg.Peephole.openRunNPrefix_peephole_congr_of_source generated
+      TypedCfg.Peephole.openRunNPrefix_combined_congr_of_source generated
         hStructuredWF hWellTyped hIndependent
         budget cfg.entry expressionsState.evm expressionsState.evm
         hEntrySeed
@@ -936,7 +937,7 @@ theorem yulToNormalizedStackAssemblyPrefixForward
       Simulation.Interaction.Rel.executes hCongr hCfgExec
     have hFollowPeep : Simulation.Interaction.Follows
         (TypedCfg.InteractionSemantics.Program.openRunNPrefix
-          (TypedCfg.Peephole.peepholeProgram cfg)
+          (TypedCfg.Peephole.peepholeProgram (TypedCfg.Peephole.normalizeProgram cfg))
           budget cfg.entry expressionsState.evm)
         transcript :=
       Simulation.Interaction.Follows.prefix_of_append transcript suffix
@@ -960,7 +961,7 @@ theorem yulToNormalizedStackAssemblyPrefixForward
       Structured.InteractionTruncationOwnerPreservation.OpenOutcome.GeneratedProgram.PrefixDoneRel.targetSafe
         hPrefix
     have hCongr :=
-      TypedCfg.Peephole.openRunNPrefix_peephole_congr_of_source generated
+      TypedCfg.Peephole.openRunNPrefix_combined_congr_of_source generated
         hStructuredWF hWellTyped hIndependent
         budget cfg.entry expressionsState.evm expressionsState.evm
         hEntrySeed
@@ -1025,12 +1026,12 @@ theorem yulToNormalizedStackAssemblyPrefixForward
         have hEq :
             budget *
                 TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
-                  (TypedCfg.Peephole.peepholeProgram cfg) +
+                  (TypedCfg.Peephole.peepholeProgram (TypedCfg.Peephole.normalizeProgram cfg)) +
               (budget *
                   TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget cfg -
                 budget *
                   TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
-                    (TypedCfg.Peephole.peepholeProgram cfg)) =
+                    (TypedCfg.Peephole.peepholeProgram (TypedCfg.Peephole.normalizeProgram cfg))) =
               budget *
                 TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget cfg :=
           Nat.add_sub_of_le hFuelLe
@@ -1372,7 +1373,7 @@ theorem structuredToEncodedBytecode
     (hGenerate :
       Structured.TypedCfgCompiler.generateWithProcEntryShapes?
           source entryShapes = some cfg)
-    (hCompile : (TypedCfg.Peephole.peepholeProgram cfg).compileCertified? =
+    (hCompile : (TypedCfg.Peephole.peepholeProgram (TypedCfg.Peephole.normalizeProgram cfg)).compileCertified? =
       some artifact)
     (hWellTyped : cfg.WellTyped)
     (hSourceWF : source.WF)
@@ -1415,8 +1416,8 @@ theorem structuredToEncodedBytecode
     cfgFuel *
       TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget cfg
   have hIndepPeep :
-      (TypedCfg.Peephole.peepholeProgram cfg).ProgramCounterIndependent :=
-    TypedCfg.Peephole.peepholeProgram_programCounterIndependent hIndependent
+      (TypedCfg.Peephole.peepholeProgram (TypedCfg.Peephole.normalizeProgram cfg)).ProgramCounterIndependent :=
+    TypedCfg.Peephole.combined_programCounterIndependent hIndependent
   obtain ⟨generated, hStructuredFor⟩ :=
     Structured.InteractionTerminalPreservation.OpenOutcome.GeneratedProgram.generateWithProcEntryShapes?_main_terminal
       hGenerate hWellTyped
@@ -1434,7 +1435,7 @@ theorem structuredToEncodedBytecode
     rw [hEntry]
     simpa [cfgFuel] using hCfgSafe
   have hBridge :=
-    TypedCfg.Peephole.openRunN_peephole_congr_of_source generated hSourceWF
+    TypedCfg.Peephole.openRunN_combined_congr_of_source generated hSourceWF
       hWellTyped hIndependent
       cfgFuel cfg.entry cfgState cfgState
       (TypedCfg.Peephole.realizedWitnessFC_entry_of_generated generated
@@ -1443,7 +1444,7 @@ theorem structuredToEncodedBytecode
   have hCfgSafeAtEntryPeep : Simulation.Interaction.AllDone
       TypedCfg.InteractionSemantics.Program.AssemblySafeHalted
       (TypedCfg.InteractionSemantics.Program.openRunN
-        (TypedCfg.Peephole.peepholeProgram cfg) cfgFuel cfg.entry cfgState) := by
+        (TypedCfg.Peephole.peepholeProgram (TypedCfg.Peephole.normalizeProgram cfg)) cfgFuel cfg.entry cfgState) := by
     have hStrong := Simulation.Interaction.Rel.strengthen_left hBridge
       hCfgSafeAtEntry
     apply Simulation.Interaction.Rel.allDone_right hStrong
@@ -1456,18 +1457,18 @@ theorem structuredToEncodedBytecode
   have hFuelLe :
       cfgFuel *
           TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
-            (TypedCfg.Peephole.peepholeProgram cfg) ≤
+            (TypedCfg.Peephole.peepholeProgram (TypedCfg.Peephole.normalizeProgram cfg)) ≤
         cfgFuel *
           TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget cfg :=
     Nat.mul_le_mul_left _
-      (TypedCfg.Peephole.fuelBudget_peepholeProgram_le cfg hWellTyped)
+      (TypedCfg.Peephole.fuelBudget_combined_le cfg hWellTyped)
   have hFinishedPeep : Simulation.Interaction.AllDone
       Assembly.InteractionSemantics.Finished
       (Assembly.InteractionSemantics.Source.openRunNResult
         artifact.target
         (cfgFuel *
           TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
-            (TypedCfg.Peephole.peepholeProgram cfg))
+            (TypedCfg.Peephole.peepholeProgram (TypedCfg.Peephole.normalizeProgram cfg)))
         assemblyState) := by
     have hStrong := Simulation.Interaction.Rel.strengthen_left hCfgAssemblyPeep
       hCfgSafeAtEntryPeep
@@ -1530,7 +1531,7 @@ theorem structuredToAssemblySource
     (hGenerate :
       Structured.TypedCfgCompiler.generateWithProcEntryShapes?
           source entryShapes = some cfg)
-    (hCompile : (TypedCfg.Peephole.peepholeProgram cfg).compileCertified? =
+    (hCompile : (TypedCfg.Peephole.peepholeProgram (TypedCfg.Peephole.normalizeProgram cfg)).compileCertified? =
       some artifact)
     (hWellTyped : cfg.WellTyped)
     (hSourceWF : source.WF)
@@ -1565,8 +1566,8 @@ theorem structuredToAssemblySource
   let assemblyFuel :=
     cfgFuel * TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget cfg
   have hIndepPeep :
-      (TypedCfg.Peephole.peepholeProgram cfg).ProgramCounterIndependent :=
-    TypedCfg.Peephole.peepholeProgram_programCounterIndependent hIndependent
+      (TypedCfg.Peephole.peepholeProgram (TypedCfg.Peephole.normalizeProgram cfg)).ProgramCounterIndependent :=
+    TypedCfg.Peephole.combined_programCounterIndependent hIndependent
   obtain ⟨generated, hStructuredFor⟩ :=
     Structured.InteractionTerminalPreservation.OpenOutcome.GeneratedProgram.generateWithProcEntryShapes?_main_terminal
       hGenerate hWellTyped
@@ -1584,7 +1585,7 @@ theorem structuredToAssemblySource
     rw [hEntry]
     simpa [cfgFuel] using hCfgSafe
   have hBridge :=
-    TypedCfg.Peephole.openRunN_peephole_congr_of_source generated hSourceWF
+    TypedCfg.Peephole.openRunN_combined_congr_of_source generated hSourceWF
       hWellTyped hIndependent
       cfgFuel cfg.entry cfgState cfgState
       (TypedCfg.Peephole.realizedWitnessFC_entry_of_generated generated
@@ -1593,7 +1594,7 @@ theorem structuredToAssemblySource
   have hCfgSafeAtEntryPeep : Simulation.Interaction.AllDone
       TypedCfg.InteractionSemantics.Program.AssemblySafeHalted
       (TypedCfg.InteractionSemantics.Program.openRunN
-        (TypedCfg.Peephole.peepholeProgram cfg) cfgFuel cfg.entry cfgState) := by
+        (TypedCfg.Peephole.peepholeProgram (TypedCfg.Peephole.normalizeProgram cfg)) cfgFuel cfg.entry cfgState) := by
     have hStrong := Simulation.Interaction.Rel.strengthen_left hBridge
       hCfgSafeAtEntry
     apply Simulation.Interaction.Rel.allDone_right hStrong
@@ -1606,18 +1607,18 @@ theorem structuredToAssemblySource
   have hFuelLe :
       cfgFuel *
           TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
-            (TypedCfg.Peephole.peepholeProgram cfg) ≤
+            (TypedCfg.Peephole.peepholeProgram (TypedCfg.Peephole.normalizeProgram cfg)) ≤
         cfgFuel *
           TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget cfg :=
     Nat.mul_le_mul_left _
-      (TypedCfg.Peephole.fuelBudget_peepholeProgram_le cfg hWellTyped)
+      (TypedCfg.Peephole.fuelBudget_combined_le cfg hWellTyped)
   have hFinishedPeep : Simulation.Interaction.AllDone
       Assembly.InteractionSemantics.Finished
       (Assembly.InteractionSemantics.Source.openRunNResult
         artifact.target
         (cfgFuel *
           TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
-            (TypedCfg.Peephole.peepholeProgram cfg))
+            (TypedCfg.Peephole.peepholeProgram (TypedCfg.Peephole.normalizeProgram cfg)))
         assemblyState) := by
     have hStrong := Simulation.Interaction.Rel.strengthen_left hCfgAssemblyPeep
       hCfgSafeAtEntryPeep
@@ -1661,7 +1662,7 @@ theorem structuredToAssemblySourceFinished
     (hGenerate :
       Structured.TypedCfgCompiler.generateWithProcEntryShapes?
           source entryShapes = some cfg)
-    (hCompile : (TypedCfg.Peephole.peepholeProgram cfg).compileCertified? =
+    (hCompile : (TypedCfg.Peephole.peepholeProgram (TypedCfg.Peephole.normalizeProgram cfg)).compileCertified? =
       some artifact)
     (hWellTyped : cfg.WellTyped)
     (hSourceWF : source.WF)
@@ -1696,8 +1697,8 @@ theorem structuredToAssemblySourceFinished
   let assemblyFuel :=
     cfgFuel * TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget cfg
   have hIndepPeep :
-      (TypedCfg.Peephole.peepholeProgram cfg).ProgramCounterIndependent :=
-    TypedCfg.Peephole.peepholeProgram_programCounterIndependent hIndependent
+      (TypedCfg.Peephole.peepholeProgram (TypedCfg.Peephole.normalizeProgram cfg)).ProgramCounterIndependent :=
+    TypedCfg.Peephole.combined_programCounterIndependent hIndependent
   obtain ⟨generated, hStructuredFor⟩ :=
     Structured.InteractionTerminalPreservation.OpenOutcome.GeneratedProgram.generateWithProcEntryShapes?_main_finished
       hGenerate hWellTyped
@@ -1715,7 +1716,7 @@ theorem structuredToAssemblySourceFinished
     rw [hEntry]
     simpa [cfgFuel] using hCfgSafe
   have hBridge :=
-    TypedCfg.Peephole.openRunN_peephole_congr_of_source generated hSourceWF
+    TypedCfg.Peephole.openRunN_combined_congr_of_source generated hSourceWF
       hWellTyped hIndependent
       cfgFuel cfg.entry cfgState cfgState
       (TypedCfg.Peephole.realizedWitnessFC_entry_of_generated generated
@@ -1724,7 +1725,7 @@ theorem structuredToAssemblySourceFinished
   have hCfgSafeAtEntryPeep : Simulation.Interaction.AllDone
       TypedCfg.InteractionSemantics.Program.AssemblySafeFinished
       (TypedCfg.InteractionSemantics.Program.openRunN
-        (TypedCfg.Peephole.peepholeProgram cfg) cfgFuel cfg.entry cfgState) := by
+        (TypedCfg.Peephole.peepholeProgram (TypedCfg.Peephole.normalizeProgram cfg)) cfgFuel cfg.entry cfgState) := by
     have hStrong := Simulation.Interaction.Rel.strengthen_left hBridge
       hCfgSafeAtEntry
     apply Simulation.Interaction.Rel.allDone_right hStrong
@@ -1737,18 +1738,18 @@ theorem structuredToAssemblySourceFinished
   have hFuelLe :
       cfgFuel *
           TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
-            (TypedCfg.Peephole.peepholeProgram cfg) ≤
+            (TypedCfg.Peephole.peepholeProgram (TypedCfg.Peephole.normalizeProgram cfg)) ≤
         cfgFuel *
           TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget cfg :=
     Nat.mul_le_mul_left _
-      (TypedCfg.Peephole.fuelBudget_peepholeProgram_le cfg hWellTyped)
+      (TypedCfg.Peephole.fuelBudget_combined_le cfg hWellTyped)
   have hFinishedPeep : Simulation.Interaction.AllDone
       Assembly.InteractionSemantics.Finished
       (Assembly.InteractionSemantics.Source.openRunNResult
         artifact.target
         (cfgFuel *
           TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
-            (TypedCfg.Peephole.peepholeProgram cfg))
+            (TypedCfg.Peephole.peepholeProgram (TypedCfg.Peephole.normalizeProgram cfg)))
         assemblyState) := by
     have hStrong := Simulation.Interaction.Rel.strengthen_left hCfgAssemblyPeep
       hCfgSafeAtEntryPeep
@@ -1863,7 +1864,7 @@ theorem yulStackToEncodedBytecode
     (hGenerate :
       Structured.TypedCfgCompiler.generateWithProcEntryShapes?
           expressions.toStructured entryShapes = some cfg)
-    (hCompile : (TypedCfg.Peephole.peepholeProgram cfg).compileCertified? =
+    (hCompile : (TypedCfg.Peephole.peepholeProgram (TypedCfg.Peephole.normalizeProgram cfg)).compileCertified? =
       some artifact)
     (hWellTyped : cfg.WellTyped)
     (hStructuredWF : expressions.toStructured.WF)
@@ -1966,7 +1967,7 @@ theorem yulStackToAssemblySource
     (hGenerate :
       Structured.TypedCfgCompiler.generateWithProcEntryShapes?
           expressions.toStructured entryShapes = some cfg)
-    (hCompile : (TypedCfg.Peephole.peepholeProgram cfg).compileCertified? =
+    (hCompile : (TypedCfg.Peephole.peepholeProgram (TypedCfg.Peephole.normalizeProgram cfg)).compileCertified? =
       some artifact)
     (hWellTyped : cfg.WellTyped)
     (hStructuredWF : expressions.toStructured.WF)
@@ -2065,7 +2066,7 @@ theorem yulNormalizedStackToAssemblySource
     (hGenerate :
       Structured.TypedCfgCompiler.generateWithProcEntryShapes?
           expressions.toStructured entryShapes = some cfg)
-    (hCompile : (TypedCfg.Peephole.peepholeProgram cfg).compileCertified? =
+    (hCompile : (TypedCfg.Peephole.peepholeProgram (TypedCfg.Peephole.normalizeProgram cfg)).compileCertified? =
       some artifact)
     (hWellTyped : cfg.WellTyped)
     (hStructuredWF : expressions.toStructured.WF)
@@ -2166,7 +2167,7 @@ theorem yulNormalizedStackToAssemblySourceFinished
     (hGenerate :
       Structured.TypedCfgCompiler.generateWithProcEntryShapes?
           expressions.toStructured entryShapes = some cfg)
-    (hCompile : (TypedCfg.Peephole.peepholeProgram cfg).compileCertified? =
+    (hCompile : (TypedCfg.Peephole.peepholeProgram (TypedCfg.Peephole.normalizeProgram cfg)).compileCertified? =
       some artifact)
     (hWellTyped : cfg.WellTyped)
     (hStructuredWF : expressions.toStructured.WF)
