@@ -196,6 +196,49 @@ theorem stackRealizes_of_realizedWitness_of_returnTokenDepth?_eq_none
     TypedCfgPreservation.stackRealizes_of_stateRel_of_returnTokenDepth?_eq_none
       hRel hFits hDepth
 
+/--
+**The un-weakened (`realizedWitnessFC`) `AllEntriesRealized` production** (session 48).  Same as
+`allEntriesRealized_realizedWitness_of_context` but keeps the STRENGTHENED predicate — the form
+the token-owning `StackRealizes` bridge (below) consumes, since the bare `realizedWitness` drops
+the local liveness `hLive` conjunct the token-bearing case needs. -/
+theorem allEntriesRealized_realizedWitnessFC_of_context
+    {source : Structured.Program}
+    {entryShapes : TypedCfgCompiler.ProcEntryShapes}
+    {cfg : TypedCfg.Program}
+    (context :
+      TypedCfgPreservation.Program.GeneratedContext source entryShapes cfg)
+    (hSourceWF : source.WF)
+    {policy : InteractionControlPreservation.OpenOutcome.StopPolicy} {fuel : Nat}
+    {entry : Assembly.Label} {target : EVMState}
+    (hSeed : realizedWitnessFC source cfg context.calls entry target) :
+    AllEntriesRealized cfg policy fuel entry target
+      (realizedWitnessFC source cfg context.calls) :=
+  AllEntriesRealized.of_openStep_invariant
+    (fun _e _t _transcript _n _s hR hE =>
+      openStep_preserves_realizedWitnessFC context hSourceWF hR hE)
+    hSeed
+
+/-- **Token-owning block-entry `StackRealizes` bridge** (session 48).  The token-bearing sibling
+of `stackRealizes_of_realizedWitness_of_returnTokenDepth?_eq_none`.  For a block whose input owns
+its return token at the bottom (`returnTokenDepth? = some (length - 1)`, as `TypedCfgCompiler`
+emits for every proc-internal block), the strengthened witness's local liveness `hLive` supplies
+the non-empty realization token list `token :: tokens`, and the session-8/9 procedure-entry lemma
+`stackRealizes_of_stateRel_of_token_last_of_tokens_cons` discharges the full realization. -/
+theorem stackRealizes_of_realizedWitnessFC_of_token_last
+    {source : Structured.Program} {cfg : TypedCfg.Program}
+    {calls : List TypedCfgCompiler.DispatchSite}
+    {label : Assembly.Label} {state : EVMState} {block : TypedCfg.Block}
+    (hReal : realizedWitnessFC source cfg calls label state)
+    (hFind : cfg.findBlock? label = some block)
+    (hLast : block.input.returnTokenDepth? = some (block.input.length - 1)) :
+    TypedCfg.StackRealizes block.input state := by
+  obtain ⟨src, tokens, block', hFind', hRel, hFits, _hFC, hLive⟩ := hReal
+  obtain rfl : block' = block := Option.some.inj (hFind'.symm.trans hFind)
+  obtain ⟨t, ts, rfl⟩ := List.exists_cons_of_ne_nil (hLive _ hLast)
+  exact
+    TypedCfgPreservation.stackRealizes_of_stateRel_of_token_last_of_tokens_cons
+      hRel hFits hLast
+
 end InteractionFrameConsistent
 end Structured
 end EvmCompiler
