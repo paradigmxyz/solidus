@@ -58,14 +58,17 @@ def srcRaw? (program : Program) (a : Block) : Option Nat :=
   match a.term with
   | .jump bLabel =>
       if bLabel ≠ program.entry ∧ refCount program bLabel = 1 then
-        match program.findBlock? bLabel, a.body with
-        | some b, [.swap d, .bindLocals 0 names] =>
-            match b.body.head? with
-            | some (.swap d') =>
-                if d = d' ∧ d + 1 < names.length ∧ 2 ≤ b.body.length then some d
-                else none
-            | _ => none
-        | _, _ => none
+        match a.body with
+        | [.swap d, .bindLocals 0 names] =>
+            match program.findBlock? bLabel with
+            | some b =>
+                match b.body.head? with
+                | some (.swap d') =>
+                    if d = d' ∧ d + 1 < names.length ∧ 2 ≤ b.body.length then some d
+                    else none
+                | _ => none
+            | none => none
+        | _ => none
       else none
   | _ => none
 
@@ -371,6 +374,137 @@ theorem bodyType?_conj {d : Nat} {names : List String} {input output : Shape}
     rw [remapShape]
     show input.tail = o.tail
     rw [hOtail, htail_m]
+
+/-! ## Firing-query specifications -/
+
+/-- Everything `srcRaw? program a = some d` asserts. -/
+theorem srcRaw?_spec {program : Program} {a : Block} {d : Nat}
+    (h : srcRaw? program a = some d) :
+    ∃ bLabel b names, a.term = Terminator.jump bLabel ∧
+      bLabel ≠ program.entry ∧ refCount program bLabel = 1 ∧
+      program.findBlock? bLabel = some b ∧
+      a.body = [Instr.swap d, Instr.bindLocals 0 names] ∧ d + 1 < names.length ∧
+      b.body.head? = some (Instr.swap d) ∧ 2 ≤ b.body.length := by
+  unfold srcRaw? at h
+  split at h
+  case h_1 bLabel hterm =>
+    split at h
+    · rename_i hguard
+      obtain ⟨hne, href⟩ := hguard
+      split at h
+      · rename_i d0 names hbody
+        split at h
+        · rename_i b hfind
+          split at h
+          · rename_i d' hhd
+            split at h
+            · rename_i hcond
+              obtain ⟨hdd, hln, hbl⟩ := hcond
+              have hd : d0 = d := Option.some.inj h
+              subst hd
+              subst hdd
+              exact ⟨bLabel, b, names, hterm, hne, href, hfind, hbody, hln, hhd, hbl⟩
+            · exact absurd h (by simp)
+          · exact absurd h (by simp)
+        · exact absurd h (by simp)
+      · exact absurd h (by simp)
+    · exact absurd h (by simp)
+  all_goals exact absurd h (by simp)
+
+/-- `cleanSrc? = some d` unpacks to `srcRaw? = some d`, `a` is not a target, and
+its target is not a source. -/
+theorem cleanSrc?_spec {program : Program} {a : Block} {d : Nat}
+    (h : cleanSrc? program a = some d) :
+    srcRaw? program a = some d ∧ tgtRaw? program a = none ∧
+      ∃ bLabel b, a.term = Terminator.jump bLabel ∧
+        program.findBlock? bLabel = some b ∧ srcRaw? program b = none := by
+  unfold cleanSrc? at h
+  split at h
+  · rename_i d0 hsr
+    split at h
+    · rename_i htg
+      split at h
+      · rename_i bLabel hterm
+        split at h
+        · rename_i b hfind
+          split at h
+          · rename_i hsrcB
+            have : d0 = d := Option.some.inj h
+            subst this
+            exact ⟨hsr, htg, bLabel, b, hterm, hfind, hsrcB⟩
+          · exact absurd h (by simp)
+        · exact absurd h (by simp)
+      · exact absurd h (by simp)
+    · exact absurd h (by simp)
+  · exact absurd h (by simp)
+
+/-- `cleanTgt? = some d` unpacks to `tgtRaw? = some d`, `b` is not a source, and its
+sole predecessor `a` (which raw-source-fires into `b`) is not a target. -/
+theorem cleanTgt?_spec {program : Program} {b : Block} {d : Nat}
+    (h : cleanTgt? program b = some d) :
+    tgtRaw? program b = some d ∧ srcRaw? program b = none ∧
+      ∃ a, program.blocks.find? (fun a => a.term == Terminator.jump b.label) = some a ∧
+        srcRaw? program a = some d ∧ tgtRaw? program a = none := by
+  unfold cleanTgt? at h
+  split at h
+  · rename_i d0 htg
+    split at h
+    · rename_i hsrcB
+      split at h
+      · rename_i a hfind
+        split at h
+        · rename_i htgA
+          have hd : d0 = d := Option.some.inj h
+          -- tgtRaw? b = some d0 and its value is srcRaw? a.
+          have hsrcA : srcRaw? program a = some d0 := by
+            have hthis := htg
+            unfold tgtRaw? at hthis
+            split at hthis
+            · rw [hfind] at hthis; exact hthis
+            · exact absurd hthis (by simp)
+          exact ⟨hd ▸ htg, hsrcB, a, hfind, hd ▸ hsrcA, htgA⟩
+        · exact absurd h (by simp)
+      · exact absurd h (by simp)
+    · exact absurd h (by simp)
+  · exact absurd h (by simp)
+
+/-! ## `seamBlockEff` field descriptions -/
+
+theorem seamBlockEff_output (program : Program) (block : Block) :
+    (seamBlockEff program block).output =
+      match cleanSrc? program block with
+      | some d => remapShape d block.output
+      | none => block.output := by
+  unfold seamBlockEff
+  cases cleanSrc? program block with
+  | some d => rfl
+  | none => cases cleanTgt? program block <;> rfl
+
+theorem seamBlockEff_input (program : Program) (block : Block) :
+    (seamBlockEff program block).input =
+      match cleanSrc? program block with
+      | some _ => block.input
+      | none =>
+          match cleanTgt? program block with
+          | some d => remapShape d block.input
+          | none => block.input := by
+  unfold seamBlockEff
+  cases cleanSrc? program block with
+  | some d => rfl
+  | none => cases cleanTgt? program block <;> rfl
+
+theorem seamBlockEff_body (program : Program) (block : Block) :
+    (seamBlockEff program block).body =
+      match cleanSrc? program block with
+      | some d => (block.body.tail).map (conjBind d)
+      | none =>
+          match cleanTgt? program block with
+          | some _ => block.body.tail
+          | none => block.body := by
+  unfold seamBlockEff
+  cases cleanSrc? program block with
+  | some d => rfl
+  | none => cases cleanTgt? program block <;> rfl
 
 end Peephole
 end TypedCfg
