@@ -4995,3 +4995,119 @@ constructs blocked only on exposing the jumped-to label = the threaded regular/f
 two machinery legs on a fits-transport) then the case-split assembly.
 `scripts/opt_harness.sh check` = OK (43 theorems); `compile_correct`/`compile_correct_creation`
 axioms UNCHANGED; delta +0.
+
+## Session-41 update (2026-07-19): the SEVEN remaining `hInv` dispatch legs banked — every one of the nine `BlockGenShapeReg` disjuncts now has its successor leg; all green + axiom-clean in 4 commits
+
+Session 41's mandate (per §Session-40 frontier): (1) the five head-construct dispatch legs;
+(2) the two machinery legs (`caseEntryPop`/`procAdapter`); (3) assemble `hInv`; (4) Step B.
+**Result: FOUR green, axiom-clean commits** banking SIX new dispatch legs
+(`codeHead`/`ifHead`/`forCond`/`switchTest` + `procAdapter`/`caseEntryPop`), all in
+`InteractionHInvDispatch.lean`.  With the two §Session-40 machinery legs
+(`nilJoin`/`terminalHalt`) and the pre-existing `realizedWitness_of_call_compile` serving
+the `callHead` disjunct directly, **all nine `BlockGenShapeReg` disjuncts now have a
+`realizedWitness` `openStep`-jump successor leg**.  `peepholeBody`/public spine UNTOUCHED ⇒
+delta **+0**; `scripts/opt_harness.sh check` = OK (43 theorems, axioms ⊆
+`[propext, Classical.choice, Quot.sound]`); `compile_correct`/`compile_correct_creation`
+axioms UNCHANGED.
+
+### KEY DESIGN FINDING (drives the §Session-40 recipe correction)
+The §Session-40 frontier framed all five head legs as "blocked only on exposing the
+jumped-to label = the threaded regular/false shape".  That is EXACT only for `codeHead`
+(single fallthrough to `regular`, `next = regular`) and `ifHead` (the `.if_` compile fact
+IN the field carries the body compile, so the `bodyLabel` shape is derivable via
+`of_compileBlockFuel?`).  For the branch machinery legs the enriched field is genuinely
+INSUFFICIENT for the non-`regular`/`false` target:
+* **`forCond`** — `next = if cond then trueLabel else falseLabel`; the field carries only
+  `hFalseShape` (the loop-exit) and the condition block's `hFind` — NOT the loop-body
+  compile — so `trueLabel`'s (loop body) `LabelShape` is a genuine parameter.
+* **`switchTest`** — `next = if caseValue = value then caseLabel else nextTest`; the field
+  carries only the test block (`hMem`) — NOT the case-entry/next-test entries — so both
+  target shapes are parameters, as is the scrutinee-pop existence.
+* **`caseEntryPop`/`procAdapter`** — unconditional jump, so the enriched `hExit`/`hBodyShape`
+  IS the exact target shape, but the child fits is at the SHIFTED shape (`output` after
+  `.pop`/`.relabel`), NOT the entry fits at `input`/`blockInput`; the fits-transport is a
+  parameter.
+CFG well-typedness (`typeWith?` for `.jumpi`, `Typing.lean:393`) gives only
+`restShape.compatible targetShape` (compatibility, NOT the `block.input = shape` EQUALITY
+`LabelShape` demands), so the branch-target EQUALITY shapes are NOT recoverable from
+well-typedness alone — they need the compiler-structure (the body/case compile facts),
+which live at the capstone.  Accordingly these four legs (`forCond`/`switchTest`/
+`procAdapter`/`caseEntryPop`) take the missing target shapes / fits-transports as clean
+**source-quantified hypotheses**, exactly mirroring how the base suppliers
+(`realizedWitness_of_{adapter,pop}_jump`) already take their child fits as a hypothesis —
+the dispatch/successor reasoning is fully banked, and ONLY the compiler-shape obligations
+remain, isolated for discharge at the assembly.
+
+### LANDED (green, axiom-clean) — all in `InteractionHInvDispatch.lean`
+* **`4035f64f`** — `realizedWitness_of_codeHead_dispatch` (`:113`).  Self-contained: mirrors
+  `realizedWitness_of_code_compile` but consumes the enriched `HRegular` field (`hReg` at
+  `regular`), exposing `next = regular` via `jump_state_rel_of_outcome` and feeding `hReg`
+  at the fallthrough shape (existing by `fallthrough_code_of_compileStmtFuel?`).  Added
+  import `InteractionCodeConstructCoupling`.
+* **`ee0fb302`** — `realizedWitness_of_ifHead_dispatch` (`:163`).  Self-contained: builds the
+  condition `DoneRel` by `openRunCondition_jumpi_toCfg`, exposes
+  `next = if cond then bodyLabel else regular` via `jump_state_rel_of_rel`, case-splits —
+  `regular` = `hReg`, `bodyLabel` = body-entry `LabelShape` from
+  `components_of_compileStmtFuel?_if` → `of_compileBlockFuel?`.
+* **`56f28ff5`** — `realizedWitness_of_procAdapter_dispatch` (`:255`) +
+  `realizedWitness_of_caseEntryPop_dispatch` (`:304`).  Unify the block by `findBlock?`
+  uniqueness, apply the successor supplier (`realizedWitness_of_adapter_jump` /
+  `openStep_pop_jump`) at the enriched exact-target field; the shifted-shape fits-transport
+  is the source-quantified `hTransport` / `hPopTransport` parameter.
+* **`fdfc43cb`** — `realizedWitness_of_forCond_dispatch` (`:360`) +
+  `realizedWitness_of_switchTest_dispatch` (`:430`).  `forCond` mirrors `ifHead` (condition
+  `DoneRel` + `jump_state_rel_of_rel` case-split) with `hTrueShape` parameterized (field
+  lacks the loop-body compile).  `switchTest` settles `openStep` via `openStep_test`
+  (source-preserving comparison, child fits = entry fits) and case-splits on
+  `caseValue = value`, with `hCaseShape`/`hNextShape` + `hPopExists` parameterized.
+
+### THE FRONTIER (session 42) — assemble `hInv` (mandate item 3)
+Every disjunct's dispatch leg is banked; assembling `hInv` (`∀ e t transcript n s,
+realizedWitness cfg e t → Executes (openStep cfg e t) … (jump n s) → realizedWitness cfg n
+s`) is now purely: (a) `block_category` split (main/proc/dispatch/programEnd); (b) main/proc
+→ `main_blockGenShapeReg`/`proc_blockGenShapeReg` → `BlockGenShapeReg cfg block`; (c) `rcases`
+the nine disjuncts and apply the matching leg; (d) dispatch arm via
+`realizedWitness_of_dispatch_jump` + its s28/s36 suppliers; (e) programEnd via
+`programEnd_openStep_no_jump`; then `AllEntriesRealized.of_openStep_invariant` (with
+`realized := realizedWitness cfg`, entry witness `realizedWitness_of_stateRel`).
+
+**The genuine remaining work is step (c)'s per-disjunct obligation discharge** — the
+source-quantified parameters the four branch/machinery legs take:
+1. **`forCond` `hTrueShape`** — the loop-body entry (`LabelSupply.label supply 1`) input =
+   `{condOutput with slots := tail}` (`branchInput`, `TypedCfgCompiler.lean:462+`).  Derive
+   from the loop body compile fact (`compileBlockFuel? … bodyLabel branchInput postLabel`)
+   via `of_compileBlockFuel?` — needs the `for_` provenance to expose that sub-compile
+   (analogous to how `ifHead` gets its body compile from the field, but here it must come
+   from the loop provenance, not the disjunct field).
+2. **`switchTest` `hCaseShape`/`hNextShape`/`hPopExists`** — both switch successors have
+   input `valueShape` (case-entry pop block + next test block, both listed in the switch
+   result); derive their `LabelShape` from the switch-result membership + `of_hasEntry`; the
+   scrutinee pop from the switch's `requireSourceWords? 1 valueShape` (source stack ≥ 1).
+3. **`procAdapter` `hTransport`** (`SourceFrameFits blockInput n → SourceFrameFits output n`,
+   `blockInput = Shape.procEntry proc`, `output = fragment.input`) — the relabel retype
+   preserves the source frame BECAUSE the compiler builds `fragment.input` with the same
+   `sourceView`/`returnTokenDepth?` as `procEntry proc`; needs the proc-fragment shape
+   invariant.
+4. **`caseEntryPop` `hPopTransport`** (pop existence + `SourceFrameFits output` at the
+   popped length) — from the switch's `requireSourceWords? 1` (pop exists) +
+   `sourceFrameFits_tail` (popped fits).
+5. **`callHead`** (served by `realizedWitness_of_call_compile` directly) — discharge
+   `hSplit` (`splitArgs? proc.argc source.evm.stack`), `hProcWF` (`proc.WF` from
+   `source.WF`), `hEntryShape` (callee entry `LabelShape`), `hChildFits` (pushed child frame
+   fits) from the call provenance + `sourceFrameFits_afterCall`.
+These are the compiler-shape invariants at each generated block category — the same facts
+the FORWARD realizing recursors establish; the reverse `hInv` now needs them exposed as
+standalone shape lemmas.  Once discharged, the assembly is mechanical and yields
+`AllEntriesRealized`, closing route-B; **then** Step B (`openRunNPrefix_peephole_congr_of_source`).
+
+### Status handed to session 42
+Landed (all green + axiom-clean), all in `InteractionHInvDispatch.lean`:
+`realizedWitness_of_codeHead_dispatch` (`:113`, `4035f64f`);
+`realizedWitness_of_ifHead_dispatch` (`:163`, `ee0fb302`);
+`realizedWitness_of_procAdapter_dispatch` (`:255`) + `realizedWitness_of_caseEntryPop_dispatch`
+(`:304`) (`56f28ff5`); `realizedWitness_of_forCond_dispatch` (`:360`) +
+`realizedWitness_of_switchTest_dispatch` (`:430`) (`fdfc43cb`).  All nine `BlockGenShapeReg`
+disjuncts have a dispatch leg; `hInv` needs the case-split assembly + discharging the five
+compiler-shape obligation groups above (the branch/machinery legs' source-quantified
+parameters).  `scripts/opt_harness.sh check` = OK (43 theorems);
+`compile_correct`/`compile_correct_creation` axioms UNCHANGED; delta +0.
