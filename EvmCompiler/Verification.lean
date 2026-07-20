@@ -15,7 +15,6 @@ import EvmCompiler.TypedCfg.InteractionPrefixPreservation
 import EvmCompiler.TypedCfg.InteractionFuelSafety
 import EvmCompiler.TypedCfg.PeepholeSwapKernel
 import EvmCompiler.TypedCfg.PeepholeStackRealizes
-import EvmCompiler.TypedCfg.PeepholeSwapOpen
 import EvmCompiler.Structured.TypedCfgPreservation.StackRealizesEntry
 import EvmCompiler.TypedCfg.InteractionEntryRealized
 import EvmCompiler.TypedCfg.InteractionReachesCap

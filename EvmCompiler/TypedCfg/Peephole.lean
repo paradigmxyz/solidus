@@ -34,15 +34,19 @@ def peepholeBody : List Instr → List Instr
   | instr :: rest =>
       match instr, peepholeBody rest with
       | .push _, .pop :: rest' => rest'
+      | .swap d, .swap d' :: rest' =>
+          if d = d' then rest' else .swap d :: .swap d' :: rest'
       | instr', tail => instr' :: tail
 
 @[simp] theorem peepholeBody_nil : peepholeBody [] = [] := rfl
 
-/-- Unfolding lemma exposing the two cases of `peepholeBody` on a cons. -/
+/-- Unfolding lemma exposing the three cases of `peepholeBody` on a cons. -/
 theorem peepholeBody_cons (instr : Instr) (rest : List Instr) :
     peepholeBody (instr :: rest) =
       match instr, peepholeBody rest with
       | .push _, .pop :: rest' => rest'
+      | .swap d, .swap d' :: rest' =>
+          if d = d' then rest' else .swap d :: .swap d' :: rest'
       | instr', tail => instr' :: tail := rfl
 
 /-- The peephole never grows a body. -/
@@ -52,18 +56,20 @@ theorem peepholeBody_length_le :
   | instr :: rest => by
       have ih := peepholeBody_length_le rest
       rw [peepholeBody_cons]
-      -- Split on the two match arms.
+      -- Split on the match arms; every result has length ≤ (peepholeBody rest).length + 1.
       split
-      · -- cancelling arm: drop `push` and the leading `pop` of the tail.
+      · -- push;pop cancel arm: drop `push` and the leading `pop` of the tail.
         rename_i v rest' hEq
-        -- `peepholeBody rest = .pop :: rest'`, and `rest'.length + 1 ≤ rest.length`.
         have hlen : (peepholeBody rest).length = rest'.length + 1 := by
           rw [hEq]; simp
-        simp only [List.length_cons]
-        omega
+        simp only [List.length_cons]; omega
+      · -- swap;swap arm: `if d = d'` cancels, else keeps.
+        rename_i d d' rest' hEq
+        have hlen : (peepholeBody rest).length = rest'.length + 1 := by
+          rw [hEq]; simp
+        split <;> simp only [List.length_cons] <;> omega
       · -- keep arm.
-        simp only [List.length_cons]
-        omega
+        simp only [List.length_cons]; omega
 
 end Peephole
 end TypedCfg

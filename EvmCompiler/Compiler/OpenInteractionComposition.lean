@@ -894,7 +894,7 @@ theorem yulToNormalizedStackAssemblyPrefixForward
         budget *
           TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget cfg :=
     Nat.mul_le_mul_left _
-      (TypedCfg.Peephole.fuelBudget_peepholeProgram_le cfg)
+      (TypedCfg.Peephole.fuelBudget_peepholeProgram_le cfg hWellTyped)
   have hEntryReturns : expressionsState.returns = [] := hStackInitial.returns
   have hEntryInit :
       expressionsState = Structured.RunState.initial expressionsState.evm := by
@@ -1460,7 +1460,7 @@ theorem structuredToEncodedBytecode
         cfgFuel *
           TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget cfg :=
     Nat.mul_le_mul_left _
-      (TypedCfg.Peephole.fuelBudget_peepholeProgram_le cfg)
+      (TypedCfg.Peephole.fuelBudget_peepholeProgram_le cfg hWellTyped)
   have hFinishedPeep : Simulation.Interaction.AllDone
       Assembly.InteractionSemantics.Finished
       (Assembly.InteractionSemantics.Source.openRunNResult
@@ -1610,7 +1610,7 @@ theorem structuredToAssemblySource
         cfgFuel *
           TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget cfg :=
     Nat.mul_le_mul_left _
-      (TypedCfg.Peephole.fuelBudget_peepholeProgram_le cfg)
+      (TypedCfg.Peephole.fuelBudget_peepholeProgram_le cfg hWellTyped)
   have hFinishedPeep : Simulation.Interaction.AllDone
       Assembly.InteractionSemantics.Finished
       (Assembly.InteractionSemantics.Source.openRunNResult
@@ -1741,7 +1741,7 @@ theorem structuredToAssemblySourceFinished
         cfgFuel *
           TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget cfg :=
     Nat.mul_le_mul_left _
-      (TypedCfg.Peephole.fuelBudget_peepholeProgram_le cfg)
+      (TypedCfg.Peephole.fuelBudget_peepholeProgram_le cfg hWellTyped)
   have hFinishedPeep : Simulation.Interaction.AllDone
       Assembly.InteractionSemantics.Finished
       (Assembly.InteractionSemantics.Source.openRunNResult

@@ -185,11 +185,23 @@ theorem mem_peepholeBody {x : Instr} :
   | instr :: rest, hx => by
       rw [peepholeBody_cons] at hx
       split at hx
-      · -- cancel arm: `x ∈ rest'`, a suffix of the (peepholed) tail.
+      · -- push;pop cancel arm: `x ∈ rest'`, a suffix of the (peepholed) tail.
         rename_i v rest' hEq
         have hmem : x ∈ peepholeBody rest := by
           rw [hEq]; exact List.mem_cons_of_mem _ hx
         exact List.mem_cons_of_mem _ (mem_peepholeBody hmem)
+      · -- swap;swap arm: `if d = d'` cancels to `rest'`, else keeps both swaps.
+        rename_i d d' rest' hEq
+        split at hx
+        · -- d = d': `x ∈ rest'`
+          have hmem : x ∈ peepholeBody rest := by
+            rw [hEq]; exact List.mem_cons_of_mem _ hx
+          exact List.mem_cons_of_mem _ (mem_peepholeBody hmem)
+        · -- d ≠ d': `x ∈ .swap d :: .swap d' :: rest'`
+          rcases List.mem_cons.mp hx with h | h
+          · exact h ▸ List.mem_cons_self ..
+          · have hmem : x ∈ peepholeBody rest := by rw [hEq]; exact h
+            exact List.mem_cons_of_mem _ (mem_peepholeBody hmem)
       · -- keep arm: `x ∈ instr :: peepholeBody rest`.
         rcases List.mem_cons.mp hx with h | h
         · exact h ▸ List.mem_cons_self ..
