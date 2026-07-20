@@ -4904,3 +4904,94 @@ strengthened capstone is COMPLETE for the main body; the proc body needs the one
 provenance lemma above, then `hInv` is the §Session-38 endgame.  `scripts/opt_harness.sh
 check` = OK (43 theorems); `compile_correct`/`compile_correct_creation` axioms UNCHANGED;
 delta +0.
+
+## Session-40 update (2026-07-19): frontier items 1 & 2 CLOSED (proc-body strengthened composite `proc_blockGenShapeReg` now complete alongside `main_blockGenShapeReg`) + hInv item-3 STARTED — the two clean machinery dispatch legs banked; all green + axiom-clean in 3 commits
+
+Session 40's mandate (per §Session-39 frontier): (1) the additive fallthrough provenance
+lemma; (2) `proc_blockGenShapeReg`; (3) assemble `hInv`; (4) Step B.  **Result: THREE
+green, axiom-clean commits** closing frontier items 1 & 2 (the strengthened classification
+capstone is now COMPLETE for BOTH bodies) and opening item 3 with the two machinery
+dispatch legs whose successor shape coincides with the entry `input`.  The §Session-39
+recipe proved exact for items 1–2 (both compiled on the first attempt).  `hInv` (item 3)
+is genuinely open — the head-construct legs (`codeHead`/`ifHead`/`callHead`/`forCond`/
+`switchTest`) each need the openStep coupling to expose `next = regular`, not a clean
+compose; and `caseEntryPop`/`procAdapter` need a fits-transport.  No red, no sorries;
+`peepholeBody`/public spine UNTOUCHED ⇒ delta **+0**; `scripts/opt_harness.sh check` = OK
+(43 theorems, axioms ⊆ `[propext, Classical.choice, Quot.sound]`); `compile_correct`/
+`compile_correct_creation` axioms UNCHANGED.
+
+### LANDED (green, axiom-clean)
+* **`5bba9a60`** — item 1, `InteractionProcBlockProvenance.lean` (additive):
+  * **`mem_procBlocks_provenance_subset_fallthrough`** (`:390`) — the ~160-line mirror of
+    `mem_procBlocks_provenance_subset`, additionally threading the in-scope `hRequire`
+    (`bodyResult.requireFallthrough? (procExit proc) = some ()`) into the returned tuple,
+    AND strengthening the adapter disjunct's `Or.inr` to carry `entry = ProcLabel.body
+    proc.name` (needed for the adapter-arm body `LabelShape`).  Every leaf already has
+    `hRequire` in scope, and every adapter `Or.inr` sets `entry := ProcLabel.body head.name`
+    — one-field / `rfl` additions.
+  * **`GeneratedContext.procBlocks_provenance_inProgram_fallthrough`** (`:453`) — the
+    context wrapper adding `BlocksInProgram` (same `findBlock?_eq_some_of_mem` promotion as
+    `procBlocks_provenance_inProgram`).
+* **`ad8046ae`** — item 2, `InteractionHInvAssemblyRegular.lean`:
+  * **`proc_blockGenShapeReg`** (`:100`) — the proc-body composite, the sibling of
+    `main_blockGenShapeReg`.  Body arm ⟶ `genShapeReg_of_compileBlock? hCompile hBlocks
+    (HRegular via `proc_regular_labelShape context hLookup hReq`) (CtxExitsShaped: brk/cont
+    vacuous, leave = `LabelShape.procExit context hLookup`) block hBody`; adapter arm ⟶
+    invert `mkBlock?` as in base `proc_blockGenShape`, then `procAdapter hType hFind
+    hBodyShape` where `hBodyShape = of_compileBlock? hCompile hBlocks` under `output = input`
+    (the `.relabel` retype, derived by `split` on the relabel `type?`).  `hLookup` from
+    `hProcMem : proc ∈ source.procs` via `lookup?_eq_some_of_mem hSourceWF.1 hProcMem rfl`
+    — **`proc_blockGenShapeReg` takes an added `hSourceWF : source.WF` hypothesis** (the
+    invariant threads program WF; `main_blockGenShapeReg` needs none).
+* **`7ba51a5c`** — item 3 (incremental), `InteractionHInvDispatch.lean` (NEW module, wired
+  into `Verification.lean`): the two clean machinery dispatch legs.
+  * **`realizedWitness_of_nilJoin_dispatch`** (`:44`) — unifies the entry `realizedWitness`
+    to the join block by `findBlock?` uniqueness (so `SourceFrameFits input` transports with
+    no extra hypothesis), then `realizedWitness_of_join_jump hFind hFits hStateRel hExec
+    hExit`.
+  * **`realizedWitness_of_terminalHalt_dispatch`** (`:82`) — vacuous via
+    `halt_openStep_no_jump` (no entry witness needed).
+
+### THE FRONTIER (session 41) — assemble `hInv`
+The strengthened classification capstone is now COMPLETE for both bodies, and two of the
+nine `BlockGenShapeReg` disjuncts have their `hInv` dispatch leg.  Remaining to close
+`hInv` (`∀ e t transcript n s, realizedWitness cfg e t → Executes (openStep cfg e t) …
+(jump n s) → realizedWitness cfg n s`):
+1. **The five head-construct dispatch legs** — `codeHead`/`ifHead`/`callHead`/`forCond`/
+   `switchTest`.  Each has its coupling supplier already banked
+   (`realizedWitness_of_{code,if,call}_compile`, `realizedWitness_of_{condBlock,test}_jump`)
+   BUT the supplier consumes `hLabelShape : LabelShape cfg next expected` at the CONCRETE
+   jumped-to `next`, which the enriched `hReg`/`hFalseShape` fields supply only at
+   `regular`/`falseLabel`.  So each leg needs `next = regular` (or `next ∈ {trueLabel,
+   falseLabel}` for the branch/for legs) exposed FIRST — that fact lives inside
+   `jump_state_rel_of_outcome`/`…_of_rel` (currently discarded as `_hNext`).  **Recipe**:
+   either (a) expose a `next = regular` corollary of the coupling and feed the enriched
+   field at that equality, or (b) generalise the head suppliers to take `hLabelShape` in the
+   threaded `∀ out, fallthrough? = some out → …` form the enriched fields already are.
+   Option (b) matches the field shapes (`HRegular`/`hFalseShape`) directly and is preferred.
+2. **`caseEntryPop` + `procAdapter` legs** — need the child fits at the SHIFTED shape
+   (`output` after `.pop` / `.relabel`), which is NOT the entry `SourceFrameFits input`.
+   The pop leg needs `source.evm.stack.pop = some (stack, value)` + fits at the popped
+   shape; the adapter leg needs `SourceFrameFits output …` (transport `output = input`
+   under the no-op relabel).  Both are dischargeable at the capstone where the source
+   stack/shape are pinned — defer until the head legs land.
+3. **Assemble the `hInv` case split** — from `realizedWitness cfg e t` recover
+   `cfg.findBlock? e = some block`; `block_category` splits into main/proc; feed
+   `main_blockGenShapeReg` / `proc_blockGenShapeReg` (the latter with `hSourceWF`) to get
+   `BlockGenShapeReg cfg block`; `rcases` the nine disjuncts and apply the matching dispatch
+   leg (items 1–2 above + the two banked machinery legs).  Then
+   `AllEntriesRealized.of_openStep_invariant` with `realized := realizedWitness cfg` and the
+   entry witness (`realizedWitness_of_stateRel`).
+4. Then Step B (`openRunNPrefix_peephole_congr_of_source`); no swap arm on `peepholeBody`.
+
+### Status handed to session 41
+Landed (all green + axiom-clean): `InteractionProcBlockProvenance.lean` —
+`mem_procBlocks_provenance_subset_fallthrough` + `procBlocks_provenance_inProgram_fallthrough`
+(`5bba9a60`); `InteractionHInvAssemblyRegular.lean` — `proc_blockGenShapeReg` (`ad8046ae`);
+`InteractionHInvDispatch.lean` (NEW, wired) — `realizedWitness_of_nilJoin_dispatch` +
+`realizedWitness_of_terminalHalt_dispatch` (`7ba51a5c`).  The strengthened capstone is
+COMPLETE for both bodies; `hInv` needs the seven remaining dispatch legs (five head
+constructs blocked only on exposing the jumped-to label = the threaded regular/false shape;
+two machinery legs on a fits-transport) then the case-split assembly.
+`scripts/opt_harness.sh check` = OK (43 theorems); `compile_correct`/`compile_correct_creation`
+axioms UNCHANGED; delta +0.
