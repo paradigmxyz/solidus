@@ -937,6 +937,172 @@ theorem openRunBody_dropLast_swap_pending
     refine Simulation.Interaction.Rel.done (.ok ⟨⟨s2, hE2, ?_⟩, rfl, hRmid⟩)
     exact SameRuntimeData.trans hSame2 hSameStack
 
+/-! ### The seam-cancel disjunctive one-step congruence (gate 2, session 65)
+
+The whole-program 2-state bisimulation.  At each block entry the two programs'
+states are related by `SeamStepRel`: `SameRuntimeData` when the block does NOT
+tail a fired seam (`targetFire? = none`), and `PendingSwap d` when it does.  One
+CFG step re-establishes this invariant at every produced `.jump` successor
+(`SeamOutcomeRel`), discriminated statically by `targetFire?` of the successor
+block, which the §62 refCount-uniqueness lemmas pin down. -/
+
+/-- Subset-monotonicity of `List.Forall` (for restricting `ProgramCounterIndependent`
+to `dropLast` / `tail` sub-bodies). -/
+theorem forall_sub {α : Type _} {p : α → Prop} {l l' : List α}
+    (h : l' ⊆ l) (hf : l.Forall p) : l'.Forall p := by
+  rw [List.forall_iff_forall_mem] at hf ⊢
+  exact fun x hx => hf x (h hx)
+
+/-- The body of a seam-edited block, split by the two firing decisions. -/
+theorem seamBlock_body (program : Program) (block : Block) :
+    (seamBlock program block).body =
+      (match sourceFire? program block, targetFire? program block with
+       | some _, some _ => block.body.dropLast.tail
+       | some _, none => block.body.dropLast
+       | none, some _ => block.body.tail
+       | none, none => block.body) := by
+  unfold seamBlock
+  cases sourceFire? program block <;> cases targetFire? program block <;> rfl
+
+/-- For a source-firing block: the dropped-tail body types to the un-swapped
+output, the trailing swap types that back, and the split reconstructs the body. -/
+theorem sourceFire_body_facts {program : Program} {b0 : Block} {e : Nat}
+    (hTyped : b0.WellTyped program) (hs : sourceFire? program b0 = some e) :
+    Block.bodyType? b0.body.dropLast b0.input = some (remapShape e b0.output) ∧
+      Instr.type? (.swap e) (remapShape e b0.output) = some b0.output ∧
+      b0.body.dropLast ++ [Instr.swap e] = b0.body := by
+  obtain ⟨bLabel, b, hterm, href, hfind, hla, hhd, hal, hbl⟩ := sourceFire?_spec hs
+  have hsplit : b0.body.dropLast ++ [Instr.swap e] = b0.body :=
+    List.dropLast_append_getLast? _ (Option.mem_def.mpr hla)
+  have hbody := hTyped.1
+  rw [← hsplit] at hbody
+  have hpre := bodyType?_dropTail_swap hbody
+  refine ⟨hpre, ?_, hsplit⟩
+  rw [bodyType?_append, Option.bind_eq_some_iff] at hbody
+  obtain ⟨mid, hpm, hsm⟩ := hbody
+  have hmideq : mid = remapShape e b0.output := by
+    rw [hpm] at hpre; exact Option.some.inj hpre
+  subst hmideq
+  rw [bodyType?_cons, Option.bind_eq_some_iff] at hsm
+  obtain ⟨out, htype, hnil⟩ := hsm
+  simp only [Block.bodyType?, Option.some.injEq] at hnil
+  subst hnil
+  exact htype
+
+/-- For a target-firing block: the body decomposes as a head swap, that swap
+types `input` to `remapShape d input`, and `d < 16`. -/
+theorem targetFire_body_facts {program : Program} {b0 : Block} {d : Nat}
+    (hUnique : program.LabelsUnique) (hmem : b0 ∈ program.blocks)
+    (hTyped : b0.WellTyped program) (ht : targetFire? program b0 = some d) :
+    b0.body = Instr.swap d :: b0.body.tail ∧
+      Instr.type? (.swap d) b0.input = some (remapShape d b0.input) ∧
+      Block.bodyType? b0.body.tail (remapShape d b0.input) = some b0.output ∧
+      d < 16 := by
+  have hhd := head_swap_of_targetFire hUnique hmem ht
+  have hdecomp : b0.body = Instr.swap d :: b0.body.tail := head_tail_decomp hhd
+  have hbody := hTyped.1
+  rw [hdecomp, bodyType?_cons, Option.bind_eq_some_iff] at hbody
+  obtain ⟨mid, htype, hrest⟩ := hbody
+  have hmid : mid = remapShape d b0.input := type?_swap_eq_remapShape htype
+  subst hmid
+  obtain ⟨hd16, _, _⟩ := Instr.length_of_type?_swap htype
+  exact ⟨hdecomp, htype, hrest, hd16⟩
+
+/-- **Unified seam-cancel body kernel.**  Running the original block body from
+`s_o` is `Rel`-related to running the edited (seam-cancelled) body from `s_c`,
+where the ENTRY relation is discriminated by `targetFire?` (SRD if `none`,
+`PendingSwap d` if `some d`) and the RESULT relation by `sourceFire?` (SRD if
+`none`, `PendingSwap e` if `some e`).  Composes the four fire cases from the two
+banked body kernels (`openRunBody_dropLast_swap_pending`,
+`openRunBody_swap_cons_resync`) plus `openRunBody_runtimeRel`. -/
+theorem seamBlock_body_rel {program : Program} {b0 : Block}
+    (hUnique : program.LabelsUnique) (hmem : b0 ∈ program.blocks)
+    (hTyped : b0.WellTyped program) (hIndep : b0.ProgramCounterIndependent)
+    {s_o s_c : EVMState}
+    (hRin : match targetFire? program b0 with
+            | none => SameRuntimeData s_o s_c
+            | some d => PendingSwap d s_c s_o)
+    (hReal_c : StackRealizes (seamBlock program b0).input s_c) :
+    Simulation.Interaction.Rel
+      (Simulation.Interaction.ExceptRel (fun a b : EVMException => a = b)
+        (fun lp rp : EVMState × Shape =>
+          (match sourceFire? program b0 with
+           | none => SameRuntimeData lp.1 rp.1
+           | some e => PendingSwap e rp.1 lp.1)
+          ∧ lp.2 = b0.output ∧ rp.2 = (seamBlock program b0).output))
+      (InteractionSemantics.Block.openRunBody b0.body b0.input s_o)
+      (InteractionSemantics.Block.openRunBody (seamBlock program b0).body
+        (seamBlock program b0).input s_c) := by
+  have hBodyEq := seamBlock_body program b0
+  have hInEq := seamBlock_input program b0
+  have hOutEq := seamBlock_output program b0
+  have hIndBody : b0.body.Forall Instr.ProgramCounterIndependent := hIndep
+  cases hs : sourceFire? program b0 with
+  | none =>
+      cases ht : targetFire? program b0 with
+      | none =>
+          -- Normal block: seamBlock is the identity; plain runtime congruence.
+          simp only [hBodyEq, hInEq, hOutEq, hs, ht] at hRin ⊢
+          exact InteractionCongruence.Block.openRunBody_runtimeRel hTyped.1 hIndBody hRin
+      | some d =>
+          -- Target only: resync the dropped head swap.
+          simp only [hBodyEq, hInEq, hOutEq, hs, ht] at hRin ⊢
+          obtain ⟨hdecomp, htype, hrest, hd16⟩ :=
+            targetFire_body_facts hUnique hmem hTyped ht
+          obtain ⟨next, hswapNext, hsyncNext⟩ := hRin
+          have hRun : Instr.runState (.swap d) b0.input s_o = .ok next := by
+            rw [runState_swap_eq hd16]; exact hswapNext
+          have hIndTail : b0.body.tail.Forall Instr.ProgramCounterIndependent :=
+            forall_sub (List.tail_subset b0.body) hIndBody
+          have hcore := openRunBody_swap_cons_resync htype hRun hrest hIndTail hsyncNext
+          conv_lhs => rw [hdecomp]
+          exact hcore
+  | some e =>
+      obtain ⟨hpreDrop, hswapType, hsplit⟩ := sourceFire_body_facts hTyped hs
+      cases ht : targetFire? program b0 with
+      | none =>
+          -- Source only: birth the pending swap on the trailing swap.
+          simp only [hBodyEq, hInEq, hOutEq, hs, ht] at hRin hReal_c ⊢
+          have hIndPre : b0.body.dropLast.Forall Instr.ProgramCounterIndependent :=
+            forall_sub (List.dropLast_subset b0.body) hIndBody
+          have hcore :=
+            openRunBody_dropLast_swap_pending hpreDrop hswapType hIndPre hRin hReal_c
+          conv_lhs => rw [← hsplit]
+          exact hcore
+      | some d =>
+          -- Both: resync the head swap, then birth the pending trailing swap.
+          simp only [hBodyEq, hInEq, hOutEq, hs, ht] at hRin hReal_c ⊢
+          obtain ⟨hdecompH, htypeH, hrestH, hd16⟩ :=
+            targetFire_body_facts hUnique hmem hTyped ht
+          obtain ⟨next, hswapNext, hsyncNext⟩ := hRin
+          have hRun : Instr.runState (.swap d) b0.input s_o = .ok next := by
+            rw [runState_swap_eq hd16]; exact hswapNext
+          have hlen : 2 ≤ b0.body.length := by
+            obtain ⟨_, _, _, _, _, _, _, hal, _⟩ := sourceFire?_spec hs; exact hal
+          have hhdSwap : b0.body.head? = some (Instr.swap d) :=
+            head_swap_of_targetFire hUnique hmem ht
+          have hd2 : b0.body.dropLast = Instr.swap d :: b0.body.dropLast.tail :=
+            dropLast_head_tail hhdSwap hlen
+          -- P = b0.body.dropLast.tail is the seam-cancelled body.
+          have hbeq : b0.body =
+              Instr.swap d :: (b0.body.dropLast.tail ++ [Instr.swap e]) := by
+            conv_lhs => rw [← hsplit, hd2]
+            rw [List.cons_append]
+          have hpreP : Block.bodyType? b0.body.dropLast.tail (remapShape d b0.input)
+              = some (remapShape e b0.output) := by
+            have hh := hpreDrop
+            rw [hd2] at hh
+            exact bodyType?_dropHead_swap hh
+          have hIndP : b0.body.dropLast.tail.Forall Instr.ProgramCounterIndependent :=
+            forall_sub
+              (List.Subset.trans (List.tail_subset _) (List.dropLast_subset b0.body))
+              hIndBody
+          -- Peel the head swap on the left, resyncing to `s_c`.
+          conv_lhs => rw [hbeq]
+          rw [openRunBody_swap_cons_ok htypeH hRun]
+          -- Now birth the trailing pending swap from the resynced state.
+          exact openRunBody_dropLast_swap_pending hpreP hswapType hIndP hsyncNext hReal_c
+
 end Peephole
 end TypedCfg
 end EvmCompiler
