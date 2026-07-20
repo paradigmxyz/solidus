@@ -5,6 +5,14 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 INSTALL_SOLC="${INSTALL_SOLC:-1}"
 read -r -a VERSIONS <<< "${SUPPORTED_SOLC_VERSIONS:-0.8.26 0.8.35}"
 
+# An explicit empty SUPPORTED_SOLC_VERSIONS override would otherwise skip the
+# loop entirely and still print the pass token (vacuous pass) — or abort with
+# an unbound-variable error on bash 3.2. Fail loudly instead.
+if [[ "${#VERSIONS[@]}" -eq 0 ]]; then
+  printf 'error: SUPPORTED_SOLC_VERSIONS is empty; nothing to test\n' >&2
+  exit 1
+fi
+
 for version in "${VERSIONS[@]}"; do
   compiler="$HOME/.solc-select/artifacts/solc-$version/solc-$version"
   if [[ ! -x "$compiler" ]]; then
