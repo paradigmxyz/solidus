@@ -383,6 +383,81 @@ theorem realizedWitness_of_adapter_jump
     InteractionRealizedWitnessSuccessor.realizedWitness_of_pure_jump
       hStep hRel hExec hLabelShape hFits
 
+/--
+**Terminal (`.halt`) block: no jump successor.**
+
+A `.terminal kind` statement compiles to the empty-body halt block
+`{ input, body := [], output := input, term := .halt kind }`
+(`TypedCfgCompiler.lean:553`).  Its `openStep` reduces to
+`.done (runTermChecked input (.halt kind) target)`, which for a halt terminator is
+always either `.ok (.halt kind …)` (a non-`selfdestruct` kind, or an allowed
+`selfdestruct`) or `.error .StaticModeViolation` (a static-mode `selfdestruct`) —
+in NO case an `.ok (.jump …)`.  So a terminal block can never `Executes`-produce a
+jump, and the `hInv` obligation at a terminal entry is vacuous — the general
+sibling of `programEnd_openStep_no_jump` (which handles the single `.halt .stop`
+programEnd block).  This completes the reachable-block discharge family: every
+generated block category (compiled head / for-cond / switch-test / case-entry /
+nil-join [which also covers brk/cont/leave] / proc-entry adapter / dispatch /
+programEnd / terminal) now has its successor supplier or vacuity lemma. -/
+theorem halt_openStep_no_jump
+    {cfg : TypedCfg.Program}
+    {entry : Assembly.Label} {input : TypedCfg.Shape}
+    {kind : Assembly.HaltKind}
+    {target state' : EVMState} {next : Assembly.Label}
+    {transcript : Simulation.Interaction.Transcript}
+    (hFind :
+      cfg.findBlock? entry =
+        some
+          { label := entry
+            input := input
+            body := []
+            output := input
+            term := .halt kind })
+    (hExec :
+      Simulation.Interaction.Executes
+        (TypedCfg.InteractionSemantics.Program.openStep cfg entry target)
+        transcript (Except.ok (TypedCfg.Outcome.jump next state'))) :
+    False := by
+  have hStep :
+      TypedCfg.InteractionSemantics.Program.openStep cfg entry target =
+        Simulation.Interaction.done
+          (TypedCfg.Block.runTermChecked input (.halt kind) target) := by
+    simp only [
+      TypedCfg.InteractionSemantics.Program.openStep,
+      TypedCfg.Control.Program.step, hFind,
+      TypedCfg.Control.Block.run, TypedCfg.Control.Block.runBody,
+      TypedCfg.Block.runTerm]
+    change
+      Simulation.Interaction.bind
+          (Simulation.Interaction.done (Except.ok (target, input)))
+          (fun result =>
+            if result.2 = input then
+              match TypedCfg.Block.runTermChecked input (.halt kind) result.1 with
+              | .ok outcome => Simulation.Interaction.pure outcome
+              | .error err => Simulation.Interaction.error err
+            else
+              Simulation.Interaction.done
+                (Except.error (.InvalidInstruction : EVMException))) =
+        Simulation.Interaction.done
+          (TypedCfg.Block.runTermChecked input (.halt kind) target)
+    simp only [Simulation.Interaction.bind_done_ok, if_pos rfl]
+    cases TypedCfg.Block.runTermChecked input (.halt kind) target with
+    | ok outcome => rfl
+    | error err => rfl
+  rw [hStep] at hExec
+  by_cases hSelf : kind = .selfdestruct
+  · subst hSelf
+    by_cases hPerm : target.executionEnv.perm = true
+    · rw [TypedCfg.Block.runTermChecked_halt_of_allowed _ _ _
+        (fun _ => hPerm)] at hExec
+      cases hExec
+    · rw [TypedCfg.Block.runTermChecked_selfdestruct_of_static _ _
+        (Bool.not_eq_true _ ▸ hPerm)] at hExec
+      cases hExec
+  · rw [TypedCfg.Block.runTermChecked_halt_of_allowed _ _ _
+      (fun h => absurd h hSelf)] at hExec
+    cases hExec
+
 end InteractionMachineryCoupling
 end Structured
 end EvmCompiler
