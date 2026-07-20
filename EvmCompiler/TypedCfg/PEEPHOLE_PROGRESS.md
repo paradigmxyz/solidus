@@ -4315,3 +4315,98 @@ the re-corrected predicate + the single remaining supporting lemma
 (`codeFact_of_switchHead`) + the exact arm-by-arm mutual recipe are pinned above.
 Frontier = `codeFact_of_switchHead` → the assembled 9-disjunct capstone mutual →
 dispatch residual, before `of_openStep_invariant` → Step B.
+
+## Session-35 update (2026-07-19): the CAPSTONE landed — switch-head fact + the assembled 9-disjunct block-generation mutual, both green + axiom-clean
+
+Session 35's mandate: `codeFact_of_switchHead` → the 9-disjunct strong-induction
+capstone mutual → dispatch residual → (if all closes) `hInv` assembly.  **Result:
+frontier items 1 & 2 (the switch-head fact AND the full capstone mutual) are banked
+green + axiom-clean.** The §Session-34 re-corrected NINE-disjunct predicate was
+implemented verbatim (no predicate hole found).  Dispatch residual + `hInv` assembly
+were deliberately NOT started (green-frontier stop; they are the next-session bulk).
+No red code, no sorries; `peepholeBody`/public spine UNTOUCHED ⇒ measured delta **+0**.
+`opt_harness.sh check` PASSES (43 public theorems, axioms ⊆
+[propext, Classical.choice, Quot.sound]); `compile_correct`/`compile_correct_creation`
+UNCHANGED.
+
+### LANDED (green, axiom-clean) — new module `InteractionBlockGenShape.lean`, wired into `EvmCompiler.Verification`
+* **`9c3ef25c`** — `codeFact_of_switchHead` (`InteractionBlockGenShape.lean:45`),
+  `BlockGenShape` (the 9-disjunct `inductive … : Prop`, `:76`), `GenShapeResult`
+  (`:221`), `GenShapeResult.append` (`:227`).  `codeFact_of_switchHead` reverse-engineers
+  the switch head's `mkCodeBlock?` emission into a single-block `compileStmtFuel? (.code
+  scrutinee) … (regular := casesEntryLabel supply 0 cases)` fact (one-line `simp`).
+  `BlockGenShape` carries: head arms (`codeHead`/`ifHead`/`callHead`) the construct's
+  `compileStmtFuel? … block.label block.input regular = some result` + `BlocksInProgram
+  result cfg`; `forCond` the `Code.toCfg`/`.jumpi` shape + `Code.type?`/`requireSourceWords?`
+  + `findBlock?`; `switchTest`/`caseEntryPop` the `[.dup 0,.push,.prim .eq]`/`[.pop]` shape
+  + `BlocksInProgram` + membership; `nilJoin` (empty-body `.jump`, covers brk/cont/leave)
+  + `procAdapter` (`[.relabel]`) + `terminalHalt` (`.halt`) the `findBlock?` fact.
+* **`d1055027`** — the CAPSTONE 5-function mutual (`InteractionBlockGenShape.lean`):
+  `genShape_of_compileBlockFuel?` (`:251`), `…StmtListFuel?` (`:268`), `…StmtFuel?`
+  (`:310`), `…CasesFuel?` (`:527`), `…DefaultFuel?` (`:581`).  Mirrors
+  `activeResult_of_compile*` (`TypedCfgCompilerActive.lean:77`) but concludes
+  `GenShapeResult result cfg`, threading `hBlocks : BlocksInProgram result cfg` down the
+  recursion (sub-results via `BlocksInProgram.{left,right}_of_append` for `stmtList`-cons
+  appends, and `hBlocks b (by simp only [List.mem_cons, List.mem_append]; tauto)` for the
+  cons/append block lists of `if`/`switch`/`for`/`cases`/`default`).  NO `ReturnTokenActive`
+  invariant needed — classification is purely structural.  Arms per §Session-34 recipe:
+  nil→`nilJoin`; code→`codeHead`; if→`ifHead`+recurse body; switch→`codeHead`(via
+  `codeFact_of_switchHead`)+recurse cases/default; for→recurse init/body/post +`forCond`
+  for the loop block; brk/cont/leave→`nilJoin`; terminal→`terminalHalt`; call→`callHead`;
+  cases-cons→`switchTest`+`caseEntryPop`+recurse body/tail; default-none→`caseEntryPop`;
+  default-some→`caseEntryPop`+recurse body.
+
+### KEY IMPLEMENTATION FINDING — constructor-arg elaboration order (metavar pinning)
+The disjunct suppliers whose block INDEX metavars are not fully pinned by an earlier
+explicit arg (`nilJoin`/`terminalHalt`: hFind only; `forCond`: label/trueLabel/falseLabel
+free after `hType`) CANNOT be closed by `exact BlockGenShape.X (hBlocks _ (by simp))` nor
+`refine … ?_; refine hBlocks _ ?_; simp` — the inner `by simp`/`hBlocks _` forces
+`?block ∈ …` (or the stuck projection `?block.label =?= entry`) BEFORE the result-type
+unification pins `?block`.  **Robust pattern (used):** capture
+`have hFind := hBlocks block hMem` at the arm's `intro block hMem` (block explicit, no
+metavar), then `subst block` and `exact BlockGenShape.X … hFind`.  For arms whose `?_`
+is a plain membership (`switchTest`/`caseEntryPop`: `record ∈ result.blocks`, no `hBlocks`
+projection) `refine BlockGenShape.X hHead hBlocks ?_; simp` works.  Also: `codeFact_of_switchHead`
+must be applied with `(compilerFuel := 0) (ctx := ctx) (supply := supply)` explicit — those
+implicits are unconstrained by the switch head block (they only touch `result.next`), so
+they surface as stray `⊢ ℕ`/`⊢ Context` goals otherwise.  Also: `«a :: b ++ c»` parses as
+`(a :: b) ++ c` (`::` binds tighter than `++`), so `simp only [mem_cons, mem_append]`
+yields the LEFT-nested `(=a ∨ … ∨ ∈b) ∨ ∈c`; the `rcases` pattern must be
+`(rfl | … ) | hTail`, not `rfl | … | hTail`.
+
+### THE FRONTIER (sharpened for session 36)
+1. **The dispatch StateRel⟶frame-facts residual** (unchanged, §Session-31 item 4): the
+   dispatch arm's `hPop`/`hAttach`/`hRetc` are RUNTIME facts, derived from the exit
+   block's `realizedWitness` `StateRel bodyState (site.token :: tokens) t`, feeding
+   `realizedWitness_of_dispatch_jump` (`InteractionRealizedWitnessSuccessor.lean:149`).
+   This is the last supplier-adjacent obligation NOT covered by `BlockGenShape` (dispatch
+   is `block_category`'s third arm, outside the predicate).
+2. **Assemble `hInv`** (frontier item 4, now all static ingredients exist): via
+   `block_category` (`InteractionBlockProvenance.lean:79`) → {main root
+   (`main_stmtList_provenance`) / proc root (`GeneratedContext.procBlocks_provenance`,
+   §Session-34) → drill (the 12 dichotomy lemmas, `InteractionBlockProvenanceDrill.lean`)
+   feeding the capstone `genShape_of_compileBlock?` (define a `compileBlock?`-level wrapper
+   over `genShape_of_compileBlockFuel?`, analogous to `activeResult_of_compileBlock?`,
+   `TypedCfgCompilerActive.lean:514`) → `cases`-split the resulting `BlockGenShape` and
+   dispatch each disjunct to its matching supplier (`realizedWitness_of_{code,if,call}_compile`,
+   `_condBlock_jump`, `_test_jump`, `_pop_jump`, `_join_jump`, `_adapter_jump`,
+   `halt_openStep_no_jump`)} ; dispatch → frame-facts (item 1) → `_dispatch_jump` ;
+   programEnd → `programEnd_openStep_no_jump`.  Feed
+   `AllEntriesRealized.of_openStep_invariant` (`TypedCfg/InteractionEntryRealized.lean:271`).
+   NOTE the transports each supplier's runtime hyps (`hFits`/`hRel`/`hLabelShape`) must be
+   discharged AT this splice from the threaded in-scope source run — that is the substance
+   of the assembly, and where the `SourceFrameFits` transports (e.g. `procAdapter` at
+   `output = relabelTarget = fragment.input`, §Session-34) are finally closed.
+3. Then proceed to Step B (`openRunNPrefix_peephole_congr_of_source`); do NOT add the swap
+   arm to `peepholeBody` until the whole invariant is green.
+
+### Status handed to session 36
+The block-generation classification is COMPLETE: `codeFact_of_switchHead` + the 9-disjunct
+`BlockGenShape` predicate + the full 5-function capstone mutual proving every emitted block
+is classified (`genShape_of_compile*`, all green + axiom-clean, `:45/76/221/227/251/268/310/527/581`).
+This closes §Session-34 frontier items 1 & 2.  Remaining = the dispatch runtime residual +
+the `hInv` assembly (block_category → root → drill(capstone) → per-disjunct supplier +
+runtime-hyp transports) → `of_openStep_invariant` → Step B.  `compile_correct`/
+`compile_correct_creation` UNCHANGED (frozen `Correctness.lean` untouched); delta +0;
+`opt_harness.sh check` PASSES.  New module `InteractionBlockGenShape.lean` wired into
+`EvmCompiler.Verification`.
