@@ -5777,3 +5777,98 @@ production.  The per-entry `StackRealizes` discharge is now TOTAL modulo the tok
 fact (frontier item 1).  Full `scripts/opt_harness.sh check` = OK (43 theorems, axioms ⊆
 `[propext, Classical.choice, Quot.sound]`); `compile_correct`/`compile_correct_creation` axioms
 UNCHANGED; delta +0.
+
+## Session-49 update (2026-07-20): the TOTAL block-entry `StackRealizes` bridge LANDS (item 2), plus the COMPLETE token-at-bottom preservation arithmetic (item 1 substrate); DECISIVE FINDING that item 1 is NOT a per-`BlockGenShapeReg`-disjunct proof but an input/output shape-invariant THREADING through the compiler classifier. Two green, axiom-clean commits.
+
+Session 49's mandate (per §Session-48 frontier): (1) the token-at-bottom static fact; (2) the
+total bridge; (3) `openRunNPrefix_peephole_congr_of_source`; (4) OIC wiring; (5) stop at the
+green frontier.  **Result: item 2 LANDED; item 1 REDUCED to its final wiring with the complete
+arithmetic banked; items 3–5 not reached.**  `peepholeBody`/public spine UNTOUCHED ⇒ delta **+0**.
+`compile_correct`/`compile_correct_creation` axioms UNCHANGED.
+
+### DECISIVE FINDING (corrects the §Session-48 frontier item-1 framing "provable from the `BlockGenShapeReg` disjuncts, per-disjunct arithmetic")
+The static token-at-bottom fact is **NOT** a per-disjunct read-off.  Audited all nine
+`BlockGenShapeReg` disjuncts (`InteractionBlockGenShapeRegular.lean:188`): the three
+straight-line-head disjuncts `codeHead`/`ifHead`/`callHead` conclude about a block whose
+`block.input` is an **opaque metavariable** threaded through a `compileStmtFuel?` hypothesis —
+the constructor pins **no** token-position fact on it (only `procAdapter` carries any token fact,
+`hInputActive : isSome`, and even that is not "at bottom"; `callHead` pins the *callee*
+`procEntry`, not its own input).  So token-at-bottom cannot be recovered disjunct-locally; it must
+be **threaded as an input↔output shape invariant** through the 5-function compiler classifier
+(`genShapeReg_of_compile{Block,StmtList,Stmt,Cases,Default}Fuel?`), seeded at `procEntry`
+(token-at-bottom) / the token-free main root, and preserved across every shape transition.  This
+is exactly the shape of the existing `GenShapeResultReg` classifier, and mirrors the §Session-48
+`realizedWitnessFC` runtime-invariant route as the alternative.
+
+**Key arithmetic (the enabling realization).**  `TokenBottomOrNone shape ⟺
+shape.length ≤ sourceLength shape + 1` — token-at-bottom is exactly "hidden suffix
+(`length − sourceLength`) ≤ 1 slot".  The hidden suffix is **exactly preserved** by every
+accepted `BasicInstr` (`length_balance_of_type`, `Core.lean:942`) and by every compiler shape op
+(`pop`/`pushWords`/`afterCall`/`slots.tail`/`Code.type?`), so the invariant propagates cleanly.
+This collapses the per-transition reasoning to one-line `omega` steps.
+
+### LANDED (green, axiom-clean) — two commits
+* **COMMIT 1 (`dbb9d8f3`) — `EvmCompiler/Structured/TokenBottomShape.lean` (NEW):** the item-1
+  substrate.  `TokenBottomOrNone` (`:40`); `tokenBottomOrNone_iff_length_le` (`:49`, the
+  `length ≤ sourceLength + 1` characterization); `returnTokenDepth?_eq_pred_length_of_tokenBottomOrNone`
+  (`:82`, the token-owning "pin" the bridge consumes).  **Complete route-agnostic op-preservation
+  set:** `tokenBottomOrNone_pushWords` (`:179`), `_pop` (`:187`), `_tail` (`:198`), `_afterCall`
+  (`:211`), `_procEntry` (`:224`), `_procExit` (`:232`); `code_length_balance` (`:242`, the
+  iterated `length_balance_of_type`) + `tokenBottomOrNone_of_code_type?` (`:273`).  Pure shape
+  arithmetic, additive.
+* **COMMIT 2 (`08d4f53a`) — `InteractionHInvClose.lean:255`:**
+  `stackRealizes_of_realizedWitnessFC` — **THE TOTAL block-entry bridge (item 2)**.  Case-splits
+  `block.input.returnTokenDepth?`: `none` ⇒ project to bare `realizedWitness` + the token-free
+  bridge; `some _` ⇒ the `TokenBottomOrNone block.input` premise (via the pin lemma) discharges the
+  `hLast` hypothesis of the token-owning bridge `stackRealizes_of_realizedWitnessFC_of_token_last`.
+  **Total modulo** the `TokenBottomOrNone block.input` premise (item 1), consumed as an explicit
+  hypothesis for the call site to supply.
+
+### THE FRONTIER (session 50) — finish item 1, then items 3–5
+1. **The static token-at-bottom fact** `∀ block, cfg.findBlock? label = some block →
+   TokenBottomOrNone block.input`, discharging the `hTB` premise of `stackRealizes_of_realizedWitnessFC`
+   at an arbitrary reached entry.  All the ARITHMETIC is now banked (COMMIT 1); the remaining work
+   is the **wiring**, two options:
+   * **(a) classifier-threading mirror (additive, recommended):** a parallel recursion
+     `tbResult_of_compile{Block,StmtList,Stmt,Cases,Default}Fuel?` over the compiler generators,
+     threading hypothesis `TokenBottomOrNone input` and concluding
+     `(∀ b ∈ result.blocks, TokenBottomOrNone b.input) ∧
+      (∀ ft, result.fallthrough? = some ft → TokenBottomOrNone ft)` — the fallthrough conjunct is
+     REQUIRED because sequential composition feeds the previous fragment's output as the next
+     fragment's input.  Reuses the existing `components_of_compileStmtFuel?_{code,if,terminal,…}`
+     inversions (`TypedCfgCompilerFacts.lean:582+`) + the COMMIT-1 op lemmas at each transition
+     (per-statement: `code`⇒`of_code_type?`; `if`/`for` sub-inputs⇒`_tail` of the cond output;
+     `switch`⇒`_tail`/pop; `call` continuation⇒`_afterCall`; `brk`/`cont`/`leave`/`nilJoin`/`terminal`
+     ⇒ input = fragment input, direct).  Then the main/proc wrappers seed it: main root token-free
+     (`TokenBottomOrNone` via `none`, since the dispatcher entry shape carries no token), proc root
+     `tokenBottomOrNone_procEntry`.  **Open sub-item:** the `block_category`
+     (`InteractionBlockProvenance.lean:79`) **dispatch-block** and **programEnd-block** cases have
+     NO `BlockGenShapeReg` producer — they need their own token-position reasoning (programEnd input
+     `= main.fallthrough?.getD Shape.caller`, token-free; dispatch-block inputs per
+     `dispatchBlocks` — audit whether any own a token).
+   * **(b) runtime `realizedWitnessFC` conjunct (the §Session-48 hLive pattern):** add
+     `TokenBottomOrNone block.input` as a conjunct to `realizedWitnessFC`, re-establish it in the 9
+     `hInv` legs (each child input is an op-image of the parent input ⇒ COMMIT-1 lemmas) + dispatch
+     (below-token coupling ⇒ new `FrameConsistent` field, as `FrameContinuationLive` in s48) +
+     callHead (child = `procEntry`).  Modifies the shared legs (higher risk); the total bridge then
+     reads `hTB` off the witness and drops its explicit premise.
+2. **`openRunNPrefix_peephole_congr_of_source`** (item 3, `PeepholeProgram.lean:174` sibling) —
+   thread `allEntriesRealized_realizedWitnessFC_of_context` through the fuel induction, discharge
+   `StackRealizes block.input` at each `openStep` entry via `stackRealizes_of_realizedWitnessFC`
+   (COMMIT 2) + item-1's static fact, feeding `openRunBody_swap_swap_congr`
+   (`PeepholeSwapOpen.lean:64`).  Then item 4 (OIC sites `OpenInteractionComposition.lean:910/943`,
+   seed via `realizedWitnessFC_of_stateRel_nil` at `cfg.entry`) and item 5 (swap arm into
+   `peepholeBody`, Step D, with the full bench).
+
+### Status handed to session 50
+Landed (green + axiom-clean, two commits `dbb9d8f3`, `08d4f53a`): the complete token-at-bottom
+preservation ARITHMETIC (`TokenBottomShape.lean`, incl. the `length ≤ sourceLength + 1`
+characterization, the pin, and pushWords/pop/tail/afterCall/Code/procEntry/procExit preservation)
+and **the total block-entry `StackRealizes` bridge** `stackRealizes_of_realizedWitnessFC`, total
+modulo the `TokenBottomOrNone block.input` static fact.  Per-entry `StackRealizes` is now discharged
+for BOTH token cases; the ONLY remaining item-1 work is the classifier-threading wiring (arithmetic
+done) + dispatch/programEnd coverage.  Full `scripts/opt_harness.sh check` = OK (43 theorems, axioms
+⊆ `[propext, Classical.choice, Quot.sound]`); `compile_correct`/`compile_correct_creation` axioms
+UNCHANGED; delta +0.  **PROCESS NOTE:** this host is **zsh** — `${PIPESTATUS[0]}` is empty, so
+`lake build … | tail; echo $PIPESTATUS` MASKS failures; verify builds with `lake build … > log 2>&1;
+echo RC=$?` (no pipe) or zsh `$pipestatus[1]`.
