@@ -4519,3 +4519,141 @@ theorems, axioms ⊆ `[propext, Classical.choice, Quot.sound]`); `compile_correc
 Item 1 (dispatch residual) is `hPop`-banked with `hAttach`/`hRetc` proven to be
 provenance-side (not `StateRel`-derivable).  The main-body classification arm is banked;
 proc-body classification + the `hInv` target-`LabelShape` transports are the frontier.
+
+## Session-37 update (2026-07-19): proc-body classification composite CLOSED + the target-`LabelShape` transport DESIGN pinned with its WellTyped-edge half banked
+
+Session 37's mandate (per §Session-36 recipe): (1) `proc_blockGenShape` (proc-body
+composite, blocked on a `BlocksInProgram bodyResult cfg` gap in `procBlocks_provenance`);
+(2) THE LABELSHAPE TRANSPORT recon + design + implement; (3) remaining runtime-hyp
+transports → assemble `hInv`.  **Result: THREE green, axiom-clean commits — item 1 fully
+closed (proc classification now COMPLETE, matching main), and item 2's design nailed down
+(with concrete evidence) plus its universally-needed WellTyped-edge half banked.**  The
+FULL `hInv` did not close — the genuine residual (the `compatible ⟶ exact` step for the
+external `regular` successor) is precisely isolated below.  No red code, no sorries;
+`peepholeBody`/public spine UNTOUCHED ⇒ delta **+0**.  `opt_harness.sh check` PASSES (43
+public theorems, axioms ⊆ `[propext, Classical.choice, Quot.sound]`); `compile_correct`/
+`compile_correct_creation` UNCHANGED.
+
+### LANDED (green, axiom-clean)
+* **`d9a80485`** — `InteractionProcBlockProvenance.lean`:
+  * **`mem_procBlocks_provenance_subset`** (`:215`) — the §Session-36-item-1 route-(a)
+    strengthening: a NEW sibling of `mem_procBlocks_provenance` whose induction ALSO emits
+    `∀ b ∈ bodyResult.blocks, b ∈ procBlocks`.  Each leaf threads the inclusion through
+    `procBlocks = body.blocks ++ tailBlocks` (`body.blocks = compiled.blocks` no-adapter /
+    `adapter :: compiled.blocks` adapter); recursion composes via `List.mem_append_right`.
+    Axioms `[propext, Classical.choice, Quot.sound]`.
+  * **`GeneratedContext.procBlocks_provenance_inProgram`** (`:417`) — promotes the body
+    compile fact straight to `BlocksInProgram bodyResult cfg` by composing the subset with
+    `procBlocks ⊆ cfg.blocks` (from `context.cfgEq`) + `findBlock?_eq_some_of_mem`
+    (`LabelsUnique`).  This is exactly the hypothesis the body drill consumes.
+* **`73c4b4c7`** — **`proc_blockGenShape`** (`InteractionHInvAssembly.lean:149`) — the
+  proc-body sibling of `main_blockGenShape`, CLOSING §Session-36 frontier item 1.  From
+  `block ∈ context.procBlocks`, `procBlocks_provenance_inProgram` yields the body case
+  (feed `genShape_of_compileBlock?` directly) or the adapter case (invert the adapter
+  `mkBlock?` exactly as `mkBlock?_label_input`: `unfold mkBlock?; cases hBT : bodyType?
+  [.relabel input] (procEntry proc); simp [hBT]; subst`, recovering the `Instr.type?
+  (.relabel input) …` fact + exact block shape, then `BlockGenShape.procAdapter hType
+  hFind` with `hFind` from `block ∈ cfg.blocks`).  Axiom-clean.  **⇒ block-generation
+  classification is now COMPLETE for BOTH main and proc bodies.**
+* **`89b3abfe`** — NEW module `InteractionLabelShapeTransport.lean` (wired into
+  `EvmCompiler.Verification`), namespace `TypedCfgPreservation.LabelShape`:
+  * **`block_wellTyped_of_findBlock?`** (`:50`) — any `cfg.findBlock?`-returned block is
+    `Block.WellTyped cfg` (member ⟶ `AllBlocksTyped`).  Axioms `[propext]`.
+  * **`edge_jump_of_wellTyped`** (`:66`) — from `cfg.WellTyped` + a found block with
+    `.jump target` term: `∃ targetShape, LabelShape cfg target targetShape ∧
+    block.output.compatible targetShape`.  The **existence** half of the successor
+    transport (the target block IS in `cfg` with a `compatible` input), reusable by every
+    route.  Axioms `[propext, Quot.sound]`.
+
+### THE LABELSHAPE-TRANSPORT DESIGN — recon findings + chosen route (item 2, the sessions-26→35 sticking point)
+The suppliers (`InteractionRealizedWitnessSuccessor.lean` :63/:101/:149,
+`InteractionCodeConstructCoupling.lean:119`) each consume `hLabelShape : LabelShape cfg
+next restShape` and package it via `realizedWitness_of_stateRel`
+(`InteractionBoundedOwnerRealized.lean:334`), which needs the STRICT
+`block.input = restShape` (`LabelShape` = `∃ block, findBlock? next = some block ∧
+block.input = restShape`, `GeneratedBoundary.lean:11`).  The `LabelShape` constructor API
+is ALREADY complete (`of_hasEntry`/`of_compileBlockFuel?`/`of_compileStmtListFuel?`/
+`of_compileStmtFuel?`/`procEntry`/`procExit`/`programEnd`, plus `LabelShape.eq`
+uniqueness) — the transport is NOT missing machinery; it is a question of *supplying the
+compile/entry fact for the target block*.  Two successor kinds:
+
+1. **Internal successors** (target block ∈ the current construct's own `result` — e.g. an
+   `if`'s body-entry `trueLabel`, a loop's body, a switch case-entry).  EXACT `LabelShape`
+   is immediate from the disjunct's own compile fact via `of_compileBlockFuel?`/
+   `of_hasEntry` restricted to the sub-result — precisely what the forward proofs do
+   (`InteractionBranchPreservation.lean:543`, `hBodyShape`).  **No obstruction; this is
+   routine per-construct extraction via the `components_of_compileStmtFuel?_*` lemmas.**
+
+2. **The external `regular` successor** (the construct's fallthrough target, NOT in its
+   own result — e.g. `codeHead`'s `.jump regular`, `ifHead`'s false/join leg).  **THIS is
+   the genuine residual.**  KEY RECON FINDING: the forward preservation proofs *never*
+   needed it because they STOP at `regular` (`RecursiveBoundary`/`RegularExit`/`StopPolicy`
+   machinery, `InteractionBranchPreservation.lean:377` `hRegular : RegularAtSupply …`), so
+   they carry no `LabelShape cfg regular …`.  The whole-program route-B invariant instead
+   *continues* into `regular`, so it must show the block declared at `regular` has input
+   EXACTLY the construct's fallthrough output.  This is a **generation-threaded exactness**
+   fact: generation sets the successor block's input = the source block's output exactly,
+   but `cfg.WellTyped` only checks `Shape.compatible` (`Syntax.lean:111` — a genuine
+   subtyping: opaque `.caller` rows may instantiate to extra hidden slots), NOT equality.
+   `edge_jump_of_wellTyped` (banked) delivers the `compatible` relation + target-block
+   existence; the residual is the **`compatible ⟶ exact`** upgrade, which is NOT derivable
+   from `WellTyped` alone.
+
+   **CHOSEN ROUTE (option B, refined — a threaded exactness, NOT a giant new mutual):**
+   thread an *inherited boundary shape* `hRegular : LabelShape cfg regular fallthroughOut`
+   through the SAME `genShape_of_compile*` recursion the capstone already performs, so each
+   disjunct additionally carries its external successor's EXACT `LabelShape`.  The
+   recursion discharges it: for a non-last statement in a list, the head's `regular` is the
+   *entry of the rest*, whose block is in the SAME enclosing result (internal ⟶ `of_hasEntry`
+   on the rest's sub-result); the list's LAST statement inherits the enclosing `regular`.
+   It **bottoms out cleanly at the two boundaries** — main body: `regular = programEnd`,
+   `LabelShape.programEnd` gives `LabelShape cfg programEnd (main.fallthrough?.getD caller)`
+   and `requireFallthrough`/main's fallthrough pins the output to match; proc body:
+   `regular = ProcLabel.exit proc.name`, `LabelShape.procExit` gives `LabelShape cfg (exit
+   proc.name) (Shape.procExit proc)` and the proc's `requireFallthrough? (procExit)` pins
+   the body's fallthrough output to `procExit` — so the inherited `hRegular` is exactly the
+   boundary `LabelShape` at every top-level entry into the mutual.  (`programEnd`/`procExit`
+   `LabelShape`s and `procEntry` already exist in `GeneratedBoundary.lean:97/159`.)
+
+   Concretely for session 38: strengthen the capstone's `GenShapeResult`/`BlockGenShape`
+   into a variant carrying, per disjunct, `LabelShape cfg <externalSuccessor> <output>`;
+   re-run the `genShape_of_compile*` mutual (mirror of `InteractionBlockGenShape.lean`'s
+   5-function mutual) with the added `hRegular` hypothesis threaded exactly as
+   `BlocksInProgram` is; seed it at the main/proc composites (`main_blockGenShape`/
+   `proc_blockGenShape`) with `LabelShape.programEnd` / `LabelShape.procExit`.  The internal
+   successors within each disjunct come free from the sub-result `of_hasEntry`.
+
+### THE FRONTIER (sharpened for session 38)
+1. **The exact external-successor `LabelShape` mutual** (item 2, chosen route above) — the
+   real remaining substance.  Additive: a strengthened `BlockGenShape`/capstone variant
+   threading `hRegular : LabelShape cfg regular <fallthroughOut>`, seeded at the two
+   boundaries.  Start from the boundary base cases (`LabelShape.programEnd`/`procExit`
+   already banked) and the non-last-statement internal case (`of_hasEntry` on the rest's
+   sub-result); the per-construct internal successors reuse `components_of_compileStmtFuel?_*`.
+2. **Assemble `hInv`** — with classification COMPLETE (main+proc) and both successor
+   `LabelShape` kinds in hand, the split is: `realizedWitness cfg e t` ⟶ `⟨source, tokens,
+   block, hFind, hStateRel, hFits⟩`; `block_category hFind` → 4 arms; programEnd →
+   `programEnd_openStep_no_jump`; main/proc → `main_blockGenShape`/`proc_blockGenShape` →
+   `cases BlockGenShape` → per-disjunct supplier (`realizedWitness_of_{code,if,call}_compile`,
+   `_condBlock_jump`, `_test_jump`, `_pop_jump`, `_join_jump`, `_adapter_jump`,
+   `halt_openStep_no_jump`) fed the internal + external `LabelShape` + `hFits` (child-frame,
+   carried by the coupling); dispatch → `dispatch_popReturn?_of_stateRel` (hPop, banked s36)
+   + site provenance (hAttach/hRetc) + `realizedWitness_of_dispatch_jump`.  Then
+   `AllEntriesRealized.of_openStep_invariant`.
+3. Then Step B (`openRunNPrefix_peephole_congr_of_source`); do NOT add the swap arm to
+   `peepholeBody` until the whole invariant is green.
+
+### Status handed to session 38
+Landed: `InteractionProcBlockProvenance.lean` — `mem_procBlocks_provenance_subset`,
+`GeneratedContext.procBlocks_provenance_inProgram` (`d9a80485`);
+`InteractionHInvAssembly.lean` — `proc_blockGenShape` (`73c4b4c7`);
+`InteractionLabelShapeTransport.lean` — `block_wellTyped_of_findBlock?`,
+`edge_jump_of_wellTyped` (`89b3abfe`), wired into `EvmCompiler.Verification`.  All green +
+axiom-clean.  **Block-generation classification is COMPLETE for main AND proc bodies.**  The
+target-`LabelShape` transport is DESIGNED (option B: thread inherited boundary
+`LabelShape cfg regular fallthroughOut` through the capstone mutual, seeded at
+programEnd/procExit) with its WellTyped-edge existence half banked; the `compatible ⟶ exact`
+external-successor upgrade is the isolated residual for session 38.  `scripts/opt_harness.sh
+check` = OK (43 public theorems, axioms ⊆ `[propext, Classical.choice, Quot.sound]`);
+`compile_correct`/`compile_correct_creation` UNCHANGED (frozen `Correctness.lean`
+untouched); delta +0.
