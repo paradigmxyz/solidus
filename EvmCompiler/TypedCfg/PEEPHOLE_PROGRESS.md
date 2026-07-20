@@ -4807,3 +4807,100 @@ strengthened-mutual recipe is worked to the case level (incl. `for_`/`switch`), 
 39's assembly is mechanical.  `scripts/opt_harness.sh check` status: see run below.
 `compile_correct`/`compile_correct_creation` UNCHANGED (frozen `Correctness.lean` untouched);
 delta +0.
+
+## Session-39 update (2026-07-19): the STRENGTHENED MUTUAL is ASSEMBLED and GREEN — enriched inductive + 5-function mutual + `compileBlock?` wrapper + MAIN-body composite, all axiom-clean; proc-body composite isolated to one additive provenance-layer gap
+
+Session 39's mandate (per §Session-38 recipe): (1) assemble the strengthened mutual; (2)
+assemble `hInv`; (3) Step B.  **Result: FOUR green, axiom-clean commits banking the entire
+strengthened classification capstone** — the enriched inductive, all five mutual functions
+(the external-regular `LabelShape` thread + ctx-exit bundle threaded through every
+construct incl. `for_`/`switch`), the public `compileBlock?` wrapper, and the MAIN-body
+composite.  The §Session-38 recipe proved essentially exact: the four banked toolkit lemmas
++ `of_hasEntry`/`of_compileBlockFuel?` discharged every case, and both the mutual (13 s
+build) and the composites compiled on the FIRST attempt.  `hInv` (item 2) and Step B (item
+3) NOT reached — the proc-body composite (the last piece before `hInv`) is blocked on a
+single, precisely-isolated additive provenance-layer lemma (below).  No red code, no
+sorries; `peepholeBody`/public spine UNTOUCHED ⇒ delta **+0**; `scripts/opt_harness.sh
+check` = OK (43 theorems, axioms ⊆ `[propext, Classical.choice, Quot.sound]`);
+`compile_correct`/`compile_correct_creation` axioms UNCHANGED.
+
+### LANDED (green, axiom-clean)
+* **`533a4a75`** — `InteractionBlockGenShapeRegular.lean` (NEW module): the threading
+  scaffold + enriched inductive.
+  * **`HRegular`** (`:59`, abbrev) — the threaded external-successor predicate
+    `∀ out, result.fallthrough? = some out → LabelShape cfg regular out`, consumed verbatim.
+  * **`CtxExitsShaped`** (`:68`, structure) — the ctx-exit `LabelShape` bundle
+    (`brk`/`cont`/`leave` fields).
+  * **`thread_of_target_requireFallthrough`** (`:83`) — fixed-target regular thread via a
+    `requireFallthrough?` pin (if-body / switch-case-body / default-some / loop-body/post).
+  * **`switchHead_regular_labelShape`** (`:105`) — the switch head's external-`regular`
+    (`casesEntryLabel supply 0 cases`) `LabelShape`, splitting on `cases` (nonempty ⟶
+    `cases_cons_test_hasEntry`; empty ⟶ `default_hasEntry`).
+  * **`BlockGenShapeReg`** (`:141`, inductive) — the strengthened classification.  **NINE
+    disjuncts, not ten**: the §Session-38 `nilJoinRegular`/`nilJoinExit` split is COLLAPSED
+    into a single `nilJoin` carrying `hExit : LabelShape cfg exitLabel input` directly (the
+    stored field is identical either way; `hInv` dispatches on block category, not the
+    constructor — sound + simpler).  Added fields: `codeHead`/`ifHead` `+hReg`; `forCond`
+    `+hFalseShape`; `caseEntryPop` `+hExit` (covers the `default`-less pop's EXTERNAL
+    `.jump regular`, a genuine correction over the recipe's "caseEntryPop stays base");
+    `nilJoin` `+hExit`; `procAdapter` `+hBodyShape`; `callHead`/`switchTest`/`terminalHalt`
+    base.
+  * **`GenShapeResultReg`** (`:291`) + `.append`.
+* **`3b27318c`** — same module: the **5-function strengthened mutual** (the capstone).
+  * **`thread_of_target_fallthrough`** (`:314`) — fallthrough-form fixed-target thread (loop
+    `init`, whose `fallthrough?` is pinned directly, not via `requireFallthrough?`).
+  * **`genShapeReg_of_compileBlockFuel?`** (`:337`), **`…StmtListFuel?`** (`:356`),
+    **`…StmtFuel?`** (`:407`), **`…CasesFuel?`** (`:697`), **`…DefaultFuel?`** (`:758`) —
+    each ADDs `(hRegular : HRegular result cfg regular) (hCtx : CtxExitsShaped cfg ctx)`
+    beside `hBlocks`, concluding `GenShapeResultReg result cfg`.  Per-case threading exactly
+    as the recipe: sequential head via `regularThread_tail_of_cons`, tail via defeq
+    `append`-fallthrough; if/switch-case/default bodies via
+    `thread_of_target_requireFallthrough (hRegular _ rfl) …`; `for_` cond `hFalseShape =
+    hRegular {condOutput.tail} rfl`, init/post via `thread_of_target_*` at the cond-block
+    `LabelShape` (membership+`hBlocks`), body via `of_compileBlockFuel? hPost`, ctx cleared
+    (break/cont vacuous, leave inherited) / body ctx break=`hRegular`, continue=`hPost`
+    entry; brk/cont/leave via `hCtx.{brk,cont,leave}`.
+* **`f4231606`** — `InteractionHInvAssemblyRegular.lean` (NEW module): the composites.
+  * **`genShapeReg_of_compileBlock?`** (`:42`) — public `compileBlock?` wrapper.
+  * **`main_blockGenShapeReg`** (`:67`) — MAIN-body composite; `HRegular` discharged by the
+    boundary seed `main_regular_labelShape` (external `regular = programEnd`),
+    `CtxExitsShaped` vacuous (main ctx all-`none`).
+
+### THE FRONTIER (session 40)
+1. **The proc-body composite `proc_blockGenShapeReg`** — the ONLY remaining piece of the
+   §Session-38 recipe.  Blocked on ONE additive provenance-layer lemma: the proc-body's
+   external `regular = ProcLabel.exit proc.name` thread needs the seed
+   `proc_regular_labelShape` (`InteractionLabelShapeTransport.lean:136`), whose hypothesis
+   `bodyResult.requireFallthrough? (procExit proc) = some ()` is CONSUMED-and-discarded
+   inside `mem_procBlocks_provenance_subset` (`InteractionProcBlockProvenance.lean:215`,
+   the `hRequire` case) and is NOT re-exposed by `procBlocks_provenance_inProgram` (`:417`).
+   `procFragment_of_lookup?` (`Core.lean:3525`) DOES expose it (`fragment.fallthrough`) but
+   for `fragment.result`, not obviously the provenance's existential `bodyResult`.
+   **Recipe for session 40**: add an ADDITIVE sibling
+   `procBlocks_provenance_inProgram_fallthrough` (mirror `mem_procBlocks_provenance_subset`
+   + `procBlocks_provenance_inProgram`, threading the in-scope `hRequire` into the
+   existential — the `body`/`none`/`some` arms already have `hRequire` bound, so it is a
+   one-field addition to the returned tuple, ~160-line mirror).  Then
+   `proc_blockGenShapeReg`: body arm ⟶ `genShapeReg_of_compileBlock? hCompile hBlocks
+   (proc_regular_labelShape context hLookup hRequire) hCtxProc`, where `hLookup` comes from
+   `hProcMem : proc ∈ source.procs` via `ProcList.lookup?`-of-nodup, `hCtxProc = ⟨brk
+   vacuous, cont vacuous, leave = procExit seed⟩`; adapter arm ⟶ invert `mkBlock?` as in
+   base `proc_blockGenShape` + `procAdapter`'s new `hBodyShape` (the body entry `LabelShape`,
+   `LabelShape.procEntry`/`of_hasEntry` on the body fragment).
+2. **Assemble `hInv`** (item 2, unchanged from §Session-38 frontier) — with
+   `main_blockGenShapeReg` + `proc_blockGenShapeReg` (exact-successor-enriched), each
+   per-disjunct supplier gets: internal `LabelShape` inline, external regular-thread from the
+   enriched field (`hReg`/`hFalseShape`/`hExit`/`hBodyShape`), dispatch `popReturn?` from
+   `dispatch_popReturn?_of_stateRel` (banked s36) + site provenance.  Then
+   `AllEntriesRealized.of_openStep_invariant`.
+3. Then Step B (`openRunNPrefix_peephole_congr_of_source`); no swap arm on `peepholeBody`.
+
+### Status handed to session 40
+Landed (all green + axiom-clean): `InteractionBlockGenShapeRegular.lean` — the full enriched
+inductive + threading scaffold (`533a4a75`) and the 5-function strengthened mutual
+(`3b27318c`); `InteractionHInvAssemblyRegular.lean` — `genShapeReg_of_compileBlock?` +
+`main_blockGenShapeReg` (`f4231606`).  Both modules wired into `Verification.lean`.  The
+strengthened capstone is COMPLETE for the main body; the proc body needs the one additive
+provenance lemma above, then `hInv` is the §Session-38 endgame.  `scripts/opt_harness.sh
+check` = OK (43 theorems); `compile_correct`/`compile_correct_creation` axioms UNCHANGED;
+delta +0.
