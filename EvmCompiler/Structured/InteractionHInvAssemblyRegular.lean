@@ -85,6 +85,77 @@ theorem main_blockGenShapeReg
        fun _ _ h _ => by simp at h,
        fun _ _ h _ => by simp at h⟩
 
+/--
+**Proc-body arm: block ⟶ `BlockGenShapeReg` composite.**  The strengthened sibling of
+`proc_blockGenShape`.  From the proc-category provenance root
+`procBlocks_provenance_inProgram_fallthrough` (which additionally exposes the proc-exit
+`requireFallthrough?` fact and, in the adapter disjunct, the body compile entry), the
+external-`regular` thread is the boundary seed `proc_regular_labelShape` (external
+`regular = ProcLabel.exit proc.name`) and the ctx-exit bundle has vacuous break/continue
+with `leave = ProcLabel.exit proc.name` discharged by `LabelShape.procExit`.  The adapter
+disjunct inverts `mkBlock?` exactly as in `proc_blockGenShape` and supplies `procAdapter`'s
+new `hBodyShape` (the body-entry `LabelShape`; `output = input` under the `.relabel`
+retype).  `source.WF` supplies the name-uniqueness discharging `proc ∈ source.procs ⟶
+lookup? proc.name = some proc`. -/
+theorem proc_blockGenShapeReg
+    {source : Structured.Program}
+    {entryShapes : TypedCfgCompiler.ProcEntryShapes}
+    {cfg : TypedCfg.Program}
+    (context :
+      TypedCfgPreservation.Program.GeneratedContext source entryShapes cfg)
+    (hSourceWF : source.WF)
+    {block : TypedCfg.Block}
+    (hMem : block ∈ context.procBlocks) :
+    BlockGenShapeReg cfg block := by
+  obtain ⟨proc, bsupply, entry, input, bodyResult,
+      hProcMem, hCompile, hReq, hBlocks, hDisj⟩ :=
+    context.procBlocks_provenance_inProgram_fallthrough hMem
+  have hLookup :
+      Structured.ProcList.lookup? proc.name source.procs = some proc :=
+    Structured.ProcList.lookup?_eq_some_of_mem hSourceWF.1 hProcMem rfl
+  rcases hDisj with hBody | ⟨hEntry, hAdapter⟩
+  · -- body case: feed the strengthened body drill with the proc-boundary seeds.
+    refine genShapeReg_of_compileBlock? hCompile hBlocks ?_ ?_ block hBody
+    · exact fun out hout =>
+        TypedCfgPreservation.LabelShape.proc_regular_labelShape
+          context hLookup hReq hout
+    · exact
+        ⟨fun _ _ h _ => by simp at h,
+         fun _ _ h _ => by simp at h,
+         fun _ _ hL hS => by
+           obtain rfl := Option.some.inj hL
+           obtain rfl := Option.some.inj hS
+           exact TypedCfgPreservation.LabelShape.procExit context hLookup⟩
+  · -- adapter case: invert `mkBlock?`, classify via `procAdapter`.
+    subst hEntry
+    have hMemCfg : block ∈ cfg.blocks := by
+      rw [context.cfgEq]
+      simp only [List.append_assoc, List.mem_append]
+      tauto
+    have hFind :=
+      TypedCfg.Program.findBlock?_eq_some_of_mem context.wellTyped.1 hMemCfg
+    unfold TypedCfgCompiler.mkBlock? at hAdapter
+    cases hBT :
+        TypedCfg.Block.bodyType? [TypedCfg.Instr.relabel input]
+          (TypedCfgCompiler.Shape.procEntry proc) with
+    | none => simp [hBT] at hAdapter
+    | some output =>
+        simp [hBT] at hAdapter
+        have hType :
+            TypedCfg.Instr.type? (.relabel input)
+              (TypedCfgCompiler.Shape.procEntry proc) = some output := by
+          simpa [TypedCfg.Block.bodyType?] using hBT
+        have hOutInput : output = input := by
+          simp only [TypedCfg.Instr.type?] at hType
+          split at hType
+          · exact (Option.some.inj hType).symm
+          · exact absurd hType (by simp)
+        subst hAdapter
+        refine BlockGenShapeReg.procAdapter hType hFind ?_
+        rw [hOutInput]
+        exact
+          TypedCfgPreservation.LabelShape.of_compileBlock? hCompile hBlocks
+
 end InteractionBlockGenShapeRegular
 end Structured
 end EvmCompiler
