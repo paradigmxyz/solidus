@@ -5965,3 +5965,93 @@ UNCHANGED; delta +0.  **Next session:** Step B runner threading — solve the `R
 (frontier item 1 above), then Steps C/D.  **PROCESS NOTE (unchanged):** host is **zsh**; verify builds
 with `lake build … > log 2>&1; echo RC=$?` (no pipe) — `${PIPESTATUS[0]}` is empty.  No foreground
 `sleep`; poll background tasks with an `until grep -q …; do sleep N; done` loop.
+
+## Session-51 update (2026-07-20): STEP B CLOSED — the `Rel`→`Executes` connector is solved and the source-threaded whole-program congruences (`open{Step,RunN,RunNPrefix}_peephole_congr_of_source`) land green + axiom-clean. The §Session-50 frontier blocker is DISSOLVED. Steps C/D not reached (Step C's entry-witness seed is genuine new crown-path work; Step D is gated behind it) — stopped at the green frontier per the never-commit-red discipline.
+
+Session 51's mandate: (1) the `Rel`→`Executes` connector; (2) `openRunNPrefix_peephole_congr_of_source`;
+(3) OIC wiring (Step C); (4) swap arm (Step D).  **Result: items 1–2 FULLY CLOSED; items 3–4 not
+reached.**  `peepholeBody`/public spine UNTOUCHED ⇒ delta **+0**.
+`compile_correct`/`compile_correct_creation` axioms UNCHANGED.  Full `scripts/opt_harness.sh check` =
+OK (43 theorems, axioms ⊆ `[propext, Classical.choice, Quot.sound]`).
+
+### LANDED (green, axiom-clean) — `EvmCompiler/Structured/PeepholeSourceCongr.lean` (NEW), two commits
+* **COMMIT 1 (`24513b8b`) — the connector.**
+  * `allDone_of_forall_executes` (`:50`) — the generic **`Executes`→`AllDone` converse** (the missing
+    inverse of `AllDone.property_of_executes`): a leaf property holding at every concrete `Executes`
+    outcome holds at every terminal leaf.  Trivial induction on the interaction tree.
+  * `allDone_realizedWitnessFC_jump` (`:76`) — **THE §Session-50 connector.**  Packages the per-leaf
+    `openStep_preserves_realizedWitnessFC` (`InteractionHInvClose.lean:107`) into
+    `AllDone (fun o => ∀ lbl s1, o = .ok (jump lbl s1) → realizedWitnessFC … lbl s1) (openStep cfg label state1)`.
+    This is what dissolves the blocker: the successor witness now rides ALONGSIDE the
+    `RuntimeOutcomeRel` value at every jump leaf, so it is available in the `Rel.bind` continuation —
+    no need to recover an `Executes`-jump from the value-only `Rel.bind` branch (which is impossible,
+    since `Rel.bind`'s `hNext` quantifies over ALL related value pairs, reachable or not).
+* **COMMIT 2 (`d40aed00`) — STEP B, the three source-threaded congruences.**
+  * `openStep_peephole_congr_of_source` (`:117`) — strengthens the unconditional
+    `openStep_peephole_congr` via **`Rel.strengthen_left`** (folds the `AllDone` left-leaf invariant
+    into the value relation as a conjunct) then **`Rel.mono`** (re-seats the conjunction inside the
+    `ExceptRel.ok` payload, so the `doneRel` is `ExceptRel (·=·) (fun v1 v2 => RuntimeRel v1 v2 ∧ (∀
+    lbl s1, v1 = jump lbl s1 → witness lbl s1))` — an `ExceptRel`-shaped rel `Rel.bind` can decompose).
+  * `openRunN_peephole_congr_of_source` (`:160`) — same fuel induction as the unconditional runner;
+    the `fuel+1` step feeds the strengthened step congruence to `Rel.bind`, and the jump branch pulls
+    the successor witness `hWit lbl _ rfl` out of the (now witness-carrying) value relation to re-seed
+    the recursion at the jump target.  Push/pop/other-outcome cases unchanged.
+  * `openRunNPrefix_peephole_congr_of_source` (`:210`) — the prefix wrapper; identical body to the
+    unconditional (`Rel.bind` over the `_of_source` runner, jump→`.error rfl`), carrying the seed.
+  * **Conclusion is the SAME `Rel Block.RuntimeOutcomeRel`** the unconditional congruences produce.
+    The threading is internal; its value is placing `realizedWitnessFC … label state` in scope at
+    EVERY reached `openStep` entry — the exact hook Step D's swap arm consumes via
+    `stackRealizes_of_realizedWitnessFC_total` (`TokenBottomThread.lean:751`).
+
+### DECISIVE FINDING (why the §Session-50 recipe (a) works, recipe (b) unneeded)
+The blocker framing was "extract the left `Executes`-jump from the `Rel.bind` jump branch."  That
+extraction is genuinely **impossible** — `Rel.bind`'s `hNext : ∀ leftValue rightValue, sourceRel
+leftValue rightValue → …` must hold for ALL `sourceRel`-related value pairs, so it carries no
+reachability/`Executes` information about any particular pair.  The resolution is to **not need** the
+`Executes` in the continuation: derive it ONCE per leaf (via `allDone_of_forall_executes`, which DOES
+have an `Executes` at each leaf by construction) BEFORE the bind, fold it into `doneRel` with
+`Rel.strengthen_left`, and let the bind carry it through.  Recipe (b) (re-decompose without
+`Rel.bind`) is not needed.
+
+### THE FRONTIER (session 52) — Step C (entry seed), then Step D
+Step B's runner congruences are ready.  The remaining work to make the swap arm live:
+
+1. **Step C — swap the OIC sites** (`OpenInteractionComposition.lean` prefix `:910`/`:943`, terminal
+   `:1415`/`:1561`/`:1688`) from `openRunN{,Prefix}_peephole_congr` to the `_of_source` variants.  The
+   swap is SAFE (identical `Rel` conclusion; downstream `Rel.executes` is unaffected) **modulo one new
+   obligation: the entry seed** `realizedWitnessFC expressions.toStructured cfg generated.calls
+   cfg.entry expressionsState.evm`.  `context := generated`, `hSourceWF := hStructuredWF`,
+   `hTyped/hIndependent` are all already in scope at the sites; only the seed is missing.
+   * **The seed is genuine new work.**  `GeneratedContext` (`Core.lean:3387`) carries NO entry
+     `StateRel` — it is pure compilation provenance.  The entry block input is `Shape.caller`
+     (`TypedCfgCompiler.lean:722`; token-free ⇒ `returnTokenDepth? = none`), so
+     `realizedWitnessFC_of_stateRel_nil` (`InteractionFrameConsistent.lean:222`) is the right builder —
+     it needs `LabelShape cfg cfg.entry Shape.caller` (from `context.cfgEq` + the entry block),
+     `StateRel RunState.initial [] expressionsState.evm` with `source.returns = []`, `tokens = []`, and
+     `SourceFrameFits Shape.caller source.evm.stack.length`.  The crux is the **entry `StateRel`**
+     between `RunState.initial` and `expressionsState.evm`, which must be composed from `hStackInitial`
+     (`Functions.StackRelation.StateRel … functionsState expressionsState`) up through the
+     Expressions→Structured→TypedCfg layers.  This composition does not yet exist as a lemma; it is the
+     one real sub-problem for Step C.  Recommend a dedicated lemma
+     `realizedWitnessFC_entry_of_generated` (given `generated` + the OIC entry hypotheses ⇒ the seed at
+     `cfg.entry`, `expressionsState.evm`) proved once and applied at all five sites.
+2. **Step D — add the `swap d :: swap d :: rest → rest` arm to `peepholeBody`.**  Re-green the
+   syntactic (b)-family (`peepholeBody_length_le`, `mem_peepholeBody`, `peepholeBody_bodyType?`,
+   `lowerBodyFrom?_peephole_le` — trivial extra arm) and the semantic block congruence (now consuming
+   `StackRealizes` at the entry, discharged from the Step-B/-C threaded witness via
+   `stackRealizes_of_realizedWitnessFC_total` feeding `openRunBody_swap_swap_congr`
+   (`PeepholeSwapOpen.lean:64`)).  Gate on `scripts/opt_harness.sh check`; the orchestrator runs the
+   full bench.
+
+### Status handed to session 52
+Step B is **CLOSED** and axiom-clean.  New file `EvmCompiler/Structured/PeepholeSourceCongr.lean`
+(imports `TypedCfg.PeepholeProgram`, `Structured.InteractionHInvClose`, `Structured.TokenBottomThread`)
+holds the connector + the three `_of_source` congruences; it is a standalone banked module (built
+green via `lake build EvmCompiler.Structured.PeepholeSourceCongr`), **not yet imported** by anything —
+Step C's OIC wiring is its first consumer (which also brings it into the default build graph).  Commits
+`24513b8b`, `d40aed00` (+ this doc update).  `scripts/opt_harness.sh check` = OK (43 theorems, axioms ⊆
+`[propext, Classical.choice, Quot.sound]`); `compile_correct`/`compile_correct_creation` UNCHANGED;
+delta +0.  **Next session:** Step C entry seed (`realizedWitnessFC_entry_of_generated`), swap the five
+OIC sites, then Step D.  **PROCESS NOTE (unchanged):** host is **zsh**; verify builds with
+`lake build … > log 2>&1; echo RC=$?` (no pipe) — `${PIPESTATUS[0]}` is empty.  No foreground `sleep`;
+poll background tasks with an `until grep -q …; do sleep N; done` loop.
