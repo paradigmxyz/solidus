@@ -1,5 +1,6 @@
 import EvmCompiler.Structured.PeepholeNoopSwapCombined
 import EvmCompiler.TypedCfg.PeepholeSeamCancel
+import EvmCompiler.TypedCfg.PeepholeTransfer
 
 /-!
 # The seam-cancelled combined transform `seamCancelProgram (peepholeProgram (normalizeProgram cfg))`
@@ -291,6 +292,72 @@ theorem openRunNPrefix_seamCombined_congr_of_source
         | returnDispatch hSt => exact .done (.error rfl)
         | halt kind hSt => exact .done (.ok (Outcome.RuntimeRel.halt kind hSt))
         | invalid hSt => exact .done (.error rfl)
+
+/-! ## Item 4 substrate: halted-path bridges for the openRunN splice sites
+
+The 3 OIC `openRunN` splice sites (`:1438/1588/1719`) transport `AllDone
+AssemblySafeHalted` from the `cfg` run to the seam-cancelled run through the
+`SeamCombinedOutcomeRel`-valued N-level bridge, and compose it with the
+`RunSimulates` assembly relation ON THE HALTED PATH.  Both reduce to: at a halt
+the jump disjunct of `SeamCombinedOutcomeRel` is impossible, so it collapses to the
+plain `RuntimeOutcomeRel` disjunct, for which the pass-agnostic transports already
+exist (`assemblySafeHalted_of_runtimeRel`, `runtime_left`). -/
+
+/-- An `AssemblySafeHalted` outcome is never a `.jump`. -/
+theorem assemblySafeHalted_not_jump
+    {a : Except EVMException TypedCfg.Outcome}
+    (h : InteractionSemantics.Program.AssemblySafeHalted a) :
+    ∀ (next : Label) (s : EVMState), a ≠ .ok (.jump next s) := by
+  intro next s hEq
+  rw [hEq] at h
+  exact h
+
+/-- On a non-jump left outcome, `SeamCombinedOutcomeRel` collapses to the plain
+`RuntimeOutcomeRel` disjunct. -/
+theorem runtimeOutcomeRel_of_seamCombinedOutcomeRel_of_not_jump
+    {source : Structured.Program} {cfg : TypedCfg.Program}
+    {calls : List Structured.TypedCfgCompiler.DispatchSite}
+    {a b : Except EVMException TypedCfg.Outcome}
+    (h : SeamCombinedOutcomeRel (source := source) (cfg := cfg) calls a b)
+    (hnj : ∀ (next : Label) (s : EVMState), a ≠ .ok (.jump next s)) :
+    InteractionCongruence.Block.RuntimeOutcomeRel a b := by
+  rcases h with hjump | hterm
+  · obtain ⟨next, s1, s_c, ha, _, _⟩ := hjump
+    exact absurd ha (hnj next s1)
+  · exact hterm.1
+
+/-- **Halted-path bridge (a).**  `AssemblySafeHalted` transports along
+`SeamCombinedOutcomeRel` (the jump disjunct is impossible at a halt). -/
+theorem assemblySafeHalted_of_seamCombinedOutcomeRel
+    {source : Structured.Program} {cfg : TypedCfg.Program}
+    {calls : List Structured.TypedCfgCompiler.DispatchSite}
+    {a b : Except EVMException TypedCfg.Outcome}
+    (h : SeamCombinedOutcomeRel (source := source) (cfg := cfg) calls a b)
+    (hSafe : InteractionSemantics.Program.AssemblySafeHalted a) :
+    InteractionSemantics.Program.AssemblySafeHalted b :=
+  assemblySafeHalted_of_runtimeRel
+    (runtimeOutcomeRel_of_seamCombinedOutcomeRel_of_not_jump h
+      (assemblySafeHalted_not_jump hSafe))
+    hSafe
+
+/-- **Halted-path bridge (b).**  `SeamCombinedOutcomeRel ∘ RunSimulates ⊆
+RunSimulates` on the halted path: given the left outcome is `AssemblySafeHalted`
+(hence not a jump), the seam relation is `RuntimeOutcomeRel`, and
+`RunSimulates.runtime_left` composes. -/
+theorem runSimulates_of_seamCombinedOutcomeRel_halted
+    {source : Structured.Program} {cfg : TypedCfg.Program}
+    {calls : List Structured.TypedCfgCompiler.DispatchSite}
+    {target : Assembly.Program}
+    {a m : Except EVMException TypedCfg.Outcome}
+    {r : Assembly.Source.ExecutionOutcome}
+    (h : SeamCombinedOutcomeRel (source := source) (cfg := cfg) calls a m)
+    (hSim : TypedCfg.InteractionPreservation.OpenBlock.RunSimulates target m r)
+    (hSafe : InteractionSemantics.Program.AssemblySafeHalted a) :
+    TypedCfg.InteractionPreservation.OpenBlock.RunSimulates target a r :=
+  TypedCfg.InteractionPreservation.OpenBlock.runtime_left
+    (runtimeOutcomeRel_of_seamCombinedOutcomeRel_of_not_jump h
+      (assemblySafeHalted_not_jump hSafe))
+    hSim
 
 /-! ## Item 3: the seam-cancel fuel bound
 
