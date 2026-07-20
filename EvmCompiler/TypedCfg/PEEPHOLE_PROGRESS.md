@@ -6055,3 +6055,90 @@ delta +0.  **Next session:** Step C entry seed (`realizedWitnessFC_entry_of_gene
 OIC sites, then Step D.  **PROCESS NOTE (unchanged):** host is **zsh**; verify builds with
 `lake build … > log 2>&1; echo RC=$?` (no pipe) — `${PIPESTATUS[0]}` is empty.  No foreground `sleep`;
 poll background tasks with an `until grep -q …; do sleep N; done` loop.
+
+## Session-52 update (2026-07-20): STEP C CLOSED — the entry-witness seed + the five OIC site swaps land green + axiom-clean; `PeepholeSourceCongr.lean` is now in the default build graph.  **Step D (the `swap;swap→ε` arm) NOT landed** — the swap arm is **NOT LIVE**; adding it is an *atomic* change that goes red without new infrastructure (identified below), so per the never-commit-red discipline `peepholeBody` is UNTOUCHED (delta **+0**).  `compile_correct`/`compile_correct_creation` axioms UNCHANGED = `[propext, Classical.choice, Quot.sound]`.  Full `scripts/opt_harness.sh check` = OK (43 theorems).
+
+### LANDED (green, axiom-clean) — commit `bcd9cf7a`
+* **The entry seed** `realizedWitnessFC_entry_of_generated` (`EvmCompiler/Structured/PeepholeSourceCongr.lean:235`).
+  Given a `GeneratedContext` and an entry `StateRel sourceState [] target`, produces
+  `realizedWitnessFC source cfg context.calls cfg.entry target`.  The §Session-50/51 "genuine new
+  work" turned out **direct**: the entry `StateRel` is not a multi-layer composition — at the program
+  entry the source activation is empty (`returns = []`, `tokens = []`), so it is just
+  `StateRel.initial` (prefix sites) or the theorem's own `hStructuredInitial` hypothesis (terminal
+  sites).  The entry block's input is `Shape.caller` (via `GeneratedContext.mainCompile` +
+  `LabelShape.of_compileBlock?` + `mainBlocks`), which is token-free (`returnTokenDepth? = none`,
+  `sourceLength = 0`), so the frame-fit and depth side-conditions of
+  `realizedWitnessFC_of_stateRel_nil` (`InteractionFrameConsistent.lean:222`) are `simp`-trivial and
+  the empty activation makes the `FrameConsistent` conjunct vacuous.
+* **Helper** `returns_nil_of_stateRel_nil` (`PeepholeSourceCongr.lean:217`) — `tokens = []` under a
+  `StateRel` forces `returns = []` (`realizeStack` pairs each ghost frame with a token).
+* **The five OIC site swaps** (`EvmCompiler/Compiler/OpenInteractionComposition.lean`, now imports
+  `EvmCompiler.Structured.PeepholeSourceCongr`):
+  * prefix sites → `openRunNPrefix_peephole_congr_of_source` at `:928` and `:963`; seeded by
+    `hEntrySeed` (built once near the theorem top from `hStackInitial.returns` +
+    `StateRel.initial`, `realizedWitnessFC_entry_of_generated generated hEntrySeedRel`).
+  * terminal sites → `openRunN_peephole_congr_of_source` at `:1437`, `:1587`, `:1718`; each seeded
+    inline by `realizedWitnessFC_entry_of_generated generated hStructuredInitial`.
+  The swap is SAFE: the `_of_source` conclusion is the SAME `Rel` (`Block.RuntimeOutcomeRel` /
+  prefix), so all downstream `Rel.executes` / `Rel.trans` / `allDone_right` usage is unaffected.
+  This brings `PeepholeSourceCongr.lean` (Step B's connector + three source-threaded congruences)
+  into the default build graph — the entry witness `realizedWitnessFC … label state` is now in scope
+  at EVERY reached `openStep` on the crown path, the hook Step D's swap arm consumes.
+
+### THE FRONTIER (session 53) — Step D is a large ATOMIC change gated on one missing bridge
+Step D cannot be partially landed: adding the `swap d :: swap d :: rest → rest` arm to `peepholeBody`
+(`Peephole.lean:32`) adds a third match arm, and the `split` inside `openRunBody_peephole_congr`
+(`PeepholeOpen.lean:124`) then produces a third semantic goal — so the semantic congruence goes red
+until that arm is discharged.  The 4 syntactic (b)-lemmas (`peepholeBody_length_le`,
+`mem_peepholeBody`, `peepholeBody_bodyType?`, `lowerBodyFrom?_peephole_le`) are trivial extra arms;
+the semantic arm is the real work, and it needs:
+
+1. **THE GATING LEMMA (does not exist).**  An `openRunAt` AllDone-`StackRealizes` bridge:
+   `AllDone (fun r => ∀ after out, r = .ok (after,out) → StackRealizes out after) (openRunAt instr input state)`
+   given `type? instr input = some output` and `StackRealizes input state`.  Non-prim instrs are
+   easy (`openRunAt = .done (runAt …)`, single leaf, discharge by `runAt_stackRealizes`
+   (`PeepholeStackRealizes.lean:203`)).  **The prim case is the missing infrastructure**: for
+   `instr = .prim op`, `openRunState = Assembly…PrimOp.openStep op state`
+   (`Assembly/InteractionSemantics.lean:244`) — an interaction with `.request` nodes for
+   call/create/resource.  Need `AllDone (fun r => .ok after → output.length ≤ after.stack.length)`
+   over ALL its outcomes: `callStep` (`finishCall` pushes `statusWord :: rest`, out-arity 1),
+   `createStep` (`finishCreate` pushes `address :: rest`, out-arity 1), `resourceStep` (pushes one
+   value), closed (`op.step`, via `PrimOp.step_stack_length_of_stackArity`
+   (`PrimSemantics.lean:3256`)).  Est. ~150–250 lines of Assembly-level case analysis; `finishCall`
+   stack machinery exists (`InteractionPreservation.lean:74 finishCall_append_stack`).
+2. **Thread the guard through `openRunBody_peephole_congr`'s keep arm.**  The keep-arm recursion
+   (`PeepholeOpen.lean:206–223`) goes through `Rel.bind`, whose continuation universally quantifies
+   the RHS child state `rightAfter` — the SAME bind-quantification obstacle Step B hit.  Resolve it
+   the Step-B way but on the RIGHT tree: `Rel.strengthen_right`
+   (`evm-interaction/…/Simulation/Interaction.lean:1490`) folds the gating lemma's RIGHT-side
+   `StackRealizes` AllDone into `RuntimeAtRel`, so `StackRealizes middle rightAfter` rides alongside
+   in the continuation and re-seeds the recursion.  Push/pop and the new swap arms recurse on
+   CONCRETE states (`state2 after push`/`after swap`) so their `StackRealizes` follows directly from
+   `runState_stackRealizes` (no bind).  Add `StackRealizes input state2` as a hypothesis to
+   `openRunBody_peephole_congr`.
+3. **The swap arm itself** — mirror the push;pop cancel arm (`PeepholeOpen.lean:147–205`) but with
+   `swap_type_involution` for the shape and `openRunBody_swap_swap_congr` (`PeepholeSwapOpen.lean:64`)
+   ingredients; the RHS head swap fires under `StackRealizes input state2`, the LHS second swap
+   (`peepholeBody rest = swap d :: rest'`) under `StackRealizes middle (state1 after swap)`.
+4. **Propagate the `StackRealizes` hypothesis UP.**  `Block.openRun_peephole_runtimeRel`
+   (`PeepholeOpen.lean:244`) → `openStep_peephole_congr` (`PeepholeProgram.lean:98`) gain a
+   found-block `StackRealizes block.input state2` obligation.  The **source-threaded** variants supply
+   it: in `openStep_peephole_congr_of_source` (`PeepholeSourceCongr.lean:101`), `hReal` +
+   `stackRealizes_of_realizedWitnessFC_total` (`TokenBottomThread.lean:751`) discharge
+   `StackRealizes block.input state1`, transported to `state2` via `SameRuntimeData.stack_eq`
+   (`hRel`).  `openRunN_peephole_congr_of_source` already re-seeds `hReal` at each jump target, so no
+   further threading is needed there.  Step C's site swaps mean the unconditional
+   `openStep/openRunN_peephole_congr` are only reached THROUGH the `_of_source` variants — good, the
+   guard has a witness supply at every use.
+
+### Status handed to session 53
+Steps B + C are **CLOSED** and axiom-clean.  `PeepholeSourceCongr.lean` is live in the build graph
+(imported by `OpenInteractionComposition.lean`).  Commit `bcd9cf7a` (+ this doc update).
+`scripts/opt_harness.sh check` = OK (43 theorems, axioms ⊆ `[propext, Classical.choice, Quot.sound]`);
+full `lake build` = OK; `compile_correct`/`compile_correct_creation` UNCHANGED; delta **+0**; **swap arm
+NOT LIVE**.  **Next session:** build the gating lemma (1), then (2)–(4) in one atomic Step-D commit —
+do NOT touch `peepholeBody` until (1)+(2)+(3) are proved green in isolation (the gating lemma can be
+banked as a standalone module first, exactly as `PeepholeSourceCongr.lean` was for Step B).
+**PROCESS NOTE (unchanged):** host is **zsh**; `lake build … > log 2>&1; echo RC=$?` (no pipe);
+harness `check` runs ~3–4 min — launch with `nohup … &` and poll with `until ! kill -0 PID; do sleep
+15; done`, never a foreground `sleep`.
