@@ -48,6 +48,49 @@ concurrency:
 
 jobs:
   # ---------------------------------------------------------------------------
+  # MERGE-REF FRESHNESS
+  #   GitHub computes the pull_request test-merge (refs/pull/N/merge) lazily
+  #   and does NOT refresh it on `edited` events — only `synchronize`
+  #   (push/rebase) recomputes it against the live base. So a body-edit re-run
+  #   after `arena` has advanced would silently exercise a STALE merge of an
+  #   old base while looking green and fresh. This job turns that silent
+  #   staleness into a loud failure: if the live base tip differs from the
+  #   base recorded in the event payload, fail and ask for a rebase/push.
+  #   (Fast-fail UX like everything here; the private runner re-verifies
+  #   ancestry against the real branches independently.)
+  # ---------------------------------------------------------------------------
+  merge-freshness:
+    name: Test-merge freshness vs live base
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout base branch tip (read-only, no PR code)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.ref }}
+          fetch-depth: 1
+
+      - name: Compare live base tip against event base SHA
+        env:
+          EVENT_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+        run: |
+          set -euo pipefail
+          LIVE_BASE_SHA="$(git rev-parse HEAD)"
+          echo "event base:  ${EVENT_BASE_SHA}"
+          echo "live ${BASE_REF}: ${LIVE_BASE_SHA}"
+          if [ "${LIVE_BASE_SHA}" != "${EVENT_BASE_SHA}" ]; then
+            echo "::error title=Stale test-merge::Base branch '${BASE_REF}' has"
+            echo "::error::advanced past the base this run's test-merge was"
+            echo "::error::computed against. Body edits do NOT refresh the"
+            echo "::error::merge — push or rebase (a 'synchronize' event) to"
+            echo "::error::re-run the gates against the current base."
+            exit 1
+          fi
+          echo "Test-merge is against the current base tip — fresh."
+
+  # ---------------------------------------------------------------------------
   # Reuse the standard CI gates (frozen hashes, import closure, proof gate,
   # determinism). Only for the pull_request event (not the label event).
   # ---------------------------------------------------------------------------

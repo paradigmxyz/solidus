@@ -86,6 +86,19 @@ them, delete them, replace them, as long as the frozen theorems still prove.
 One private scoring per PR per green public CI. The private suite is
 refreshed between seasons, never within one.
 
+Practical notes:
+
+- **Drive the harness with solc 0.8.26.** The raw-AST path requires the
+  `irOptimizedAst` standard-JSON output, which newer solc releases
+  (0.8.35+) gate off; `scripts/opt_harness.sh` is validated against 0.8.26
+  (e.g. via `solc-select`). Other 0.8.2x releases may work but are not
+  what CI pins.
+- **Refresh runs with a push, not a body edit.** GitHub only recomputes
+  the PR's test-merge against the live `arena` tip on a `synchronize`
+  event (push or rebase). Editing the PR body re-runs the gates against
+  the previously computed merge; if `arena` has advanced in the meantime,
+  the freshness check will fail the run and ask for a rebase.
+
 ## Language coverage note
 
 **Unbounded recursion is not supported, by design.** A function whose
