@@ -7,8 +7,9 @@ import EvmCompiler.TypedCfg.InteractionPrefixPreservation
 The compile-spine splice couples the SOURCE-side facts (about `openRunNPrefix cfg`
 / `openRunN cfg`) to the ASSEMBLY preservation keyed on the PEEPHOLED certificate
 (`(peepholeProgram cfg).compileCertified?`).  The bridge is the whole-program
-open congruence (`openRunN_peephole_congr` / `openRunNPrefix_peephole_congr`),
-which relates the original outcome (LEFT) to the peepholed outcome (RIGHT) up to
+open congruence (the source-threaded `openRunN_peephole_congr_of_source` /
+`openRunNPrefix_peephole_congr_of_source`), which relates the original outcome
+(LEFT) to the peepholed outcome (RIGHT) up to
 `InteractionCongruence.Block.RuntimeOutcomeRel` (control label / halt kind equal,
 carried state `SameRuntimeData`).  This file provides the two small
 `RuntimeOutcomeRel`-stability lemmas the safety side-conditions need

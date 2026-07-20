@@ -48,7 +48,7 @@ typed `output`, so we realize `output` against the final state. -/
 def StackRealizesPair (output : Shape) :
     Except EVMException (EVMState × Shape) → Prop
   | .error _ => True
-  | .ok (final, _actualOutput) => StackRealizes output final
+  | .ok pair => StackRealizes output pair.1
 
 /-- **State-level open `StackRealizes` bridge.** Every terminal leaf of the open
 one-instruction state step realizes the output shape.  Quantifies over every

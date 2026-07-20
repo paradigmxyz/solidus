@@ -117,8 +117,21 @@ theorem openStep_peephole_congr_of_source
               realizedWitnessFC source cfg context.calls lbl s1)))
       (InteractionSemantics.Program.openStep cfg label state1)
       (InteractionSemantics.Program.openStep (peepholeProgram cfg) label state2) := by
+  -- Discharge the per-found-block runtime depth guard from the source witness:
+  -- `stackRealizes_of_realizedWitnessFC_total` gives it at `state1`; transport to
+  -- `state2` along `SameRuntimeData` (the guard depends only on `stack.length`).
+  have hReal2 : ∀ block, cfg.findBlock? label = some block →
+      TypedCfg.StackRealizes block.input state2 := by
+    intro block hFind
+    have hR1 :=
+      Structured.TokenBottomThread.stackRealizes_of_realizedWitnessFC_total
+        context hSourceWF hReal hFind
+    unfold TypedCfg.StackRealizes at hR1 ⊢
+    rw [← SameRuntimeData.stack_eq hRel]
+    exact hR1
   have hStep :=
-    openStep_peephole_congr (program := cfg) hTyped hIndependent hRel (label := label)
+    openStep_peephole_congr (program := cfg) hTyped hIndependent hReal2 hRel
+      (label := label)
   have hAll := allDone_realizedWitnessFC_jump context hSourceWF hReal
   have hStrong := Simulation.Interaction.Rel.strengthen_left hStep hAll
   refine Simulation.Interaction.Rel.mono hStrong ?_

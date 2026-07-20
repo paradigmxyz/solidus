@@ -1,5 +1,6 @@
 import EvmCompiler.TypedCfg.PeepholeSemantics
 import EvmCompiler.TypedCfg.InteractionCongruence
+import EvmCompiler.TypedCfg.PeepholeOpenStackRealizes
 
 /-!
 # Peephole preservation at the OPEN interaction level
@@ -125,16 +126,17 @@ theorem openRunBody_peephole_congr :
     ∀ (body : List Instr) (input output : Shape) (state1 state2 : EVMState),
       Block.bodyType? body input = some output →
       body.Forall Instr.ProgramCounterIndependent →
+      StackRealizes input state2 →
       SameRuntimeData state1 state2 →
       Simulation.Interaction.Rel (Instr.RuntimeAtRel output)
         (Block.openRunBody (peepholeBody body) input state1)
         (Block.openRunBody body input state2)
-  | [], input, output, state1, state2, hType, _, hRel => by
+  | [], input, output, state1, state2, hType, _, _hReal2, hRel => by
       simp only [Block.bodyType?, Option.some.injEq] at hType
       subst hType
       simp only [peepholeBody_nil]
       exact .done (.ok ⟨hRel, rfl, rfl⟩)
-  | instr :: rest, input, output, state1, state2, hType, hPC, hRel => by
+  | instr :: rest, input, output, state1, state2, hType, hPC, hReal2, hRel => by
       cases hHeadType : instr.type? input with
       | none => simp [Block.bodyType?, hHeadType] at hType
       | some middle =>
@@ -179,12 +181,20 @@ theorem openRunBody_peephole_congr :
                     { input with slots := .literal v :: input.slots }
                     (state2.replaceStackAndIncrPC (state2.stack.push v) 33) :=
               openRunBody_push_cons v rest input state2
+            have hPushReal2 :
+                StackRealizes { input with slots := .literal v :: input.slots }
+                  (state2.replaceStackAndIncrPC (state2.stack.push v) 33) := by
+              unfold StackRealizes at hReal2 ⊢
+              simp only [Shape.length, List.length_cons,
+                EvmYul.EVM.State.replaceStackAndIncrPC, EvmYul.EVM.State.incrPC,
+                EvmYul.Stack.push, List.length_cons] at *
+              omega
             have ihRest :=
               openRunBody_peephole_congr rest
                 { input with slots := .literal v :: input.slots } output
                 (state1.replaceStackAndIncrPC (state1.stack.push v) 33)
                 (state2.replaceStackAndIncrPC (state2.stack.push v) 33)
-                hTailType hTailPC hPushRel
+                hTailType hTailPC hPushReal2 hPushRel
             rw [hPeep] at ihRest
             have hPopReduce :
                 Block.openRunBody (.pop :: rest')
@@ -207,20 +217,40 @@ theorem openRunBody_peephole_congr :
             have hHead :=
               InteractionCongruence.Instr.openRunAt_runtimeRel
                 hHeadType hHeadPC hRel
+            -- The gating lemma supplies the RIGHT-tree depth guard at every leaf;
+            -- `strengthen_right` folds it into the value relation so the guard
+            -- rides alongside `RuntimeAtRel` into the bind continuation and
+            -- re-seeds the recursion (the bind-quantification obstacle, resolved
+            -- on the RIGHT tree — mirror of Step B's left-tree resolution).
+            have hGuard := openRunAt_stackRealizes hHeadType hReal2
+            have hStrong' :
+                Simulation.Interaction.Rel
+                  (Simulation.Interaction.ExceptRel
+                    (fun a b : EVMException => a = b)
+                    (fun lp rp : EVMState × Shape =>
+                      SameRuntimeData lp.1 rp.1 ∧ lp.2 = middle ∧ rp.2 = middle ∧
+                        StackRealizes middle rp.1))
+                  _ _ :=
+              Simulation.Interaction.Rel.mono
+                (Simulation.Interaction.Rel.strengthen_right hHead hGuard) (by
+                  rintro l r ⟨hER, hSR⟩
+                  cases hER with
+                  | error he => exact .error he
+                  | ok hSS => exact .ok ⟨hSS.1, hSS.2.1, hSS.2.2, hSR⟩)
             unfold InteractionSemantics.Block.openRunBody
               Control.Block.runBody
-            apply Simulation.Interaction.Rel.bind hHead
+            apply Simulation.Interaction.Rel.bind hStrong'
             intro leftPair rightPair hPair
             rcases leftPair with ⟨leftAfter, leftShape⟩
             rcases rightPair with ⟨rightAfter, rightShape⟩
-            rcases hPair with ⟨hAfter, hLeftShape, hRightShape⟩
+            obtain ⟨hAfter, hLeftShape, hRightShape, hRightReal⟩ := hPair
             change SameRuntimeData leftAfter rightAfter at hAfter
             change leftShape = middle at hLeftShape
             change rightShape = middle at hRightShape
             subst leftShape; subst rightShape
             exact
               openRunBody_peephole_congr rest middle output
-                leftAfter rightAfter hTailType hTailPC hAfter
+                leftAfter rightAfter hTailType hTailPC hRightReal hAfter
 
 /-- The peepholed block: same label/input/output/terminator, cancelled body. -/
 def peepholeBlock (block : Block) : Block :=
@@ -244,13 +274,14 @@ carried state), from the same input state. -/
 theorem Block.openRun_peephole_runtimeRel
     {program : Program} (block : Block) (state : EVMState)
     (hTyped : block.WellTyped program)
-    (hIndependent : block.ProgramCounterIndependent) :
+    (hIndependent : block.ProgramCounterIndependent)
+    (hReal : StackRealizes block.input state) :
     Simulation.Interaction.Rel InteractionCongruence.Block.RuntimeOutcomeRel
       (InteractionSemantics.Block.openRun (peepholeBlock block) state)
       (InteractionSemantics.Block.openRun block state) := by
   have hBody :=
     openRunBody_peephole_congr block.body block.input block.output
-      state state hTyped.1 hIndependent (SameRuntimeData.refl state)
+      state state hTyped.1 hIndependent hReal (SameRuntimeData.refl state)
   unfold InteractionSemantics.Block.openRun Control.Block.run
   simp only [peepholeBlock_body, peepholeBlock_input, peepholeBlock_output,
     peepholeBlock_term]

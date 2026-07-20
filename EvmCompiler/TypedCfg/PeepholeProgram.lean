@@ -99,6 +99,8 @@ theorem openStep_peephole_congr {program : Program} {label : Label}
     {state1 state2 : EVMState}
     (hTyped : program.WellTyped)
     (hIndependent : program.ProgramCounterIndependent)
+    (hReal2 : ∀ block, program.findBlock? label = some block →
+      StackRealizes block.input state2)
     (hRel : SameRuntimeData state1 state2) :
     Simulation.Interaction.Rel InteractionCongruence.Block.RuntimeOutcomeRel
       (InteractionSemantics.Program.openStep program label state1)
@@ -130,72 +132,29 @@ theorem openStep_peephole_congr {program : Program} {label : Label}
             (InteractionSemantics.Block.openRun (peepholeBlock block) state2)
             (InteractionSemantics.Block.openRun block state2) :=
         Block.openRun_peephole_runtimeRel block state2 hBlockTyped hBlockIndep
+          (hReal2 block hFind)
       refine Simulation.Interaction.Rel.mono
         (Simulation.Interaction.Rel.trans h1 (rel_runtimeOutcomeRel_symm h2)) ?_
       rintro l r ⟨m, ha, hb⟩
       exact runtimeOutcomeRel_trans ha hb
 
-/-- **Fuel-bounded whole-program peephole congruence.** -/
-theorem openRunN_peephole_congr {program : Program}
-    (hTyped : program.WellTyped)
-    (hIndependent : program.ProgramCounterIndependent) :
-    ∀ (fuel : Nat) (label : Label) (state1 state2 : EVMState),
-      SameRuntimeData state1 state2 →
-      Simulation.Interaction.Rel InteractionCongruence.Block.RuntimeOutcomeRel
-        (InteractionSemantics.Program.openRunN program fuel label state1)
-        (InteractionSemantics.Program.openRunN (peepholeProgram program)
-          fuel label state2)
-  | 0, label, state1, state2, hRel => by
-      simp only [InteractionSemantics.Program.openRunN_zero]
-      exact .done (.ok (Outcome.RuntimeRel.jump label hRel))
-  | fuel + 1, label, state1, state2, hRel => by
-      rw [InteractionSemantics.Program.openRunN_succ,
-        InteractionSemantics.Program.openRunN_succ]
-      have hStep := openStep_peephole_congr hTyped hIndependent hRel
-        (label := label)
-      apply Simulation.Interaction.Rel.bind hStep
-      intro o1 o2 hOut
-      cases hOut with
-      | jump lbl hState =>
-          exact openRunN_peephole_congr hTyped hIndependent fuel lbl _ _ hState
-      | fallthrough hState =>
-          exact .done (.ok (Outcome.RuntimeRel.fallthrough hState))
-      | returnDispatch hState =>
-          exact .done (.ok (Outcome.RuntimeRel.returnDispatch hState))
-      | halt kind hState =>
-          exact .done (.ok (Outcome.RuntimeRel.halt kind hState))
-      | invalid hState =>
-          exact .done (.ok (Outcome.RuntimeRel.invalid hState))
+/-
+**Fuel-bounded / prefix whole-program peephole congruences.**
 
-/-- **Whole-program prefix peephole congruence.** The canonical finite-prefix
-semantics of the original program (from `state1`) is `Rel`-related to that of
-the peepholed program (from any `SameRuntimeData` `state2`).  This is the witness
-the compile spine feeds to `Rel.executes` / `OpenBlock.runtime_left`. -/
-theorem openRunNPrefix_peephole_congr {program : Program}
-    (hTyped : program.WellTyped)
-    (hIndependent : program.ProgramCounterIndependent)
-    (fuel : Nat) (label : Label) (state1 state2 : EVMState)
-    (hRel : SameRuntimeData state1 state2) :
-    Simulation.Interaction.Rel InteractionCongruence.Block.RuntimeOutcomeRel
-      (InteractionSemantics.Program.openRunNPrefix program fuel label state1)
-      (InteractionSemantics.Program.openRunNPrefix (peepholeProgram program)
-        fuel label state2) := by
-  unfold InteractionSemantics.Program.openRunNPrefix
-  have hRun :=
-    openRunN_peephole_congr hTyped hIndependent fuel label state1 state2 hRel
-  apply Simulation.Interaction.Rel.bind hRun
-  intro o1 o2 hOut
-  cases hOut with
-  | halt kind hState =>
-      exact .done (.ok (Outcome.RuntimeRel.halt kind hState))
-  | jump lbl hState =>
-      exact .done (.error rfl)
-  | fallthrough hState =>
-      exact .done (.error rfl)
-  | returnDispatch hState =>
-      exact .done (.error rfl)
-  | invalid hState =>
-      exact .done (.error rfl)
+The guard-free unconditional whole-program congruences (`openRunN_peephole_congr`,
+`openRunNPrefix_peephole_congr`) can no longer be stated once the block-body
+peephole carries the `swap d ; swap d → ε` arm: the per-block congruence acquires
+a runtime depth guard (`StackRealizes block.input state`) that must be discharged
+at EVERY reached block entry, which no static whole-program invariant supplies.
+The source-threaded variants
+(`Structured.…PeepholeSourceCongr.openRunN_peephole_congr_of_source`,
+`openRunNPrefix_peephole_congr_of_source`) supersede them: they carry the
+strengthened entry witness `realizedWitnessFC` and re-establish it at each jump
+target, discharging the guard via `stackRealizes_of_realizedWitnessFC_total`.
+Those are the variants the five OIC consumption sites use.  The one-step building
+block `openStep_peephole_congr` (above) is retained with the per-found-block
+`StackRealizes` guard hypothesis; the source-threaded step congruence supplies it.
+-/
 
 end Peephole
 end TypedCfg
