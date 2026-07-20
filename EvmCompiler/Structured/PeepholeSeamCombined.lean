@@ -382,6 +382,47 @@ theorem runSimulates_of_seamCombinedOutcomeRel_halted
       (assemblySafeHalted_not_jump hSafe))
     hSim
 
+/-- An `AssemblySafeFinished` outcome is never a `.jump` (its only non-`False`
+cases are `.error _` and `.ok (.halt …)`). -/
+theorem assemblySafeFinished_not_jump
+    {a : Except EVMException TypedCfg.Outcome}
+    (h : InteractionSemantics.Program.AssemblySafeFinished a) :
+    ∀ (next : Label) (s : EVMState), a ≠ .ok (.jump next s) := by
+  intro next s hEq
+  rw [hEq] at h
+  exact h
+
+/-- **Halted-path bridge (a), finished variant.**  `AssemblySafeFinished`
+transports along `SeamCombinedOutcomeRel` (the jump disjunct is impossible). -/
+theorem assemblySafeFinished_of_seamCombinedOutcomeRel
+    {source : Structured.Program} {cfg : TypedCfg.Program}
+    {calls : List Structured.TypedCfgCompiler.DispatchSite}
+    {a b : Except EVMException TypedCfg.Outcome}
+    (h : SeamCombinedOutcomeRel (source := source) (cfg := cfg) calls a b)
+    (hSafe : InteractionSemantics.Program.AssemblySafeFinished a) :
+    InteractionSemantics.Program.AssemblySafeFinished b :=
+  assemblySafeFinished_of_runtimeRel
+    (runtimeOutcomeRel_of_seamCombinedOutcomeRel_of_not_jump h
+      (assemblySafeFinished_not_jump hSafe))
+    hSafe
+
+/-- **Halted-path bridge (b), finished variant.**  `SeamCombinedOutcomeRel ∘
+RunSimulates ⊆ RunSimulates` on the finished path. -/
+theorem runSimulates_of_seamCombinedOutcomeRel_finished
+    {source : Structured.Program} {cfg : TypedCfg.Program}
+    {calls : List Structured.TypedCfgCompiler.DispatchSite}
+    {target : Assembly.Program}
+    {a m : Except EVMException TypedCfg.Outcome}
+    {r : Assembly.Source.ExecutionOutcome}
+    (h : SeamCombinedOutcomeRel (source := source) (cfg := cfg) calls a m)
+    (hSim : TypedCfg.InteractionPreservation.OpenBlock.RunSimulates target m r)
+    (hSafe : InteractionSemantics.Program.AssemblySafeFinished a) :
+    TypedCfg.InteractionPreservation.OpenBlock.RunSimulates target a r :=
+  TypedCfg.InteractionPreservation.OpenBlock.runtime_left
+    (runtimeOutcomeRel_of_seamCombinedOutcomeRel_of_not_jump h
+      (assemblySafeFinished_not_jump hSafe))
+    hSim
+
 /-! ## Item 3: the seam-cancel fuel bound
 
 `fuelBudget (seamCancelProgram P) ≤ fuelBudget P`.  Reduces (via

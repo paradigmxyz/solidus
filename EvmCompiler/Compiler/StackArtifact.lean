@@ -9,6 +9,7 @@ import EvmCompiler.Structured.TypedCfgCompiler
 import EvmCompiler.TypedCfg.Certificate
 import EvmCompiler.TypedCfg.PeepholeSpine
 import EvmCompiler.TypedCfg.PeepholeNoopSwapProgram
+import EvmCompiler.TypedCfg.PeepholeSeamCancel
 import EvmCompiler.Assembly.Bytecode
 
 namespace EvmCompiler
@@ -59,8 +60,9 @@ def compile? (source : Functions.Program) : Option Artifact := do
   else
     none
   let certified ←
-    (TypedCfg.Peephole.peepholeProgram
-      (TypedCfg.Peephole.normalizeProgram cfg)).compileCertified?
+    (TypedCfg.Peephole.seamCancelProgram
+      (TypedCfg.Peephole.peepholeProgram
+        (TypedCfg.Peephole.normalizeProgram cfg))).compileCertified?
   let target ← Assembly.compileExecutable? certified.target
   if Assembly.Bytecode.targetFitsDecodeWindow? target then
     if Functions.OpenSupportCheck.Program.openSupported? source then
@@ -92,8 +94,9 @@ theorem compile?_parts
         some artifact.cfg ∧
       artifact.cfg.WellTyped ∧
       artifact.cfg.ProgramCounterIndependent ∧
-      (TypedCfg.Peephole.peepholeProgram
-          (TypedCfg.Peephole.normalizeProgram artifact.cfg)).compileCertified? =
+      (TypedCfg.Peephole.seamCancelProgram
+          (TypedCfg.Peephole.peepholeProgram
+            (TypedCfg.Peephole.normalizeProgram artifact.cfg))).compileCertified? =
         some artifact.certified ∧
       Assembly.compileExecutable? artifact.certified.target =
         some artifact.target ∧
@@ -148,9 +151,10 @@ theorem compile?_parts
                     generated.cfg.programCounterIndependent? = true
                 · simp [hIndependent] at hCompile
                   cases hCertified :
-                      (TypedCfg.Peephole.peepholeProgram
-                        (TypedCfg.Peephole.normalizeProgram
-                          generated.cfg)).compileCertified? with
+                      (TypedCfg.Peephole.seamCancelProgram
+                        (TypedCfg.Peephole.peepholeProgram
+                          (TypedCfg.Peephole.normalizeProgram
+                            generated.cfg))).compileCertified? with
                   | none => simp [hCertified] at hCompile
                   | some certified =>
                       simp [hCertified] at hCompile

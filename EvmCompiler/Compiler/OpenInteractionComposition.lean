@@ -9,6 +9,7 @@ import EvmCompiler.TypedCfg.InteractionPrefixPreservation
 import EvmCompiler.TypedCfg.PeepholeTransfer
 import EvmCompiler.Structured.PeepholeSourceCongr
 import EvmCompiler.Structured.PeepholeNoopSwapCombined
+import EvmCompiler.Structured.PeepholeSeamCombined
 import EvmCompiler.Assembly.InteractionBytecode
 import EvmCompiler.Assembly.InteractionConcreteResources
 import EvmCompiler.Solidity.VerifiedStackObjectArtifact
@@ -850,7 +851,7 @@ theorem yulToNormalizedStackAssemblyPrefixForward
     (hWellTyped : cfg.WellTyped)
     (hStructuredWF : expressions.toStructured.WF)
     (hFrameSafe : expressions.toStructured.FrameSafe)
-    (hCompile : (TypedCfg.Peephole.peepholeProgram (TypedCfg.Peephole.normalizeProgram cfg)).compileCertified? =
+    (hCompile : (TypedCfg.Peephole.seamCancelProgram (TypedCfg.Peephole.peepholeProgram (TypedCfg.Peephole.normalizeProgram cfg))).compileCertified? =
       some artifact)
     (hIndependent : cfg.ProgramCounterIndependent)
     (hAssemblyPc : assemblyState.pc = EvmYul.UInt256.ofNat 0)
@@ -882,8 +883,9 @@ theorem yulToNormalizedStackAssemblyPrefixForward
   have hEntry : cfg.entry = Structured.TypedCfgCompiler.entryLabel := by
     simpa using congrArg TypedCfg.Program.entry generated.cfgEq
   have hIndepPeep :
-      (TypedCfg.Peephole.peepholeProgram (TypedCfg.Peephole.normalizeProgram cfg)).ProgramCounterIndependent :=
-    TypedCfg.Peephole.combined_programCounterIndependent hIndependent
+      (TypedCfg.Peephole.seamCancelProgram (TypedCfg.Peephole.peepholeProgram (TypedCfg.Peephole.normalizeProgram cfg))).ProgramCounterIndependent :=
+    TypedCfg.Peephole.seamCancelProgram_programCounterIndependent
+      (TypedCfg.Peephole.combined_programCounterIndependent hIndependent)
   set budget :=
     Structured.InteractionStaticCost.blockBudget
         expressions.toStructured structuredFuel
@@ -891,11 +893,11 @@ theorem yulToNormalizedStackAssemblyPrefixForward
   have hFuelLe :
       budget *
           TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
-            (TypedCfg.Peephole.peepholeProgram (TypedCfg.Peephole.normalizeProgram cfg)) ≤
+            (TypedCfg.Peephole.seamCancelProgram (TypedCfg.Peephole.peepholeProgram (TypedCfg.Peephole.normalizeProgram cfg))) ≤
         budget *
           TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget cfg :=
     Nat.mul_le_mul_left _
-      (TypedCfg.Peephole.fuelBudget_combined_le cfg hWellTyped)
+      (TypedCfg.Peephole.fuelBudget_seamCombined_le cfg hWellTyped)
   have hEntryReturns : expressionsState.returns = [] := hStackInitial.returns
   have hEntryInit :
       expressionsState = Structured.RunState.initial expressionsState.evm := by
@@ -910,9 +912,9 @@ theorem yulToNormalizedStackAssemblyPrefixForward
     rw [hEntryInit]
     exact Structured.TypedCfgPreservation.StateRel.initial _
   have hEntrySeed :
-      Structured.InteractionFrameConsistent.realizedWitnessFC
-        expressions.toStructured cfg generated.calls cfg.entry expressionsState.evm :=
-    TypedCfg.Peephole.realizedWitnessFC_entry_of_generated generated hEntrySeedRel
+      TypedCfg.Peephole.SeamCombinedStepRel (source := expressions.toStructured) (cfg := cfg)
+        generated.calls cfg.entry expressionsState.evm expressionsState.evm :=
+    TypedCfg.Peephole.seamCombinedStepRel_entry_of_generated generated hEntrySeedRel
   refine ⟨structuredFuel, generated, ?_⟩
   apply Simulation.Interaction.ForwardRel.of_executes_or_follows
   intro transcript sourceDone hSourceExec
@@ -926,18 +928,17 @@ theorem yulToNormalizedStackAssemblyPrefixForward
         transcript := by
       simpa [hEntry] using hCfgFollow
     have hCongr :=
-      TypedCfg.Peephole.openRunNPrefix_combined_congr_of_source generated
+      TypedCfg.Peephole.openRunNPrefix_seamCombined_congr_of_source generated
         hStructuredWF hWellTyped hIndependent
         budget cfg.entry expressionsState.evm expressionsState.evm
         hEntrySeed
-        (Assembly.SameRuntimeData.refl _)
     obtain ⟨suffix, cfgDone, hCfgExec⟩ :=
       hCfgFollowAtEntry.exists_executes_extension
     obtain ⟨peepDone, hPeepExec, _hRuntimeRel⟩ :=
       Simulation.Interaction.Rel.executes hCongr hCfgExec
     have hFollowPeep : Simulation.Interaction.Follows
         (TypedCfg.InteractionSemantics.Program.openRunNPrefix
-          (TypedCfg.Peephole.peepholeProgram (TypedCfg.Peephole.normalizeProgram cfg))
+          (TypedCfg.Peephole.seamCancelProgram (TypedCfg.Peephole.peepholeProgram (TypedCfg.Peephole.normalizeProgram cfg)))
           budget cfg.entry expressionsState.evm)
         transcript :=
       Simulation.Interaction.Follows.prefix_of_append transcript suffix
@@ -961,11 +962,10 @@ theorem yulToNormalizedStackAssemblyPrefixForward
       Structured.InteractionTruncationOwnerPreservation.OpenOutcome.GeneratedProgram.PrefixDoneRel.targetSafe
         hPrefix
     have hCongr :=
-      TypedCfg.Peephole.openRunNPrefix_combined_congr_of_source generated
+      TypedCfg.Peephole.openRunNPrefix_seamCombined_congr_of_source generated
         hStructuredWF hWellTyped hIndependent
         budget cfg.entry expressionsState.evm expressionsState.evm
         hEntrySeed
-        (Assembly.SameRuntimeData.refl _)
     obtain ⟨peepDone, hPeepExec, hRuntimeRel⟩ :=
       Simulation.Interaction.Rel.executes hCongr hCfgExecAtEntry
     have hSafePeep :
@@ -1026,12 +1026,12 @@ theorem yulToNormalizedStackAssemblyPrefixForward
         have hEq :
             budget *
                 TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
-                  (TypedCfg.Peephole.peepholeProgram (TypedCfg.Peephole.normalizeProgram cfg)) +
+                  (TypedCfg.Peephole.seamCancelProgram (TypedCfg.Peephole.peepholeProgram (TypedCfg.Peephole.normalizeProgram cfg))) +
               (budget *
                   TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget cfg -
                 budget *
                   TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
-                    (TypedCfg.Peephole.peepholeProgram (TypedCfg.Peephole.normalizeProgram cfg))) =
+                    (TypedCfg.Peephole.seamCancelProgram (TypedCfg.Peephole.peepholeProgram (TypedCfg.Peephole.normalizeProgram cfg)))) =
               budget *
                 TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget cfg :=
           Nat.add_sub_of_le hFuelLe
@@ -1373,7 +1373,7 @@ theorem structuredToEncodedBytecode
     (hGenerate :
       Structured.TypedCfgCompiler.generateWithProcEntryShapes?
           source entryShapes = some cfg)
-    (hCompile : (TypedCfg.Peephole.peepholeProgram (TypedCfg.Peephole.normalizeProgram cfg)).compileCertified? =
+    (hCompile : (TypedCfg.Peephole.seamCancelProgram (TypedCfg.Peephole.peepholeProgram (TypedCfg.Peephole.normalizeProgram cfg))).compileCertified? =
       some artifact)
     (hWellTyped : cfg.WellTyped)
     (hSourceWF : source.WF)
@@ -1416,8 +1416,9 @@ theorem structuredToEncodedBytecode
     cfgFuel *
       TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget cfg
   have hIndepPeep :
-      (TypedCfg.Peephole.peepholeProgram (TypedCfg.Peephole.normalizeProgram cfg)).ProgramCounterIndependent :=
-    TypedCfg.Peephole.combined_programCounterIndependent hIndependent
+      (TypedCfg.Peephole.seamCancelProgram (TypedCfg.Peephole.peepholeProgram (TypedCfg.Peephole.normalizeProgram cfg))).ProgramCounterIndependent :=
+    TypedCfg.Peephole.seamCancelProgram_programCounterIndependent
+      (TypedCfg.Peephole.combined_programCounterIndependent hIndependent)
   obtain ⟨generated, hStructuredFor⟩ :=
     Structured.InteractionTerminalPreservation.OpenOutcome.GeneratedProgram.generateWithProcEntryShapes?_main_terminal
       hGenerate hWellTyped
@@ -1435,21 +1436,20 @@ theorem structuredToEncodedBytecode
     rw [hEntry]
     simpa [cfgFuel] using hCfgSafe
   have hBridge :=
-    TypedCfg.Peephole.openRunN_combined_congr_of_source generated hSourceWF
+    TypedCfg.Peephole.openRunN_seamCombined_congr_of_source generated hSourceWF
       hWellTyped hIndependent
       cfgFuel cfg.entry cfgState cfgState
-      (TypedCfg.Peephole.realizedWitnessFC_entry_of_generated generated
+      (TypedCfg.Peephole.seamCombinedStepRel_entry_of_generated generated
         hStructuredInitial)
-      (Assembly.SameRuntimeData.refl _)
   have hCfgSafeAtEntryPeep : Simulation.Interaction.AllDone
       TypedCfg.InteractionSemantics.Program.AssemblySafeHalted
       (TypedCfg.InteractionSemantics.Program.openRunN
-        (TypedCfg.Peephole.peepholeProgram (TypedCfg.Peephole.normalizeProgram cfg)) cfgFuel cfg.entry cfgState) := by
+        (TypedCfg.Peephole.seamCancelProgram (TypedCfg.Peephole.peepholeProgram (TypedCfg.Peephole.normalizeProgram cfg))) cfgFuel cfg.entry cfgState) := by
     have hStrong := Simulation.Interaction.Rel.strengthen_left hBridge
       hCfgSafeAtEntry
     apply Simulation.Interaction.Rel.allDone_right hStrong
     rintro l r ⟨_hrel, hsafe⟩
-    exact TypedCfg.Peephole.assemblySafeHalted_of_runtimeRel _hrel hsafe
+    exact TypedCfg.Peephole.assemblySafeHalted_of_seamCombinedOutcomeRel _hrel hsafe
   have hCfgAssemblyPeep :=
     TypedCfg.InteractionPreservation.Program.compileCertified?_entry_openRunN_assembly_rel
       cfgFuel hCompile hIndepPeep hAssemblyPc hAssemblyInitial
@@ -1457,18 +1457,18 @@ theorem structuredToEncodedBytecode
   have hFuelLe :
       cfgFuel *
           TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
-            (TypedCfg.Peephole.peepholeProgram (TypedCfg.Peephole.normalizeProgram cfg)) ≤
+            (TypedCfg.Peephole.seamCancelProgram (TypedCfg.Peephole.peepholeProgram (TypedCfg.Peephole.normalizeProgram cfg))) ≤
         cfgFuel *
           TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget cfg :=
     Nat.mul_le_mul_left _
-      (TypedCfg.Peephole.fuelBudget_combined_le cfg hWellTyped)
+      (TypedCfg.Peephole.fuelBudget_seamCombined_le cfg hWellTyped)
   have hFinishedPeep : Simulation.Interaction.AllDone
       Assembly.InteractionSemantics.Finished
       (Assembly.InteractionSemantics.Source.openRunNResult
         artifact.target
         (cfgFuel *
           TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
-            (TypedCfg.Peephole.peepholeProgram (TypedCfg.Peephole.normalizeProgram cfg)))
+            (TypedCfg.Peephole.seamCancelProgram (TypedCfg.Peephole.peepholeProgram (TypedCfg.Peephole.normalizeProgram cfg))))
         assemblyState) := by
     have hStrong := Simulation.Interaction.Rel.strengthen_left hCfgAssemblyPeep
       hCfgSafeAtEntryPeep
@@ -1490,10 +1490,11 @@ theorem structuredToEncodedBytecode
           cfg cfgFuel cfg.entry cfgState)
         (Assembly.InteractionSemantics.Source.openRunNResult
           artifact.target assemblyFuel assemblyState) := by
-    apply Simulation.Interaction.Rel.mono
-      (Simulation.Interaction.Rel.trans hBridge hCfgAssemblyPeepPad)
-    rintro l r ⟨m, hrel, hsim⟩
-    exact TypedCfg.InteractionPreservation.OpenBlock.runtime_left hrel hsim
+    have hStrong := Simulation.Interaction.Rel.strengthen_left
+      (Simulation.Interaction.Rel.trans hBridge hCfgAssemblyPeepPad) hCfgSafeAtEntry
+    apply Simulation.Interaction.Rel.mono hStrong
+    rintro l r ⟨⟨m, hrel, hsim⟩, hsafe⟩
+    exact TypedCfg.Peephole.runSimulates_of_seamCombinedOutcomeRel_halted hrel hsim hsafe
   have hAssemblyTerminal : Simulation.Interaction.AllDone
       Assembly.InteractionSemantics.Terminal
       (Assembly.InteractionSemantics.Source.openRunNResult
@@ -1531,7 +1532,7 @@ theorem structuredToAssemblySource
     (hGenerate :
       Structured.TypedCfgCompiler.generateWithProcEntryShapes?
           source entryShapes = some cfg)
-    (hCompile : (TypedCfg.Peephole.peepholeProgram (TypedCfg.Peephole.normalizeProgram cfg)).compileCertified? =
+    (hCompile : (TypedCfg.Peephole.seamCancelProgram (TypedCfg.Peephole.peepholeProgram (TypedCfg.Peephole.normalizeProgram cfg))).compileCertified? =
       some artifact)
     (hWellTyped : cfg.WellTyped)
     (hSourceWF : source.WF)
@@ -1566,8 +1567,9 @@ theorem structuredToAssemblySource
   let assemblyFuel :=
     cfgFuel * TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget cfg
   have hIndepPeep :
-      (TypedCfg.Peephole.peepholeProgram (TypedCfg.Peephole.normalizeProgram cfg)).ProgramCounterIndependent :=
-    TypedCfg.Peephole.combined_programCounterIndependent hIndependent
+      (TypedCfg.Peephole.seamCancelProgram (TypedCfg.Peephole.peepholeProgram (TypedCfg.Peephole.normalizeProgram cfg))).ProgramCounterIndependent :=
+    TypedCfg.Peephole.seamCancelProgram_programCounterIndependent
+      (TypedCfg.Peephole.combined_programCounterIndependent hIndependent)
   obtain ⟨generated, hStructuredFor⟩ :=
     Structured.InteractionTerminalPreservation.OpenOutcome.GeneratedProgram.generateWithProcEntryShapes?_main_terminal
       hGenerate hWellTyped
@@ -1585,21 +1587,20 @@ theorem structuredToAssemblySource
     rw [hEntry]
     simpa [cfgFuel] using hCfgSafe
   have hBridge :=
-    TypedCfg.Peephole.openRunN_combined_congr_of_source generated hSourceWF
+    TypedCfg.Peephole.openRunN_seamCombined_congr_of_source generated hSourceWF
       hWellTyped hIndependent
       cfgFuel cfg.entry cfgState cfgState
-      (TypedCfg.Peephole.realizedWitnessFC_entry_of_generated generated
+      (TypedCfg.Peephole.seamCombinedStepRel_entry_of_generated generated
         hStructuredInitial)
-      (Assembly.SameRuntimeData.refl _)
   have hCfgSafeAtEntryPeep : Simulation.Interaction.AllDone
       TypedCfg.InteractionSemantics.Program.AssemblySafeHalted
       (TypedCfg.InteractionSemantics.Program.openRunN
-        (TypedCfg.Peephole.peepholeProgram (TypedCfg.Peephole.normalizeProgram cfg)) cfgFuel cfg.entry cfgState) := by
+        (TypedCfg.Peephole.seamCancelProgram (TypedCfg.Peephole.peepholeProgram (TypedCfg.Peephole.normalizeProgram cfg))) cfgFuel cfg.entry cfgState) := by
     have hStrong := Simulation.Interaction.Rel.strengthen_left hBridge
       hCfgSafeAtEntry
     apply Simulation.Interaction.Rel.allDone_right hStrong
     rintro l r ⟨_hrel, hsafe⟩
-    exact TypedCfg.Peephole.assemblySafeHalted_of_runtimeRel _hrel hsafe
+    exact TypedCfg.Peephole.assemblySafeHalted_of_seamCombinedOutcomeRel _hrel hsafe
   have hCfgAssemblyPeep :=
     TypedCfg.InteractionPreservation.Program.compileCertified?_entry_openRunN_assembly_rel
       cfgFuel hCompile hIndepPeep hAssemblyPc hAssemblyInitial
@@ -1607,18 +1608,18 @@ theorem structuredToAssemblySource
   have hFuelLe :
       cfgFuel *
           TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
-            (TypedCfg.Peephole.peepholeProgram (TypedCfg.Peephole.normalizeProgram cfg)) ≤
+            (TypedCfg.Peephole.seamCancelProgram (TypedCfg.Peephole.peepholeProgram (TypedCfg.Peephole.normalizeProgram cfg))) ≤
         cfgFuel *
           TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget cfg :=
     Nat.mul_le_mul_left _
-      (TypedCfg.Peephole.fuelBudget_combined_le cfg hWellTyped)
+      (TypedCfg.Peephole.fuelBudget_seamCombined_le cfg hWellTyped)
   have hFinishedPeep : Simulation.Interaction.AllDone
       Assembly.InteractionSemantics.Finished
       (Assembly.InteractionSemantics.Source.openRunNResult
         artifact.target
         (cfgFuel *
           TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
-            (TypedCfg.Peephole.peepholeProgram (TypedCfg.Peephole.normalizeProgram cfg)))
+            (TypedCfg.Peephole.seamCancelProgram (TypedCfg.Peephole.peepholeProgram (TypedCfg.Peephole.normalizeProgram cfg))))
         assemblyState) := by
     have hStrong := Simulation.Interaction.Rel.strengthen_left hCfgAssemblyPeep
       hCfgSafeAtEntryPeep
@@ -1640,10 +1641,11 @@ theorem structuredToAssemblySource
           cfg cfgFuel cfg.entry cfgState)
         (Assembly.InteractionSemantics.Source.openRunNResult
           artifact.target assemblyFuel assemblyState) := by
-    apply Simulation.Interaction.Rel.mono
-      (Simulation.Interaction.Rel.trans hBridge hCfgAssemblyPeepPad)
-    rintro l r ⟨m, hrel, hsim⟩
-    exact TypedCfg.InteractionPreservation.OpenBlock.runtime_left hrel hsim
+    have hStrong := Simulation.Interaction.Rel.strengthen_left
+      (Simulation.Interaction.Rel.trans hBridge hCfgAssemblyPeepPad) hCfgSafeAtEntry
+    apply Simulation.Interaction.Rel.mono hStrong
+    rintro l r ⟨⟨m, hrel, hsim⟩, hsafe⟩
+    exact TypedCfg.Peephole.runSimulates_of_seamCombinedOutcomeRel_halted hrel hsim hsafe
   refine ⟨generated, ?_⟩
   rw [hEntry] at hCfgAssembly
   simpa [StructuredBytecodeDoneRel, cfgFuel, assemblyFuel] using
@@ -1662,7 +1664,7 @@ theorem structuredToAssemblySourceFinished
     (hGenerate :
       Structured.TypedCfgCompiler.generateWithProcEntryShapes?
           source entryShapes = some cfg)
-    (hCompile : (TypedCfg.Peephole.peepholeProgram (TypedCfg.Peephole.normalizeProgram cfg)).compileCertified? =
+    (hCompile : (TypedCfg.Peephole.seamCancelProgram (TypedCfg.Peephole.peepholeProgram (TypedCfg.Peephole.normalizeProgram cfg))).compileCertified? =
       some artifact)
     (hWellTyped : cfg.WellTyped)
     (hSourceWF : source.WF)
@@ -1697,8 +1699,9 @@ theorem structuredToAssemblySourceFinished
   let assemblyFuel :=
     cfgFuel * TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget cfg
   have hIndepPeep :
-      (TypedCfg.Peephole.peepholeProgram (TypedCfg.Peephole.normalizeProgram cfg)).ProgramCounterIndependent :=
-    TypedCfg.Peephole.combined_programCounterIndependent hIndependent
+      (TypedCfg.Peephole.seamCancelProgram (TypedCfg.Peephole.peepholeProgram (TypedCfg.Peephole.normalizeProgram cfg))).ProgramCounterIndependent :=
+    TypedCfg.Peephole.seamCancelProgram_programCounterIndependent
+      (TypedCfg.Peephole.combined_programCounterIndependent hIndependent)
   obtain ⟨generated, hStructuredFor⟩ :=
     Structured.InteractionTerminalPreservation.OpenOutcome.GeneratedProgram.generateWithProcEntryShapes?_main_finished
       hGenerate hWellTyped
@@ -1716,21 +1719,20 @@ theorem structuredToAssemblySourceFinished
     rw [hEntry]
     simpa [cfgFuel] using hCfgSafe
   have hBridge :=
-    TypedCfg.Peephole.openRunN_combined_congr_of_source generated hSourceWF
+    TypedCfg.Peephole.openRunN_seamCombined_congr_of_source generated hSourceWF
       hWellTyped hIndependent
       cfgFuel cfg.entry cfgState cfgState
-      (TypedCfg.Peephole.realizedWitnessFC_entry_of_generated generated
+      (TypedCfg.Peephole.seamCombinedStepRel_entry_of_generated generated
         hStructuredInitial)
-      (Assembly.SameRuntimeData.refl _)
   have hCfgSafeAtEntryPeep : Simulation.Interaction.AllDone
       TypedCfg.InteractionSemantics.Program.AssemblySafeFinished
       (TypedCfg.InteractionSemantics.Program.openRunN
-        (TypedCfg.Peephole.peepholeProgram (TypedCfg.Peephole.normalizeProgram cfg)) cfgFuel cfg.entry cfgState) := by
+        (TypedCfg.Peephole.seamCancelProgram (TypedCfg.Peephole.peepholeProgram (TypedCfg.Peephole.normalizeProgram cfg))) cfgFuel cfg.entry cfgState) := by
     have hStrong := Simulation.Interaction.Rel.strengthen_left hBridge
       hCfgSafeAtEntry
     apply Simulation.Interaction.Rel.allDone_right hStrong
     rintro l r ⟨_hrel, hsafe⟩
-    exact TypedCfg.Peephole.assemblySafeFinished_of_runtimeRel _hrel hsafe
+    exact TypedCfg.Peephole.assemblySafeFinished_of_seamCombinedOutcomeRel _hrel hsafe
   have hCfgAssemblyPeep :=
     TypedCfg.InteractionPreservation.Program.compileCertified?_entry_openRunN_assembly_finished_rel
       cfgFuel hCompile hIndepPeep hAssemblyPc hAssemblyInitial
@@ -1738,18 +1740,18 @@ theorem structuredToAssemblySourceFinished
   have hFuelLe :
       cfgFuel *
           TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
-            (TypedCfg.Peephole.peepholeProgram (TypedCfg.Peephole.normalizeProgram cfg)) ≤
+            (TypedCfg.Peephole.seamCancelProgram (TypedCfg.Peephole.peepholeProgram (TypedCfg.Peephole.normalizeProgram cfg))) ≤
         cfgFuel *
           TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget cfg :=
     Nat.mul_le_mul_left _
-      (TypedCfg.Peephole.fuelBudget_combined_le cfg hWellTyped)
+      (TypedCfg.Peephole.fuelBudget_seamCombined_le cfg hWellTyped)
   have hFinishedPeep : Simulation.Interaction.AllDone
       Assembly.InteractionSemantics.Finished
       (Assembly.InteractionSemantics.Source.openRunNResult
         artifact.target
         (cfgFuel *
           TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
-            (TypedCfg.Peephole.peepholeProgram (TypedCfg.Peephole.normalizeProgram cfg)))
+            (TypedCfg.Peephole.seamCancelProgram (TypedCfg.Peephole.peepholeProgram (TypedCfg.Peephole.normalizeProgram cfg))))
         assemblyState) := by
     have hStrong := Simulation.Interaction.Rel.strengthen_left hCfgAssemblyPeep
       hCfgSafeAtEntryPeep
@@ -1768,10 +1770,11 @@ theorem structuredToAssemblySourceFinished
           cfg cfgFuel cfg.entry cfgState)
         (Assembly.InteractionSemantics.Source.openRunNResult
           artifact.target assemblyFuel assemblyState) := by
-    apply Simulation.Interaction.Rel.mono
-      (Simulation.Interaction.Rel.trans hBridge hCfgAssemblyPeepPad)
-    rintro l r ⟨m, hrel, hsim⟩
-    exact TypedCfg.InteractionPreservation.OpenBlock.runtime_left hrel hsim
+    have hStrong := Simulation.Interaction.Rel.strengthen_left
+      (Simulation.Interaction.Rel.trans hBridge hCfgAssemblyPeepPad) hCfgSafeAtEntry
+    apply Simulation.Interaction.Rel.mono hStrong
+    rintro l r ⟨⟨m, hrel, hsim⟩, hsafe⟩
+    exact TypedCfg.Peephole.runSimulates_of_seamCombinedOutcomeRel_finished hrel hsim hsafe
   refine ⟨generated, ?_⟩
   rw [hEntry] at hCfgAssembly
   simpa [StructuredBytecodeDoneRel, cfgFuel, assemblyFuel] using
@@ -1864,7 +1867,7 @@ theorem yulStackToEncodedBytecode
     (hGenerate :
       Structured.TypedCfgCompiler.generateWithProcEntryShapes?
           expressions.toStructured entryShapes = some cfg)
-    (hCompile : (TypedCfg.Peephole.peepholeProgram (TypedCfg.Peephole.normalizeProgram cfg)).compileCertified? =
+    (hCompile : (TypedCfg.Peephole.seamCancelProgram (TypedCfg.Peephole.peepholeProgram (TypedCfg.Peephole.normalizeProgram cfg))).compileCertified? =
       some artifact)
     (hWellTyped : cfg.WellTyped)
     (hStructuredWF : expressions.toStructured.WF)
@@ -1967,7 +1970,7 @@ theorem yulStackToAssemblySource
     (hGenerate :
       Structured.TypedCfgCompiler.generateWithProcEntryShapes?
           expressions.toStructured entryShapes = some cfg)
-    (hCompile : (TypedCfg.Peephole.peepholeProgram (TypedCfg.Peephole.normalizeProgram cfg)).compileCertified? =
+    (hCompile : (TypedCfg.Peephole.seamCancelProgram (TypedCfg.Peephole.peepholeProgram (TypedCfg.Peephole.normalizeProgram cfg))).compileCertified? =
       some artifact)
     (hWellTyped : cfg.WellTyped)
     (hStructuredWF : expressions.toStructured.WF)
@@ -2066,7 +2069,7 @@ theorem yulNormalizedStackToAssemblySource
     (hGenerate :
       Structured.TypedCfgCompiler.generateWithProcEntryShapes?
           expressions.toStructured entryShapes = some cfg)
-    (hCompile : (TypedCfg.Peephole.peepholeProgram (TypedCfg.Peephole.normalizeProgram cfg)).compileCertified? =
+    (hCompile : (TypedCfg.Peephole.seamCancelProgram (TypedCfg.Peephole.peepholeProgram (TypedCfg.Peephole.normalizeProgram cfg))).compileCertified? =
       some artifact)
     (hWellTyped : cfg.WellTyped)
     (hStructuredWF : expressions.toStructured.WF)
@@ -2167,7 +2170,7 @@ theorem yulNormalizedStackToAssemblySourceFinished
     (hGenerate :
       Structured.TypedCfgCompiler.generateWithProcEntryShapes?
           expressions.toStructured entryShapes = some cfg)
-    (hCompile : (TypedCfg.Peephole.peepholeProgram (TypedCfg.Peephole.normalizeProgram cfg)).compileCertified? =
+    (hCompile : (TypedCfg.Peephole.seamCancelProgram (TypedCfg.Peephole.peepholeProgram (TypedCfg.Peephole.normalizeProgram cfg))).compileCertified? =
       some artifact)
     (hWellTyped : cfg.WellTyped)
     (hStructuredWF : expressions.toStructured.WF)
