@@ -41,6 +41,7 @@ import EvmCompiler.Structured.InteractionBlockGenShape
 import EvmCompiler.Structured.InteractionBlockGenShapeRegular
 import EvmCompiler.Structured.InteractionHInvAssembly
 import EvmCompiler.Structured.InteractionHInvAssemblyRegular
+import EvmCompiler.Structured.InteractionHInvDispatch
 import EvmCompiler.Structured.InteractionLabelShapeTransport
 import EvmCompiler.Assembly.GasfulBridge
 import EvmCompiler.Assembly.InteractionBytecode
