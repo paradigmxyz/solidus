@@ -221,6 +221,510 @@ theorem bodyType?_dropHead_swap {d : Nat} {rest : List Instr} {input output : Sh
   have : mid = remapShape d input := type?_swap_eq_remapShape hswap
   rw [← this]; exact hrest
 
+/-! ## `compatible` preservation under the seam transposition
+
+The only affected terminator check is the seam predecessor `A`'s
+`.fallthrough B`, whose original `A.output.compatible B.input` becomes
+`(remapShape d A.output).compatible (remapShape d B.input)`.  Because
+`remapShape = swapPos 0 (d+1)` transposes the SAME two in-range positions on both
+shapes, `Shape.compatible` is preserved (length + tail are untouched, and
+`slotsAgree` is preserved by a pointwise reindexing).  Unlike
+`slotsAgree_swapPos_eq` this variant does NOT require equal lengths — only that
+`0` and `d+1` are in range on both slot lists. -/
+
+/-- `slotsAgree` (as `true`) is preserved by simultaneously transposing the
+`0 ↔ d+1` positions, given both indices are in range on BOTH lists (lengths may
+differ). -/
+theorem slotsAgree_swapPos_true_of_bounds (d : Nat) (a b : List Slot)
+    (h0a : 0 < a.length) (hda : d + 1 < a.length)
+    (h0b : 0 < b.length) (hdb : d + 1 < b.length)
+    (hAgree : Shape.slotsAgree a b = true) :
+    Shape.slotsAgree (swapPos 0 (d + 1) a) (swapPos 0 (d + 1) b) = true := by
+  rw [slotsAgree_iff_pointwise] at hAgree ⊢
+  intro k
+  rw [swapPos_getElem? 0 (d + 1) a k h0a hda,
+      swapPos_getElem? 0 (d + 1) b k h0b hdb]
+  by_cases hdk : d + 1 = k
+  · simpa [hdk] using hAgree 0
+  · by_cases hzk : 0 = k
+    · simpa [hdk, hzk] using hAgree (d + 1)
+    · simpa [hdk, hzk] using hAgree k
+
+/-- `slotsAgree` (as a `Bool`) is invariant under the `0 ↔ d+1` transposition,
+given both indices are in range on both lists. -/
+theorem slotsAgree_swapPos_eq_of_bounds (d : Nat) (a b : List Slot)
+    (h0a : 0 < a.length) (hda : d + 1 < a.length)
+    (h0b : 0 < b.length) (hdb : d + 1 < b.length) :
+    Shape.slotsAgree (swapPos 0 (d + 1) a) (swapPos 0 (d + 1) b)
+      = Shape.slotsAgree a b := by
+  by_cases h : Shape.slotsAgree a b = true
+  · rw [h]
+    exact slotsAgree_swapPos_true_of_bounds d a b h0a hda h0b hdb h
+  · simp only [Bool.not_eq_true] at h
+    rw [h]
+    by_contra hne
+    simp only [Bool.not_eq_false] at hne
+    have hback := slotsAgree_swapPos_true_of_bounds d
+      (swapPos 0 (d + 1) a) (swapPos 0 (d + 1) b)
+      (by rw [swapPos_length]; exact h0a) (by rw [swapPos_length]; exact hda)
+      (by rw [swapPos_length]; exact h0b) (by rw [swapPos_length]; exact hdb) hne
+    rw [swapPos_involutive 0 (d + 1) a h0a hda,
+        swapPos_involutive 0 (d + 1) b h0b hdb] at hback
+    rw [hback] at h; exact absurd h (by simp)
+
+/-- `Shape.compatible` is invariant under the seam transposition on both shapes,
+given `d+1` is in range on both slot lists. -/
+theorem compatible_remapShape_eq {d : Nat} {l r : Shape}
+    (hl : d + 1 < l.slots.length) (hr : d + 1 < r.slots.length) :
+    (remapShape d l).compatible (remapShape d r) = l.compatible r := by
+  unfold Shape.compatible remapShape
+  simp only [Shape.length, Shape.tail, swapPos_length]
+  rw [slotsAgree_swapPos_eq_of_bounds d l.slots r.slots (by omega) hl (by omega) hr]
+
+/-! ## `refCount = 1` uniqueness
+
+A firing seam target `B` has `refCount program B.label = 1`, so `B.label` is
+referenced by EXACTLY ONE terminator across the whole program.  Any block whose
+terminator lists a firing-target label must therefore be that unique referencer.
+These are the list-count lemmas that turn `refCount = 1` into that uniqueness. -/
+
+/-- A single member's target-count is a lower bound on the flat-mapped count. -/
+theorem count_le_flatMap_of_mem {α : Type _} (l : List α) (f : α → List Label)
+    (b : Label) {x : α} (hx : x ∈ l) :
+    (f x).count b ≤ (l.flatMap f).count b := by
+  induction l with
+  | nil => simp at hx
+  | cons a as ih =>
+      simp only [List.flatMap_cons, List.count_append]
+      rcases List.mem_cons.mp hx with rfl | hx'
+      · exact Nat.le_add_right _ _
+      · exact le_trans (ih hx') (Nat.le_add_left _ _)
+
+/-- Two DISTINCT members each contributing to the flat-mapped count give a
+combined lower bound. -/
+theorem count_flatMap_two_mem {α : Type _} (l : List α) (f : α → List Label)
+    (b : Label) {x y : α} (hx : x ∈ l) (hy : y ∈ l) (hne : x ≠ y) :
+    (f x).count b + (f y).count b ≤ (l.flatMap f).count b := by
+  induction l with
+  | nil => simp at hx
+  | cons a as ih =>
+      simp only [List.flatMap_cons, List.count_append]
+      rcases List.mem_cons.mp hx with rfl | hx'
+      · have hy' : y ∈ as := by
+          rcases List.mem_cons.mp hy with rfl | h
+          · exact absurd rfl hne
+          · exact h
+        have := count_le_flatMap_of_mem as f b hy'
+        omega
+      · rcases List.mem_cons.mp hy with rfl | hy'
+        · have := count_le_flatMap_of_mem as f b hx'
+          omega
+        · have := ih hx' hy'
+          omega
+
+/-- If `refCount program L = 1`, two distinct blocks cannot both reference `L`. -/
+theorem two_le_refCount {program : Program} {L : Label} {A b0 : Block}
+    (hA : A ∈ program.blocks) (hLA : L ∈ A.term.targets)
+    (hb0 : b0 ∈ program.blocks) (hLb0 : L ∈ b0.term.targets)
+    (hne : A ≠ b0) : 2 ≤ refCount program L := by
+  unfold refCount
+  have hAc : 1 ≤ (A.term.targets).count L := by
+    rw [Nat.one_le_iff_ne_zero, Ne, List.count_eq_zero]; exact fun h => h hLA
+  have hb0c : 1 ≤ (b0.term.targets).count L := by
+    rw [Nat.one_le_iff_ne_zero, Ne, List.count_eq_zero]; exact fun h => h hLb0
+  have hsum := count_flatMap_two_mem program.blocks (fun block => block.term.targets)
+    L hA hb0 hne
+  simp only at hsum
+  omega
+
+/-! ## Firing-query specifications
+
+Structured unpackings of `sourceFire?` / `targetFire?` returning `some d`. -/
+
+/-- Everything `sourceFire? program a = some d` asserts. -/
+theorem sourceFire?_spec {program : Program} {a : Block} {d : Nat}
+    (h : sourceFire? program a = some d) :
+    ∃ bLabel b, a.term = Terminator.fallthrough bLabel ∧
+      refCount program bLabel = 1 ∧ program.findBlock? bLabel = some b ∧
+      a.body.getLast? = some (Instr.swap d) ∧ b.body.head? = some (Instr.swap d) ∧
+      2 ≤ a.body.length ∧ 2 ≤ b.body.length := by
+  unfold sourceFire? at h
+  split at h
+  case h_1 bLabel hterm =>
+    split at h
+    · rename_i href
+      split at h
+      · rename_i b hfind
+        split at h
+        · rename_i d1 d2 hla hhd
+          split at h
+          · rename_i hcond
+            obtain ⟨hdd, hal, hbl⟩ := hcond
+            subst hdd
+            have hd : d1 = d := Option.some.inj h
+            subst hd
+            exact ⟨bLabel, b, hterm, href, hfind, hla, hhd, hal, hbl⟩
+          · exact absurd h (by simp)
+        · exact absurd h (by simp)
+      · exact absurd h (by simp)
+    · exact absurd h (by simp)
+  all_goals exact absurd h (by simp)
+
+/-- Everything `targetFire? program b = some d` asserts. -/
+theorem targetFire?_spec {program : Program} {b : Block} {d : Nat}
+    (h : targetFire? program b = some d) :
+    refCount program b.label = 1 ∧
+      ∃ a, program.blocks.find?
+            (fun a => a.term == Terminator.fallthrough b.label) = some a ∧
+          sourceFire? program a = some d := by
+  unfold targetFire? at h
+  split at h
+  · rename_i href
+    split at h
+    · rename_i a hfind
+      exact ⟨href, a, hfind, h⟩
+    · exact absurd h (by simp)
+  · exact absurd h (by simp)
+
+/-! ## Field-shape descriptions of `seamBlock` -/
+
+/-- The `input` of a seam-edited block, in terms of `targetFire?`. -/
+theorem seamBlock_input (program : Program) (block : Block) :
+    (seamBlock program block).input =
+      match targetFire? program block with
+      | some d => remapShape d block.input
+      | none => block.input := by
+  unfold seamBlock
+  cases sourceFire? program block <;> cases targetFire? program block <;> rfl
+
+/-- The `output` of a seam-edited block, in terms of `sourceFire?`. -/
+theorem seamBlock_output (program : Program) (block : Block) :
+    (seamBlock program block).output =
+      match sourceFire? program block with
+      | some d => remapShape d block.output
+      | none => block.output := by
+  unfold seamBlock
+  cases sourceFire? program block <;> cases targetFire? program block <;> rfl
+
+/-- `labelShape?` of the seam-cancelled program: the seam-target inputs move. -/
+theorem labelShape?_seamCancelProgram (program : Program) (L : Label) :
+    (seamCancelProgram program).labelShape? L =
+      (program.findBlock? L).map (fun b =>
+        match targetFire? program b with
+        | some d => remapShape d b.input
+        | none => b.input) := by
+  unfold Program.labelShape?
+  rw [findBlock?_seamCancelProgram]
+  cases program.findBlock? L with
+  | none => rfl
+  | some b =>
+      simp only [Option.map_some]
+      rw [seamBlock_input]
+
+/-! ## Bounds and firing connections -/
+
+/-- A well-typed source block's output is long enough for the dropped tail swap. -/
+theorem output_bound_of_sourceFire {program : Program} {a : Block} {d : Nat}
+    (hTyped : a.WellTyped program) (h : sourceFire? program a = some d) :
+    d + 1 < a.output.slots.length := by
+  obtain ⟨bLabel, b, hterm, href, hfind, hla, hhd, hal, hbl⟩ := sourceFire?_spec h
+  have hsplit : a.body.dropLast ++ [Instr.swap d] = a.body :=
+    List.dropLast_append_getLast? _ (Option.mem_def.mpr hla)
+  have hbody := hTyped.1
+  rw [← hsplit, bodyType?_append, Option.bind_eq_some_iff] at hbody
+  obtain ⟨mid, hpre, hswap⟩ := hbody
+  rw [bodyType?_cons, Option.bind_eq_some_iff] at hswap
+  obtain ⟨out, htype, hnil⟩ := hswap
+  simp only [Block.bodyType?, Option.some.injEq] at hnil
+  subst hnil
+  obtain ⟨_, hle, hlen⟩ := Instr.length_of_type?_swap htype
+  show d + 1 < a.output.slots.length
+  have h1 : a.output.slots.length = a.output.length := rfl
+  omega
+
+/-- A well-typed target block's input is long enough for the dropped head swap. -/
+theorem input_bound_of_head_swap {program : Program} {b : Block} {d : Nat}
+    (hTyped : b.WellTyped program) (hhd : b.body.head? = some (Instr.swap d)) :
+    d + 1 < b.input.slots.length := by
+  have hbody := hTyped.1
+  obtain ⟨rest, hb⟩ : ∃ rest, b.body = Instr.swap d :: rest := by
+    cases hbb : b.body with
+    | nil => rw [hbb] at hhd; simp at hhd
+    | cons x xs =>
+        rw [hbb] at hhd; simp only [List.head?_cons, Option.some.injEq] at hhd
+        subst hhd; exact ⟨xs, rfl⟩
+  rw [hb, bodyType?_cons, Option.bind_eq_some_iff] at hbody
+  obtain ⟨mid, htype, _⟩ := hbody
+  obtain ⟨_, hle, _⟩ := Instr.length_of_type?_swap htype
+  show d + 1 < b.input.slots.length
+  have h1 : b.input.slots.length = b.input.length := rfl
+  omega
+
+/-- The unique-predecessor target of a firing source itself has `targetFire?`. -/
+theorem targetFire?_target_of_sourceFire {program : Program} {a B : Block}
+    {bLabel : Label} {d : Nat}
+    (hmem : a ∈ program.blocks)
+    (hterm : a.term = Terminator.fallthrough bLabel)
+    (hfind : program.findBlock? bLabel = some B)
+    (href : refCount program bLabel = 1)
+    (h : sourceFire? program a = some d) :
+    targetFire? program B = some d := by
+  have hBlabel : B.label = bLabel := by
+    unfold Program.findBlock? at hfind
+    have := List.find?_some hfind; simpa using this
+  unfold targetFire?
+  rw [hBlabel, if_pos href]
+  cases hf : program.blocks.find?
+      (fun a => a.term == Terminator.fallthrough bLabel) with
+  | none =>
+      exfalso
+      have hp : (a.term == Terminator.fallthrough bLabel) = true := by rw [hterm]; simp
+      exact (List.find?_eq_none.mp hf) a hmem hp
+  | some a' =>
+      have ha'mem := List.mem_of_find?_eq_some hf
+      have ha'term : a'.term = Terminator.fallthrough bLabel := by
+        have := List.find?_some hf; simpa using this
+      have hEq : a' = a := by
+        by_cases hne : a' = a
+        · exact hne
+        · exfalso
+          have h2 := two_le_refCount (L := bLabel) ha'mem
+            (by rw [ha'term]; simp [Terminator.targets]) hmem
+            (by rw [hterm]; simp [Terminator.targets]) hne
+          omega
+      simp only [hEq]; exact h
+
+/-- The head swap of a firing target (recoverable from `targetFire?`). -/
+theorem head_swap_of_targetFire {program : Program} {b : Block} {d : Nat}
+    (hUnique : program.LabelsUnique) (hmem : b ∈ program.blocks)
+    (h : targetFire? program b = some d) :
+    b.body.head? = some (Instr.swap d) := by
+  obtain ⟨href, a, hfind, hsrc⟩ := targetFire?_spec h
+  obtain ⟨bLabel, b', hterm, href', hfind', hla, hhd, hal, hbl⟩ := sourceFire?_spec hsrc
+  have haterm : a.term = Terminator.fallthrough b.label := by
+    have := List.find?_some hfind; simpa using this
+  rw [hterm] at haterm
+  have hbl_eq : bLabel = b.label := by injection haterm
+  rw [hbl_eq] at hfind'
+  have hfb : program.findBlock? b.label = some b :=
+    Program.findBlock?_eq_some_of_mem hUnique hmem
+  rw [hfb] at hfind'
+  have : b = b' := Option.some.inj hfind'
+  rw [this]; exact hhd
+
+/-- If a firing seam target's label were referenced by `b0` (a non-source), the
+`refCount = 1` uniqueness is violated: hence non-source targets never fire. -/
+theorem targetFire?_none_of_sourceFire_none {program : Program} {b0 bL : Block}
+    {L : Label}
+    (hmemb0 : b0 ∈ program.blocks) (hLmem : L ∈ b0.term.targets)
+    (hs : sourceFire? program b0 = none)
+    (hfind : program.findBlock? L = some bL) :
+    targetFire? program bL = none := by
+  by_contra hne
+  obtain ⟨d, htf⟩ := Option.ne_none_iff_exists'.mp hne
+  obtain ⟨href, a', hf, hsrc⟩ := targetFire?_spec htf
+  have hbLlabel : bL.label = L := by
+    unfold Program.findBlock? at hfind
+    have := List.find?_some hfind; simpa using this
+  rw [hbLlabel] at href hf
+  have ha'mem := List.mem_of_find?_eq_some hf
+  have ha'term : a'.term = Terminator.fallthrough L := by
+    have := List.find?_some hf; simpa using this
+  by_cases hEq : a' = b0
+  · subst hEq; simp [hs] at hsrc
+  · have h2 := two_le_refCount ha'mem (by rw [ha'term]; simp [Terminator.targets]) hmemb0 hLmem hEq
+    rw [href] at h2; omega
+
+/-! ## Terminator `typeWith?` congruence over agreeing label maps -/
+
+theorem targetsHaveShapeWith?_congr {f g : Label → Option Shape} {shape : Shape}
+    {sites : List ReturnSite}
+    (h : ∀ site ∈ sites, f site.target = g site.target) :
+    Terminator.targetsHaveShapeWith? f shape sites =
+      Terminator.targetsHaveShapeWith? g shape sites := by
+  induction sites with
+  | nil => rfl
+  | cons site rest ih =>
+      simp only [Terminator.targetsHaveShapeWith?]
+      rw [h site (by simp)]
+      cases g site.target with
+      | none => rfl
+      | some _ => rw [ih (fun s hs => h s (by simp [hs]))]
+
+theorem typeWith?_congr {f g : Label → Option Shape} {shape : Shape}
+    {term : Terminator}
+    (h : ∀ L ∈ term.targets, f L = g L) :
+    Terminator.typeWith? f shape term = Terminator.typeWith? g shape term := by
+  cases term with
+  | fallthrough next =>
+      simp only [Terminator.typeWith?]; rw [h next (by simp [Terminator.targets])]
+  | jump target =>
+      simp only [Terminator.typeWith?]; rw [h target (by simp [Terminator.targets])]
+  | jumpi target next =>
+      simp only [Terminator.typeWith?]
+      rw [h target (by simp [Terminator.targets]), h next (by simp [Terminator.targets])]
+  | returnDispatch returnCount sites =>
+      simp only [Terminator.typeWith?]
+      congr 1
+      funext depth
+      rw [targetsHaveShapeWith?_congr (fun site hs => h site.target (by
+        simp only [Terminator.targets]; exact List.mem_map_of_mem hs))]
+  | halt kind => rfl
+  | invalid => rfl
+
+/-- The seam terminator type-check is invariant for a non-source block. -/
+theorem term_type?_seamCancelProgram_eq {program : Program} {b0 : Block}
+    {shape : Shape}
+    (hmem : b0 ∈ program.blocks)
+    (hs : sourceFire? program b0 = none) :
+    b0.term.type? (seamCancelProgram program) shape =
+      b0.term.type? program shape := by
+  unfold Terminator.type?
+  apply typeWith?_congr
+  intro L hLmem
+  rw [labelShape?_seamCancelProgram]
+  cases hfind : program.findBlock? L with
+  | none => unfold Program.labelShape?; rw [hfind]; rfl
+  | some bL =>
+      have htf := targetFire?_none_of_sourceFire_none hmem hLmem hs hfind
+      simp only [Option.map_some, htf]
+      unfold Program.labelShape?; rw [hfind]; rfl
+
+/-! ## Head-preserving `dropLast` and the per-block WellTyped assembly -/
+
+theorem head_tail_decomp {α : Type _} {l : List α} {x : α}
+    (h : l.head? = some x) : l = x :: l.tail := by
+  cases l with
+  | nil => simp at h
+  | cons a rest =>
+      simp only [List.head?_cons, Option.some.injEq] at h; subst h; rfl
+
+theorem dropLast_head_tail {α : Type _} {l : List α} {x : α}
+    (h : l.head? = some x) (h2 : 2 ≤ l.length) :
+    l.dropLast = x :: l.dropLast.tail := by
+  cases l with
+  | nil => simp at h
+  | cons a rest =>
+      simp only [List.head?_cons, Option.some.injEq] at h; subst h
+      cases rest with
+      | nil => simp at h2
+      | cons y rest' => simp [List.dropLast_cons₂]
+
+theorem blockWellTyped_of_mem {program : Program} {b : Block}
+    (hAll : program.AllBlocksTyped) (hmem : b ∈ program.blocks) :
+    b.WellTyped program :=
+  (List.forall_iff_forall_mem.mp hAll) b hmem
+
+/-- A `.fallthrough`'s type-check, reduced once its target shape is known. -/
+theorem type?_fallthrough_some {program : Program} {shape : Shape} {next : Label}
+    {ts : Shape} (h : program.labelShape? next = some ts) :
+    (Terminator.fallthrough next).type? program shape =
+      (if shape.compatible ts then some () else none) := by
+  simp [Terminator.type?, Terminator.typeWith?, h]
+
+/-- The seam terminator obligation. -/
+theorem seamBlock_term_type? {program : Program} {b0 : Block}
+    (hUnique : program.LabelsUnique) (hAll : program.AllBlocksTyped)
+    (hmem : b0 ∈ program.blocks) :
+    b0.term.type? (seamCancelProgram program) (seamBlock program b0).output
+      = some () := by
+  have hTyped := blockWellTyped_of_mem hAll hmem
+  rw [seamBlock_output]
+  cases hs : sourceFire? program b0 with
+  | none =>
+      rw [term_type?_seamCancelProgram_eq hmem hs]; exact hTyped.2
+  | some d =>
+      obtain ⟨bLabel, B, hterm, href, hfind, hla, hhd, hal, hbl⟩ :=
+        sourceFire?_spec hs
+      have hBmem : B ∈ program.blocks := by
+        unfold Program.findBlock? at hfind; exact List.mem_of_find?_eq_some hfind
+      have hBTyped := blockWellTyped_of_mem hAll hBmem
+      have htf : targetFire? program B = some d :=
+        targetFire?_target_of_sourceFire hmem hterm hfind href hs
+      have hls : (seamCancelProgram program).labelShape? bLabel
+          = some (remapShape d B.input) := by
+        rw [labelShape?_seamCancelProgram, hfind]
+        simp only [Option.map_some, htf]
+      have hpls : program.labelShape? bLabel = some B.input := by
+        unfold Program.labelShape?; rw [hfind]; rfl
+      have hbo : d + 1 < b0.output.slots.length :=
+        output_bound_of_sourceFire hTyped hs
+      have hbi : d + 1 < B.input.slots.length :=
+        input_bound_of_head_swap hBTyped hhd
+      have horig := hTyped.2
+      rw [hterm, type?_fallthrough_some hpls] at horig
+      rw [hterm, type?_fallthrough_some hls, compatible_remapShape_eq hbo hbi]
+      exact horig
+
+/-- The seam body-typing obligation (four fire cases). -/
+theorem seamBlock_bodyType? {program : Program} {b0 : Block}
+    (hUnique : program.LabelsUnique) (hAll : program.AllBlocksTyped)
+    (hmem : b0 ∈ program.blocks) :
+    Block.bodyType? (seamBlock program b0).body (seamBlock program b0).input
+      = some (seamBlock program b0).output := by
+  have hTyped := blockWellTyped_of_mem hAll hmem
+  have hbody := hTyped.1
+  unfold seamBlock
+  cases hs : sourceFire? program b0 with
+  | none =>
+      cases ht : targetFire? program b0 with
+      | none => simpa using hbody
+      | some dt =>
+          simp only []
+          have hhd := head_swap_of_targetFire hUnique hmem ht
+          have hdecomp : b0.body = Instr.swap dt :: b0.body.tail :=
+            head_tail_decomp hhd
+          rw [hdecomp] at hbody
+          exact bodyType?_dropHead_swap hbody
+  | some ds =>
+      have hla : b0.body.getLast? = some (Instr.swap ds) := by
+        obtain ⟨_, _, _, _, _, hla, _, _, _⟩ := sourceFire?_spec hs; exact hla
+      have hlen : 2 ≤ b0.body.length := by
+        obtain ⟨_, _, _, _, _, _, _, hal, _⟩ := sourceFire?_spec hs; exact hal
+      have hsplit : b0.body.dropLast ++ [Instr.swap ds] = b0.body :=
+        List.dropLast_append_getLast? _ (Option.mem_def.mpr hla)
+      cases ht : targetFire? program b0 with
+      | none =>
+          simp only []
+          rw [← hsplit] at hbody
+          exact bodyType?_dropTail_swap hbody
+      | some dt =>
+          simp only []
+          have hpre : Block.bodyType? b0.body.dropLast b0.input
+              = some (remapShape ds b0.output) := by
+            rw [← hsplit] at hbody; exact bodyType?_dropTail_swap hbody
+          have hhd := head_swap_of_targetFire hUnique hmem ht
+          have hdecomp : b0.body.dropLast
+              = Instr.swap dt :: b0.body.dropLast.tail :=
+            dropLast_head_tail hhd hlen
+          rw [hdecomp] at hpre
+          exact bodyType?_dropHead_swap hpre
+
+/-- Every seam-edited block is `WellTyped` in the seam-cancelled program. -/
+theorem seamBlock_wellTyped {program : Program} {b0 : Block}
+    (hUnique : program.LabelsUnique) (hAll : program.AllBlocksTyped)
+    (hmem : b0 ∈ program.blocks) :
+    (seamBlock program b0).WellTyped (seamCancelProgram program) := by
+  refine ⟨seamBlock_bodyType? hUnique hAll hmem, ?_⟩
+  rw [seamBlock_term]
+  exact seamBlock_term_type? hUnique hAll hmem
+
+/-- **The WellTyped gate.** Seam cancellation preserves whole-program
+`WellTyped`. -/
+theorem seamCancelProgram_wellTyped {program : Program}
+    (h : program.WellTyped) :
+    (seamCancelProgram program).WellTyped := by
+  obtain ⟨hUnique, hAll, hEntry, hEmit⟩ := h
+  refine ⟨labelsUnique_seamCancelProgram hUnique, ?_,
+    entry_findBlock?_seamCancelProgram hEntry,
+    emittedLabelsUnique_seamCancelProgram hEmit⟩
+  unfold Program.AllBlocksTyped
+  rw [seamCancelProgram_blocks, List.forall_iff_forall_mem]
+  intro b hb
+  rw [List.mem_map] at hb
+  obtain ⟨b0, hb0mem, rfl⟩ := hb
+  exact seamBlock_wellTyped hUnique hAll hb0mem
+
 end Peephole
 end TypedCfg
 end EvmCompiler
