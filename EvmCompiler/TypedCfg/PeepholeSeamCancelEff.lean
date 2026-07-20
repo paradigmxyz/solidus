@@ -37,10 +37,26 @@ namespace Peephole
 
 open TypedCfg (Instr Shape Terminator Block Program Label)
 
-/-- A body instruction that lowers to the empty assembly program (the zero-
-lowering no-ops: `bindLocals` / `bindScratch` / `relabel`, and `bindLocals` with
-empty binds). These are transparent to the emitted bytes. -/
-def lowersToNothing (i : Instr) : Bool := i.lower? == some []
+/-- A trailing "no-op" body instruction that is skipped when locating the
+emitted-tail swap. These are the **length-preserving, zero-lowering** binds:
+`bindLocals` and `bindScratch`. Both
+
+* lower to the empty assembly program (`Instr.lower? = some []`, `Lower.lean:52-53`),
+  so they are transparent to the emitted bytes, AND
+* are typed by a **length-only** gate (`length_of_type?_bindLocals` /
+  `length_of_type?_bindScratch`: `output.length = input.length`), so removing an
+  upstream swap cannot break their typing — the key to the corrected re-typing.
+
+`relabel` is deliberately EXCLUDED even though it also lowers to `[]`: its typing
+gate (`relabelCompatible`, `slotsAgree`) inspects the concrete slots, so removing
+an upstream swap could change whether it type-checks. Excluding it keeps the
+transform conservatively sound (a swap trailed by a `relabel` simply does not
+fire); it costs no ECB seam (all measured trailing binds are `bindLocals`). -/
+def lowersToNothing (i : Instr) : Bool :=
+  match i with
+  | .bindLocals _ _ => true
+  | .bindScratch _ _ _ => true
+  | _ => false
 
 /-- The last body instruction with **non-empty** lowering — i.e. the last
 instruction that actually emits bytes. Trailing zero-lowering binds are skipped. -/
@@ -63,6 +79,18 @@ def removeEffTail (body : List Instr) : List Instr :=
   match rev.dropWhile lowersToNothing with
   | [] => body
   | _ :: rest => ((rev.takeWhile lowersToNothing) ++ rest).reverse
+
+/-- The seam-cancelled **output** shape of a source-firing block: re-type the
+edited body (`removeEffTail`, i.e. the tail swap gone but the trailing binds
+retained) from the block's `input`. This is the corrected replacement for the
+shipped `remapShape d block.output` — which is only valid when the swap is
+literally last. When the trailing binds are non-trivial the true output is the
+transposition **conjugated through the binds' shape maps**, which is exactly what
+re-running `bodyType?` on the edited body computes. The `fallback` (the original
+`output`) is used only in the impossible `none` case (a firing source block always
+re-types by `bodyType?_removeEffTail_eq_some`). -/
+def reTypeOut (input : Shape) (body' : List Instr) (fallback : Shape) : Shape :=
+  (Block.bodyType? body' input).getD fallback
 
 /-- Corrected source-side firing: block `a` heads a firing seam if its terminator
 is `.jump G` to a unique-predecessor, non-entry block `G` whose head swap matches
@@ -100,7 +128,10 @@ seam (re-typing `input`). Both firing decisions read the **original** program. -
 def seamBlockEff (program : Program) (block : Block) : Block :=
   let block1 :=
     match sourceFireEff? program block with
-    | some d => { block with output := remapShape d block.output, body := removeEffTail block.body }
+    | some _ =>
+        { block with
+          output := reTypeOut block.input (removeEffTail block.body) block.output,
+          body := removeEffTail block.body }
     | none => block
   match targetFireEff? program block with
   | some d => { block1 with input := remapShape d block1.input, body := block1.body.tail }
