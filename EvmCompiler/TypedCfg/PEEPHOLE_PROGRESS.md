@@ -6809,3 +6809,30 @@ Type layer closed; remaining:
 
 ### Files touched (session 71)
 `EvmCompiler/TypedCfg/PEEPHOLE_PROGRESS.md` (this note); `EvmCompiler/TypedCfg/PeepholeSeamCancelEff.lean` (rewritten to the correct conjugating clean-seam transform + WellTyped tower, still imported by nobody). No frozen file touched. No splice ⟹ emitted bytes UNCHANGED. `compile_correct`/`compile_correct_creation` axioms UNCHANGED = `[propext, Classical.choice, Quot.sound]`.
+
+## Session-72 update (2026-07-20): **THE FIRST LIVE BYTE DELTA — the corrected clean-seam conjugating canceller is LIVE in the public compile spine. Runtime pending-swap bisimulation ported, spliced at StackArtifact.compile? + OIC; `scripts/opt_harness.sh check` = OK (43 theorems, axioms ⊆ [propext, Classical.choice, Quot.sound]); ECB runtime 2791→2685 (−106, EXACTLY the §71 prediction), byte-identical on double-compile.** Four green, axiom-clean commits on `arena-opt`. `compile_correct`/`compile_correct_creation` axioms UNCHANGED. No frozen file touched.
+
+### WHAT LANDED (green, axiom-clean — commits `f4278b79` `ebac2bbf` `ab97e4ff` + this doc)
+1. **Runtime tower** (`f4278b79`, `EvmCompiler/TypedCfg/PeepholeSeamCancelEffRuntime.lean`): ported §62-67 of `PeepholeSeamCancel` to the clean-seam canceller. The one genuinely-new kernel is the SOURCE HEAD-swap birth through a runtime-identity conjugated bind — **`openRunBody_headSwap_bind_pending`** (`:36`): running the original `[swap d, bindLocals 0 names]` from `s_o` vs the edited `[bindLocals 0 names']` from a SRD `s_c` gives `PendingSwap d` by the head swap's involution; both `bindLocals` are EVMState identities (`Semantics.lean:78-83`), transparent to the trailing bind. Because `cleanSrc?`/`cleanTgt?` are disjoint (`cleanSrc?_cleanTgt?_disjoint`), the body kernel **`seamBlockEff_body_rel`** (`:126`) has only THREE reachable cases (shipped some/some chain case vacuous). Then `SeamStepRelEff`/`SeamOutcomeRelEff`, `openRun_seamCancelEff_congr` (`:197`), `openStep_seamCancelEff_congr` (`:271`), `conjBind`/`seamBlockEff`/whole-program PCI preservation, `cleanTgt?_entry_eq_none`, `seamStepRelEff_entry`.
+2. **Combined tower + fuel bound** (`ebac2bbf`, `EvmCompiler/Structured/PeepholeSeamCombinedEff.lean`): ported `PeepholeSeamCombined` to `seamCancelProgramEff` — `SeamCombinedStepRelEff`/`OutcomeRelEff`, `seamCombinedStepRelEff_entry_of_generated`, `openStep_seamCombinedEff_congr_of_source` (`:96`, the per-entry StackRealizes guard via `seamBlockEff_input_cleanTgt` + `pendingSwap_stack_length`), fuelled + prefix congruences, halted/finished bridges, and **`fuelBudget_seamCombinedEff_le`** — the source-case fuel argument redone for the bindLocals-conjugation edit (edited body `[bindLocals names']` lowers to `[]` via `lowerBodyFrom?_singleton_bindLocals`). Stack-length support and the `cfg→P` combined leg reused verbatim.
+3. **The SPLICE** (`ab97e4ff`): `StackArtifact.compile?` + `compile?_parts` and OIC now route `seamCancelProgram → seamCancelProgramEff` and consume the Eff combined tower. `seamCancelProgram` is an internal name flowing StackArtifact→OIC — **no frozen file references it** — so the splice is localized to two non-frozen files; the whole downstream consumer graph (Yul/Solidity crowns, 1323/1369 jobs) rebuilds green.
+
+### THE FIRST LIVE BYTE DELTA (solc 0.8.26 via-IR + Yul optimizer; runtime & creation; determinism = double-compile)
+| contract | runtime (base→now, Δ) | creation (base→now, Δ) | swap-pairs (base→now, Δ) | double-compile |
+|---|---|---|---|---|
+| **ExternalCallBox** | 2791 → **2685** (**−106**) | 2825 → **2719** (−106) | 61 → 12 (−49) | **byte-identical** |
+| **AdversarialStackPressure** | 8557 → **8551** (−6) | 8591 → **8585** (−6) | 3 → 1 (−2) | **byte-identical** |
+| **MiniToken** | 1991 → **1965** (−26) | 2234 → **2204** (−30) | 15 → 5 (−10) | **byte-identical** |
+| **LoopBox** | 923 → **897** (−26) | 957 → **931** (−26) | 15 → 3 (−12) | **byte-identical** |
+
+ECB hits the §71-predicted 2685 (= 2791 − 2·53 clean seams) **exactly**. All four contracts shrink and are deterministic (identical bytes on re-compile). The residual swap-pairs are seams excluded by the clean-endpoint guard (chain overlaps) plus non-`bindLocals`-shaped adjacencies; these are the next campaign's target.
+
+### GATES
+`scripts/opt_harness.sh check` = **OK** (43 public theorems; axioms contained in `[propext, Classical.choice, Quot.sound]`). `#print axioms` confirms `Solidus.compile_correct` and `Solidus.compile_correct_creation` depend on exactly `[propext, Classical.choice, Quot.sound]` — UNCHANGED. Production smoke (`stack_backend_production_smoke.lean`) exercised inside the check. Forge differential deferred to CI (not run). No frozen file touched.
+
+### REMAINING FRONTIER
+* The 8 double-claimed chain seams on ECB (and analogous overlaps elsewhere) dropped by the clean-endpoint guard — recovering them needs a chain-aware pending-swap invariant (multiple pending desyncs threaded through `C→A→B`).
+* Non-`bindLocals`-shaped adjacent swap pairs (the residual 12 on ECB, 5 MiniToken, 3 LoopBox, 1 ASP) — different source shapes not yet covered by `srcRaw?`.
+
+### Files touched (session 72)
+NEW `EvmCompiler/TypedCfg/PeepholeSeamCancelEffRuntime.lean`, NEW `EvmCompiler/Structured/PeepholeSeamCombinedEff.lean`; spliced `EvmCompiler/Compiler/StackArtifact.lean` + `EvmCompiler/Compiler/OpenInteractionComposition.lean` (seamCancelProgram→seamCancelProgramEff); this note. No frozen file touched. `compile_correct`/`compile_correct_creation` axioms UNCHANGED = `[propext, Classical.choice, Quot.sound]`.
