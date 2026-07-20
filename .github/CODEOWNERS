@@ -9,14 +9,19 @@
 # before making the repo public. This is a placeholder.
 # =============================================================================
 
-# The freeze surface: the manifest and the frozen files' pins.
-/benchmarks/frozen_manifest.txt   @danrobinson
+# The freeze surface: the manifest, the toolchain/dependency pins, and the
+# frozen proof-artifact smoke file (all hash-pinned in frozen_hashes.json).
+/benchmarks/frozen_manifest.txt              @danrobinson
+/lake-manifest.json                          @danrobinson
+/lean-toolchain                              @danrobinson
+/proof_artifacts/stack_backend_production_smoke.lean  @danrobinson
 
-# The evaluation harness and the import-closure checker (frozen machinery).
+# The evaluation harness and the freeze checkers (frozen machinery).
 /scripts/opt_harness.sh           @danrobinson
 /scripts/opt_harness.py           @danrobinson
 /scripts/opt_gas_runner.py        @danrobinson
 /scripts/check_frozen_closure.py  @danrobinson
+/scripts/check_frozen_defs.lean   @danrobinson
 
-# CI, workflows, CODEOWNERS, the provisional frozen hashes — the guard rails.
+# CI, workflows, CODEOWNERS, the frozen-hash pin file — the guard rails.
 /.github/                         @danrobinson
