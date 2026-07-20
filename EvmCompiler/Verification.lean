@@ -38,6 +38,7 @@ import EvmCompiler.Structured.InteractionBlockProvenanceDrill
 import EvmCompiler.Structured.InteractionMachineryCoupling
 import EvmCompiler.Structured.InteractionProcBlockProvenance
 import EvmCompiler.Structured.InteractionBlockGenShape
+import EvmCompiler.Structured.InteractionBlockGenShapeRegular
 import EvmCompiler.Structured.InteractionHInvAssembly
 import EvmCompiler.Structured.InteractionLabelShapeTransport
 import EvmCompiler.Assembly.GasfulBridge
