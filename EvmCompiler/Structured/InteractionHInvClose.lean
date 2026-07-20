@@ -1,6 +1,7 @@
 import EvmCompiler.Structured.InteractionFrameConsistentCallLeg
 import EvmCompiler.Structured.InteractionHInvAssemblyRegular
 import EvmCompiler.Structured.InteractionHInvAssembly
+import EvmCompiler.Structured.TypedCfgPreservation.StackRealizesEntry
 
 /-!
 # The `hInv` assembly — the strengthened `openStep`-jump invariant and its `AllEntriesRealized`
@@ -162,6 +163,38 @@ theorem allEntriesRealized_realizedWitness_of_context
       (fun _e _t _transcript _n _s hR hE =>
         openStep_preserves_realizedWitnessFC context hSourceWF hR hE)
       hSeed)
+
+/-!
+## Step B ingredient — the token-free block-entry `StackRealizes` bridge (session 47)
+
+At a reached entry `label`, the `realizedWitness cfg` fact the `AllEntriesRealized` production
+supplies unpacks to `StateRel` + `SourceFrameFits` on the block found there.  For a block whose
+input shape carries **no** compiler-owned return token
+(`block.input.returnTokenDepth? = none`), that already gives the full target-stack realization
+the swap peephole arm's depth guard consumes — no run-structure information needed
+(`stackRealizes_of_stateRel_of_returnTokenDepth?_eq_none`, sessions 8/9).  This is the
+token-free half of the per-entry `StackRealizes` discharge Step B threads at each entry.
+
+The token-BEARING half (`block.input.returnTokenDepth? = some (length-1)`) is NOT bridgeable
+from the bare `realizedWitness` alone: it needs `source.returns ≠ []` (equivalently a non-empty
+realization token list `token :: tokens`) at that entry, which the bare predicate does not carry
+— see the §Session-47 Step-B design finding in `PEEPHOLE_PROGRESS.md`.
+-/
+
+/-- **Token-free block-entry `StackRealizes` bridge.**  Unpack the entry's `realizedWitness`
+and, for a token-free input shape, discharge `StackRealizes block.input state` outright. -/
+theorem stackRealizes_of_realizedWitness_of_returnTokenDepth?_eq_none
+    {cfg : TypedCfg.Program} {label : Assembly.Label} {state : EVMState}
+    {block : TypedCfg.Block}
+    (hReal : realizedWitness cfg label state)
+    (hFind : cfg.findBlock? label = some block)
+    (hDepth : block.input.returnTokenDepth? = none) :
+    TypedCfg.StackRealizes block.input state := by
+  obtain ⟨source, tokens, block', hFind', hRel, hFits⟩ := hReal
+  obtain rfl : block' = block := Option.some.inj (hFind'.symm.trans hFind)
+  exact
+    TypedCfgPreservation.stackRealizes_of_stateRel_of_returnTokenDepth?_eq_none
+      hRel hFits hDepth
 
 end InteractionFrameConsistent
 end Structured
