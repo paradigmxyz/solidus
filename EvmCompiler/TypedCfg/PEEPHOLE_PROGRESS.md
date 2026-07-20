@@ -6142,3 +6142,106 @@ banked as a standalone module first, exactly as `PeepholeSourceCongr.lean` was f
 **PROCESS NOTE (unchanged):** host is **zsh**; `lake build … > log 2>&1; echo RC=$?` (no pipe);
 harness `check` runs ~3–4 min — launch with `nohup … &` and poll with `until ! kill -0 PID; do sleep
 15; done`, never a foreground `sleep`.
+
+## Session-53 update (2026-07-20): Step D items (1) + (2) + (4-propagation) LANDED green + axiom-clean; the atomic `peepholeBody` swap arm is **NOT LIVE** — blocked by TWO obstacles the §Session-52 frontier under-scoped (documented below).  `scripts/opt_harness.sh check` = OK (43 theorems; axioms ⊆ `[propext, Classical.choice, Quot.sound]`).  `compile_correct` / `compile_correct_creation` **UNCHANGED** = `[propext, Classical.choice, Quot.sound]`.  Single-contract sanity (pinned solc 0.8.26 → `solidus-backend raw-summary` on `examples/AdversarialStackPressure.sol`): SUCCESS, runtime **8557** bytes / creation **8591** bytes (codegen byte-identical — the `peepholeProgram` transform is untouched; commits are proof-only).
+
+### LANDED (green, axiom-clean)
+* **Commit `d3abf555`** — Step D item (1), the gating lemma as a STANDALONE BANKED MODULE
+  `EvmCompiler/TypedCfg/PeepholeOpenStackRealizes.lean` (as `PeepholeSourceCongr.lean` was for Step B):
+  * `StackRealizesState` (`:40`) / `StackRealizesPair` (`:48`) — terminal-leaf `StackRealizes`
+    properties for the open state-step / `runAt`-step result carriers.
+  * `openRunState_stackRealizes` (`:56`) — every terminal leaf of `openRunState instr input state`
+    realizes the output shape.  **Prim case delegates to the pre-existing Assembly
+    `InteractionPreservation.PrimOp.openStep_realizesStackArity`** (which already covers `callStep` /
+    `createStep` / `resourceStep` / closed `op.step` via `RealizesStackArity`), then `omega` with
+    `length_of_type?_prim`; bookkeeping cases delegate to `runState_stackRealizes`.  The
+    ~150–250-line "prim `openStep` case analysis" the frontier estimated was **already built**
+    (`Assembly/InteractionPreservation.lean:978`) — the module just wires it to `StackRealizes`.
+  * `openRunAt_stackRealizes` (`:102`) — the `runAt`-level bridge (the Step D gating lemma), by
+    `AllDone.map` through the `type?` pairing, mirroring `Instr.openRunAt_atLoweredEnd`.
+* **Commit `c1481a34`** — items (2) + (4-propagation): thread the `StackRealizes` depth guard through
+  the whole OPEN congruence chain (peephole transform still 2-arm; guard USED in keep/push recursion):
+  * `openRunBody_peephole_congr` (`PeepholeOpen.lean:125`) — **+hypothesis `StackRealizes input
+    state2`**.  Keep arm resolves the RIGHT-tree bind-quantification via
+    `Rel.strengthen_right` on `openRunAt_stackRealizes` (+`Rel.mono` to re-seat the guard inside the
+    `ExceptRel.ok` payload), so `StackRealizes middle rightAfter` rides into the `Rel.bind`
+    continuation and re-seeds the recursion (mirror of Step B's LEFT-tree resolution).  Push cancel
+    arm supplies the concrete guard by `omega`.
+  * `Block.openRun_peephole_runtimeRel` (`PeepholeOpen.lean:274`) — +`StackRealizes block.input state`.
+  * `openStep_peephole_congr` (`PeepholeProgram.lean:98`) — +`hReal2 : ∀ block, findBlock? label =
+    some block → StackRealizes block.input state2`.
+  * `openStep_peephole_congr_of_source` (`PeepholeSourceCongr.lean:101`, guard built at `:123`) —
+    discharges the per-found-block guard from `stackRealizes_of_realizedWitnessFC_total` (at `state1`)
+    transported to `state2` along `SameRuntimeData.stack_eq`.  `openRunN/openRunNPrefix_…_of_source`
+    already re-seed the witness per jump, so no further threading.
+  * **RETIRED** the guard-free unconditional `openRunN_peephole_congr` / `openRunNPrefix_peephole_congr`
+    (were dead — referenced only in one doc comment; unstatable once the swap arm's per-entry guard
+    exists; superseded by the `_of_source` variants used at all 5 OIC sites).
+
+### THE FRONTIER (session 54) — the atomic swap arm, with TWO obstacles the §Session-52 frontier MISSED
+Adding `swap d :: swap d :: rest → rest` to `peepholeBody` (`Peephole.lean:32` — the arm is
+`| .swap d, .swap d' :: rest' => if d = d' then rest' else .swap d :: .swap d' :: rest'`, and
+`peepholeBody_cons` / `peepholeBody_length_le` re-green trivially, VERIFIED green in a reverted spike)
+breaks **SIX** `split`-on-`peepholeBody_cons` sites, not the 5 the frontier listed:
+  1. `peepholeBody_length_le` (`Peephole.lean`) — trivial (`omega`); **spiked green**.
+  2. `mem_peepholeBody` (`PeepholeSemantics.lean`) — trivial; **spiked green** (`if_pos`/`if_neg hdd`).
+  3. `peepholeBody_bodyType?` (`PeepholeOpen.lean:35`) — **OBSTACLE B, see below**.
+  4. `lowerBodyFrom?_peephole_le` (`PeepholeFuel.lean:64`) — depends on (3).
+  5. `openRunBody_peephole_congr` swap arm (`PeepholeOpen.lean`) — the OPEN semantic arm (the real
+     crown work); needs the module reshuffle in the note below + a NEW open swap-cancellation proof.
+  6. **`peepholeBody_runBody_erase` (`PeepholeSemantics.lean:236`) — OBSTACLE A, the MISSED closed
+     tower.**
+
+**OBSTACLE A — the closed-level tower needs the guard too.**  `peepholeBody_runBody_erase` (closed
+`runBody` preservation, `BodySafe`-only signature) and its dead lift `PeepholeBlock.Block.
+run_peephole_runtimeRel` (`PeepholeBlock.lean`, imported by NOBODY) also `split` on
+`peepholeBody_cons`.  The swap cancellation is UNSOUND without a runtime depth guard, which the
+`BodySafe`-only signature cannot supply.  Options: (a) RETIRE both (same justification as the
+unconditional runners: the crown path routes only through the OPEN level; `PeepholeBlock` is dead) —
+lowest-risk; or (b) add a `StackRealizes`/depth hypothesis and thread through the (dead) `PeepholeBlock`
+mirror of the open work.  Recommend (a).
+
+**OBSTACLE B — swap;swap breaks UNCONDITIONAL `bodyType?` preservation (unlike push;pop).**
+`peepholeBody_bodyType?` currently proves `bodyType? (peepholeBody body) input = bodyType? body input`
+for ALL `body, input`.  `push v ; pop` is ALWAYS well-typed + shape-neutral, so this is unconditional.
+`swap d ; swap d` is type-neutral **only when the swap is well-typed at the shape** (the type-level
+depth guard `d + 2 ≤ input.length`).  Counterexample: pick `input` with `type? (.swap d) input = none`
+(shallow shape) but the cancelled tail `rest'` well-typed at `input` — then LHS `bodyType?
+(peepholeBody body) input = bodyType? rest' input = some …` while RHS `bodyType? body input = none`.
+So the equality FAILS unconditionally.  **Fix:** weaken `peepholeBody_bodyType?` to the DIRECTIONAL
+form `bodyType? body input = some output → bodyType? (peepholeBody body) input = some output` (TRUE:
+if the original types, the swaps are well-typed → involution → cancellation preserves the typing).
+This suffices for the two consumers (both already carry the `= some output` hypothesis:
+`openRunBody_peephole_congr`'s `hRestBodyType`, and `lowerBodyFrom?_peephole_le`) but requires
+re-examining both call sites and `lowerBodyFrom?_peephole_le`'s structure.  This is a DESIGN change to
+a core syntactic invariant, not a mechanical arm addition — the reason the swap arm was NOT rushed in
+this session.
+
+**MODULE-CYCLE NOTE for site 5.**  The open swap-cancellation proof needs `swap_type_involution` +
+`swap_swap_sameRuntimeData` + `runState_swap_eq` + `openRunBody_swap_cons_ok`.  The latter two live in
+`PeepholeSwapOpen.lean`, which *imports* `PeepholeOpen` (cycle).  BUT `PeepholeSwapKernel` and
+`PeepholeStackRealizes` do NOT import `PeepholeOpen`, so **move `runState_swap_eq` +
+`openRunBody_swap_cons_ok` into `PeepholeOpen`** (add `import …PeepholeSwapKernel`; `PeepholeStackRealizes`
+already arrives via `PeepholeOpenStackRealizes`).  IMPORTANT: the session-6 lemma
+`openRunBody_swap_swap_congr` (`PeepholeSwapOpen.lean:64`) does **NOT** directly discharge site 5 — it
+assumes the ORIGINAL body is literally `swap d :: swap d :: rest`, but `peepholeBody`'s cancel arm has
+the original as `swap d :: rest` where only `peepholeBody rest = swap d :: rest'`.  The correct proof
+MIRRORS the push;pop cancel arm (`PeepholeOpen.lean:149–215`): the RHS head `swap d` fires on `state2`
+under `StackRealizes input state2` (the new hypothesis), the recursion (`ihRest`) handles `rest`, and
+the LHS second `swap d` (head of `peepholeBody rest = swap d :: rest'`) fires on `state1`-after-swap
+under `StackRealizes middle (state1-swapped)` (from `StackRealizes input state1` via
+`SameRuntimeData.stack_eq hRel` + `runState_stackRealizes`), then `swap_swap_sameRuntimeData` collapses
+`state1`-swapped-twice back to `~ state1` and `openRunBody_runtimeRel` carries the tail.  Use the
+INGREDIENTS, not the monolithic lemma.
+
+### Status handed to session 54
+Steps B + C **CLOSED**; Step D items (1), (2), (4-prop) **CLOSED** green + axiom-clean (commits
+`d3abf555`, `c1481a34`).  The gating lemma `openRunAt_stackRealizes` is banked and the depth guard is
+threaded to every reached `openStep` via the `_of_source` path.  **Swap arm NOT LIVE** (peephole delta
+still push;pop-only).  Next session = the atomic `peepholeBody` swap-arm commit, but FIRST resolve
+Obstacle B (directional `bodyType?`) as its own green commit, retire the closed tower (Obstacle A, do
+it as its own green commit), then land the 4 syntactic + open semantic arm with the module reshuffle
+above.  `compile_correct`/`compile_correct_creation` axioms MUST stay `[propext, Classical.choice,
+Quot.sound]`.
+**PROCESS NOTE (unchanged):** host is **zsh**; `lake build … > log 2>&1; echo RC=$?` (no pipe);
+harness `check` ~3–4 min — `nohup … &`, poll `until ! kill -0 PID; do sleep 15; done`.
