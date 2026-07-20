@@ -389,6 +389,42 @@ theorem type?_window_bindLocals_single {d offset : Nat} {name : String}
   subst hslots htail
   rfl
 
+/-! ## Unified window `type?`-preservation (step-3 type capstone) -/
+
+/-- The zero-width instructions whose `remapZeroWidth` residue is a single
+shape-preserving instruction: `bindScratch`, `relabel`, and single-name
+`bindLocals`.  Multi-name `bindLocals` (a straddling range) is excluded — it is
+the documented frontier. -/
+def RemapSafe : Instr → Bool
+  | .bindLocals _ names => names.length = 1
+  | .bindScratch _ _ _ => true
+  | .relabel _ => true
+  | _ => false
+
+theorem remapSafe_isZeroWidth {z : Instr} (h : RemapSafe z = true) :
+    isZeroWidth z = true := by
+  cases z <;> simp_all [RemapSafe, isZeroWidth]
+
+/-- **Window `type?`-preservation.** For any remap-safe zero-width `z`, cancelling
+`swap d ; z ; swap d` in favour of `remapZeroWidth d z` reaches the identical
+output shape. -/
+theorem type?_remapZeroWidth_window {d : Nat} {z : Instr} {s0 s1 s2 s3 : Shape}
+    (hSafe : RemapSafe z = true)
+    (h1 : Instr.type? (.swap d) s0 = some s1)
+    (h2 : Instr.type? z s1 = some s2)
+    (h3 : Instr.type? (.swap d) s2 = some s3) :
+    Instr.type? (remapZeroWidth d z) s0 = some s3 := by
+  cases z with
+  | bindScratch baseDepth name slot =>
+      exact type?_window_bindScratch h1 h2 h3
+  | relabel target =>
+      exact type?_window_relabel h1 h2 h3
+  | bindLocals offset names =>
+      -- RemapSafe forces `names = [name]`.
+      match names, hSafe with
+      | [name], _ => exact type?_window_bindLocals_single h1 h2 h3
+  | _ => simp [RemapSafe] at hSafe
+
 end Peephole
 end TypedCfg
 end EvmCompiler
