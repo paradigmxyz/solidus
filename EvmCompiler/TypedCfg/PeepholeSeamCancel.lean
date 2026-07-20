@@ -171,6 +171,56 @@ theorem entry_findBlock?_seamCancelProgram {program : Program}
   | none => exact absurd hFind h
   | some block => simp
 
+/-! ## Body-typing kernels for the seam edits (WellTyped shape half)
+
+Dropping a leading / trailing `swap d` from a well-typed body preserves
+`bodyType?` after re-typing the input / output through the `0 ↔ d+1`
+transposition `remapShape d` — because `Instr.type? (.swap d)` *is* that
+transposition on the running shape.  These are the intra-block kernels the
+`WellTyped` (`bodyType?` conjunct) preservation is assembled from. -/
+
+/-- `Instr.type? (.swap d)` computes exactly the `remapShape d` transposition. -/
+theorem type?_swap_eq_remapShape {d : Nat} {s s' : Shape}
+    (h : Instr.type? (.swap d) s = some s') : s' = remapShape d s := by
+  obtain ⟨hslots, htail⟩ := type?_swap_eq h
+  cases s'; cases s
+  simp only [remapShape] at *
+  simp_all
+
+/-- Dropping a trailing `swap d` from a well-typed body: the output is un-swapped
+through `remapShape d`. -/
+theorem bodyType?_dropTail_swap {d : Nat} {pre : List Instr} {input output : Shape}
+    (h : Block.bodyType? (pre ++ [Instr.swap d]) input = some output) :
+    Block.bodyType? pre input = some (remapShape d output) := by
+  rw [bodyType?_append, Option.bind_eq_some_iff] at h
+  obtain ⟨mid, hpre, hswap⟩ := h
+  rw [bodyType?_cons, Option.bind_eq_some_iff] at hswap
+  obtain ⟨out, hswap', hnil⟩ := hswap
+  simp only [Block.bodyType?] at hnil
+  have hoo : out = output := Option.some.inj hnil
+  subst hoo
+  have hEq : out = remapShape d mid := type?_swap_eq_remapShape hswap'
+  obtain ⟨_, hlen, _⟩ := Instr.length_of_type?_swap hswap'
+  have h0 : 0 < mid.slots.length := by
+    have : mid.slots.length = mid.length := rfl
+    omega
+  have hd1 : d + 1 < mid.slots.length := by
+    have : mid.slots.length = mid.length := rfl
+    omega
+  have hmid : remapShape d out = mid := by
+    rw [hEq, remapShape_involutive d mid h0 hd1]
+  rw [hmid]; exact hpre
+
+/-- Dropping a leading `swap d` from a well-typed body: the input is un-swapped
+through `remapShape d`, the output unchanged. -/
+theorem bodyType?_dropHead_swap {d : Nat} {rest : List Instr} {input output : Shape}
+    (h : Block.bodyType? (Instr.swap d :: rest) input = some output) :
+    Block.bodyType? rest (remapShape d input) = some output := by
+  rw [bodyType?_cons, Option.bind_eq_some_iff] at h
+  obtain ⟨mid, hswap, hrest⟩ := h
+  have : mid = remapShape d input := type?_swap_eq_remapShape hswap
+  rw [← this]; exact hrest
+
 end Peephole
 end TypedCfg
 end EvmCompiler
