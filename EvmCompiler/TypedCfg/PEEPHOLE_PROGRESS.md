@@ -6416,3 +6416,60 @@ The splice infrastructure is complete and live.  To produce a real byte delta th
 
 ### Files touched (session 59)
 Two NEW non-frozen modules: `EvmCompiler/TypedCfg/PeepholeNoopSwapSpine.lean`, `EvmCompiler/Structured/PeepholeNoopSwapCombined.lean`.  Edited (both non-frozen): `EvmCompiler/Compiler/StackArtifact.lean` (splice + import), `EvmCompiler/Compiler/OpenInteractionComposition.lean` (5-site rewire + import).  No frozen file touched.  Three green, axiom-clean commits.
+
+## Session-60 update (2026-07-20): EMPIRICAL PINPOINTING — the birth site of ALL 61 ExternalCallBox `SWAPn;SWAPn` pairs is MEASURED, not deduced: **100 % are fallthrough BLOCK SEAMS created by the compaction phase** (`Assembly.Compact.prepare` = `elideFallthroughJumps` + `pruneUnreferencedLabels`).  **Both §55 (StackShuffle/lowering) and §56 (cfg-body `swap d ; z* ; swap d`) are EMPIRICALLY REFUTED.**  The pairs do NOT exist in the lowered image `certified.target` at all — they are manufactured downstream, during byte compaction, by removing the `jump G ; label G` that separated block A's tail swap from block B's head swap.  This is why the entire sessions-3–59 cfg-body peephole∘normalize tower fires nowhere: it operates at the wrong altitude (single cfg block bodies), and the redundancy is inherently a **cross-block seam** phenomenon.  No `.lean` change landed (the fix is a multi-session cfg-level cross-block transform — no small localized re-proof exists, so per the never-commit-red discipline this session is measurement + route decision + this note).  `scripts/opt_harness.sh check` unaffected (no `.lean` edit); `compile_correct`/`compile_correct_creation` axioms UNCHANGED = `[propext, Classical.choice, Quot.sound]`.  Docs-only commit.
+
+### METHOD (empirical, reproducible; probes run from scratch dir OUTSIDE the repo, NOT committed)
+Generated ExternalCallBox runtime solc IR with **pinned solc 0.8.26** (`viaIR`, Yul optimizer, `details.yul`), fed it through the exact corpus path in a `lake env lean --run` probe: `Solidity.RawAst.decodeAndElaborateSolcIr? … (objectSelector := .runtime)` → `Program.compileArtifactWithLinkerSymbols? []` → `artifact.codeArtifact`.  From the code artifact:
+* `L := codeArtifact.compiled.certified.target` — the LOWERED combined program `(peepholeProgram (normalizeProgram cfg)).lower?` (WITH `.label`/`.jump` pseudo-instrs, pre-compaction).
+* `P := codeArtifact.compact.physicalSource` — the POST-compaction `Assembly.Program` on which the CLI's `controlPatternStats.swapPair` is computed (`BackendCli.lean:745`), i.e. the exact 61-count metric.
+
+### THE DECISIVE MEASUREMENT
+| program | adjacent-equal `SWAPn;SWAPn` |
+|---|---|
+| `L` = `certified.target` (lowered, pre-compaction) | **0** |
+| `elideFallthroughJumps L` (jumps elided, labels kept) | **0** |
+| `prepare L` = `physicalSource` = `P` (jumps elided + labels pruned) | **61** |
+
+`decide (prepare L = physicalSource) = true` (my `P` IS the shipped physical source).  **The 61 pairs are born entirely by `pruneUnreferencedLabels` acting after `elideFallthroughJumps`** — neither lowering (`L` has 0) nor jump-elision alone (`elide L` has 0) produces a single one.  Splitting `L` into its 1056 per-block segments (delimited by `.label`): **intra-block swap pairs = 0** across all blocks — no cfg block body contains the pattern, confirming the cfg-body tower structurally cannot fire.
+
+### BIRTH-SITE CLASSIFICATION (all 61, via greedy `P`-back-to-`L` subsequence alignment — compaction only DELETES, so `P ⊆ L` in order)
+For every pair at `P[i],P[i+1]` I recovered the `L` window `L[la..lb]` and the deleted gap `L[la+1 .. lb-1]`:
+
+| birth category | count | gap removed by compaction | swap depth |
+|---|---|---|---|
+| **fallthrough block seam** (A.term = `.fallthrough G`, A.body tail `swap 0`, B=block `G` head `swap 0`) | **61 / 61** | exactly `[jump G ; label G]`, `G` matching | **all SWAP1 (d=0)** — histogram `{0x90 ↦ 61}` |
+| lowering-internal (StackShuffle / terminator) | 0 | — | — |
+| cfg-body `swap;z*;swap` (the §56 premise) | 0 | — | — |
+
+Additional structural facts proven from the data (all 61/61):
+* Gap is **exactly** `[jump G, label G]` with the jump target = the pruned label (a genuine fallthrough).
+* `G` is referenced **exactly once** in all of `L` (only by the seam jump) ⟹ after elision `G` is unreferenced ⟹ pruned ⟹ **block B has a UNIQUE predecessor** (the fallthrough from A).  This is the crucial soundness lever: deleting B's head swap cannot break any other in-edge because there is none.
+
+Representative `L` windows (probe output):
+```
+pair#1  SWAP1@P[32]   L[71..74]   gap=[jump  generated 21_100 ; label generated 21_100]
+pair#8  SWAP1@P[230]  L[511..514] gap=[jump  generated 149_100; label generated 149_100]
+pair#20 SWAP1@P[744]  L[1431..1434] gap=[jump generated 370_100; label generated 370_100]
+```
+i.e. `L` locally is `… , swap1 , jump G , label G , swap1 , …`  →  compaction  →  `… , swap1 , swap1 , …`.
+
+### WHY THIS FORCES THE CATEGORY (airtight, matches the measurement)
+`L` is a concatenation of per-block lowerings, each `= .label :: body ++ term` (`Lower.lean:250`); block bodies contain NO labels (labels only lead blocks / returnDispatch cases).  Compaction's only edits are (i) `elideFallthroughJumps` deletes a `jump t` immediately followed by `label t`, (ii) `pruneUnreferencedLabels` deletes labels with no remaining reference.  Therefore any adjacent equal `swapN;swapN` in `P` that is NOT already adjacent in `L` (measured: none are) can ONLY arise from deleting a `.label` (a block boundary) — and, given `L` has no `jump;label` pairs whose removal leaves two equal swaps except across a fallthrough seam, EVERY such pair is `blockA(…swap d) —fallthrough→ blockB(swap d …)`.  §56 step-3's claim that "block/terminator seams never abut two equal swaps" is TRUE *in `L`* but MISSES that compaction *creates* the abutment by erasing the seam.  That is the precise error in the §55/§56 deductions.
+
+### ROUTE RE-DECISION (evidence-based)
+The redundancy is a **cross-block fallthrough seam** with a **unique-predecessor** successor, all at **SWAP1 (d=0)**.  Three routes, with blast radius:
+
+* **Route 1 / assembly-level (post-`prepare`) peephole — REAL, where the bytes are, but LARGEST.**  Cancel adjacent equal swaps in `physicalSource`.  Local soundness trivial (SWAP is a stack involution, shape-free).  BUT `physicalSource` feeds `layout?/emit?/bytes` and the `Compact.DecodingCorrect` + `GasfulBridge.RunRefinesOpenTotal` interaction-semantics chain; `Assembly/*` and `Compact.lean` are FROZEN, so the pass must live in a NEW non-frozen module spliced at the `Compact` seam with its OWN assembly-layer congruence.  The entire sessions-3–59 tower is TypedCfg-level and does NOT transfer.  Blast radius: LARGE + new altitude.  (Unchanged from §55/§56 assessment.)
+
+* **Route A — cfg-level FALLTHROUGH-SEAM swap cancellation (block-structure-preserving) — CHOSEN as primary.**  A cfg→cfg pass that, for each block A with `term = .fallthrough B` where B has a unique predecessor (computable: B's label referenced exactly once in the cfg) and A.body ends `swap d` and B.body starts `swap d`, DELETES both swaps.  Runtime: `swap d ; (fallthrough) ; swap d = id` across the seam — reuses the swap-involution kernels already proven (`PeepholeSwapKernel.swap_swap_sameRuntimeData`, `runState_swap_eq`, sessions 51–54).  Preserves block COUNT / labels / lowering order (like `normalizeProgram`, NOT like a block-merge), so it slots into the SAME congruence-family template (runtime/type/fuel/source/spine) that sessions 57–59 built for `normalizeProgram`.  NEW obligations vs normalize: (a) a fallthrough-successor + unique-predecessor cfg analysis (a `findBlock?`/reference-count query), (b) **cross-block edge-shape threading** — A.output and B.input must be re-typed through the removed `swap d` consistently (normalize was purely intra-block, so this edge coupling is genuinely new).  Blast radius: MEDIUM–LARGE, but same altitude + heavy proof reuse.  Est. 2–3 sessions.
+
+* **Route A-coalesce — variant: merge A into B first, then the EXISTING live peephole fires.**  Coalescing A;B (unique edge) yields body `A.body ++ B.body` with `swap d :: swap d` LITERALLY adjacent → the already-live, already-proven `peepholeBody` swap arm cancels it with ZERO new cancellation proof.  Trades the bespoke canceller of Route A for a structural block-MERGE transform (changes block count/labels/`findBlock?`/`blocksInLoweringOrder?`/label-uniqueness `WellTyped`).  Bigger structural surface than Route A but maximal cancellation-proof reuse.  Ranked second.
+
+**Decision:** pursue **Route A** (block-preserving cfg seam cancellation) as primary — it is the cheapest SOUND fix at the altitude where the verified tower already lives, reuses the swap-involution semantics and the normalize congruence-family template, and the unique-predecessor property (measured 61/61) makes it unconditionally sound with a cheap, decidable firing guard.  Route 1 (assembly) is the fallback if the cross-block edge-shape threading proves harder than the block-merge.  All routes are genuinely multi-session; **no small localized re-proof exists**, so no starter `.lean` commit this session (never-commit-red).
+
+### KEY CORRECTION TO THE CAMPAIGN MODEL
+The sessions-3–59 assumption that removable swap pairs live in **cfg block BODIES** is empirically false for the corpus: on ExternalCallBox they live ONLY at **cross-block fallthrough seams** and are made adjacent by **byte compaction**.  The live-but-inert peephole∘normalize splice (§59) is correct and harmless but will remain inert on this corpus regardless of contract — the target adjacency is structurally never intra-block here.  The first byte-shrinking delta requires a cross-block (Route A) or assembly-level (Route 1) pass.
+
+### Files touched this session
+Documentation only (`PEEPHOLE_PROGRESS.md`).  Three `lake env lean --run` probes (`probe1/2/3.lean`) were run from the scratch dir OUTSIDE the repo and are NOT committed.  No `.lean` change; no frozen file touched.  `compile_correct`/`compile_correct_creation` axioms unchanged = `[propext, Classical.choice, Quot.sound]`.
