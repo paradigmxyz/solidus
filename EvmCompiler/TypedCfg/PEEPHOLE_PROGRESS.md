@@ -5495,3 +5495,92 @@ realized predicate strengthened with a per-witness source frame-consistency inva
 item 1), which subsumes both atoms.  Full `scripts/opt_harness.sh check` = OK (43 theorems, axioms ⊆
 `[propext, Classical.choice, Quot.sound]`); `compile_correct`/`compile_correct_creation` axioms
 UNCHANGED; delta +0.
+
+## Session-46 update (2026-07-20): frontier item 1 DONE + item 2 COMPLETE — the strengthened predicate `realizedWitnessFC` + ALL NINE `BlockGenShapeReg` legs + the dispatch (pop) arm now land the strengthened successor, all green + axiom-clean in 6 commits; only the `hInv` case-split assembly (item 3) + Step B remain
+
+Session 46's mandate (per §Session-45 frontier): (1) strengthen the realized predicate with a
+per-witness source frame-consistency invariant; (2) re-establish the 9 legs + dispatch + entry seed
+at the strengthened predicate; (3) assemble `hInv`; (4) Step B.  **Result: items 1 and 2 landed IN
+FULL — 6 green, axiom-clean commits.**  The strengthening design worked cleanly the whole way
+down (every leg compiled first-try); items 3/4 remain.  `peepholeBody`/public spine UNTOUCHED ⇒
+delta **+0**.
+
+### KEY DESIGN FINDING (what made item 2 tractable in one session, against the §Session-45 "budget it as its own session" estimate)
+`FrameConsistent` is a function of `(source.returns, tokens)` and the STATIC context **only —
+never the runtime EVM stack**.  Session 45's atom (ii) was stated at `bodyState.evm.stack.length +
+frame.callerStack.length`; restating it at `frame.retc + frame.callerStack.length` (the two
+coincide at a `procExit proc` witness, where `bodyState.evm.stack.length = proc.retc = frame.retc`)
+makes the invariant stack-independent.  **Consequence:** the SEVEN non-frame-shifting legs
+transport the entry witness's frame-consistency conjunct with NO push/pop and (for the pure/pop
+legs) NO returns-tracking at all — the child witness shares the entry's `(returns, tokens)`, only
+the EVM stack shifts.  Only callHead (push) and the dispatch arm (pop) do real frame work.
+
+### LANDED (green, axiom-clean) — six commits, six new leaf modules
+* **`9b7feb2f`** — `InteractionFrameConsistent.lean`: the foundation.
+  * `FrameHeadConsistent` / `FrameConsistent` (stack-independent recursion over
+    `(source.returns, tokens)` + static context) — the per-frame atoms of
+    `dispatch_hFinish_of_frameConsistent`, stated so the head condition quantifies over all
+    matching sites (no token-uniqueness needed at the consumer).
+  * `realizedWitnessFC` — the strengthened predicate (`realizedWitness` + `FrameConsistent` on the
+    same existential witness); `realizedWitnessFC.realizedWitness` projection;
+    `realizedWitnessFC_of_stateRel` uniform packager; `realizedWitnessFC_of_stateRel_nil` entry
+    seed; `FrameConsistent.{nil,tail,cons}` (pop/push); `AllEntriesRealized.weaken` +
+    `allEntriesRealized_realizedWitness_of_FC` (recovers the bare `realizedWitness` consumer for
+    Step B).
+* **`7e25bbfc`** — `InteractionFrameConsistentLegs.lean`: `realizedWitnessFC_of_pure_jump` +
+  the 5 transport legs `realizedWitnessFC_of_{nilJoin,terminalHalt,procAdapter,caseEntryPop,
+  switchTest}_dispatch`.
+* **`3c817210`** — `InteractionFrameConsistentBranchLegs.lean`: `jump_state_rel_returns_of_rel`
+  (returns-exposing branch extractor) + `realizedWitnessFC_of_{ifHead,forCond}_dispatch`.
+* **`e359202a`** — `InteractionFrameConsistentCodeLeg.lean`: `jump_state_rel_returns_of_outcome`
+  + `realizedWitnessFC_of_codeHead_dispatch`.
+* **`078b7264`** — `InteractionFrameConsistentDispatchLeg.lean`:
+  `realizedWitnessFC_of_dispatch_arm` — the ATOM-MOTIVATING case (§Session-45 counterexample).
+  The entry `FrameConsistent` head SUPPLIES the two atoms (instantiate `FrameHeadConsistent` at the
+  runtime-selected site + exiting proc); `FrameConsistent.tail` transports the popped caller
+  activation.  **No residual `hFinish`, no `source.FrameSafe`.**
+* **`dbd50e23`** — `InteractionFrameConsistentCallLeg.lean`:
+  `realizedWitnessFC_of_callHead_dispatch` — the only PUSH leg.  Establishes the pushed frame's
+  `FrameHeadConsistent` from the call's own site + token uniqueness
+  (`context.tokensUnique` + `List.inj_on_of_nodup_map`) + `hReg` + `sourceFrameFits_afterCall`,
+  then `FrameConsistent.cons`.
+
+`InteractionFrameConsistentCallLeg` is imported into `Verification.lean` (pulls the whole FS chain
+into the correctness build graph).
+
+### THE FRONTIER (session 47) — assemble `hInv`, then Step B
+The strengthened successor is now available at every arm.  Remaining, in order:
+
+1. **`hInv` assembly** (mandate item 3).  `block_category context hFind` → 4 arms:
+   * main/proc arms: `main_blockGenShape` / `proc_blockGenShape` (→ `BlockGenShape`; the
+     `BlockGenShapeReg` strengthenings `main_blockGenShapeReg`/`proc_blockGenShapeReg` carry the
+     exact-target `LabelShape` fields) → `cases` the 9 disjuncts → the matching
+     `realizedWitnessFC_of_*_dispatch` leg;
+   * dispatch arm: `dispatchBlock_provenance` → `realizedWitnessFC_of_dispatch_arm`;
+   * programEnd arm: `programEnd_openStep_no_jump`.
+   Then `AllEntriesRealized.of_openStep_invariant` with `realized := realizedWitnessFC …`, entry
+   witness `realizedWitnessFC_of_stateRel_nil`, then `allEntriesRealized_realizedWitness_of_FC`
+   to weaken to the bare `realizedWitness cfg` the downstream consumer wants.
+   * **KNOWN GAP (must close first):** the `callHead` leg threads `hReg :
+     ∀ out, result.fallthrough? = some out → LabelShape cfg regular out` as a hypothesis, but the
+     `BlockGenShapeReg.callHead` disjunct (`InteractionBlockGenShapeRegular.lean:211`) carries
+     `hEntryShape`/`hProcWF` but NOT `hReg`.  So the assembly cannot feed `callHead` directly.
+     FIX OPTIONS: (a) strengthen the `BlockGenShapeReg.callHead` disjunct with an `HRegular result
+     cfg regular` field (mirrors codeHead/ifHead) and re-prove `main_blockGenShapeReg` /
+     `proc_blockGenShapeReg` in `InteractionHInvAssemblyRegular.lean`; or (b) derive `hReg` for the
+     call from the enclosing statement-list provenance at the assembly site.  Option (a) is the
+     §Session-42 disjunct-strengthening methodology and is recommended.
+   * Note the FS legs' `calls` param is instantiated to `context.calls` throughout; the seven
+     non-call legs are `calls`-polymorphic (they carry `FrameConsistent` opaquely), callHead and
+     dispatch pin `context.calls`.
+2. **Step B** (`openRunNPrefix_peephole_congr_of_source`).
+
+### Status handed to session 47
+Landed (green + axiom-clean, six commits `9b7feb2f`→`dbd50e23`): the strengthened predicate
+`realizedWitnessFC` + all foundational plumbing + ALL NINE `BlockGenShapeReg` legs + the dispatch
+(pop) arm, each landing `realizedWitnessFC`.  The §Session-45 blocker (bare `realizedWitness` too
+weak) is DISSOLVED: `FrameConsistent` (stack-independent) supplies the dispatch atoms and is
+preserved by every jump.  **Remaining:** the `hInv` case-split assembly (item 3 — one all-or-nothing
+proof, blocked only on the `callHead`/`hReg` disjunct gap above) then Step B.  Full
+`scripts/opt_harness.sh check` = OK (43 theorems, axioms ⊆ `[propext, Classical.choice,
+Quot.sound]`); `compile_correct`/`compile_correct_creation` axioms UNCHANGED; delta +0.

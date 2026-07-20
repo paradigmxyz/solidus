@@ -43,6 +43,7 @@ import EvmCompiler.Structured.InteractionHInvAssembly
 import EvmCompiler.Structured.InteractionHInvAssemblyRegular
 import EvmCompiler.Structured.InteractionHInvDispatch
 import EvmCompiler.Structured.InteractionDispatchInversion
+import EvmCompiler.Structured.InteractionFrameConsistentCallLeg
 import EvmCompiler.Structured.InteractionLabelShapeTransport
 import EvmCompiler.Assembly.GasfulBridge
 import EvmCompiler.Assembly.InteractionBytecode
