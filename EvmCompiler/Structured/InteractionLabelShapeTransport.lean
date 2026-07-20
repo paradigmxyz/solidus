@@ -88,6 +88,74 @@ theorem edge_jump_of_wellTyped
       · simp only [hCompat, if_false] at hType
         exact absurd hType (by simp)
 
+/-!
+## Option-B boundary seeds — the external `regular` `LabelShape` in threaded form
+
+The head-construct successor suppliers (`realizedWitness_of_if_compile` /
+`realizedWitness_of_code_compile`, `InteractionConstructCoupling.lean:74` /
+`InteractionCodeConstructCoupling.lean:205`) each consume the external `regular`
+successor's `LabelShape` in the **threaded form**
+
+    ∀ out, result.fallthrough? = some out → LabelShape cfg regular out
+
+(the branch coupling pins `restShape = result.fallthrough?`, so the only shape ever
+demanded at `regular`/`next` is the construct's fallthrough output).  Option B threads
+exactly this predicate through the capstone mutual, seeded at the two program
+boundaries.  These two lemmas ARE the seeds: at the main body the external `regular`
+is `ProcLabel.programEnd` and at a proc body it is `ProcLabel.exit proc.name`, and the
+already-banked `LabelShape.programEnd` / `LabelShape.procExit` pin the boundary block's
+input — which, under the fallthrough hypothesis, is exactly `out`.
+-/
+
+/--
+**Main-body boundary seed (option B).**  The external `regular` successor of the main
+body is `ProcLabel.programEnd`, whose block input is `main.fallthrough?.getD caller`
+(`LabelShape.programEnd`).  Under `main.fallthrough? = some out` that input is exactly
+`out`, so `LabelShape cfg ProcLabel.programEnd out` — the threaded external-successor
+seed the main composite feeds the capstone. -/
+theorem main_regular_labelShape
+    {program : Structured.Program}
+    {entryShapes : TypedCfgCompiler.ProcEntryShapes}
+    {cfg : TypedCfg.Program}
+    (generated : Program.GeneratedContext program entryShapes cfg)
+    {out : TypedCfg.Shape}
+    (hFallthrough : generated.main.fallthrough? = some out) :
+    LabelShape cfg ProcLabel.programEnd out := by
+  have h := programEnd generated
+  rw [hFallthrough] at h
+  simpa using h
+
+/--
+**Proc-body boundary seed (option B).**  The external `regular` successor of a proc
+body is `ProcLabel.exit proc.name`, whose block input is `Shape.procExit proc`
+(`LabelShape.procExit`).  The proc fragment's `requireFallthrough? (procExit) = some ()`
+forces any actual body fallthrough output to be exactly `Shape.procExit proc`, so under
+`bodyResult.fallthrough? = some out` we get `out = Shape.procExit proc` and hence
+`LabelShape cfg (ProcLabel.exit proc.name) out` — the threaded external-successor seed
+the proc composite feeds the capstone. -/
+theorem proc_regular_labelShape
+    {program : Structured.Program}
+    {entryShapes : TypedCfgCompiler.ProcEntryShapes}
+    {cfg : TypedCfg.Program}
+    (generated : Program.GeneratedContext program entryShapes cfg)
+    {name : Structured.Name} {proc : Structured.Proc}
+    (hLookup :
+      Structured.ProcList.lookup? name program.procs = some proc)
+    {bodyResult : TypedCfgCompiler.Result} {out : TypedCfg.Shape}
+    (hRequire :
+      bodyResult.requireFallthrough? (TypedCfgCompiler.Shape.procExit proc) =
+        some ())
+    (hFallthrough : bodyResult.fallthrough? = some out) :
+    LabelShape cfg (ProcLabel.exit proc.name) out := by
+  have hOut : out = TypedCfgCompiler.Shape.procExit proc := by
+    rcases
+        TypedCfgCompilerFacts.Result.requireFallthrough?_eq_some_iff.mp hRequire with
+      hNone | hSome
+    · rw [hFallthrough] at hNone; exact absurd hNone (by simp)
+    · exact Option.some.inj (hFallthrough.symm.trans hSome)
+  subst hOut
+  exact procExit generated hLookup
+
 end LabelShape
 end TypedCfgPreservation
 end Structured
