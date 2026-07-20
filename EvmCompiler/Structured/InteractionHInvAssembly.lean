@@ -99,6 +99,44 @@ theorem dispatch_popReturn?_of_stateRel
   simp only [RunState.popReturn?, hReturns]
 
 /--
+**Dispatch arm: `dispatchBlocks` membership ⟶ owning-proc provenance.**
+
+`block_category`'s THIRD arm hands `block ∈ dispatchBlocks source.procs (context.main.calls
+++ context.procCalls)`.  `dispatchBlocks` is `source.procs.map (dispatchBlock · calls)`, so
+every such block is the return-dispatch block of exactly one `proc ∈ source.procs`; its label
+is `ProcLabel.exit proc.name`, its `input`/`output` the `procExit` shape, and its terminator
+the `returnDispatch` over that proc's registered return sites.  This recovers the owning proc
+together with the `lookup?`-witness (`source.WF` name-uniqueness) the return-dispatch successor
+supplier `realizedWitness_of_dispatch_jump` consumes as `hLookup`, plus the exact block shape
+(`= dispatchBlock proc context.calls`) the eventual dispatch `openStep` inversion turns on.
+
+Additive; no existing statement touched. -/
+theorem dispatchBlock_provenance
+    {source : Structured.Program}
+    {entryShapes : TypedCfgCompiler.ProcEntryShapes}
+    {cfg : TypedCfg.Program}
+    (context :
+      TypedCfgPreservation.Program.GeneratedContext source entryShapes cfg)
+    (hSourceWF : source.WF)
+    {block : TypedCfg.Block}
+    (hMem :
+      block ∈
+        TypedCfgCompiler.dispatchBlocks source.procs
+          (context.main.calls ++ context.procCalls)) :
+    ∃ proc : Structured.Proc,
+      proc ∈ source.procs ∧
+      Structured.ProcList.lookup? proc.name source.procs = some proc ∧
+      block =
+        TypedCfgCompiler.dispatchBlock proc
+          (context.main.calls ++ context.procCalls) := by
+  simp only [TypedCfgCompiler.dispatchBlocks, List.mem_map] at hMem
+  obtain ⟨proc, hProcMem, hBlock⟩ := hMem
+  exact
+    ⟨proc, hProcMem,
+      Structured.ProcList.lookup?_eq_some_of_mem hSourceWF.1 hProcMem rfl,
+      hBlock.symm⟩
+
+/--
 **Main-body arm: block ⟶ `BlockGenShape` composite.**
 
 Combines the main-body provenance root (`main_stmtList_provenance`) with the capstone
