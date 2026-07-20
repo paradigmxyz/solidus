@@ -1,4 +1,5 @@
 import EvmCompiler.Structured.InteractionMachineryCoupling
+import EvmCompiler.Structured.InteractionCodeConstructCoupling
 
 /-!
 # Per-disjunct `hInv` dispatch — the machinery-block legs (session 40)
@@ -33,7 +34,7 @@ namespace EvmCompiler
 namespace Structured
 namespace InteractionHInvDispatch
 
-open InteractionBoundedOwnerPreservation.OpenOutcome (realizedWitness)
+open InteractionBoundedOwnerPreservation.OpenOutcome (realizedWitness realizedWitness_of_stateRel)
 
 /--
 **`nilJoin` disjunct `hInv` leg.**  From the entry `realizedWitness` (which, unified to the
@@ -99,6 +100,54 @@ theorem realizedWitness_of_terminalHalt_dispatch
         transcript (Except.ok (TypedCfg.Outcome.jump next state'))) :
     realizedWitness cfg next state' :=
   (InteractionMachineryCoupling.halt_openStep_no_jump hFind hExec).elim
+
+/--
+**`codeHead` disjunct `hInv` leg.**  For a straight-line `.code` head block, the only
+first jump falls through to `regular` (`next = regular`, exposed by
+`jump_state_rel_of_outcome`).  This leg mirrors `realizedWitness_of_code_compile` but,
+instead of consuming a `LabelShape cfg next expected` supplied at the CONCRETE jumped-to
+`next`, it consumes the enriched `codeHead` field `hReg` (the threaded
+`HRegular result cfg regular` form) and feeds it at the fallthrough shape once
+`next = regular` is exposed — the fallthrough shape existing by
+`fallthrough_code_of_compileStmtFuel?`. -/
+theorem realizedWitness_of_codeHead_dispatch
+    {cfg : TypedCfg.Program} {sourceProgram : Structured.Program}
+    {compilerFuel sourceFuel : Nat} {code : Structured.Code}
+    {ctx : TypedCfgCompiler.Context} {supply : LabelSupply}
+    {entry regular next : Assembly.Label} {input : TypedCfg.Shape}
+    {result : TypedCfgCompiler.Result}
+    {source : RunState} {tokens : List Word} {target state' : EVMState}
+    {transcript : Simulation.Interaction.Transcript}
+    (hCompile :
+      TypedCfgCompiler.compileStmtFuel? (compilerFuel + 1) (.code code) ctx
+          supply entry input regular = some result)
+    (hBlocks : TypedCfgPreservation.BlocksInProgram result cfg)
+    (hFits :
+      TypedCfgCompiler.Shape.SourceFrameFits input source.evm.stack.length)
+    (hRel : TypedCfgPreservation.StateRel source tokens target)
+    (hReg :
+      ∀ out, result.fallthrough? = some out →
+        TypedCfgPreservation.LabelShape cfg regular out)
+    (hExec :
+      Simulation.Interaction.Executes
+        (TypedCfg.InteractionSemantics.Program.openStep cfg entry target)
+        transcript (Except.ok (TypedCfg.Outcome.jump next state'))) :
+    realizedWitness cfg next state' := by
+  obtain ⟨expected, hFall⟩ :=
+    TypedCfgCompilerFacts.Stmt.fallthrough_code_of_compileStmtFuel? hCompile
+  have hRequire : result.requireFallthrough? expected = some () :=
+    TypedCfgCompilerFacts.Result.requireFallthrough?_eq_some_iff.mpr (Or.inr hFall)
+  have hProd :=
+    InteractionControlPreservation.Stmt.openStep_code_of_compileStmtFuel?
+      (sourceProgram := sourceProgram) (sourceFuel := sourceFuel)
+      hCompile hBlocks hFits hRel
+  obtain ⟨srcState, hNext, hStateRel, hFits'⟩ :=
+    InteractionControlPreservation.OpenOutcome.jump_state_rel_of_outcome
+      hRequire hProd hExec
+      (fun _t _o hExec' =>
+        InteractionConstructCoupling.stmt_openRun_code_only_regular hExec')
+  subst hNext
+  exact realizedWitness_of_stateRel (hReg expected hFall) hStateRel hFits'
 
 end InteractionHInvDispatch
 end Structured
