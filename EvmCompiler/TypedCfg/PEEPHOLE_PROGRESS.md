@@ -4130,3 +4130,188 @@ pin the capstone predicate: (1) the switch head reuses `_code_compile` (no new l
 shape-transport).  Frontier = adapter supplier → proc-body root inversion → the
 assembled 5-function capstone mutual → dispatch residual, before
 `of_openStep_invariant` → Step B.
+
+## Session-34 update (2026-07-19): frontier items 1 & 2 LANDED (adapter supplier + proc-body root inversion), the terminal-arm vacuity LANDED (successor-discharge family now COMPLETE for every reachable block category), and TWO concrete corrections to the §Session-33 capstone predicate pinned before the mutual was written
+
+Session 34's mandate: adapter supplier → proc-body root inversion → the assembled
+capstone mutual → dispatch residual.  **Result: the two self-contained "next-session
+first steps" (frontier items 1 & 2) are banked green + axiom-clean, PLUS the terminal
+vacuity lemma that completes the discharge family; the capstone mutual itself was NOT
+written — two predicate CORRECTIONS discovered while nailing down the arms show the
+§Session-33 6-disjunct sketch is wrong in two places, so committing that predicate now
+would have been the "large wrong artifact" the §Session-32/33 notes warn against.**
+No red code, no sorries; `peepholeBody`/public spine UNTOUCHED ⇒ measured delta still
+**+0**.
+
+### LANDED (green, axiom-clean) — all `#print axioms = [propext, Classical.choice, Quot.sound]`
+* **`d90b60e0` — `realizedWitness_of_adapter_jump`** (`InteractionMachineryCoupling.lean`,
+  after `_join_jump`).  The proc-entry ADAPTER block (finding 2, §Session-33):
+  `{ input := blockInput, body := [.relabel relabelTarget], output, term := .jump
+  bodyLabel }`.  Its `openStep` reduces silently to `pure (.jump bodyLabel target)`
+  (state unchanged — the `.relabel` runs no primitive; mirrors the reduction inside
+  `openRunNResult_procEntry`, `InteractionCallPreservation.lean:696–740`), then
+  `realizedWitness_of_pure_jump` closes it.  **Design resolution of the §Session-33
+  caveat:** `StateRel` mentions no shape, so it needs NO relabel transport (carried
+  from the entry directly, like `_join_jump`).  `SourceFrameFits` is NOT preserved
+  across a relabel in general — `relabelCompatible` (`Syntax.lean:120`) requires equal
+  length + equal tail + `slotsAgree`, but `slotsAgree` lets a `.word` slot match any
+  slot, so `sourceView`/`returnTokenDepth?` (hence `sourceLength`) can differ.  So —
+  exactly as `_pop_jump`/`_pure_jump` — the supplier takes the child fits at the
+  SUCCESSOR shape (`hFits : SourceFrameFits output …`) as a hypothesis; the concrete
+  transport (at `output = relabelTarget = fragment.input`, since a type-checking
+  relabel returns `some target`, `Typing.lean:51`) is discharged at capstone assembly.
+  NO standalone `.relabel` `SourceFrameFits` transport lemma was banked because none is
+  true in general — that part of the §Session-33 frontier was mis-scoped.
+* **`ccad028e` — `mem_procBlocks_provenance` + `GeneratedContext.procBlocks_provenance`**
+  (`InteractionProcBlockProvenance.lean`, NEW module, wired into
+  `EvmCompiler.Verification`).  The proc-body root (frontier item 2): the reverse of
+  `procFragment_of_lowerProcBodiesWithShapes?` (`Core.lean:3049`).  From
+  `block ∈ context.procBlocks` recover the generating `proc` (`∈ source.procs` — see
+  NOTE) and classify: either `block ∈ (compileBlock? proc.body …).blocks` (the body
+  drill entry, analogous to `main_stmtList_provenance`) or `block` = that proc's entry
+  ADAPTER (`mkBlock? (ProcLabel.entry proc.name) … = some block`).  Mirrors the forward
+  induction (adapter/no-adapter × shape-present/absent) over
+  `lowerProcBodiesWithShapes?`, tracking `procBlocks = body.blocks ++ tailBlocks` with
+  `body.blocks = compiled.blocks` or `adapter :: compiled.blocks`
+  (`TypedCfgCompiler.lean:677`).  **NOTE (design choice):** the lemma surfaces
+  `proc ∈ procs` (List.Mem), NOT a `ProcList.lookup?` fact.  A block in the *tail*
+  belongs to a proc in `rest`, but if its name collided with `head.name` the
+  `lookup?` would return `head`, not the true generator — so `lookup?` is UNPROVABLE
+  from block membership without a global proc-name-uniqueness invariant.  `∈` is always
+  liftable through the induction and suffices for both consumers (the adapter supplier
+  is shape-generic; the body drill consumes only the compile fact).
+* **`3dc73f63` — `halt_openStep_no_jump`** (`InteractionMachineryCoupling.lean`, end).
+  The `.terminal kind` block `{ input, body := [], output := input, term := .halt kind }`
+  (`TypedCfgCompiler.lean:553`): its `openStep` = `.done (runTermChecked input
+  (.halt kind) target)`, always `.ok (.halt …)` or `.error .StaticModeViolation`
+  (static `selfdestruct`), NEVER `.ok (.jump …)`, so it can't `Executes`-produce a
+  jump.  General sibling of `programEnd_openStep_no_jump`.  **This closes the last
+  reachable-block category — the successor-discharge family is now COMPLETE.**
+
+### KEY CORRECTION 1 — brk/cont/leave are NOT vacuous; they are nil-join blocks (reuse `_join_jump`, NO new supplier)
+The §Session-33 predicate sketch (line ~4059) lumped "brk/cont/leave/terminal emit no
+`.jump` successor — vacuous like programEnd" into the `IsHead` arm.  **Wrong for
+brk/cont/leave.**  `compileStmtFuel?` for `.brk`/`.cont`/`.leave`
+(`TypedCfgCompiler.lean:507–536`) emits `mkBlock? entry input [] term` where
+`term = checkedJumpOrInvalid … input = .jump <break/continue/leave label>` (only when
+`input = expected`, so `output = input`).  That is **byte-for-byte the nil-join shape**
+`{ input, body := [], output := input, term := .jump exitLabel }` — already discharged
+by `realizedWitness_of_join_jump` (session 33).  So in the capstone mutual the
+brk/cont/leave arms emit the **nil-join disjunct** directly (carrying `input` +
+the target label), NOT a head compile-fact.  Only `.terminal` is truly vacuous
+(it emits `.halt`, `TypedCfgCompiler.lean:553` — closed by `halt_openStep_no_jump`
+this session).
+
+### KEY CORRECTION 2 — brk/cont/leave should be emitted as the join disjunct FROM THEIR OWN mutual arm, not routed through `IsHead`+`cases stmt`
+Because there is no `realizedWitness_of_brk_compile` supplier (and none is needed —
+the block IS the join shape), the cleanest capstone design does NOT put brk/cont/leave
+into a generic `IsHead` disjunct that `hInv` later re-cases with `cases stmt`.
+Instead each of the brk/cont/leave arms of `activeResult_of_compileStmtFuel?`'s mirror
+extracts the block's concrete `{ [], .jump target }` shape (from
+`checkedJumpOrInvalid … = some (.jump target)` under `input = expected`) and emits the
+`nilJoin` disjunct.  This keeps `hInv`'s consumer a clean per-disjunct dispatch with no
+nested `stmt` case-split.
+
+### THE RE-CORRECTED CAPSTONE PREDICATE (supersedes §Session-33's; pin BEFORE the mutual)
+`BlockGenShape cfg block` — a purely-STATIC classification (compile facts + shapes +
+type facts; NO runtime `StateRel`/`SourceFrameFits`/`openStep`, and NOT the successor
+`LabelShape` — both supplied separately by `hInv`).  Disjuncts (constructors of an
+`inductive … : Prop`), each carrying exactly its supplier's static inputs:
+1. **`codeHead`** — `∃ cf code ctx supply regular result, compileStmtFuel? (cf+1)
+   (.code code) ctx supply block.label block.input regular = some result ∧
+   BlocksInProgram result cfg` → `realizedWitness_of_code_compile`.  **Finding 1
+   (§Session-33): the `.switch` head folds here** — the switch head is
+   `mkCodeBlock? entry input scrutinee (.jump firstTest)` = the block a
+   `compileStmtFuel? (.code scrutinee) … (regular := firstTest)` emits; the switch arm
+   SYNTHESISES that `.code scrutinee` compile fact for its head block (a small helper
+   `codeFact_of_switchHead` is the one genuinely-new supporting lemma the mutual needs
+   here — reverse of `mkCodeBlock?`; not yet banked).
+2. **`ifHead`** — `∃ cf cond body ctx supply regular result, compileStmtFuel? (cf+1)
+   (.if_ cond body) ctx supply block.label block.input regular = some result ∧
+   BlocksInProgram result cfg` → `realizedWitness_of_if_compile`.
+3. **`callHead`** — `∃ cf name ctx supply regular result, ProcList.lookup? name
+   ctx.procs = some proc ∧ compileStmtFuel? (cf+1) (.call name) … = some result ∧
+   BlocksInProgram result cfg` (also needs `proc.WF` + the `splitArgs?` runtime — the
+   `splitArgs?`/`proc.WF` come from the callee's own `realizedWitness`/a WF invariant at
+   `hInv`, so `callHead` need only carry the compile fact + lookup + `BlocksInProgram`)
+   → `realizedWitness_of_call_compile`.
+4. **`forCond`** — `∃ cond input output trueLabel falseLabel, block = { block.label,
+   input, body := Code.toCfg cond, output, term := .jumpi trueLabel falseLabel } ∧
+   Code.type? cond input = some output ∧ requireSourceWords? 1 output = some () ∧
+   findBlock? block.label = some block` → `realizedWitness_of_condBlock_jump`.
+5. **`switchTest`** — carry `valueShape/caseValue/labels` + `head?` +
+   `BlocksInProgram result cfg` + membership → `realizedWitness_of_test_jump`.
+6. **`caseEntryPop`** — carry `input/output` + `Instr.type? .pop` + `BlocksInProgram` +
+   membership → `realizedWitness_of_pop_jump`.
+7. **`nilJoin`** — `∃ input exitLabel, findBlock? block.label = some { block.label,
+   input, body := [], output := input, term := .jump exitLabel }` →
+   `realizedWitness_of_join_jump`.  **COVERS: the empty-stmt-list join block AND
+   brk/cont/leave (correction 1).**
+8. **`procAdapter`** — `∃ blockInput relabelTarget output bodyLabel, findBlock?
+   block.label = some { block.label, blockInput, [.relabel relabelTarget], output,
+   .jump bodyLabel } ∧ Instr.type? (.relabel relabelTarget) blockInput = some output`
+   → `realizedWitness_of_adapter_jump` (banked this session).
+9. **`terminalHalt`** — `∃ input kind, findBlock? block.label = some { block.label,
+   input, [], input, .halt kind }` → `halt_openStep_no_jump` (banked this session).
+
+That is NINE disjuncts, not six: the §Session-33 "six" conflated the three head
+suppliers into one `IsHead`, and mis-placed brk/cont/leave + terminal.  Splitting the
+head into `code/if/call` avoids a nested `cases stmt` in `hInv`; `nilJoin` absorbs
+brk/cont/leave; `terminalHalt` is its own vacuity disjunct.  (Dispatch blocks are NOT a
+`BlockGenShape` disjunct — they are `block_category`'s THIRD arm, discharged by
+`realizedWitness_of_dispatch_jump` directly, outside this predicate, which only classes
+the main-body + proc-body categories.)
+
+### THE FRONTIER (sharpened for session 35)
+1. **The one supporting lemma the mutual still needs:** `codeFact_of_switchHead`
+   (synthesise the `compileStmtFuel? (.code scrutinee) … = some <single-block result>`
+   fact for the switch head block, from the switch's `components_of_compileStmtFuel?_switch`
+   head `mkCodeBlock?` fact — reverse-engineer the `.code` emission at line 412).  The
+   analogous facts for brk/cont/leave (their `{[], .jump target}` shape) come straight
+   out of `checkedJumpOrInvalid = some (.jump target)` under `input = expected`; no
+   helper needed beyond a `simp` unfold.
+2. **The assembled 9-disjunct capstone mutual** — 5 functions
+   (`compileBlockFuel?`/`compileStmtListFuel?`/`compileStmtFuel?`/`compileCasesFuel?`/
+   `compileDefaultFuel?`) mirroring `activeResult_of_compile*`
+   (`TypedCfgCompilerActive.lean:77–508`) but concluding
+   `∀ block ∈ result.blocks, BlockGenShape cfg block` (define
+   `GenShapeResult result cfg := that ∀`, prove an `append` lemma like
+   `ActiveResult.append`).  **Thread `hBlocks : BlocksInProgram result cfg`** DOWN the
+   recursion (each sub-result's `BlocksInProgram` follows from block-list inclusion:
+   sub.blocks ⊆ result.blocks — small `sublist`/`left_of_append`/`right_of_append`
+   helpers; `BlocksInProgram.{left,right}_of_append` already exist at `Core.lean:2085`).
+   Per §Session-33: machinery arms must use `components_of_compileStmtFuel?_{for,switch}`
+   / `components_of_compileCasesFuel?_cons` DIRECTLY (not the lossy `mem_of_*`) to
+   retain the block shape + `hType`/`hSource`/`head?` facts the disjuncts carry.  Arms:
+   nil→`nilJoin`; code→`codeHead`; if→`ifHead` for head + recurse body; switch→
+   `codeHead`(via `codeFact_of_switchHead`) for head + recurse cases/default; for→recurse
+   init + `forCond` for the loop block + recurse body/post; brk/cont/leave→`nilJoin`;
+   terminal→`terminalHalt`; call→`callHead`; cases-cons→`switchTest`+`caseEntryPop`+
+   recurse body + recurse tail; default-none→`caseEntryPop`; default-some→`caseEntryPop`
+   (the `pop` entry) + recurse body.
+3. **The dispatch StateRel⟶frame-facts residual** (unchanged, §Session-31 item 4).
+4. Then assemble `hInv` via `block_category` → {main root
+   (`main_stmtList_provenance`) / proc root (`procBlocks_provenance`, banked this
+   session) → drill(capstone) → matching supplier} ; dispatch → frame-facts →
+   `realizedWitness_of_dispatch_jump` ; programEnd → `programEnd_openStep_no_jump`.
+   Feed `AllEntriesRealized.of_openStep_invariant`; proceed to Step B
+   (`openRunNPrefix_peephole_congr_of_source`).
+* Do NOT add the swap arm to `peepholeBody` until the whole invariant is green.
+
+### Status handed to session 35
+Frontier items 1 & 2 (adapter supplier + proc-body root inversion) LANDED; the
+terminal vacuity lemma LANDED ⇒ the **successor-discharge family is COMPLETE** for
+EVERY reachable block category (compiled head ×3 / for-cond / switch-test / case-entry /
+nil-join [also brk/cont/leave] / proc-entry adapter / dispatch / programEnd / terminal).
+Landed: `InteractionMachineryCoupling.lean` — `realizedWitness_of_adapter_jump`
+(`d90b60e0`), `halt_openStep_no_jump` (`3dc73f63`);
+`InteractionProcBlockProvenance.lean` (NEW, wired into `EvmCompiler.Verification`) —
+`mem_procBlocks_provenance` + `GeneratedContext.procBlocks_provenance` (`ccad028e`).
+`compile_correct`/`compile_correct_creation` UNCHANGED (frozen `Correctness.lean`
+untouched); delta +0.  The capstone mutual was deliberately deferred: two predicate
+CORRECTIONS (brk/cont/leave are nil-join, not vacuous; the head splits into
+code/if/call, so NINE disjuncts not six) mean the §Session-33 predicate was wrong;
+the re-corrected predicate + the single remaining supporting lemma
+(`codeFact_of_switchHead`) + the exact arm-by-arm mutual recipe are pinned above.
+Frontier = `codeFact_of_switchHead` → the assembled 9-disjunct capstone mutual →
+dispatch residual, before `of_openStep_invariant` → Step B.
