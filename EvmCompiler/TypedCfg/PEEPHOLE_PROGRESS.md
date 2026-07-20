@@ -6259,3 +6259,44 @@ harness `check` ~3–4 min — `nohup … &`, poll `until ! kill -0 PID; do slee
 
 ### Status handed to session 55
 Steps B + C **CLOSED**; Step D (all items) **CLOSED**; the `swap d ; swap d → ε` arm is **LIVE** in `peepholeBody` and every dependent proof is green + axiom-clean. `peepholeProgram` now cancels BOTH `push;pop` and `swap;swap` and its whole-program OPEN congruence (`Block.openRun_peephole_runtimeRel`) + `WellTyped` preservation + fuel bound all hold. **Not yet done**: splicing `peepholeProgram` into the emitted codegen (currently the transform is proven but the public spine emits the un-peepholed program, so byte counts are unchanged). Next natural target = the spine splice (emit `peepholeProgram cfg` and re-route `compile_correct` through `Block.openRun_peephole_runtimeRel`), or a further peephole rule (`dup;pop`, `swapN;…`). `compile_correct`/`compile_correct_creation` axioms MUST stay `[propext, Classical.choice, Quot.sound]`.
+
+## Session-55 update (2026-07-20): GROUND-TRUTH RESOLVED — the spine splice is **ALREADY LIVE** in the emitted-bytes path (has been since §Session-4); the §Session-54 parenthetical "NOT spliced into emitted codegen" is **STALE / WRONG**. The `swap;swap→ε` arm is genuinely wired into the shipped bytes but is **live-but-inert** (outcome (a)): the redundant swap pairs do **not exist at the TypedCfg block-body granularity** the cfg-level `peepholeBody` operates on — they are a **lowering / compaction-phase artifact**. No code change (splice needs none); this session is investigation + measurement + this note. `scripts/opt_harness.sh check` = **OK** (1355 jobs, **43** public theorems; `compile_correct`/`compile_correct_creation` axioms = `[propext, Classical.choice, Quot.sound]`).
+
+### The contradiction and its resolution (the mandate's first task)
+The §Session-3/4 note claimed the splice landed: `StackArtifact.compile?` certifies `(peepholeProgram cfg).compileCertified?`. The §Session-54 note claimed the opposite ("the public spine emits the un-peepholed program"). **Ground truth by code trace, not by re-reading the notes:**
+* **`EvmCompiler/Compiler/StackArtifact.lean:60`**: `let certified ← (TypedCfg.Peephole.peepholeProgram cfg).compileCertified?` — the emitted target is derived from the **peepholed** cfg. (`compile?_parts`' 11th field, line 92, pins `(peepholeProgram artifact.cfg).compileCertified? = some artifact.certified`.)
+* **`EvmCompiler/TypedCfg/Certificate.lean:497`**: `compileCertified?` does `let target ← program.lower?`, so `certified.target = (peepholeProgram cfg).lower?`.
+* **`StackArtifact.compile?:61`**: `let target ← Assembly.compileExecutable? certified.target` → the emitted `artifact.target` is the lowering of the **peepholed** program.
+* **CLI raw path** (the corpus/measurement path): `runRaw` → `Solidity.RawAst.compileArtifactFromRawSolcIr?` → `Program.compileArtifactWithLinkerSymbols?` → per-object `compileVerifiedStackCodeArtifactIn?` (`Frontend.lean:3862/3867`) → `Compiler.StackArtifact.compile? lower.toFunctions`. Same `compile?`, same peephole. **The shipped bytes go through `peepholeProgram`.**
+
+So §Session-54's parenthetical is simply incorrect (its author measured ASP byte-identical and inferred "no splice"; the real reason is "no targets"). **The splice has been live in emitted bytes continuously since §Session-4** — it was never reverted; the Step B–D restructure (sessions 51–54) kept `StackArtifact.compile?:60` pointed at `peepholeProgram cfg` throughout.
+
+### Why bytes are unchanged — RIGOROUS, not "probably no targets"
+`peepholeBody`'s swap arm deletes an adjacent same-depth `swap d :: swap d` from a TypedCfg **block body**; each deleted `Instr.swap` lowers to ≥1 byte, so **any** firing strictly shrinks the emitted image. Therefore *unchanged emitted bytes ⟺ the cfg-body peephole fires zero times* for a contract. Measured (pinned solc 0.8.26, current HEAD e073b629 build, peephole ON):
+| contract | runtime | creation | matches baseline |
+|---|---|---|---|
+| AdversarialStackPressure | **8557** | **8591** | = §Session-53/54 |
+| ExternalCallBox | **2791** | **2825** | = §Session-4 (2791 rt) |
+
+Both byte-identical to their pre-swap-arm baselines ⟹ **zero cfg-body firings** on both. No wiring changed this session, so **no determinism double-compile is required** (byte counts did not move).
+
+### WHERE the swap;swap pairs actually live (the mandate's scan)
+Disassembled the **emitted, shipped** bytecode (properly skipping PUSH immediates) and counted adjacent *equal-opcode* `SWAPn;SWAPn` (the exact rule the arm cancels) and `PUSHx;POP`:
+| contract | runtime bytes | ops | `SWAPn;SWAPn` adj | `PUSHx;POP` adj |
+|---|---|---|---|---|
+| AdversarialStackPressure | 8557 | 8308 | **3** | 0 |
+| ExternalCallBox | 2791 | 2146 | **61** | 0 |
+| MiniToken | 1991 | 1354 | **15** | 0 |
+| LoopBox | 923 | 639 | **15** | 0 |
+
+The ExternalCallBox count **61** reproduces §Session-4's physical `swapPair` figure exactly (`controlPatternStats.swapPair`, `BackendCli.lean:629`, is the identical adjacency rule). These pairs **survive all the way into the shipped bytes** yet the cfg-level peephole cancelled **none** of them → they are **created downstream of the TypedCfg point**, during `cfg.lower?` / StackShuffle expansion / fallthrough compaction (adjacencies that span block boundaries or arise from per-block cleanup-shuffle expansion are invisible to a single-block-body `peepholeBody`). `PUSHx;POP` = 0 corpus-wide (confirms push;pop is inert too). **This is outcome (a): the arm is correctly wired and provably sound, but structurally cannot fire because the target adjacencies do not exist at cfg-body granularity.**
+
+### The honest next lever (highest value observed)
+The cfg-body `peepholeProgram` is the wrong altitude for these no-ops. The 61+15+15+3 removable `SWAPn;SWAPn` pairs live in the **lowered assembly** (post-`lower?`, in `Assembly.Program`/physical). The real byte win requires one of:
+1. **An assembly-level (post-lowering) involution peephole** on `Assembly.TargetProgram` (or on the compacted physical stream), cancelling adjacent equal `SWAPn;SWAPn` and `PUSHx;POP`. This is a **new proof lever** at the Assembly layer — the sessions-12–54 chain is entirely TypedCfg-level and does NOT transfer; it would need its own `RuntimeOutcomeRel`-style congruence against `Assembly.compileExecutable?`/`Compact`. Est. large. Watch the frozen boundary: `EvmCompiler/Assembly/*` is FROZEN, so an assembly-level transform must live in a NEW non-frozen module and be spliced at `StackArtifact.compile?:61` (the `compileExecutable?` seam), NOT inside `Assembly/`.
+2. **Shuffle-scheduler canonicalization** in `TypedCfg/Lower.lean` (StackShuffle) so it never emits an adjacent `swapN;swapN` in the first place — a codegen-quality fix, cheaper to make correct-by-construction but touches the lowering the whole certificate rests on.
+
+Either is a genuine multi-session effort; neither is a "splice" of the existing `peepholeProgram`. The cfg-level `push;pop`+`swap;swap` tower (sessions 3–54) remains a correct, axiom-clean, **already-emitted-path-wired** substrate that is simply inert on this corpus.
+
+### Files touched this session
+Documentation only (`PEEPHOLE_PROGRESS.md`). No `.lean` change; scratch probe/measure scripts live outside the repo and are not committed. `compile_correct`/`compile_correct_creation` axioms unchanged.
