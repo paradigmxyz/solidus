@@ -19,6 +19,23 @@ cleanup() {
 }
 trap cleanup EXIT
 
+for executable in "$PYTHON_BIN" "$LAKE_BIN" "$SOLC_BIN" "$FORGE_BIN" "$CAST_BIN"; do
+  if [[ ! -x "$executable" ]] && ! command -v "$executable" >/dev/null 2>&1; then
+    printf 'error: required executable is unavailable: %s\n' "$executable" >&2
+    exit 1
+  fi
+done
+
+# Hoist cast out of argument position: a $(...) inside an argument list is
+# not covered by set -e, so a failing cast would silently pass empty
+# calldata while the call-count assertion still held.
+CALLDATA_ARGS=()
+add_calldata() {
+  local encoded
+  encoded="$("$CAST_BIN" calldata "$@")"
+  CALLDATA_ARGS+=(--calldata "$encoded")
+}
+
 SOURCE="$ROOT/examples/ProxyLifecycleSurfaceBox.sol"
 REPORT="$OUTDIR/proxy-lifecycle.lean-backend-check.json"
 COMPARE="$OUTDIR/proxy-lifecycle.compare.txt"
@@ -36,6 +53,18 @@ COMPARE="$OUTDIR/proxy-lifecycle.compare.txt"
 
 "$PYTHON_BIN" "$ROOT/scripts/validate_bridge_json.py" --quiet "$REPORT"
 
+add_calldata 'implementation()'
+add_calldata 'set(uint256)' 11
+add_calldata 'value()'
+add_calldata 'reenter(uint256)' 22
+add_calldata 'value()'
+add_calldata 'failAfterStore(uint256)' 33
+add_calldata 'value()'
+add_calldata 'upgradeToV2()'
+add_calldata 'version()'
+add_calldata 'set(uint256)' 44
+add_calldata 'value()'
+
 "$PYTHON_BIN" "$ROOT/scripts/compare_contract_call_bytecode.py" \
   "$SOURCE" \
   --solc "$SOLC_BIN" \
@@ -44,17 +73,7 @@ COMPARE="$OUTDIR/proxy-lifecycle.compare.txt"
   --forge "$FORGE_BIN" \
   --contract ProxyLifecycleSurfaceBox \
   --optimized \
-  --calldata "$("$CAST_BIN" calldata 'implementation()')" \
-  --calldata "$("$CAST_BIN" calldata 'set(uint256)' 11)" \
-  --calldata "$("$CAST_BIN" calldata 'value()')" \
-  --calldata "$("$CAST_BIN" calldata 'reenter(uint256)' 22)" \
-  --calldata "$("$CAST_BIN" calldata 'value()')" \
-  --calldata "$("$CAST_BIN" calldata 'failAfterStore(uint256)' 33)" \
-  --calldata "$("$CAST_BIN" calldata 'value()')" \
-  --calldata "$("$CAST_BIN" calldata 'upgradeToV2()')" \
-  --calldata "$("$CAST_BIN" calldata 'version()')" \
-  --calldata "$("$CAST_BIN" calldata 'set(uint256)' 44)" \
-  --calldata "$("$CAST_BIN" calldata 'value()')" \
+  "${CALLDATA_ARGS[@]}" \
   > "$COMPARE"
 
 "$PYTHON_BIN" - "$REPORT" "$COMPARE" <<'PY'

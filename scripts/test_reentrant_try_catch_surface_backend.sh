@@ -19,6 +19,23 @@ cleanup() {
 }
 trap cleanup EXIT
 
+for executable in "$PYTHON_BIN" "$LAKE_BIN" "$SOLC_BIN" "$FORGE_BIN" "$CAST_BIN"; do
+  if [[ ! -x "$executable" ]] && ! command -v "$executable" >/dev/null 2>&1; then
+    printf 'error: required executable is unavailable: %s\n' "$executable" >&2
+    exit 1
+  fi
+done
+
+# Hoist cast out of argument position: a $(...) inside an argument list is
+# not covered by set -e, so a failing cast would silently pass empty
+# calldata while the call-count assertion still held.
+CALLDATA_ARGS=()
+add_calldata() {
+  local encoded
+  encoded="$("$CAST_BIN" calldata "$@")"
+  CALLDATA_ARGS+=(--calldata "$encoded")
+}
+
 SOURCE="$ROOT/examples/ReentrantTryCatchSurfaceBox.sol"
 REPORT="$OUTDIR/reentrant-try-catch.lean-backend-check.json"
 COMPARE="$OUTDIR/reentrant-try-catch.compare.txt"
@@ -36,6 +53,15 @@ COMPARE="$OUTDIR/reentrant-try-catch.compare.txt"
 
 "$PYTHON_BIN" "$ROOT/scripts/validate_bridge_json.py" --quiet "$REPORT"
 
+add_calldata 'probe(uint8,uint256)' 0 2
+add_calldata 'probe(uint8,uint256)' 1 2
+add_calldata 'probe(uint8,uint256)' 2 1
+add_calldata 'probe(uint8,uint256)' 3 1
+add_calldata 'probe(uint8,uint256)' 4 1
+add_calldata 'probe(uint8,uint256)' 5 0
+add_calldata 'probe(uint8,uint256)' 0 1
+add_calldata 'counter()'
+
 "$PYTHON_BIN" "$ROOT/scripts/compare_contract_call_bytecode.py" \
   "$SOURCE" \
   --solc "$SOLC_BIN" \
@@ -44,14 +70,7 @@ COMPARE="$OUTDIR/reentrant-try-catch.compare.txt"
   --forge "$FORGE_BIN" \
   --contract ReentrantTryCatchSurfaceBox \
   --optimized \
-  --calldata "$("$CAST_BIN" calldata 'probe(uint8,uint256)' 0 2)" \
-  --calldata "$("$CAST_BIN" calldata 'probe(uint8,uint256)' 1 2)" \
-  --calldata "$("$CAST_BIN" calldata 'probe(uint8,uint256)' 2 1)" \
-  --calldata "$("$CAST_BIN" calldata 'probe(uint8,uint256)' 3 1)" \
-  --calldata "$("$CAST_BIN" calldata 'probe(uint8,uint256)' 4 1)" \
-  --calldata "$("$CAST_BIN" calldata 'probe(uint8,uint256)' 5 0)" \
-  --calldata "$("$CAST_BIN" calldata 'probe(uint8,uint256)' 0 1)" \
-  --calldata "$("$CAST_BIN" calldata 'counter()')" \
+  "${CALLDATA_ARGS[@]}" \
   > "$COMPARE"
 
 "$PYTHON_BIN" - "$REPORT" "$COMPARE" <<'PY'

@@ -106,7 +106,5 @@ grep -Eq '^forge_compare_result_[0-9]+=PASS testLibraryScore\(\)$' \
 grep -q '^forge_compare_tests_passed=2$' "$OUTDIR/compare.log"
 grep -q '^forge_compare_tests_failed=0$' "$OUTDIR/compare.log"
 grep -q '^forge_compare_tests_skipped=0$' "$OUTDIR/compare.log"
-  "$OUTDIR/compare.log"
-  "$OUTDIR/compare.log"
 
 cat "$OUTDIR/compare.log"

@@ -19,6 +19,23 @@ cleanup() {
 }
 trap cleanup EXIT
 
+for executable in "$PYTHON_BIN" "$LAKE_BIN" "$SOLC_BIN" "$FORGE_BIN" "$CAST_BIN"; do
+  if [[ ! -x "$executable" ]] && ! command -v "$executable" >/dev/null 2>&1; then
+    printf 'error: required executable is unavailable: %s\n' "$executable" >&2
+    exit 1
+  fi
+done
+
+# Hoist cast out of argument position: a $(...) inside an argument list is
+# not covered by set -e, so a failing cast would silently pass empty
+# calldata while the call-count assertion still held.
+CALLDATA_ARGS=()
+add_calldata() {
+  local encoded
+  encoded="$("$CAST_BIN" calldata "$@")"
+  CALLDATA_ARGS+=(--calldata "$encoded")
+}
+
 SOURCE="$ROOT/examples/DynamicStorageSurfaceBox.sol"
 REPORT="$OUTDIR/dynamic-storage.lean-backend-check.json"
 COMPARE="$OUTDIR/dynamic-storage.compare.txt"
@@ -40,6 +57,22 @@ BYTES33="0x333333333333333333333333333333333333333333333333333333333333333333"
 
 "$PYTHON_BIN" "$ROOT/scripts/validate_bridge_json.py" --quiet "$REPORT"
 
+add_calldata 'replaceBlob(bytes,string)' 0x01 short
+add_calldata 'replaceBlob(bytes,string)' "$BYTES31" thirty-one
+add_calldata 'replaceBlob(bytes,string)' "$BYTES32" thirty-two
+add_calldata 'replaceBlob(bytes,string)' "$BYTES33" thirty-three-crosses-the-inline-storage-boundary
+add_calldata 'patchBlob(uint256,bytes1)' 32 0xff
+add_calldata 'blobSnapshot()'
+add_calldata 'replaceBlob(bytes,string)' 0x empty
+add_calldata 'pushRow(uint256[])' '[1,2,3,4]'
+add_calldata 'replaceRow(uint256,uint256[])' 0 '[9,8]'
+add_calldata 'rowSnapshot(uint256)' 0
+add_calldata 'setEntry(bytes32,uint64,bool,bytes,uint256[])' "$KEY" 18446744073709551615 true "$BYTES31" '[5,6,7]'
+add_calldata 'mutateEntry(bytes32,uint256,uint256,bytes1)' "$KEY" 1 99 0xee
+add_calldata 'entrySnapshot(bytes32)' "$KEY"
+add_calldata 'nestedHash(uint256[][],bytes[])' '[[1,2],[],[3,4,5]]' '[0x01,0xaabb,0x]'
+add_calldata 'rowSnapshot(uint256)' 99
+
 "$PYTHON_BIN" "$ROOT/scripts/compare_contract_call_bytecode.py" \
   "$SOURCE" \
   --solc "$SOLC_BIN" \
@@ -48,21 +81,7 @@ BYTES33="0x333333333333333333333333333333333333333333333333333333333333333333"
   --forge "$FORGE_BIN" \
   --contract DynamicStorageSurfaceBox \
   --optimized \
-  --calldata "$("$CAST_BIN" calldata 'replaceBlob(bytes,string)' 0x01 short)" \
-  --calldata "$("$CAST_BIN" calldata 'replaceBlob(bytes,string)' "$BYTES31" thirty-one)" \
-  --calldata "$("$CAST_BIN" calldata 'replaceBlob(bytes,string)' "$BYTES32" thirty-two)" \
-  --calldata "$("$CAST_BIN" calldata 'replaceBlob(bytes,string)' "$BYTES33" thirty-three-crosses-the-inline-storage-boundary)" \
-  --calldata "$("$CAST_BIN" calldata 'patchBlob(uint256,bytes1)' 32 0xff)" \
-  --calldata "$("$CAST_BIN" calldata 'blobSnapshot()')" \
-  --calldata "$("$CAST_BIN" calldata 'replaceBlob(bytes,string)' 0x empty)" \
-  --calldata "$("$CAST_BIN" calldata 'pushRow(uint256[])' '[1,2,3,4]')" \
-  --calldata "$("$CAST_BIN" calldata 'replaceRow(uint256,uint256[])' 0 '[9,8]')" \
-  --calldata "$("$CAST_BIN" calldata 'rowSnapshot(uint256)' 0)" \
-  --calldata "$("$CAST_BIN" calldata 'setEntry(bytes32,uint64,bool,bytes,uint256[])' "$KEY" 18446744073709551615 true "$BYTES31" '[5,6,7]')" \
-  --calldata "$("$CAST_BIN" calldata 'mutateEntry(bytes32,uint256,uint256,bytes1)' "$KEY" 1 99 0xee)" \
-  --calldata "$("$CAST_BIN" calldata 'entrySnapshot(bytes32)' "$KEY")" \
-  --calldata "$("$CAST_BIN" calldata 'nestedHash(uint256[][],bytes[])' '[[1,2],[],[3,4,5]]' '[0x01,0xaabb,0x]')" \
-  --calldata "$("$CAST_BIN" calldata 'rowSnapshot(uint256)' 99)" \
+  "${CALLDATA_ARGS[@]}" \
   > "$COMPARE"
 
 "$PYTHON_BIN" - "$REPORT" "$COMPARE" <<'PY'

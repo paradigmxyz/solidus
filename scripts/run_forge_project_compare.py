@@ -359,7 +359,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     ]:
         if key in key_values:
             print(f"{key}={key_values[key]}")
-    return status
+    # Exit from the REPORTED status, not the raw compare return code: if the
+    # compare script ever exited 0 while emitting a non-"pass" forge_compare
+    # status, returning the raw code would exit 0 while report.json says
+    # "fail". Keep the process exit and the report coupled.
+    if report["status"] == "pass":
+        return 0
+    return status if status != 0 else 1
 
 
 if __name__ == "__main__":

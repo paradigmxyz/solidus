@@ -70,7 +70,13 @@ def validate_bridge_data(
     quiet: bool,
 ) -> Tuple[str, str, str]:
     validator = jsonschema.Draft202012Validator(schema)
-    errors = sorted(validator.iter_errors(data), key=lambda error: error.path)
+    # Stringify the path elements: a raw deque mixes int array indices with
+    # str keys, and comparing those raises TypeError, turning a clean
+    # "schema validation failed" message into a traceback.
+    errors = sorted(
+        validator.iter_errors(data),
+        key=lambda error: [str(part) for part in error.path],
+    )
     if errors:
         first = errors[0]
         bridge.fail(
@@ -88,7 +94,13 @@ def validate_bridge_data(
 
 def validate_schema_data(data: Any, schema: Any, label: str) -> None:
     validator = jsonschema.Draft202012Validator(schema)
-    errors = sorted(validator.iter_errors(data), key=lambda error: error.path)
+    # Stringify the path elements: a raw deque mixes int array indices with
+    # str keys, and comparing those raises TypeError, turning a clean
+    # "schema validation failed" message into a traceback.
+    errors = sorted(
+        validator.iter_errors(data),
+        key=lambda error: [str(part) for part in error.path],
+    )
     if errors:
         first = errors[0]
         bridge.fail(

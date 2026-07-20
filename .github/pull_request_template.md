@@ -12,7 +12,9 @@
 ## Based-on
 
 <!-- REQUIRED for arena submissions. Which record did you branch from?
-     Must match a `record-N` tag (or `arena`, the current record). -->
+     Must name a `record-N` tag (CI's ancestry check only accepts the
+     `record-<number>` form — if you branched from the `arena` tip, name
+     the record it currently carries). -->
 
 Based-on: record-N
 

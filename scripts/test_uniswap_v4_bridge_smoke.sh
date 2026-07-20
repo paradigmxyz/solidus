@@ -95,7 +95,6 @@ SQRT_PRICE_FALLBACK_SOURCE="$OUTDIR/UniswapV4SqrtPriceMathFallback.sol"
 SQRT_PRICE_BRIDGE_DIR="$OUTDIR/sqrt-price-bridge-json"
 SQRT_PRICE_BRIDGE="$OUTDIR/UniswapV4SqrtPriceMathFallback.runtime.bridge.json"
 SQRT_PRICE_SUMMARY="$OUTDIR/UniswapV4SqrtPriceMathFallback.bridge-json-summary.json"
-SQRT_PRICE_BACKEND_CHECK="$OUTDIR/UniswapV4SqrtPriceMathFallback.runtime.backend-check.json"
 LOCK_FALLBACK_SOURCE="$OUTDIR/UniswapV4LockFallback.sol"
 LOCK_BRIDGE_DIR="$OUTDIR/lock-bridge-json"
 LOCK_BRIDGE="$OUTDIR/UniswapV4LockFallback.runtime.bridge.json"
@@ -674,29 +673,6 @@ print("sqrt_price_runtime_summary_primitives=yes")
 print("sqrt_price_runtime_backend_compatibility=ready")
 PY
 
-SQRT_PRICE_BACKEND_STATUS="skipped"
-SQRT_PRICE_BACKEND_FIRST_NONE="not-run"
-if [[ "${RUN_SQRT_PRICE_BACKEND_CHECK:-0}" == "1" ]]; then
-  python3 "$ROOT/scripts/solidity_to_yul_lean.py" \
-    "$SQRT_PRICE_BRIDGE_DIR/manifest.json" \
-    --input-format bridge-json-manifest \
-    --lake "$LAKE_BIN" \
-    --lake-cwd "$ROOT" \
-    --format lean-backend-check \
-    --output "$SQRT_PRICE_BACKEND_CHECK"
-
-  python3 "$ROOT/scripts/validate_bridge_json.py" --quiet "$SQRT_PRICE_BACKEND_CHECK"
-
-  SQRT_PRICE_BACKEND_STATUS="$(
-    python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["checkedObjects"][0]["status"])' \
-      "$SQRT_PRICE_BACKEND_CHECK"
-  )"
-  SQRT_PRICE_BACKEND_FIRST_NONE="$(
-    python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["checkedObjects"][0]["firstNone"])' \
-      "$SQRT_PRICE_BACKEND_CHECK"
-  )"
-fi
-
 cat > "$LOCK_FALLBACK_SOURCE" <<'SOL'
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.26;
@@ -1173,6 +1149,11 @@ run_strict_backend poolmanager_runtime bridge-json-manifest \
   "$POOLMANAGER_PACKAGE_MANIFEST" \
   --contract PoolManager --object runtime "${POOL_LINKER_ARGS[@]}"
 
+# Truthful because `run_strict_backend sqrt_price_runtime` above hard-asserts
+# status=pass / firstNone=none for every checked object (the script aborts
+# otherwise). The old RUN_SQRT_PRICE_BACKEND_CHECK-gated recomputation was
+# removed: these values were unconditionally overwriting its result anyway,
+# and the unconditional strict check subsumes it.
 SQRT_PRICE_BACKEND_STATUS="pass"
 SQRT_PRICE_BACKEND_FIRST_NONE="none"
 

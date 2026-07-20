@@ -577,7 +577,6 @@ def cmd_gen_vectors(args: argparse.Namespace) -> int:
         s = raw.strip()
         if s and not s.startswith("#"):
             corpus_sources.append(s)
-    corpus_basenames = {Path(s).name for s in corpus_sources}
 
     written, skipped = 0, 0
     for src_path in corpus_sources:
