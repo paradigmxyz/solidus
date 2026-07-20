@@ -506,6 +506,291 @@ theorem seamBlockEff_body (program : Program) (block : Block) :
   | some d => rfl
   | none => cases cleanTgt? program block <;> rfl
 
+/-! ## The clean-target head swap and the source/target seam relations -/
+
+/-- A clean-target block's body begins with the dropped head swap. -/
+theorem cleanTgt_head_swap {program : Program} {b0 : Block} {d : Nat}
+    (hUnique : program.LabelsUnique) (hmem : b0 ∈ program.blocks)
+    (h : cleanTgt? program b0 = some d) :
+    b0.body.head? = some (Instr.swap d) := by
+  obtain ⟨htg, hsrcB, a, hfind, hsrcA, htgA⟩ := cleanTgt?_spec h
+  obtain ⟨bLabel, b, names, htermA, hneA, hrefA, hfindA, hbodyA, hlnA, hhdB, hblB⟩ :=
+    srcRaw?_spec hsrcA
+  have haterm : a.term = Terminator.jump b0.label := by
+    have := List.find?_some hfind; simpa using this
+  rw [htermA] at haterm
+  have hbl : bLabel = b0.label := by injection haterm
+  rw [hbl] at hfindA
+  have hfb : program.findBlock? b0.label = some b0 :=
+    Program.findBlock?_eq_some_of_mem hUnique hmem
+  rw [hfb] at hfindA
+  have hbeq : b0 = b := Option.some.inj hfindA
+  rw [hbeq]; exact hhdB
+
+/-- The clean-target counterpart of a clean source: the seam's target block is a
+clean target with the same depth. -/
+theorem cleanTgt?_of_cleanSrc? {program : Program} {a B : Block}
+    {bLabel : Label} {d : Nat}
+    (hmem : a ∈ program.blocks)
+    (hterm : a.term = Terminator.jump bLabel)
+    (hfind : program.findBlock? bLabel = some B)
+    (h : cleanSrc? program a = some d) :
+    cleanTgt? program B = some d := by
+  obtain ⟨hsr, htgA, bLabel', B', htermA, hfindA, hsrcB'⟩ := cleanSrc?_spec h
+  obtain ⟨bLbl, b, names, htermA2, hneA, hrefA, hfindA2, _, _, _, _⟩ := srcRaw?_spec hsr
+  -- All target labels agree with bLabel; found blocks agree with B (no `subst`).
+  have e1 : bLabel' = bLabel := by injection (htermA.symm.trans hterm)
+  have e2 : bLbl = bLabel := by injection (htermA2.symm.trans hterm)
+  have hBlabel : B.label = bLabel := by
+    unfold Program.findBlock? at hfind
+    have := List.find?_some hfind; simpa using this
+  have hBeq' : B' = B := by
+    have hh := hfindA; rw [e1, hfind] at hh; exact (Option.some.inj hh).symm
+  have hsrcBnone : srcRaw? program B = none := hBeq' ▸ hsrcB'
+  have hneB : bLabel ≠ program.entry := e2 ▸ hneA
+  have hrefB : refCount program bLabel = 1 := e2 ▸ hrefA
+  -- The unique predecessor jumping to bLabel is `a`.
+  have huniq : program.blocks.find?
+      (fun a' => a'.term == Terminator.jump bLabel) = some a := by
+    cases hf : program.blocks.find?
+        (fun a' => a'.term == Terminator.jump bLabel) with
+    | none =>
+        exfalso
+        exact (List.find?_eq_none.mp hf) a hmem (by rw [hterm]; simp)
+    | some a' =>
+        have ha'mem := List.mem_of_find?_eq_some hf
+        have ha'term : a'.term = Terminator.jump bLabel := by
+          have := List.find?_some hf; simpa using this
+        have hEq : a' = a := by
+          by_contra hne
+          have h2 := two_le_refCount (L := bLabel) ha'mem
+            (by simp [ha'term, Terminator.targets]) hmem
+            (by simp [hterm, Terminator.targets]) hne
+          omega
+        rw [hEq]
+  -- tgtRaw? B = some d.
+  have htgB : tgtRaw? program B = some d := by
+    unfold tgtRaw?
+    rw [hBlabel, if_pos ⟨hneB, hrefB⟩, huniq]; exact hsr
+  unfold cleanTgt?
+  simp only [htgB, hBlabel, huniq]
+  rw [if_pos hsrcBnone, if_pos htgA]
+
+/-- If a block does not clean-source-fire and references label `L`, the block at
+`L` does not clean-target-fire (so its input is untouched). -/
+theorem cleanTgt?_none_of_cleanSrc?_none {program : Program} {b0 bL : Block}
+    {L : Label}
+    (hmemb0 : b0 ∈ program.blocks) (hLmem : L ∈ b0.term.targets)
+    (hs : cleanSrc? program b0 = none)
+    (hfind : program.findBlock? L = some bL) :
+    cleanTgt? program bL = none := by
+  by_contra hne
+  obtain ⟨d, htf⟩ := Option.ne_none_iff_exists'.mp hne
+  obtain ⟨htg, hsrcBL, a', hf, hsrcA', htgA'⟩ := cleanTgt?_spec htf
+  have hbLlabel : bL.label = L := by
+    unfold Program.findBlock? at hfind
+    have := List.find?_some hfind; simpa using this
+  rw [hbLlabel] at hf
+  have ha'mem := List.mem_of_find?_eq_some hf
+  have ha'term : a'.term = Terminator.jump L := by
+    have := List.find?_some hf; simpa using this
+  -- refCount L = 1, so the unique referencer of L is both a' and b0 ⟹ a' = b0.
+  have href : refCount program L = 1 := by
+    have := htg; unfold tgtRaw? at this
+    split at this
+    · rename_i hguard; rw [hbLlabel] at hguard; exact hguard.2
+    · exact absurd this (by simp)
+  have hEq : a' = b0 := by
+    by_cases hEq : a' = b0
+    · exact hEq
+    · exfalso
+      have h2 := two_le_refCount (L := L) ha'mem
+        (by rw [ha'term]; simp [Terminator.targets]) hmemb0 hLmem hEq
+      omega
+  subst hEq
+  -- Now a'.term = jump L, srcRaw? a' = some d, tgtRaw? a' = none, srcRaw? bL = none.
+  -- ⟹ cleanSrc? a' = some d, contradicting hs.
+  have hcs : cleanSrc? program a' = some d := by
+    simp only [cleanSrc?, hsrcA', htgA', ha'term, hfind, hsrcBL, if_true,
+      reduceIte, Option.some.injEq]
+  rw [hcs] at hs; exact absurd hs (by simp)
+
+/-! ## Bounds for the seam transposition -/
+
+/-- A clean source block's output is long enough for the dropped tail swap. -/
+theorem output_bound_of_cleanSrc {program : Program} {a : Block} {d : Nat}
+    (hTyped : a.WellTyped program) (h : cleanSrc? program a = some d) :
+    d + 1 < a.output.slots.length := by
+  obtain ⟨hsr, _, _⟩ := cleanSrc?_spec h
+  obtain ⟨bLabel, b, names, hterm, _, _, _, hbody, hln, _, _⟩ := srcRaw?_spec hsr
+  have hbodyT := hTyped.1
+  rw [hbody, bodyType?_cons, Option.bind_eq_some_iff] at hbodyT
+  obtain ⟨m, hswap, hrest⟩ := hbodyT
+  rw [bodyType?_cons, Option.bind_eq_some_iff] at hrest
+  obtain ⟨o, hbind, hnil⟩ := hrest
+  simp only [Block.bodyType?, Option.some.injEq] at hnil
+  subst hnil
+  obtain ⟨hNamesLe, _, _⟩ := type?_bindLocals0 hbind
+  obtain ⟨_, hdepth, hmlen⟩ := Instr.length_of_type?_swap hswap
+  -- a.output = o, |o.slots| = |m.slots| = |a.input.slots|, and names.length ≤ |m.slots|.
+  have h1 : a.output.slots.length = m.slots.length := by
+    rw [(type?_bindLocals0 hbind).2.1]
+    rw [List.length_append, List.length_map, List.length_drop]
+    omega
+  -- d + 1 < names.length ≤ |m.slots| = |a.output.slots|.
+  have : names.length ≤ m.slots.length := hNamesLe
+  omega
+
+/-- A well-typed clean-target block's input is long enough for the dropped head
+swap. -/
+theorem input_bound_of_cleanTgt {program : Program} {b : Block} {d : Nat}
+    (hTyped : b.WellTyped program) (hhd : b.body.head? = some (Instr.swap d)) :
+    d + 1 < b.input.slots.length := by
+  have hbody := hTyped.1
+  obtain ⟨rest, hb⟩ : ∃ rest, b.body = Instr.swap d :: rest := by
+    cases hbb : b.body with
+    | nil => rw [hbb] at hhd; simp at hhd
+    | cons x xs =>
+        rw [hbb] at hhd; simp only [List.head?_cons, Option.some.injEq] at hhd
+        subst hhd; exact ⟨xs, rfl⟩
+  rw [hb, bodyType?_cons, Option.bind_eq_some_iff] at hbody
+  obtain ⟨mid, htype, _⟩ := hbody
+  obtain ⟨_, hle, _⟩ := Instr.length_of_type?_swap htype
+  show d + 1 < b.input.slots.length
+  have h1 : b.input.slots.length = b.input.length := rfl
+  omega
+
+/-! ## The whole-program label-shape relation and the terminator obligation -/
+
+/-- `labelShape?` of the seam-cancelled program: seam-target inputs move by
+`remapShape d`. -/
+theorem labelShape?_seamCancelProgramEff (program : Program) (L : Label) :
+    (seamCancelProgramEff program).labelShape? L =
+      (program.findBlock? L).map (fun b =>
+        match cleanTgt? program b with
+        | some d => remapShape d b.input
+        | none => b.input) := by
+  unfold Program.labelShape?
+  rw [findBlock?_seamCancelProgramEff]
+  cases program.findBlock? L with
+  | none => rfl
+  | some b =>
+      simp only [Option.map_some]
+      rw [seamBlockEff_input]
+      rcases cleanSrc?_cleanTgt?_disjoint program b with hcs | hct
+      · rw [hcs]
+      · rw [hct]; cases cleanSrc? program b <;> rfl
+
+/-- A `.jump`'s type-check, reduced once its target shape is known (re-export). -/
+theorem type?_jump_someEff {program : Program} {shape : Shape} {next : Label}
+    {ts : Shape} (h : program.labelShape? next = some ts) :
+    (Terminator.jump next).type? program shape =
+      (if shape.compatible ts then some () else none) := by
+  simp [Terminator.type?, Terminator.typeWith?, h]
+
+/-- The terminator obligation for the seam-edited block. -/
+theorem seamBlockEff_term_type? {program : Program} {b0 : Block}
+    (hUnique : program.LabelsUnique) (hAll : program.AllBlocksTyped)
+    (hmem : b0 ∈ program.blocks) :
+    b0.term.type? (seamCancelProgramEff program) (seamBlockEff program b0).output
+      = some () := by
+  have hTyped := blockWellTyped_of_mem hAll hmem
+  rw [seamBlockEff_output]
+  cases hs : cleanSrc? program b0 with
+  | none =>
+      -- Non-source: labelShape? unchanged on all of b0's targets ⟹ term type unchanged.
+      have hEq : b0.term.type? (seamCancelProgramEff program) b0.output
+          = b0.term.type? program b0.output := by
+        unfold Terminator.type?
+        apply typeWith?_congr
+        intro L hLmem
+        rw [labelShape?_seamCancelProgramEff]
+        cases hfind : program.findBlock? L with
+        | none => unfold Program.labelShape?; rw [hfind]; rfl
+        | some bL =>
+            have htf := cleanTgt?_none_of_cleanSrc?_none hmem hLmem hs hfind
+            simp only [Option.map_some, htf]
+            unfold Program.labelShape?; rw [hfind]; rfl
+      rw [hEq]; exact hTyped.2
+  | some d =>
+      obtain ⟨hsr, _, _⟩ := cleanSrc?_spec hs
+      obtain ⟨bLabel, B, names, hterm, hne, href, hfind, hbody, hln, hhd, hbl⟩ :=
+        srcRaw?_spec hsr
+      have hBmem : B ∈ program.blocks := by
+        unfold Program.findBlock? at hfind; exact List.mem_of_find?_eq_some hfind
+      have hBTyped := blockWellTyped_of_mem hAll hBmem
+      have htf : cleanTgt? program B = some d :=
+        cleanTgt?_of_cleanSrc? hmem hterm hfind hs
+      have hls : (seamCancelProgramEff program).labelShape? bLabel
+          = some (remapShape d B.input) := by
+        rw [labelShape?_seamCancelProgramEff, hfind]
+        simp only [Option.map_some, htf]
+      have hpls : program.labelShape? bLabel = some B.input := by
+        unfold Program.labelShape?; rw [hfind]; rfl
+      have hbo : d + 1 < b0.output.slots.length :=
+        output_bound_of_cleanSrc hTyped hs
+      have hhd' : B.body.head? = some (Instr.swap d) := hhd
+      have hbi : d + 1 < B.input.slots.length :=
+        input_bound_of_cleanTgt hBTyped hhd'
+      have horig := hTyped.2
+      rw [hterm, type?_jump_someEff hpls] at horig
+      rw [hterm, type?_jump_someEff hls, compatible_remapShape_eq hbo hbi]
+      exact horig
+
+/-! ## The body obligation and the WellTyped gate -/
+
+theorem seamBlockEff_bodyType? {program : Program} {b0 : Block}
+    (hUnique : program.LabelsUnique) (hAll : program.AllBlocksTyped)
+    (hmem : b0 ∈ program.blocks) :
+    Block.bodyType? (seamBlockEff program b0).body (seamBlockEff program b0).input
+      = some (seamBlockEff program b0).output := by
+  have hTyped := blockWellTyped_of_mem hAll hmem
+  rw [seamBlockEff_body, seamBlockEff_input, seamBlockEff_output]
+  cases hs : cleanSrc? program b0 with
+  | some d =>
+      obtain ⟨hsr, _, _⟩ := cleanSrc?_spec hs
+      obtain ⟨bLabel, b, names, hterm, _, _, _, hbody, hln, _, _⟩ := srcRaw?_spec hsr
+      have hbodyT := hTyped.1
+      rw [hbody]
+      simp only [List.tail_cons, List.map_cons, List.map_nil, conjBind]
+      rw [hbody] at hbodyT
+      exact bodyType?_conj hln hbodyT
+  | none =>
+      cases ht : cleanTgt? program b0 with
+      | none => simpa using hTyped.1
+      | some dt =>
+          have hhd := cleanTgt_head_swap hUnique hmem ht
+          have hdecomp : b0.body = Instr.swap dt :: b0.body.tail :=
+            head_tail_decomp hhd
+          have hbodyT := hTyped.1
+          rw [hdecomp] at hbodyT
+          exact bodyType?_dropHead_swap hbodyT
+
+/-- Every seam-edited block is `WellTyped` in the seam-cancelled program. -/
+theorem seamBlockEff_wellTyped {program : Program} {b0 : Block}
+    (hUnique : program.LabelsUnique) (hAll : program.AllBlocksTyped)
+    (hmem : b0 ∈ program.blocks) :
+    (seamBlockEff program b0).WellTyped (seamCancelProgramEff program) := by
+  refine ⟨seamBlockEff_bodyType? hUnique hAll hmem, ?_⟩
+  rw [seamBlockEff_term]
+  exact seamBlockEff_term_type? hUnique hAll hmem
+
+/-- **The WellTyped gate.** The corrected seam cancellation preserves whole-program
+`WellTyped`. -/
+theorem seamCancelProgramEff_wellTyped {program : Program}
+    (h : program.WellTyped) :
+    (seamCancelProgramEff program).WellTyped := by
+  obtain ⟨hUnique, hAll, hEntry, hEmit⟩ := h
+  refine ⟨labelsUnique_seamCancelProgramEff hUnique, ?_,
+    entry_findBlock?_seamCancelProgramEff hEntry,
+    emittedLabelsUnique_seamCancelProgramEff hEmit⟩
+  unfold Program.AllBlocksTyped
+  rw [seamCancelProgramEff_blocks, List.forall_iff_forall_mem]
+  intro b hb
+  rw [List.mem_map] at hb
+  obtain ⟨b0, hb0mem, rfl⟩ := hb
+  exact seamBlockEff_wellTyped hUnique hAll hb0mem
+
 end Peephole
 end TypedCfg
 end EvmCompiler
