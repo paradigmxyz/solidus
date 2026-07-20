@@ -187,7 +187,9 @@ inductive BlockGenShapeReg (cfg : TypedCfg.Program) : TypedCfg.Block → Prop wh
               output := output
               term := .jumpi trueLabel falseLabel })
       (hFalseShape :
-        LabelShape cfg falseLabel { output with slots := output.slots.tail }) :
+        LabelShape cfg falseLabel { output with slots := output.slots.tail })
+      (hTrueShape :
+        LabelShape cfg trueLabel { output with slots := output.slots.tail }) :
       BlockGenShapeReg cfg
         { label := label
           input := input
@@ -595,6 +597,7 @@ theorem genShapeReg_of_compileStmtFuel?
               simpa using hLoopMem
             subst block
             exact BlockGenShapeReg.forCond hType hSource hFind (hRegular _ rfl)
+              (LabelShape.of_compileBlockFuel? hBody hBodyBlocks)
           · exact hBodyGen block hBodyMem
           · exact hPostGen block hPostMem
       | brk =>
