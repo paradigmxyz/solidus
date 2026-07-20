@@ -241,6 +241,112 @@ theorem realizedWitness_of_ifHead_dispatch
         exact hBodyLS
   exact realizedWitness_of_stateRel hLS hStateRel hFits'
 
+/--
+**`procAdapter` disjunct `hInv` leg.**  The proc-entry adapter block
+`{ body := [.relabel relabelTarget], term := .jump bodyLabel }` is an unconditional jump,
+so the enriched `hBodyShape : LabelShape cfg bodyLabel output` field is exactly the target
+`LabelShape` `realizedWitness_of_adapter_jump` consumes; the entry `realizedWitness`
+supplies the `StateRel` and (after unifying the block by `findBlock?` uniqueness) the entry
+fits at `blockInput`.  The relabel shifts the STATIC shape (`blockInput → output`) so the
+child fits at `output` is NOT the entry fits at `blockInput`; the concrete
+`SourceFrameFits`-transport across the (runtime-no-op) relabel is taken here as the
+source-quantified hypothesis `hTransport` and discharged at the capstone assembly, where
+the proc's `procEntry`/body shapes are pinned. -/
+theorem realizedWitness_of_procAdapter_dispatch
+    {cfg : TypedCfg.Program}
+    {entry bodyLabel next : Assembly.Label}
+    {blockInput relabelTarget output : TypedCfg.Shape}
+    {target state' : EVMState}
+    {transcript : Simulation.Interaction.Transcript}
+    (hReal : realizedWitness cfg entry target)
+    (hType :
+      TypedCfg.Instr.type? (.relabel relabelTarget) blockInput = some output)
+    (hFind :
+      cfg.findBlock? entry =
+        some
+          { label := entry
+            input := blockInput
+            body := [.relabel relabelTarget]
+            output := output
+            term := .jump bodyLabel })
+    (hBodyShape : TypedCfgPreservation.LabelShape cfg bodyLabel output)
+    (hTransport :
+      ∀ n, TypedCfgCompiler.Shape.SourceFrameFits blockInput n →
+        TypedCfgCompiler.Shape.SourceFrameFits output n)
+    (hExec :
+      Simulation.Interaction.Executes
+        (TypedCfg.InteractionSemantics.Program.openStep cfg entry target)
+        transcript (Except.ok (TypedCfg.Outcome.jump next state'))) :
+    realizedWitness cfg next state' := by
+  obtain ⟨source, tokens, block, hFindReal, hStateRel, hFits⟩ := hReal
+  have hBlockEq :
+      block =
+        { label := entry
+          input := blockInput
+          body := [.relabel relabelTarget]
+          output := output
+          term := .jump bodyLabel } :=
+    Option.some.inj (hFindReal.symm.trans hFind)
+  subst hBlockEq
+  exact
+    InteractionMachineryCoupling.realizedWitness_of_adapter_jump
+      hFind hType (hTransport _ hFits) hStateRel hExec hBodyShape
+
+/--
+**`caseEntryPop` disjunct `hInv` leg.**  The switch case-entry `pop` block
+`{ body := [.pop], term := .jump label }` is an unconditional jump, so once the source
+scrutinee pop is available the first jump lands `(label, targetFinal)` with the popped
+`StateRel` (`openStep_pop_jump`); the enriched `hExit : LabelShape cfg label output` field
+is exactly the target shape.  The source pop and the child fits at the shifted (popped)
+shape `output` are taken here as the source-quantified hypothesis `hPopTransport` — the
+pop existence follows from the switch's `requireSourceWords? 1` fact and the popped fits
+from `sourceFrameFits_tail`, both pinned at the capstone assembly. -/
+theorem realizedWitness_of_caseEntryPop_dispatch
+    {result : TypedCfgCompiler.Result} {cfg : TypedCfg.Program}
+    {entry label next : Assembly.Label} {input output : TypedCfg.Shape}
+    {target state' : EVMState}
+    {transcript : Simulation.Interaction.Transcript}
+    (hReal : realizedWitness cfg entry target)
+    (hBlocks : TypedCfgPreservation.BlocksInProgram result cfg)
+    (hMem :
+      { label := entry
+        input := input
+        body := [.pop]
+        output := output
+        term := .jump label } ∈ result.blocks)
+    (hType : TypedCfg.Instr.type? .pop input = some output)
+    (hExit : TypedCfgPreservation.LabelShape cfg label output)
+    (hPopTransport :
+      ∀ source : RunState,
+        TypedCfgCompiler.Shape.SourceFrameFits input source.evm.stack.length →
+        ∃ (stack : EvmYul.Stack Word) (value : Word),
+          source.evm.stack.pop = some (stack, value) ∧
+          TypedCfgCompiler.Shape.SourceFrameFits output
+            (source.withEVM { source.evm with stack := stack }).evm.stack.length)
+    (hExec :
+      Simulation.Interaction.Executes
+        (TypedCfg.InteractionSemantics.Program.openStep cfg entry target)
+        transcript (Except.ok (TypedCfg.Outcome.jump next state'))) :
+    realizedWitness cfg next state' := by
+  obtain ⟨source, tokens, block, hFindReal, hStateRel, hFits⟩ := hReal
+  have hFindPop := hBlocks _ hMem
+  have hBlockEq :
+      block =
+        { label := entry
+          input := input
+          body := [.pop]
+          output := output
+          term := .jump label } :=
+    Option.some.inj (hFindReal.symm.trans hFindPop)
+  subst hBlockEq
+  obtain ⟨stack, value, hPop, hPopFits⟩ := hPopTransport source hFits
+  obtain ⟨targetFinal, hStep, hFinalRel⟩ :=
+    InteractionSwitchPreservation.Switch.openStep_pop_jump
+      hBlocks hMem hType hStateRel hPop
+  rw [hStep] at hExec
+  cases hExec
+  exact realizedWitness_of_stateRel hExit hFinalRel hPopFits
+
 end InteractionHInvDispatch
 end Structured
 end EvmCompiler
