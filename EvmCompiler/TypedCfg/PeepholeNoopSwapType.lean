@@ -192,6 +192,123 @@ theorem type?_window_bindScratch {d baseDepth : Nat} {name : String} {slot : Nat
       subst hslots htail
       rfl
 
+/-! ## `slotsAgree` under the transposition (for `relabel`) -/
+
+/-- Per-position agreement, matching `Shape.slotsAgree`'s head rule. -/
+def pairAgree : Slot → Slot → Bool
+  | .returnPC _, .returnToken => true
+  | .returnToken, .returnPC _ => true
+  | l, r => decide (l = .word) || decide (r = .word) || decide (l = r)
+
+/-- Lifted to positions that may be out of range (vacuously agreeing). -/
+def pairAgree? : Option Slot → Option Slot → Bool
+  | some l, some r => pairAgree l r
+  | _, _ => true
+
+theorem slotsAgree_cons (x y : Slot) (as bs : List Slot) :
+    Shape.slotsAgree (x :: as) (y :: bs)
+      = (pairAgree x y && Shape.slotsAgree as bs) := by
+  cases x <;> cases y <;> simp [Shape.slotsAgree, pairAgree]
+
+/-- `slotsAgree` is exactly pairwise agreement on the common prefix. -/
+theorem slotsAgree_iff_pointwise (a b : List Slot) :
+    Shape.slotsAgree a b = true ↔ ∀ k : Nat, pairAgree? a[k]? b[k]? = true := by
+  induction a generalizing b with
+  | nil =>
+      simp only [Shape.slotsAgree]
+      exact ⟨fun _ k => by simp [pairAgree?, List.getElem?_nil], fun _ => trivial⟩
+  | cons x as ih =>
+      cases b with
+      | nil =>
+          constructor
+          · intro _ k
+            simp [pairAgree?, List.getElem?_nil]
+          · intro _; rfl
+      | cons y bs =>
+          rw [slotsAgree_cons, Bool.and_eq_true, ih bs]
+          constructor
+          · rintro ⟨hHead, hTail⟩ k
+            cases k with
+            | zero => simpa [pairAgree?] using hHead
+            | succ n => simpa using hTail n
+          · intro h
+            refine ⟨?_, fun n => ?_⟩
+            · simpa [pairAgree?] using h 0
+            · simpa using h (n + 1)
+
+/-- Simultaneously transposing two positions preserves `slotsAgree` (given the
+positions are valid on both equal-length lists). -/
+theorem slotsAgree_swapPos (d : Nat) (a b : List Slot)
+    (hlen : a.length = b.length)
+    (h0 : 0 < a.length) (hd : d + 1 < a.length)
+    (hAgree : Shape.slotsAgree a b = true) :
+    Shape.slotsAgree (swapPos 0 (d + 1) a) (swapPos 0 (d + 1) b) = true := by
+  have h0b : 0 < b.length := hlen ▸ h0
+  have hdb : d + 1 < b.length := hlen ▸ hd
+  rw [slotsAgree_iff_pointwise] at hAgree ⊢
+  intro k
+  rw [swapPos_getElem? 0 (d + 1) a k h0 hd,
+    swapPos_getElem? 0 (d + 1) b k h0b hdb]
+  by_cases hdk : d + 1 = k
+  · simpa [hdk] using hAgree 0
+  · by_cases hzk : 0 = k
+    · simpa [hdk, hzk] using hAgree (d + 1)
+    · simpa [hdk, hzk] using hAgree k
+
+/-- **`relabel` window preservation.** -/
+theorem type?_window_relabel {d : Nat} {target : Shape} {s0 s1 s2 s3 : Shape}
+    (h1 : Instr.type? (.swap d) s0 = some s1)
+    (h2 : Instr.type? (.relabel target) s1 = some s2)
+    (h3 : Instr.type? (.swap d) s2 = some s3) :
+    Instr.type? (remapZeroWidth d (.relabel target)) s0 = some s3 := by
+  obtain ⟨h0, hd1⟩ := swap_bounds h1
+  obtain ⟨hs1slots, hs1tail⟩ := type?_swap_eq h1
+  -- relabel: relabelCompatible s1 target ∧ s2 = target
+  simp only [Instr.type?] at h2
+  by_cases hCompat : s1.relabelCompatible target
+  · rw [if_pos hCompat] at h2
+    simp only [Option.some.injEq] at h2
+    subst h2
+    obtain ⟨hs3slots, hs3tail⟩ := type?_swap_eq h3
+    -- unpack relabelCompatible s1 target
+    unfold Shape.relabelCompatible at hCompat
+    simp only [Bool.and_eq_true, decide_eq_true_eq] at hCompat
+    obtain ⟨⟨hAgree, hLenEq⟩, hTailEq⟩ := hCompat
+    -- lengths / involution helpers
+    have hlen : (swapPos 0 (d + 1) s0.slots).length = s0.slots.length :=
+      swapPos_length 0 (d + 1) s0.slots
+    -- s0.slots = swapPos (s1.slots)
+    have hs0 : s0.slots = swapPos 0 (d + 1) s1.slots := by
+      rw [hs1slots, swapPos_involutive 0 (d + 1) s0.slots h0 hd1]
+    -- bounds on s1.slots
+    have h0s1 : 0 < s1.slots.length := by rw [hs1slots, hlen]; exact h0
+    have hd1s1 : d + 1 < s1.slots.length := by rw [hs1slots, hlen]; exact hd1
+    -- goal reduces via remapZeroWidth = relabel (remapShape d target)
+    have hRemapCompat : s0.relabelCompatible (remapShape d target) = true := by
+      unfold Shape.relabelCompatible remapShape
+      simp only [Bool.and_eq_true, decide_eq_true_eq]
+      refine ⟨⟨?_, ?_⟩, ?_⟩
+      · -- slotsAgree s0.slots (swapPos target.slots)
+        rw [hs0]
+        exact slotsAgree_swapPos d s1.slots target.slots hLenEq h0s1 hd1s1 hAgree
+      · -- length
+        show s0.length = (swapPos 0 (d + 1) target.slots).length
+        rw [swapPos_length]
+        have hswap : s1.length = s0.length := (Instr.length_of_type?_swap h1).2.2
+        exact hswap ▸ hLenEq
+      · -- tail
+        show s0.tail = target.tail
+        rw [← hTailEq, ← hs1tail]
+    simp only [remapZeroWidth, Instr.type?, hRemapCompat, if_true]
+    refine congrArg some ?_
+    -- remapShape d target = s3
+    obtain ⟨sl3, tl3⟩ := s3
+    simp only at hs3slots hs3tail
+    unfold remapShape
+    simp only [Shape.mk.injEq]
+    exact ⟨hs3slots.symm, hs3tail.symm⟩
+  · rw [if_neg hCompat] at h2; simp at h2
+
 end Peephole
 end TypedCfg
 end EvmCompiler
