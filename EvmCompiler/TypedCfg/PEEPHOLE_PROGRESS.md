@@ -5215,3 +5215,104 @@ case-split glue remain (frontier items 1–3 above).  Full `lake build` green;
 `scripts/opt_harness.sh check` = OK (43 theorems, axioms ⊆
 `[propext, Classical.choice, Quot.sound]`);
 `compile_correct`/`compile_correct_creation` axioms UNCHANGED; delta +0.
+
+## Session-43 update (2026-07-20): callHead group-(e) supplier banked (with a new ProcsShaped disjunct thread) + the dispatch arm's structural owning-proc provenance; the dispatch openStep-jump INVERSION + the hInv glue remain — all green + axiom-clean in 2 commits
+
+Session 43's mandate (per §Session-42 frontier): (1) the callHead group-(e) supplier;
+(2) the dispatch-arm packaging; (3) the hInv case-split glue; (4) Step B.  **Result: TWO
+green, axiom-clean commits** landing item 1 in full and item 2's structural half.  The
+hInv glue (item 3, all-or-nothing) and Step B stay closed behind item 2's remaining
+*dispatch openStep-jump inversion* (isolated below).  `peepholeBody`/public spine
+UNTOUCHED ⇒ delta **+0**; full `lake build` green; `scripts/opt_harness.sh check` = OK
+(43 theorems, axioms ⊆ `[propext, Classical.choice, Quot.sound]`);
+`compile_correct`/`compile_correct_creation` axioms UNCHANGED.
+
+### KEY DESIGN FINDING (why callHead needed a new thread, not the §Session-42 route)
+The §Session-42 frontier framed the callHead supplier as a standalone lemma taking
+`realizedWitness + source.WF + the callHead compile fact`, discharging `hLabelShape` from
+`LabelShape.procEntry context hLookup`.  Investigation showed this is **not** directly
+possible: `LabelShape.procEntry` needs `lookup? name source.procs`, but the callHead
+disjunct only exposes `lookup? name ctx.procs` for the LOCAL compile context `ctx`, and the
+`ctx.procs = source.procs` link is LOST once the composite collapses to `BlockGenShapeReg`
+(the disjunct existentially hides `ctx` without recording the equality, and `source` is not
+even in the `BlockGenShapeReg` signature).  `ctx.procs` IS constant through the whole
+generation recursion (the compiler never rewrites it — every context update is `{ctx with
+break/continue/leave := …}`), and the equality is in scope at the composite CONSTRUCTION
+sites (main ctx `= {procs := source.procs}`; proc ctx `= {procs := source.procs, leave…}`).
+So the correct additive move — exactly §Session-42's disjunct-strengthening methodology —
+is to thread a new `ProcsShaped cfg ctx` predicate (bundling, per `ctx.procs` lookup, the
+callee entry `LabelShape` + `proc.WF`) through the mutual and store its output in the
+strengthened callHead disjunct.  `ProcsShaped` reads only `ctx.procs`, so it threads
+UNCHANGED and transfers across the `for_` re-scopings by `ProcsShaped.of_procs_eq`.
+
+**LANDING PITFALL (do not repeat):** `ProcsShaped.of_procs_eq rfl hProcs` at the `for_`
+sites elaborates AMBIGUOUSLY on a clean build — `rfl` greedily unifies the source `ctx`
+into the target record, so `hProcs : ProcsShaped cfg ctx` is rejected against
+`ProcsShaped cfg {ctx with …}`.  A stale-olean `lake build` masked this; the canonical
+`scripts/opt_harness.sh check` caught it.  Fix: pin the source explicitly —
+`ProcsShaped.of_procs_eq (ctx := ctx) rfl hProcs`.  **Always gate on the harness, not a
+targeted `lake build`, before committing changes to the shared mutual.**
+
+### LANDED (green, axiom-clean)
+* **`829a18e0`** — item 1.  `ProcsShaped` structure + `of_procs_eq` + `seed`
+  (`InteractionBlockGenShapeRegular.lean:79`/`98`/`110`); the predicate threaded through all
+  five `genShapeReg_of_compile*` mutual functions + the `genShapeReg_of_compileBlock?`
+  wrapper (`InteractionHInvAssemblyRegular.lean:52`); `BlockGenShapeReg.callHead` gains
+  `hEntryShape` + `hProcWF` (`:171`+); seeded in `main_blockGenShapeReg` (now takes
+  `hSourceWF`) + `proc_blockGenShapeReg` via `ProcsShaped.seed context hSourceWF rfl`.  The
+  group-(e) leg **`realizedWitness_of_callHead_dispatch`**
+  (`InteractionHInvDispatch.lean:484`) wraps `realizedWitness_of_call_compile`, deriving
+  `splitArgs?` (entry `SourceFrameFits` ∘ `requireSourceWords? proc.argc` from
+  `components_of_compileStmtFuel?_call`) and the pushed child fits
+  (`SourceFrameFits.procEntry_of_splitArgs`; `pushReturn`/`withEVM` leave `evm.stack = args`)
+  internally.
+* **`d7494786`** — item 2 (structural half).  **`dispatchBlock_provenance`**
+  (`InteractionHInvAssembly.lean:101`): from `block ∈ dispatchBlocks source.procs
+  (context.main.calls ++ context.procCalls)` (block_category's 3rd arm) recover
+  `proc ∈ source.procs`, `lookup? proc.name source.procs = some proc` (`source.WF`
+  name-uniqueness), and `block = dispatchBlock proc context.calls` via `List.mem_map`.
+
+### THE FRONTIER (session 44) — the dispatch openStep-jump inversion, then hInv, then Step B
+Eight of nine `BlockGenShapeReg` disjuncts already feed their dispatch leg directly; callHead
+(nine) is now served by `realizedWitness_of_callHead_dispatch`.  What blocks `hInv`:
+
+1. **The dispatch openStep-jump inversion** (item 2's remaining heavy half — the genuine
+   frontier).  `realizedWitness_of_dispatch_jump`
+   (`InteractionRealizedWitnessSuccessor.lean:149`) consumes the SITE facts
+   `hSiteProc`/`hSiteMem`/`hRel : StateRel bodyState (site.token :: tokens) target`/`hPop`/
+   `hAttach`/`hRetc`.  `dispatchBlock_provenance` gives `hLookup`; `dispatch_popReturn?_of_stateRel`
+   (`InteractionHInvAssembly.lean:88`) gives `hPop` ONCE tokens are known non-empty.  The
+   missing move: from `hExec` (the exit block's `openStep` PRODUCED a `.jump`, so the
+   `returnDispatch` must have SUCCEEDED — `findTarget?` on the runtime return token returned
+   `some`), invert to recover the matching `site` (`site.token = head token`, `site.procName =
+   proc.name`, `site ∈ context.calls`) plus `hAttach`/`hRetc` (the popped frame's stack-length
+   `= proc.retc` — a `procExit` `SourceFrameFits` fact — and `retc` identity — a
+   procedure-frame-safety fact, likely needing `source.FrameSafe`, NOT in `realizedWitness`
+   alone).  This is a multi-lemma sub-assembly over `returnDispatch`'s `openStep`, the ghost/
+   runtime return-token correspondence in `StateRel`, and `findTarget?_some` inversion; budget
+   it as its own session.  Recommended intermediate green banks: (a) a `findTarget?`-some ⟶
+   `∃ site ∈ returnSitesFor …, site.token = tok` inversion; (b) a `StateRel`-at-`procExit` ⟶
+   runtime-return-token-`= head-ghost-token` correspondence; (c) `returnSitesFor ⊆ calls` +
+   `procName` (probably already present in `TypedCfgCompilerFacts.Call`).
+2. **`hInv` assembly** (item 3, all-or-nothing).  With item 1 done, its 9-disjunct dispatch is
+   ready: unpack `realizedWitness cfg e t`; `block_category context hFind` → 4 arms; main →
+   `main_blockGenShapeReg context hSourceWF`, proc → `proc_blockGenShapeReg context hSourceWF`,
+   each `rcases`'d into 9 disjuncts → matching leg (8 machinery/head + callHead via
+   `realizedWitness_of_callHead_dispatch`); dispatch arm via item-1 above once the inversion
+   lands; programEnd via `programEnd_openStep_no_jump`.  Then
+   `AllEntriesRealized.of_openStep_invariant` with `realized := realizedWitness cfg`, entry
+   witness `realizedWitness_of_stateRel`.  Note the head/machinery legs each need their
+   disjunct's obligation fields fed from `rcases` (all now carried) plus, at the assembly, the
+   block-input/entry unifications from the shared `findBlock?` (mirror
+   `realizedWitness_of_procAdapter_dispatch`'s `Option.some.inj (hFindReal.symm.trans hFind)`).
+3. Then Step B (`openRunNPrefix_peephole_congr_of_source`).
+
+### Status handed to session 44
+Landed (all green + axiom-clean): item 1 in full — `ProcsShaped` thread + callHead
+strengthening + `realizedWitness_of_callHead_dispatch` (`829a18e0`); item 2 structural half —
+`dispatchBlock_provenance` (`d7494786`).  All nine `BlockGenShapeReg` disjuncts now have a
+successor leg AND every field their leg needs.  Sole remaining blocker to `hInv` = the
+dispatch openStep-jump inversion (frontier item 1); then the `hInv` glue (item 2) and Step B.
+Full `lake build` green; `scripts/opt_harness.sh check` = OK (43 theorems, axioms ⊆
+`[propext, Classical.choice, Quot.sound]`); `compile_correct`/`compile_correct_creation`
+axioms UNCHANGED; delta +0.
