@@ -6836,3 +6836,36 @@ ECB hits the §71-predicted 2685 (= 2791 − 2·53 clean seams) **exactly**. All
 
 ### Files touched (session 72)
 NEW `EvmCompiler/TypedCfg/PeepholeSeamCancelEffRuntime.lean`, NEW `EvmCompiler/Structured/PeepholeSeamCombinedEff.lean`; spliced `EvmCompiler/Compiler/StackArtifact.lean` + `EvmCompiler/Compiler/OpenInteractionComposition.lean` (seamCancelProgram→seamCancelProgramEff); this note. No frozen file touched. `compile_correct`/`compile_correct_creation` axioms UNCHANGED = `[propext, Classical.choice, Quot.sound]`.
+
+## Session-73 update (2026-07-20): **PROBED BOTH §72 RESIDUAL TARGETS EMPIRICALLY; BOTH ARE OUT OF CHEAP REACH. Iteration is a proven fixpoint dead-end; the 8 chain overlaps need the non-local matching invariant §72 named; the 4 extra ECB pairs are `swap2;swap2` created by our own transform + compaction, living in the FROZEN `Assembly/Compact.lean`. No sound cheap extension exists ⟹ NO live change; codegen byte-identical to §72 (corpus −0.43% shipped state intact).** Docs-only commit. `scripts/opt_harness.sh check` = **OK** (1369 jobs, **43** public theorems; axioms ⊆ `[propext, Classical.choice, Quot.sound]`). `compile_correct`/`compile_correct_creation` UNCHANGED = `[propext, Classical.choice, Quot.sound]` (verified in the full Verification build). No frozen file touched. No byte change ⟹ no determinism double-compile, no bench re-run (would reproduce §72's shipped numbers).
+
+### PROBE (a) — DOES ITERATING `seamCancelProgramEff` UNLOCK THE 8 CHAIN SEAMS? **NO — it is a fixpoint at pass 1.**
+`lake env lean --run` probe on the ECB corpus value `seamCancelProgram (peepholeProgram (normalizeProgram cfg0))` (the live-fed program), counting `srcRaw?`/`tgtRaw?`/`cleanSrc?`/`cleanTgt?` firings + `lower?` length per iteration of `seamCancelProgramEff`:
+
+| iter | srcRaw | tgtRaw | cleanSrc | cleanTgt | loweredLen | wt |
+|---|---|---|---|---|---|---|
+| 0 | 61 | 61 | 53 | 53 | 3851 | T |
+| 1 | 8 | 8 | **0** | **0** | 3745 | T |
+| 2 | 8 | 8 | 0 | 0 | 3745 | T |
+| 3+ | 8 | 8 | 0 | 0 | 3745 | T |
+
+Pass 0 fires the 53 clean seams (loweredLen 3851→3745, −106 = the §72 delta). Pass 1 leaves **8 raw seams** but **zero** clean firings, and the program is a fixpoint from there. The 8 residual raw seams never become clean because `srcRaw?`/`tgtRaw?`/`cleanSrc?`/`cleanTgt?` depend only on each block's **local** body shape + `refCount` + entry — none of which the disjoint clean edits (elsewhere in the program) touch. **The iterate-to-fixpoint wrapper is a dead end and was NOT built.**
+
+### PROBE (b) — CLASSIFY THE RESIDUAL 12 ECB EMITTED PAIRS. Two categories, both non-cheap.
+Probe: lower `seamCancelProgramEff base` → `Assembly.Compact.prepare` → scan adjacent equal `SWAPn;SWAPn` with lookbehind/lookahead context. Base (pre-eff) had **61** pairs, **all `swap1;swap1`**. LIVE (post-eff) has **12**:
+
+* **8 pairs = 4 three-block chains** `A→B→C`, blocks (generated) `148→149→150`, `302→303→304`, `323→324→325`, `731→732→733`; each block body `[.swap 0, .bindLocals 0 #{3or4}]`, `refCount = 1`, all `srcRaw? = true`. Three consecutive emitted `swap1`s ⟹ two overlapping pairs per chain. These are exactly the `srcRaw?`-firing-but-clean-guard-blocked overlaps: B is both `A`'s target and `B→C`'s source, so `cleanSrc?`/`cleanTgt?` drop **both** seams.
+* **4 pairs = `swap2;swap2`** (`[swap1] swap2;swap2 [push|dup2]`). These exist in **neither** the base compacted image **nor** the LIVE **pre-compaction** lowered image — they appear **only** after `Compact.prepare` on the eff-transformed program. They are a pure **compaction-phase artifact created by our own transform**: dropping the clean-seam `swap1`s changes fallthrough abutment, so `elideFallthroughJumps` newly juxtaposes two `swap2`-emitting block ends. There is **no** `swap2` seam at cfg-body granularity even post-eff (a dedicated emitted-tail(`.swap d`)→head(`.swap d`) scan finds only the 8 `d=0` chain seams).
+
+### VERDICT — NO CHEAP SOUND EXTENSION; STOP GREEN.
+* **Iteration**: proven fixpoint dead-end (probe a). Not built.
+* **The 8 chain pairs**: recovering even *one* seam per 3-block chain needs a **matching** (fire `A→B`, skip `B→C`). But firing `A→B` target-edits `B` (drops B's only swap); then C's surviving lone swap must **not** be dropped — yet `tgtRaw?(C) ≠ none` (C is a raw target of raw-source B), so a local `cleanTgt?(C)` *would* fire and wrongly drop C's swap, corrupting the program. Suppressing it requires the **non-local** "B's swap was already consumed upstream" fact threaded along the chain — precisely §72's chain-aware **multi-pending** invariant (and its runtime bisimulation re-derivation). This is a multi-session build, not a local predicate tweak. NOT attempted (never-commit-red).
+* **The 4 `swap2` pairs**: a compaction-phase redundancy in `EvmCompiler/Assembly/Compact.lean`, which is **FROZEN**. Invisible at cfg-body granularity, so no cfg-body predicate can reach it; the only route is an assembly-level peephole that breaks the frozen certificate contract. NOT allowed.
+
+Both §72 frontier items are thus confirmed genuinely multi-session / contract-breaking, not the "cheap" targets the session hoped for. The −0.43% corpus / §72 per-contract deltas (ECB 2685/2719, ASP 8551/8585, MiniToken 1965/2204, LoopBox 897/931) remain the shipped state, unchanged.
+
+### GATES
+`scripts/opt_harness.sh check` = **OK** (1369 jobs, 43 public theorems; axioms ⊆ `[propext, Classical.choice, Quot.sound]`). `#print axioms` (in the full Verification build) confirms `Solidus.compile_correct` / `Solidus.compile_correct_creation` = `[propext, Classical.choice, Quot.sound]` — UNCHANGED. No `.lean`/frozen file touched (docs-only); scratch `lake env lean --run` probes (`scratch_probe/probe_iter.lean`, `probe_residual.lean`, `probe_swap2*.lean`) are uncommitted.
+
+### Files touched (session 73)
+`EvmCompiler/TypedCfg/PEEPHOLE_PROGRESS.md` ONLY (this note). No `.lean` change, no frozen file, no codegen change. `compile_correct`/`compile_correct_creation` axioms UNCHANGED = `[propext, Classical.choice, Quot.sound]`.
