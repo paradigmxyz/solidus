@@ -19,6 +19,23 @@ cleanup() {
 }
 trap cleanup EXIT
 
+for executable in "$PYTHON_BIN" "$LAKE_BIN" "$SOLC_BIN" "$FORGE_BIN" "$CAST_BIN"; do
+  if [[ ! -x "$executable" ]] && ! command -v "$executable" >/dev/null 2>&1; then
+    printf 'error: required executable is unavailable: %s\n' "$executable" >&2
+    exit 1
+  fi
+done
+
+# Hoist cast out of argument position: a $(...) inside an argument list is
+# not covered by set -e, so a failing cast would silently pass empty
+# calldata while the call-count assertion still held.
+CALLDATA_ARGS=()
+add_calldata() {
+  local encoded
+  encoded="$("$CAST_BIN" calldata "$@")"
+  CALLDATA_ARGS+=(--calldata "$encoded")
+}
+
 RUNTIME_BRIDGE="$OUTDIR/effect-ordering.runtime.bridge.json"
 RUNTIME_DIAGNOSTICS="$OUTDIR/effect-ordering.runtime.diagnostics.txt"
 CREATION_IMAGE="$OUTDIR/effect-ordering.creation.image.txt"
@@ -51,6 +68,13 @@ EXECUTION_COMPARE="$OUTDIR/effect-ordering.execution.compare.txt"
 "$LAKE_BIN" exe solidus-backend image \
   "$OUTDIR/effect-ordering.creation.bridge.json" > "$CREATION_IMAGE"
 
+add_calldata 'interleave(address,bytes,bytes,bytes32)' \
+  0x0000000000000000000000000000000000000000 \
+  0x 0xfe \
+  0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+add_calldata 'proxy(address,bytes)' \
+  0x0000000000000000000000000000000000000000 0x
+
 "$PYTHON_BIN" "$ROOT/scripts/compare_contract_call_bytecode.py" \
   "$ROOT/examples/EffectOrderingSurfaceBox.sol" \
   --solc "$SOLC_BIN" \
@@ -59,14 +83,7 @@ EXECUTION_COMPARE="$OUTDIR/effect-ordering.execution.compare.txt"
   --forge "$FORGE_BIN" \
   --contract EffectOrderingSurfaceBox \
   --optimized \
-  --calldata "$("$CAST_BIN" calldata \
-    'interleave(address,bytes,bytes,bytes32)' \
-    0x0000000000000000000000000000000000000000 \
-    0x 0xfe \
-    0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa)" \
-  --calldata "$("$CAST_BIN" calldata \
-    'proxy(address,bytes)' \
-    0x0000000000000000000000000000000000000000 0x)" \
+  "${CALLDATA_ARGS[@]}" \
   > "$EXECUTION_COMPARE"
 
 "$PYTHON_BIN" - \

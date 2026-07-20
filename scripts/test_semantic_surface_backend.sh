@@ -26,6 +26,17 @@ for executable in "$PYTHON_BIN" "$LAKE_BIN" "$SOLC_BIN" "$FORGE_BIN" "$CAST_BIN"
   fi
 done
 
+# Hoist cast out of argument position: a $(...) inside an argument list is
+# not covered by set -e, so a failing cast would silently pass empty
+# calldata while the call-count assertion still held. Reset CALLDATA_ARGS
+# before each comparison group.
+CALLDATA_ARGS=()
+add_calldata() {
+  local encoded
+  encoded="$("$CAST_BIN" calldata "$@")"
+  CALLDATA_ARGS+=(--calldata "$encoded")
+}
+
 compile_object() {
   local kind="$1"
   local bridge="$OUTDIR/semantic-surface-$kind.bridge.json"
@@ -56,6 +67,13 @@ compile_object runtime
 compile_object creation
 
 ARITHMETIC_COMPARE="$OUTDIR/semantic-surface-arithmetic.compare.txt"
+CALLDATA_ARGS=()
+add_calldata 'arithmetic(uint256,uint256,uint256)' 0 0 0
+add_calldata 'arithmetic(uint256,uint256,uint256)' 2 256 17
+add_calldata 'arithmetic(uint256,uint256,uint256)' \
+  0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff \
+  1 \
+  0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
 "$PYTHON_BIN" "$ROOT/scripts/compare_contract_call_bytecode.py" \
   "$ROOT/examples/SemanticSurfaceBox.sol" \
   --solc "$SOLC_BIN" \
@@ -65,18 +83,34 @@ ARITHMETIC_COMPARE="$OUTDIR/semantic-surface-arithmetic.compare.txt"
   --contract SemanticSurfaceBox \
   --runtime-only \
   --optimized \
-  --calldata "$("$CAST_BIN" calldata \
-    'arithmetic(uint256,uint256,uint256)' 0 0 0)" \
-  --calldata "$("$CAST_BIN" calldata \
-    'arithmetic(uint256,uint256,uint256)' 2 256 17)" \
-  --calldata "$("$CAST_BIN" calldata \
-    'arithmetic(uint256,uint256,uint256)' \
-    0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff \
-    1 \
-    0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff)" \
+  "${CALLDATA_ARGS[@]}" \
   > "$ARITHMETIC_COMPARE"
 
 SURFACE_COMPARE="$OUTDIR/semantic-surface-execution.compare.txt"
+CALLDATA_ARGS=()
+add_calldata 'contextSummary(address,uint256)' \
+  0x0000000000000000000000000000000000000000 0
+add_calldata 'storageAndBytes(bytes32,uint256)' \
+  0x0000000000000000000000000000000000000000000000000000000000000001 \
+  123
+add_calldata 'loadStorage(bytes32)' \
+  0x0000000000000000000000000000000000000000000000000000000000000001
+add_calldata 'transientAndBlob(bytes32,uint256,uint256)' \
+  0x0000000000000000000000000000000000000000000000000000000000000002 \
+  456 0
+add_calldata 'memoryCopy(uint256,uint256)' 11 22
+add_calldata 'codeSummary(address)' \
+  0x0000000000000000000000000000000000000000
+add_calldata 'calls(address,bytes)' \
+  0x0000000000000000000000000000000000000000 0x
+add_calldata 'createsSummary(bytes,bytes32)' \
+  0x6001600c60003960016000f300 \
+  0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+add_calldata 'logs(bytes32,bytes32,bytes32,bytes32)' \
+  0x0000000000000000000000000000000000000000000000000000000000000011 \
+  0x0000000000000000000000000000000000000000000000000000000000000022 \
+  0x0000000000000000000000000000000000000000000000000000000000000033 \
+  0x0000000000000000000000000000000000000000000000000000000000000044
 "$PYTHON_BIN" "$ROOT/scripts/compare_contract_call_bytecode.py" \
   "$ROOT/examples/SemanticSurfaceBox.sol" \
   --solc "$SOLC_BIN" \
@@ -85,40 +119,14 @@ SURFACE_COMPARE="$OUTDIR/semantic-surface-execution.compare.txt"
   --forge "$FORGE_BIN" \
   --contract SemanticSurfaceBox \
   --optimized \
-  --calldata "$("$CAST_BIN" calldata \
-    'contextSummary(address,uint256)' \
-    0x0000000000000000000000000000000000000000 0)" \
-  --calldata "$("$CAST_BIN" calldata \
-    'storageAndBytes(bytes32,uint256)' \
-    0x0000000000000000000000000000000000000000000000000000000000000001 \
-    123)" \
-  --calldata "$("$CAST_BIN" calldata \
-    'loadStorage(bytes32)' \
-    0x0000000000000000000000000000000000000000000000000000000000000001)" \
-  --calldata "$("$CAST_BIN" calldata \
-    'transientAndBlob(bytes32,uint256,uint256)' \
-    0x0000000000000000000000000000000000000000000000000000000000000002 \
-    456 0)" \
-  --calldata "$("$CAST_BIN" calldata 'memoryCopy(uint256,uint256)' 11 22)" \
-  --calldata "$("$CAST_BIN" calldata \
-    'codeSummary(address)' \
-    0x0000000000000000000000000000000000000000)" \
-  --calldata "$("$CAST_BIN" calldata \
-    'calls(address,bytes)' \
-    0x0000000000000000000000000000000000000000 0x)" \
-  --calldata "$("$CAST_BIN" calldata \
-    'createsSummary(bytes,bytes32)' \
-    0x6001600c60003960016000f300 \
-    0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb)" \
-  --calldata "$("$CAST_BIN" calldata \
-    'logs(bytes32,bytes32,bytes32,bytes32)' \
-    0x0000000000000000000000000000000000000000000000000000000000000011 \
-    0x0000000000000000000000000000000000000000000000000000000000000022 \
-    0x0000000000000000000000000000000000000000000000000000000000000033 \
-    0x0000000000000000000000000000000000000000000000000000000000000044)" \
+  "${CALLDATA_ARGS[@]}" \
   > "$SURFACE_COMPARE"
 
 TERMINAL_COMPARE="$OUTDIR/semantic-surface-terminal.compare.txt"
+CALLDATA_ARGS=()
+add_calldata 'terminate(uint256,address)' 0 0x0000000000000000000000000000000000000000
+add_calldata 'terminate(uint256,address)' 2 0x0000000000000000000000000000000000000000
+add_calldata 'terminate(uint256,address)' 1 0x0000000000000000000000000000000000000000
 "$PYTHON_BIN" "$ROOT/scripts/compare_contract_call_bytecode.py" \
   "$ROOT/examples/SemanticSurfaceBox.sol" \
   --solc "$SOLC_BIN" \
@@ -128,12 +136,7 @@ TERMINAL_COMPARE="$OUTDIR/semantic-surface-terminal.compare.txt"
   --contract SemanticSurfaceBox \
   --runtime-only \
   --optimized \
-  --calldata "$("$CAST_BIN" calldata \
-    'terminate(uint256,address)' 0 0x0000000000000000000000000000000000000000)" \
-  --calldata "$("$CAST_BIN" calldata \
-    'terminate(uint256,address)' 2 0x0000000000000000000000000000000000000000)" \
-  --calldata "$("$CAST_BIN" calldata \
-    'terminate(uint256,address)' 1 0x0000000000000000000000000000000000000000)" \
+  "${CALLDATA_ARGS[@]}" \
   > "$TERMINAL_COMPARE"
 
 MSIZE_ERROR="$OUTDIR/optimized-msize.stderr"
