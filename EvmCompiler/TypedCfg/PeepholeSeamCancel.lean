@@ -1142,7 +1142,8 @@ def SeamOutcomeRel (program : Program) :
     (∃ (next : Label) (so sc : EVMState),
       a = .ok (.jump next so) ∧ b = .ok (.jump next sc) ∧
         SeamStepRel program next so sc)
-    ∨ InteractionCongruence.Block.RuntimeOutcomeRel a b
+    ∨ (InteractionCongruence.Block.RuntimeOutcomeRel a b ∧
+        ∀ (next : Label) (s : EVMState), a ≠ .ok (.jump next s))
 
 /-- Every `.jump` produced by a terminator lands at one of its static targets. -/
 theorem runTerm_jump_mem_targets {shape : Shape} {term : TypedCfg.Terminator}
@@ -1205,7 +1206,7 @@ theorem openRun_seamCancel_congr {program : Program} {b0 : Block}
   refine Simulation.Interaction.Rel.bind_custom hbody ?_
   intro leftDone rightDone hDone
   cases hDone with
-  | error he => exact Simulation.Interaction.Rel.done (Or.inr (.error he))
+  | error he => exact Simulation.Interaction.Rel.done (Or.inr ⟨.error he, by simp⟩)
   | ok hpair =>
       rename_i lpair rpair
       obtain ⟨hrel, hlp2, hrp2⟩ := hpair
@@ -1224,7 +1225,8 @@ theorem openRun_seamCancel_congr {program : Program} {b0 : Block}
               | error eR =>
                   simp only [hL, hR] at hChecked
                   cases hChecked with
-                  | error he => exact Simulation.Interaction.Rel.done (Or.inr (.error he))
+                  | error he =>
+                      exact Simulation.Interaction.Rel.done (Or.inr ⟨.error he, by simp⟩)
               | ok oR => simp only [hL, hR] at hChecked; cases hChecked
           | ok oL =>
               cases hR : TypedCfg.Block.runTermChecked b0.output b0.term rpair.1 with
@@ -1246,10 +1248,10 @@ theorem openRun_seamCancel_congr {program : Program} {b0 : Block}
                           | some bL =>
                               simp only [targetFire?_none_of_sourceFire_none hmem hmemT hsrc hfindL]
                               exact hSt
-                      | fallthrough hSt => exact Or.inr (.ok (.fallthrough hSt))
-                      | returnDispatch hSt => exact Or.inr (.ok (.returnDispatch hSt))
-                      | halt kind hSt => exact Or.inr (.ok (.halt kind hSt))
-                      | invalid hSt => exact Or.inr (.ok (.invalid hSt))
+                      | fallthrough hSt => exact Or.inr ⟨.ok (.fallthrough hSt), by simp⟩
+                      | returnDispatch hSt => exact Or.inr ⟨.ok (.returnDispatch hSt), by simp⟩
+                      | halt kind hSt => exact Or.inr ⟨.ok (.halt kind hSt), by simp⟩
+                      | invalid hSt => exact Or.inr ⟨.ok (.invalid hSt), by simp⟩
       | some e =>
           obtain ⟨bLabel, B, hterm, href, hfind, hla, hhd, hal, hbl⟩ :=
             sourceFire?_spec hsrc
@@ -1283,7 +1285,7 @@ theorem openStep_seamCancel_congr {program : Program} {label : Label}
   | none =>
       simp only [hFind, Option.map_none]
       simp only [SeamStepRel, hFind] at hStep
-      exact Simulation.Interaction.Rel.done (Or.inr (.ok (Outcome.RuntimeRel.invalid hStep)))
+      exact Simulation.Interaction.Rel.done (Or.inr ⟨.ok (Outcome.RuntimeRel.invalid hStep), by simp⟩)
   | some b0 =>
       simp only [hFind, Option.map_some]
       have hMem : b0 ∈ program.blocks := by

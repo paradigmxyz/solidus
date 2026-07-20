@@ -104,7 +104,8 @@ def SeamCombinedOutcomeRel {source : Structured.Program}
     (∃ (next : Label) (s1 s_c : EVMState),
       a = .ok (.jump next s1) ∧ b = .ok (.jump next s_c) ∧
         SeamCombinedStepRel (source := source) (cfg := cfg) calls next s1 s_c)
-    ∨ InteractionCongruence.Block.RuntimeOutcomeRel a b
+    ∨ (InteractionCongruence.Block.RuntimeOutcomeRel a b ∧
+        ∀ (next : Label) (s : EVMState), a ≠ .ok (.jump next s))
 
 /-! ## Source-threaded one-step seam-combined congruence -/
 
@@ -180,8 +181,9 @@ theorem openStep_seamCombined_congr_of_source
       rcases hyz with hjump | hrr
       · obtain ⟨next, so, sc, hy, _, _⟩ := hjump
         exact absurd hy (by simp)
-      · cases hrr with
-        | error he2 => exact Or.inr (.error (he.trans he2))
+      · obtain ⟨hrrr, _⟩ := hrr
+        cases hrrr with
+        | error he2 => exact Or.inr ⟨.error (he.trans he2), by simp⟩
   | ok hok =>
       obtain ⟨hrr, hwit⟩ := hok
       rcases hyz with hjump | hrr2
@@ -192,8 +194,103 @@ theorem openStep_seamCombined_congr_of_source
         | jump lbl hSt =>
             refine Or.inl ⟨next, _, sc, rfl, hz, ?_⟩
             exact ⟨so, hwit next _ rfl, hSt, hstepP⟩
-      · cases hrr2 with
-        | ok hrrz => exact Or.inr (.ok (Outcome.RuntimeRel.trans hrr hrrz))
+      · obtain ⟨hrrz0, hnj⟩ := hrr2
+        cases hrrz0 with
+        | ok hrrz =>
+            refine Or.inr ⟨.ok (Outcome.RuntimeRel.trans hrr hrrz), ?_⟩
+            rintro n s hEq
+            rw [Except.ok.injEq] at hEq
+            subst hEq
+            cases hrr with
+            | jump lbl hSt => exact hnj _ _ rfl
+
+/-! ## Source-threaded fuel + prefix seam-combined congruences -/
+
+/-- **Source-threaded fuel-bounded seam-combined congruence.**  Threads the
+`SeamCombinedStepRel` 3-tuple invariant across the fuel recursion.  The outcome
+relation is `SeamCombinedOutcomeRel` (NOT clean: residual jumps carry the pending
+invariant); the PREFIX lemma below collapses it to clean `RuntimeOutcomeRel`. -/
+theorem openRunN_seamCombined_congr_of_source
+    {source : Structured.Program}
+    {entryShapes : Structured.TypedCfgCompiler.ProcEntryShapes}
+    {cfg : TypedCfg.Program}
+    (context :
+      Structured.TypedCfgPreservation.Program.GeneratedContext source entryShapes cfg)
+    (hSourceWF : source.WF)
+    (hTyped : cfg.WellTyped) (hIndependent : cfg.ProgramCounterIndependent) :
+    ∀ (fuel : Nat) (label : Label) (state1 s_c : EVMState),
+      SeamCombinedStepRel (source := source) (cfg := cfg) context.calls label state1 s_c →
+      Simulation.Interaction.Rel
+        (SeamCombinedOutcomeRel (source := source) (cfg := cfg) context.calls)
+        (InteractionSemantics.Program.openRunN cfg fuel label state1)
+        (InteractionSemantics.Program.openRunN
+          (seamCancelProgram (peepholeProgram (normalizeProgram cfg))) fuel label s_c)
+  | 0, label, state1, s_c, hStep => by
+      simp only [InteractionSemantics.Program.openRunN_zero]
+      exact .done (Or.inl ⟨label, state1, s_c, rfl, rfl, hStep⟩)
+  | fuel + 1, label, state1, s_c, hStep => by
+      rw [InteractionSemantics.Program.openRunN_succ,
+        InteractionSemantics.Program.openRunN_succ]
+      have hStepOne :=
+        openStep_seamCombined_congr_of_source context hSourceWF hTyped hIndependent hStep
+      apply Simulation.Interaction.Rel.bind_custom hStepOne
+      intro leftDone rightDone hOut
+      rcases hOut with hjump | hterm
+      · obtain ⟨next, s1', sc', h1, h2, hstep'⟩ := hjump
+        subst h1; subst h2
+        exact openRunN_seamCombined_congr_of_source context hSourceWF hTyped hIndependent
+          fuel next s1' sc' hstep'
+      · obtain ⟨hrr, hnj⟩ := hterm
+        cases hrr with
+        | error he => exact .done (Or.inr ⟨.error he, by simp⟩)
+        | ok hrrr =>
+            cases hrrr with
+            | jump lbl hSt => exact absurd rfl (hnj _ _)
+            | fallthrough hSt => exact .done (Or.inr ⟨.ok (.fallthrough hSt), by simp⟩)
+            | returnDispatch hSt => exact .done (Or.inr ⟨.ok (.returnDispatch hSt), by simp⟩)
+            | halt kind hSt => exact .done (Or.inr ⟨.ok (.halt kind hSt), by simp⟩)
+            | invalid hSt => exact .done (Or.inr ⟨.ok (.invalid hSt), by simp⟩)
+
+/-- **Source-threaded prefix seam-combined congruence.**  Collapses the
+`SeamCombinedOutcomeRel` N-level relation to clean `Block.RuntimeOutcomeRel`: every
+residual jump (the only place a pending-swap state surfaces) maps to `OutOfFuel` on
+BOTH sides, and halts arise only from the re-synced `RuntimeOutcomeRel` disjunct.
+This is exactly the OIC-consumable prefix shape. -/
+theorem openRunNPrefix_seamCombined_congr_of_source
+    {source : Structured.Program}
+    {entryShapes : Structured.TypedCfgCompiler.ProcEntryShapes}
+    {cfg : TypedCfg.Program}
+    (context :
+      Structured.TypedCfgPreservation.Program.GeneratedContext source entryShapes cfg)
+    (hSourceWF : source.WF)
+    (hTyped : cfg.WellTyped) (hIndependent : cfg.ProgramCounterIndependent)
+    (fuel : Nat) (label : Label) (state1 s_c : EVMState)
+    (hStep : SeamCombinedStepRel (source := source) (cfg := cfg)
+      context.calls label state1 s_c) :
+    Simulation.Interaction.Rel InteractionCongruence.Block.RuntimeOutcomeRel
+      (InteractionSemantics.Program.openRunNPrefix cfg fuel label state1)
+      (InteractionSemantics.Program.openRunNPrefix
+        (seamCancelProgram (peepholeProgram (normalizeProgram cfg))) fuel label s_c) := by
+  unfold InteractionSemantics.Program.openRunNPrefix
+  have hRun :=
+    openRunN_seamCombined_congr_of_source context hSourceWF hTyped hIndependent
+      fuel label state1 s_c hStep
+  apply Simulation.Interaction.Rel.bind_custom hRun
+  intro leftDone rightDone hOut
+  rcases hOut with hjump | hterm
+  · obtain ⟨next, s1', sc', h1, h2, _⟩ := hjump
+    subst h1; subst h2
+    exact .done (.error rfl)
+  · obtain ⟨hrr, hnj⟩ := hterm
+    cases hrr with
+    | error he => exact .done (.error he)
+    | ok hrrr =>
+        cases hrrr with
+        | jump lbl hSt => exact absurd rfl (hnj _ _)
+        | fallthrough hSt => exact .done (.error rfl)
+        | returnDispatch hSt => exact .done (.error rfl)
+        | halt kind hSt => exact .done (.ok (Outcome.RuntimeRel.halt kind hSt))
+        | invalid hSt => exact .done (.error rfl)
 
 end Peephole
 end TypedCfg
