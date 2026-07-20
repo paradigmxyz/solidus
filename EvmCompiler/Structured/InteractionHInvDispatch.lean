@@ -477,6 +477,75 @@ theorem realizedWitness_of_switchTest_dispatch
   · rw [if_neg hEq]
     exact realizedWitness_of_stateRel hNextShape hFinalRel hFits
 
+/--
+**`callHead` disjunct `hInv` leg** (group (e)).  The compiled call-site block is silent: its
+`openStep` reduces to the `pure (.jump (ProcLabel.entry name) …)` that
+`realizedWitness_of_call_compile` consumes.  Unlike the other eight legs, its successor facts
+are runtime-dependent (`splitArgs?` on the source stack) or WF-dependent, so this supplier
+takes the entry `realizedWitness` ingredients (`StateRel` + entry `SourceFrameFits input`) plus
+the two strengthened `callHead` disjunct fields — the callee-entry `LabelShape`
+(`hEntryShape`) and the callee `WF` (`hProcWF`) — and discharges `splitArgs?` + the pushed child
+frame-fit internally:
+
+* the argument split exists because the entry stack has at least `proc.argc` words — the call's
+  `requireSourceWords? proc.argc input` fact (`components_of_compileStmtFuel?_call`) bounded
+  through the entry `SourceFrameFits`;
+* the pushed child frame fits the callee `procEntry` shape by
+  `SourceFrameFits.procEntry_of_splitArgs` (the `pushReturn` leaves the EVM stack = `args`).
+
+Then `realizedWitness_of_call_compile` produces the child `realizedWitness cfg next state'`. -/
+theorem realizedWitness_of_callHead_dispatch
+    {compilerFuel : Nat} {name : Structured.Name} {proc : Structured.Proc}
+    {ctx : TypedCfgCompiler.Context} {supply : LabelSupply}
+    {entry regular next : Assembly.Label} {input : TypedCfg.Shape}
+    {result : TypedCfgCompiler.Result} {cfg : TypedCfg.Program}
+    {source : RunState} {tokens : List Word} {target state' : EVMState}
+    {transcript : Simulation.Interaction.Transcript}
+    (hLookup : Structured.ProcList.lookup? name ctx.procs = some proc)
+    (hCompile :
+      TypedCfgCompiler.compileStmtFuel? (compilerFuel + 1) (.call name) ctx
+          supply entry input regular = some result)
+    (hBlocks : TypedCfgPreservation.BlocksInProgram result cfg)
+    (hRel : TypedCfgPreservation.StateRel source tokens target)
+    (hFits :
+      TypedCfgCompiler.Shape.SourceFrameFits input source.evm.stack.length)
+    (hEntryShape :
+      TypedCfgPreservation.LabelShape cfg (ProcLabel.entry name)
+        (TypedCfgCompiler.Shape.procEntry proc))
+    (hProcWF : proc.WF)
+    (hExec :
+      Simulation.Interaction.Executes
+        (TypedCfg.InteractionSemantics.Program.openStep cfg entry target)
+        transcript (Except.ok (TypedCfg.Outcome.jump next state'))) :
+    realizedWitness cfg next state' := by
+  obtain ⟨returnShape, output, hSource, _hAfter, _hType, _hResult⟩ :=
+    TypedCfgCompilerFacts.Call.components_of_compileStmtFuel?_call hLookup hCompile
+  have hArgBound : proc.argc ≤ TypedCfgCompiler.Shape.sourceLength input :=
+    TypedCfgCompilerFacts.Shape.requireSourceWords?_eq_some_iff.mp hSource
+  have hStackBound : proc.argc ≤ source.evm.stack.length :=
+    Nat.le_trans hArgBound hFits.1
+  have hSplit :
+      Structured.StackFrame.splitArgs? proc.argc source.evm.stack =
+        some (source.evm.stack.take proc.argc, source.evm.stack.drop proc.argc) := by
+    simp [Structured.StackFrame.splitArgs?, hStackBound]
+  have hStk :
+      ((source.withEVM
+            { source.evm with stack := source.evm.stack.take proc.argc }).pushReturn
+          (source.evm.stack.drop proc.argc) proc.retc).evm.stack =
+        source.evm.stack.take proc.argc := by
+    simp [RunState.pushReturn, RunState.withEVM]
+  have hFitsChild :
+      TypedCfgCompiler.Shape.SourceFrameFits
+        (TypedCfgCompiler.Shape.procEntry proc)
+        ((source.withEVM
+            { source.evm with stack := source.evm.stack.take proc.argc }).pushReturn
+          (source.evm.stack.drop proc.argc) proc.retc).evm.stack.length := by
+    rw [hStk]
+    exact TypedCfgPreservation.SourceFrameFits.procEntry_of_splitArgs hSplit
+  exact
+    InteractionConstructCoupling.realizedWitness_of_call_compile
+      hLookup hCompile hBlocks hRel hSplit hProcWF hExec hEntryShape hFitsChild
+
 end InteractionHInvDispatch
 end Structured
 end EvmCompiler

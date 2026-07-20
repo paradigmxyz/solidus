@@ -76,6 +76,52 @@ structure CtxExitsShaped (cfg : TypedCfg.Program)
     LabelShape cfg lbl shp
 
 /--
+**Callee `procEntry` `LabelShape`/`WF` bundle** (the `callHead` group-(e) thread).  For every
+proc reachable by a `.call` in the current compilation context (`lookup? name ctx.procs`),
+carries the exact `LabelShape` of the callee's `ProcLabel.entry` block (whose input is the
+callee's `procEntry` shape) together with the callee's well-formedness.  `ctx.procs` is
+constant through the whole generation recursion (the compiler never rewrites it), so this
+bundle threads UNCHANGED through every descent and is seeded at each program boundary from the
+`GeneratedContext` (`LabelShape.procEntry`) + `source.WF` (`procWF_of_lookup?`). -/
+structure ProcsShaped (cfg : TypedCfg.Program)
+    (ctx : TypedCfgCompiler.Context) : Prop where
+  get : ∀ {name : Structured.Name} {proc : Structured.Proc},
+    Structured.ProcList.lookup? name ctx.procs = some proc →
+    LabelShape cfg (ProcLabel.entry name)
+        (TypedCfgCompiler.Shape.procEntry proc) ∧ proc.WF
+
+/-- `ProcsShaped` depends only on `ctx.procs`, so it transfers across any context update that
+preserves the proc list (the `break`/`continue`/`leave` re-scopings inside `for_`). -/
+theorem ProcsShaped.of_procs_eq
+    {cfg : TypedCfg.Program} {ctx ctx' : TypedCfgCompiler.Context}
+    (h : ctx'.procs = ctx.procs)
+    (hProcs : ProcsShaped cfg ctx) :
+    ProcsShaped cfg ctx' :=
+  ⟨fun hLookup => hProcs.get (h ▸ hLookup)⟩
+
+/-- Seed `ProcsShaped` at a program boundary whose compile context's proc list is the source
+program's (`ctx.procs = source.procs`): each callee's entry `LabelShape` is
+`LabelShape.procEntry`, each callee's `WF` is `procWF_of_lookup?`. -/
+theorem ProcsShaped.seed
+    {source : Structured.Program}
+    {entryShapes : TypedCfgCompiler.ProcEntryShapes}
+    {cfg : TypedCfg.Program}
+    (context :
+      TypedCfgPreservation.Program.GeneratedContext source entryShapes cfg)
+    (hSourceWF : source.WF)
+    {ctx : TypedCfgCompiler.Context}
+    (hProcsEq : ctx.procs = source.procs) :
+    ProcsShaped cfg ctx :=
+  ⟨fun {name proc} hLookup => by
+    rw [hProcsEq] at hLookup
+    have hName : proc.name = name :=
+      Structured.ProcList.name_of_lookup? hLookup
+    refine ⟨?_, Structured.Program.procWF_of_lookup? hSourceWF hLookup⟩
+    have h := TypedCfgPreservation.LabelShape.procEntry context hLookup
+    rw [hName] at h
+    exact h⟩
+
+/--
 **Fixed-target regular thread.**  A sub-result that `requireFallthrough?`s to `expected`
 falls through only to `expected`, whose target `LabelShape cfg target expected` is already
 known (internally derived), so the sub-result inherits the thread at that fixed target.
@@ -171,7 +217,11 @@ inductive BlockGenShapeReg (cfg : TypedCfg.Program) : TypedCfg.Block → Prop wh
       (hCompile :
         TypedCfgCompiler.compileStmtFuel? (compilerFuel + 1) (.call name) ctx
             supply block.label block.input regular = some result)
-      (hBlocks : TypedCfgPreservation.BlocksInProgram result cfg) :
+      (hBlocks : TypedCfgPreservation.BlocksInProgram result cfg)
+      (hEntryShape :
+        LabelShape cfg (ProcLabel.entry name)
+          (TypedCfgCompiler.Shape.procEntry proc))
+      (hProcWF : proc.WF) :
       BlockGenShapeReg cfg block
   | forCond
       {input output : TypedCfg.Shape}
@@ -365,14 +415,15 @@ theorem genShapeReg_of_compileBlockFuel?
           supply entry input regular = some result)
     (hBlocks : BlocksInProgram result cfg)
     (hRegular : HRegular result cfg regular)
-    (hCtx : CtxExitsShaped cfg ctx) :
+    (hCtx : CtxExitsShaped cfg ctx)
+    (hProcs : ProcsShaped cfg ctx) :
     GenShapeResultReg result cfg := by
   cases fuel with
   | zero =>
       simp [TypedCfgCompiler.compileBlockFuel?] at hCompile
   | succ compilerFuel =>
       unfold TypedCfgCompiler.compileBlockFuel? at hCompile
-      exact genShapeReg_of_compileStmtListFuel? hCompile hBlocks hRegular hCtx
+      exact genShapeReg_of_compileStmtListFuel? hCompile hBlocks hRegular hCtx hProcs
 
 theorem genShapeReg_of_compileStmtListFuel?
     {fuel : Nat} {stmts : List Structured.Stmt}
@@ -384,7 +435,8 @@ theorem genShapeReg_of_compileStmtListFuel?
           supply entry input regular = some result)
     (hBlocks : BlocksInProgram result cfg)
     (hRegular : HRegular result cfg regular)
-    (hCtx : CtxExitsShaped cfg ctx) :
+    (hCtx : CtxExitsShaped cfg ctx)
+    (hProcs : ProcsShaped cfg ctx) :
     GenShapeResultReg result cfg := by
   cases fuel with
   | zero =>
@@ -410,7 +462,7 @@ theorem genShapeReg_of_compileStmtListFuel?
               genShapeReg_of_compileStmtFuel? hHead hBlocks
                 (fun out hout => by
                   rw [hFallthrough] at hout; exact absurd hout (by simp))
-                hCtx
+                hCtx hProcs
           · rcases hTail with
               ⟨tailInput, tailResult, hHeadFall, hTailCompile, rfl⟩
             have hHeadBlocks :=
@@ -421,9 +473,9 @@ theorem genShapeReg_of_compileStmtListFuel?
               (genShapeReg_of_compileStmtFuel? hHead hHeadBlocks
                   (LabelShape.regularThread_tail_of_cons hHeadFall hTailCompile
                     hTailBlocks)
-                  hCtx).append
+                  hCtx hProcs).append
                 (genShapeReg_of_compileStmtListFuel? hTailCompile hTailBlocks
-                  hRegular hCtx)
+                  hRegular hCtx hProcs)
 
 theorem genShapeReg_of_compileStmtFuel?
     {fuel : Nat} {stmt : Structured.Stmt}
@@ -435,7 +487,8 @@ theorem genShapeReg_of_compileStmtFuel?
           supply entry input regular = some result)
     (hBlocks : BlocksInProgram result cfg)
     (hRegular : HRegular result cfg regular)
-    (hCtx : CtxExitsShaped cfg ctx) :
+    (hCtx : CtxExitsShaped cfg ctx)
+    (hProcs : ProcsShaped cfg ctx) :
     GenShapeResultReg result cfg := by
   cases fuel with
   | zero =>
@@ -463,7 +516,7 @@ theorem genShapeReg_of_compileStmtFuel?
               (thread_of_target_requireFallthrough
                 (hRegular { output with slots := output.slots.tail } rfl)
                 hBodyRequire)
-              hCtx
+              hCtx hProcs
           intro block hMem
           simp only [List.mem_cons] at hMem
           rcases hMem with rfl | hBodyMem
@@ -505,7 +558,7 @@ theorem genShapeReg_of_compileStmtFuel?
                   hHead hPop hCases] at hout
                 obtain rfl := Option.some.inj hout
                 exact hRegular _ rfl)
-              hCtx hValueSource hDefaultShape
+              hCtx hProcs hValueSource hDefaultShape
           have hDefaultGen :=
             genShapeReg_of_compileDefaultFuel? hPop hDefault hDefaultBlocks
               (fun out hout => by
@@ -513,7 +566,7 @@ theorem genShapeReg_of_compileStmtFuel?
                   hPop hDefault] at hout
                 obtain rfl := Option.some.inj hout
                 exact hRegular _ rfl)
-              hCtx hValueSource
+              hCtx hProcs hValueSource
           intro block hMem
           simp only [List.mem_cons, List.mem_append] at hMem
           rcases hMem with (rfl | hCaseMem) | hDefaultMem
@@ -597,16 +650,16 @@ theorem genShapeReg_of_compileStmtFuel?
           have hInitGen :=
             genShapeReg_of_compileBlockFuel? hInit hInitBlocks
               (thread_of_target_fallthrough hCondShape hInitFallthrough)
-              hCtxCleared
+              hCtxCleared (ProcsShaped.of_procs_eq (ctx := ctx) rfl hProcs)
           have hBodyGen :=
             genShapeReg_of_compileBlockFuel? hBody hBodyBlocks
               (thread_of_target_requireFallthrough
                 (LabelShape.of_compileBlockFuel? hPost hPostBlocks) hBodyRequire)
-              hCtxBody
+              hCtxBody (ProcsShaped.of_procs_eq (ctx := ctx) rfl hProcs)
           have hPostGen :=
             genShapeReg_of_compileBlockFuel? hPost hPostBlocks
               (thread_of_target_requireFallthrough hCondShape hPostRequire)
-              hCtxCleared
+              hCtxCleared (ProcsShaped.of_procs_eq (ctx := ctx) rfl hProcs)
           intro block hMem
           have hFind := hBlocks block hMem
           rcases List.mem_append.mp hMem with hBeforePost | hPostMem
@@ -713,7 +766,9 @@ theorem genShapeReg_of_compileStmtFuel?
           intro block hMem
           simp only [List.mem_singleton] at hMem
           subst block
-          exact BlockGenShapeReg.callHead hLookup hCompile hBlocks
+          obtain ⟨hEntryShape, hProcWF⟩ := hProcs.get hLookup
+          exact
+            BlockGenShapeReg.callHead hLookup hCompile hBlocks hEntryShape hProcWF
       | terminal kind =>
           obtain ⟨_hSource, rfl⟩ :=
             TypedCfgCompilerFacts.Stmt.components_of_compileStmtFuel?_terminal
@@ -738,6 +793,7 @@ theorem genShapeReg_of_compileCasesFuel?
     (hBlocks : BlocksInProgram result cfg)
     (hRegular : HRegular result cfg regular)
     (hCtx : CtxExitsShaped cfg ctx)
+    (hProcs : ProcsShaped cfg ctx)
     (hValueSource : 1 ≤ TypedCfgCompiler.Shape.sourceLength valueShape)
     (hDefaultShape :
       LabelShape cfg (LabelSupply.label base 1) valueShape) :
@@ -770,7 +826,7 @@ theorem genShapeReg_of_compileCasesFuel?
           have hBodyGen :=
             genShapeReg_of_compileBlockFuel? hBodyCompile hBodyBlocks
               (thread_of_target_requireFallthrough (hRegular _ rfl) hBodyRequire)
-              hCtx
+              hCtx hProcs
           have hTailGen :=
             genShapeReg_of_compileCasesFuel? hHead hPop hTailCompile hTailBlocks
               (fun out hout => by
@@ -778,7 +834,7 @@ theorem genShapeReg_of_compileCasesFuel?
                   hHead hPop hTailCompile] at hout
                 obtain rfl := Option.some.inj hout
                 exact hRegular _ rfl)
-              hCtx hValueSource hDefaultShape
+              hCtx hProcs hValueSource hDefaultShape
           intro block hMem
           simp only [List.mem_cons, List.mem_append] at hMem
           rcases hMem with (rfl | rfl | hBodyMem) | hTailMem
@@ -819,6 +875,7 @@ theorem genShapeReg_of_compileDefaultFuel?
     (hBlocks : BlocksInProgram result cfg)
     (hRegular : HRegular result cfg regular)
     (hCtx : CtxExitsShaped cfg ctx)
+    (hProcs : ProcsShaped cfg ctx)
     (hValueSource : 1 ≤ TypedCfgCompiler.Shape.sourceLength valueShape) :
     GenShapeResultReg result cfg := by
   cases fuel with
@@ -847,7 +904,7 @@ theorem genShapeReg_of_compileDefaultFuel?
           have hBodyGen :=
             genShapeReg_of_compileBlockFuel? hBodyCompile hBodyBlocks
               (thread_of_target_requireFallthrough (hRegular _ rfl) hBodyRequire)
-              hCtx
+              hCtx hProcs
           intro block hMem
           simp only [List.mem_cons] at hMem
           rcases hMem with rfl | hBodyMem
