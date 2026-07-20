@@ -221,7 +221,8 @@ inductive BlockGenShapeReg (cfg : TypedCfg.Program) : TypedCfg.Block → Prop wh
       (hEntryShape :
         LabelShape cfg (ProcLabel.entry name)
           (TypedCfgCompiler.Shape.procEntry proc))
-      (hProcWF : proc.WF) :
+      (hProcWF : proc.WF)
+      (hReg : HRegular result cfg regular) :
       BlockGenShapeReg cfg block
   | forCond
       {input output : TypedCfg.Shape}
@@ -769,6 +770,7 @@ theorem genShapeReg_of_compileStmtFuel?
           obtain ⟨hEntryShape, hProcWF⟩ := hProcs.get hLookup
           exact
             BlockGenShapeReg.callHead hLookup hCompile hBlocks hEntryShape hProcWF
+              hRegular
       | terminal kind =>
           obtain ⟨_hSource, rfl⟩ :=
             TypedCfgCompilerFacts.Stmt.components_of_compileStmtFuel?_terminal
