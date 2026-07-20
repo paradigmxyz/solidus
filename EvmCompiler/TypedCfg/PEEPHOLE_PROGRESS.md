@@ -5111,3 +5111,107 @@ disjuncts have a dispatch leg; `hInv` needs the case-split assembly + dischargin
 compiler-shape obligation groups above (the branch/machinery legs' source-quantified
 parameters).  `scripts/opt_harness.sh check` = OK (43 theorems);
 `compile_correct`/`compile_correct_creation` axioms UNCHANGED; delta +0.
+
+## Session-42 update (2026-07-19): FOUR of the five compiler-shape obligation groups discharged by STRENGTHENING the `BlockGenShapeReg` disjuncts (groups a/b/c/d); only callHead (e) + the `hInv` case-split glue remain — all green + axiom-clean in 4 commits
+
+Session 42's mandate: (1) discharge the five compiler-shape obligation groups the branch/
+machinery dispatch legs take as source-quantified hypotheses; (2) assemble `hInv`; (3) Step B.
+**Result: FOUR green, axiom-clean commits** moving obligation groups (a) forCond,
+(b) switch case/next shapes + pop, (c) proc-adapter relabel transport, (d) caseEntryPop pop
+transport OUT of the dispatch-leg hypotheses and INTO the `BlockGenShapeReg` disjunct fields,
+supplied at the capstone/composite construction sites where the enclosing construct's
+provenance is in scope.  This is exactly mandate item-1's first option ("small additions to
+the disjunct fields via enrichment lemmas over the existing capstone results").  The dispatch
+legs (`InteractionHInvDispatch.lean`) are UNCHANGED — they already take these as hypotheses,
+so the strengthened disjuncts now feed them directly at the (not-yet-written) assembly.
+`peepholeBody`/public spine UNTOUCHED ⇒ delta **+0**; full `lake build` green;
+`scripts/opt_harness.sh check` = OK (43 theorems, axioms ⊆
+`[propext, Classical.choice, Quot.sound]`); `compile_correct`/`compile_correct_creation`
+axioms UNCHANGED.
+
+### KEY DESIGN FINDING (why disjunct-strengthening, not standalone reverse lemmas)
+The §Session-41 frontier framed groups a–d as either "small additions to the disjunct fields"
+OR "standalone reverse lemmas".  Investigation confirmed the **standalone-from-disjunct-fields
+route is impossible** for every branch/machinery group: the missing shape/transport facts are
+NOT derivable from the disjunct fields alone (CFG well-typedness gives only `compatible`, not
+the `LabelShape` EQUALITY; `relabelCompatible` permits `.word` wildcards so does NOT pin
+`returnTokenDepth?`; `.pop` typing gives `slots` non-empty but not `sourceLength ≥ 1`).  They
+need the enclosing construct's provenance, which is LOST once the composite collapses to
+`BlockGenShapeReg`.  BUT that provenance IS in scope at the capstone/composite CONSTRUCTION
+sites — so strengthening the disjunct fields (supplied there) is the correct additive move.
+`BlockGenShapeReg` had NO external consumer (no `rcases`/`cases`) yet, so adding fields only
+touched the construction sites; the dispatch legs and everything downstream are unaffected.
+
+### LANDED (green, axiom-clean)
+* **`52b47014`** — group (a): `BlockGenShapeReg.forCond` gains `hTrueShape`
+  (`InteractionBlockGenShapeRegular.lean:192`), the loop-body entry `LabelShape`
+  (`= { output with slots := tail }`), supplied at the capstone forCond site from the
+  for-loop body compile fact via `LabelShape.of_compileBlockFuel? hBody hBodyBlocks`.
+* **`3c2f05aa`** — new module `InteractionHInvObligations.lean` (wired into the build via an
+  import from the capstone): `caseEntryPop_popTransport` (`:38`) — from the switch scrutinee
+  source word (`1 ≤ sourceLength input`) + `.pop` typing, every source frame fitting `input`
+  has a poppable top and the popped frame fits the `.pop` output (via `sourceFrameFits_tail`);
+  `switchTest_popExists` (`:76`) — same source word gives the scrutinee-pop existence.
+* **`02b60587`** — groups (b)+(d): `BlockGenShapeReg.switchTest` gains
+  `hPopExists`/`hCaseShape`/`hNextShape` (`:212`/`:217`/`:218`); `BlockGenShapeReg.caseEntryPop`
+  gains `hPopTransport` (`:238`).  Threads `hValueSource` (`1 ≤ sourceLength valueShape`, from
+  the switch's previously-discarded `requireSourceWords? 1`) and `hDefaultShape` (terminal
+  default-entry `LabelShape`, from `default_hasEntry`) through
+  `genShapeReg_of_compileCasesFuel?`/`genShapeReg_of_compileDefaultFuel?`.  case/next entry
+  shapes: `cases_cons_case_hasEntry`/`cases_cons_test_hasEntry` (internal) + `hDefaultShape`
+  (last-case EXTERNAL successor = the default entry `LabelSupply.label base 1`).
+* **`63fc05c3`** — group (c): `BlockGenShapeReg.procAdapter` gains `hTransport`
+  (`:283`), the `SourceFrameFits` transport across the runtime-no-op relabel
+  (`procEntry proc` and body `input` both carry `returnTokenDepth? = some proc.argc`, so both
+  fits reduce to `n = argc`).  To supply it, the proc-block provenance
+  (`mem_procBlocks_provenance_subset_fallthrough` +
+  `procBlocks_provenance_inProgram_fallthrough`, `InteractionProcBlockProvenance.lean:416`/`663`)
+  adapter disjunct is ENRICHED with `input.returnTokenDepth? = some proc.argc`, drawn from the
+  generation-time `requireReturnTokenDepth?` check (`hFrame`) already in the induction;
+  `proc_blockGenShapeReg`'s adapter case (`InteractionHInvAssemblyRegular.lean:116`,`:154+`)
+  builds `hTransport` via `sourceFrameFits_iff_eq_of_returnTokenDepth?_eq_some` +
+  `returnTokenDepth?_procEntry`.  (Provenance enrichment strengthens the RETURNED existential;
+  the sole consumer `proc_blockGenShapeReg` updated; full build confirms no other breakage.)
+
+### THE FRONTIER (session 43) — group (e) callHead + the `hInv` case-split glue
+Eight of the nine `BlockGenShapeReg` disjuncts (codeHead, ifHead, forCond, switchTest,
+caseEntryPop, nilJoin, procAdapter, terminalHalt) now carry, in the disjunct, EVERY field
+their dispatch leg needs — so at the assembly each of those eight arms feeds its dispatch leg
+(`InteractionHInvDispatch.lean`) directly from `rcases`.  Remaining:
+1. **callHead group (e)** — served by `realizedWitness_of_call_compile`
+   (`InteractionConstructCoupling.lean:123`), which needs `hSplit`/`hProcWF`/`hLabelShape`
+   (callee `procEntry`)/`hFits`.  These are NOT static disjunct fields: `hSplit`
+   (`splitArgs? proc.argc source.evm.stack`) depends on the RUNTIME source stack, so it is
+   discharged at the ASSEMBLY from the realized witness's `SourceFrameFits` + a call
+   "needs argc source words" fact; `hProcWF` from `source.WF`; `hLabelShape` from
+   `LabelShape.procEntry context hLookup`; `hFits` via `sourceFrameFits_afterCall`-style
+   pushed-frame reasoning.  Recommend: bank a `callHead` dispatch supplier that takes the
+   `realizedWitness` + `source.WF` + the callHead compile fact and discharges (e) internally
+   (mirroring how the other legs consume the witness), then the assembly's callHead arm is a
+   one-liner like the other eight.
+2. **The dispatch arm** (`block_category`'s 3rd arm) — NOT yet packaged.  Needs a lemma that,
+   from a `dispatchBlocks` membership + the realized witness, recovers the site provenance
+   (`hLookup`/`hSiteProc`/`hSiteMem`) and the frame facts (`hPop` via
+   `dispatch_popReturn?_of_stateRel` when tokens = `site.token :: _`; `hAttach`/`hRetc` from
+   the site's `retc` identity) to feed `realizedWitness_of_dispatch_jump`
+   (`InteractionRealizedWitnessSuccessor.lean:149`).  This is the heaviest remaining sub-assembly.
+3. **`hInv` assembly** — with 1+2 done: from `realizedWitness cfg e t` extract
+   `hFind : findBlock? e = some block` (the witness's first component); `block_category context
+   hFind` → 4 arms; main → `main_blockGenShapeReg`, proc → `proc_blockGenShapeReg hSourceWF`,
+   each `rcases`'d into the 9 disjuncts → matching dispatch leg (8 direct, callHead via item 1);
+   dispatch arm via item 2; programEnd via `programEnd_openStep_no_jump`.  Then
+   `AllEntriesRealized.of_openStep_invariant` with `realized := realizedWitness cfg`, entry
+   witness `realizedWitness_of_stateRel`.  `hInv` is ONE theorem (all-or-nothing — no partial
+   commit), so land items 1+2 as their own green banks FIRST, then the glue.
+4. Then Step B (`openRunNPrefix_peephole_congr_of_source`, mandate item 3).
+
+### Status handed to session 43
+Landed (all green + axiom-clean): forCond `hTrueShape` (`52b47014`); obligations module
+`caseEntryPop_popTransport`/`switchTest_popExists` (`3c2f05aa`); switchTest
+`hPopExists`/`hCaseShape`/`hNextShape` + caseEntryPop `hPopTransport` (`02b60587`); procAdapter
+`hTransport` + proc-provenance depth enrichment (`63fc05c3`).  Obligation groups a/b/c/d are
+now CARRIED IN the disjuncts; only callHead (e) + the dispatch-arm recovery + the `hInv`
+case-split glue remain (frontier items 1–3 above).  Full `lake build` green;
+`scripts/opt_harness.sh check` = OK (43 theorems, axioms ⊆
+`[propext, Classical.choice, Quot.sound]`);
+`compile_correct`/`compile_correct_creation` axioms UNCHANGED; delta +0.
