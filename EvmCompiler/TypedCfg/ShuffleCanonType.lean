@@ -188,6 +188,104 @@ theorem bodyType?_map_swap_of
           { slots := applySwap (d + 1) input.slots, tail := input.tail } = _
       rw [ih _ hBound']
 
+/-! ## (P2) Permutation-action naturality: `applySwaps` depends only on `netStack`
+
+The action of a transposition list on a list factors through its net window
+permutation.  Hence two position lists with equal `netStack` act identically on
+any list — the second of the two pure-permutation facts the `canonBody`
+preservation reduces to. -/
+
+/-- `applySwap` is natural under `List.map`: permuting then relabelling equals
+relabelling then permuting. -/
+theorem applySwap_map {α β : Type _} (f : α → β) (k : Nat) (l : List α) :
+    applySwap k (l.map f) = (applySwap k l).map f := by
+  unfold applySwap
+  rw [List.getElem?_map, List.getElem?_map]
+  cases h0 : l[0]? with
+  | none => simp [h0]
+  | some a =>
+      cases hk : l[k]? with
+      | none => simp [h0, hk]
+      | some b =>
+          simp only [h0, hk, Option.map_some]
+          rw [List.map_set, List.map_set]
+
+/-- `applySwaps` is natural under `List.map`. -/
+theorem applySwaps_map {α β : Type _} (f : α → β) (ps : List Nat) (l : List α) :
+    applySwaps ps (l.map f) = (applySwaps ps l).map f := by
+  induction ps generalizing l with
+  | nil => rfl
+  | cons k ps ih => rw [applySwaps_cons, applySwaps_cons, applySwap_map, ih]
+
+/-- Reconstruct a list from its length window by gathering. -/
+theorem range_map_getElem! {α : Type _} [Inhabited α] (xs : List α) :
+    (List.range xs.length).map (fun j => xs[j]!) = xs := by
+  apply List.ext_getElem
+  · simp
+  · intro i h1 h2
+    rw [List.getElem_map, List.getElem_range]
+    have hi : i < xs.length := by simpa using h1
+    rw [getElem!_pos xs i hi]
+
+/-- **The factoring.**  `applySwaps ps xs` is the net window permutation
+`netStack ps xs.length` used to gather from `xs`. -/
+theorem applySwaps_eq_gather {α : Type _} [Inhabited α] (ps : List Nat)
+    (xs : List α) :
+    applySwaps ps xs = (netStack ps xs.length).map (fun j => xs[j]!) := by
+  conv_lhs => rw [← range_map_getElem! xs]
+  rw [applySwaps_map]
+  rfl
+
+/-- **(P2) naturality.**  Equal `netStack` (over the shared length window) ⟹
+equal `applySwaps` on any list. -/
+theorem applySwaps_congr_of_netStack {α : Type _} [Inhabited α]
+    (ps qs : List Nat) (xs : List α)
+    (h : netStack ps xs.length = netStack qs xs.length) :
+    applySwaps ps xs = applySwaps qs xs := by
+  rw [applySwaps_eq_gather ps xs, applySwaps_eq_gather qs xs, h]
+
+/-! ## The per-run type-preservation reduction
+
+Combining the dictionary (forward + definedness) with (P2) naturality reduces the
+`bodyType?`-preservation of `canonSwaps` on a single swap run to the two
+pure-permutation facts, stated here as explicit hypotheses:
+
+* `hNet` — `canonSwaps` preserves the net window permutation.  In the unfired
+  branch this is `rfl`; in the fired branch it is exactly **(P1)** selection-sort
+  realisability (`netStack (starDecompose t) t.length = t`) transported from the
+  decomposition window `maxDepth+1` up to the slot window (both agree because all
+  positions stay below `maxDepth+1 ≤ input.slots.length`).
+* `hBound` — every canonical depth is `< 16` and lands in range (its position
+  never exceeds the original run's deepest, which the typing bound already caps).
+
+Both are `ShuffleCanon`-internal permutation facts, independent of the typed
+`Shape` layer; discharging them (the §Session-75 frontier) upgrades this to an
+unconditional `canonBody`/`canonBlock` WellTyped/`lower?` preservation. -/
+
+/-- A default `Slot` for the gather reconstruction (local; this leaf is imported
+by nobody). -/
+private instance : Inhabited Slot := ⟨Slot.word⟩
+
+/-- **Per-run type-preservation (reduction).**  If a swap run types from `input`,
+and `canonSwaps` preserves both the net permutation (`hNet`) and the in-range
+bound (`hBound`), then the canonicalised run types from `input` to the SAME
+output — the crux `canonBody` preservation modulo the two pure-permutation
+facts. -/
+theorem canonSwaps_bodyType?_preserve
+    (r : List Nat) (input out : Shape)
+    (hType : Block.bodyType? (r.map Instr.swap) input = some out)
+    (hBound : ∀ e ∈ canonSwaps r, e < 16 ∧ e + 1 < input.slots.length)
+    (hNet : netStack ((canonSwaps r).map (· + 1)) input.slots.length
+          = netStack (r.map (· + 1)) input.slots.length) :
+    Block.bodyType? ((canonSwaps r).map Instr.swap) input = some out := by
+  have hout : out =
+      { slots := applySwaps (r.map (· + 1)) input.slots, tail := input.tail } :=
+    bodyType?_map_swap_eq r input out hType
+  rw [bodyType?_map_swap_of (canonSwaps r) input hBound, hout]
+  apply congrArg some
+  refine Shape.ext_slots_tail ?_ rfl
+  exact applySwaps_congr_of_netStack _ _ input.slots hNet
+
 end ShuffleCanon
 end TypedCfg
 end EvmCompiler
