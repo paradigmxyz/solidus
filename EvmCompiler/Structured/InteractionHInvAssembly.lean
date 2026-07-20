@@ -1,4 +1,6 @@
 import EvmCompiler.Structured.InteractionBlockGenShape
+import EvmCompiler.Structured.InteractionBlockProvenanceRoot
+import EvmCompiler.Structured.InteractionProcBlockProvenance
 
 /-!
 # `hInv` assembly ingredients (route-2 endgame glue)
@@ -95,6 +97,34 @@ theorem dispatch_popReturn?_of_stateRel
     TypedCfgPreservation.StateRel.returns_cons_of_tokens_cons hRel
   refine ⟨frame, returns, hReturns, ?_⟩
   simp only [RunState.popReturn?, hReturns]
+
+/--
+**Main-body arm: block ⟶ `BlockGenShape` composite.**
+
+Combines the main-body provenance root (`main_stmtList_provenance`) with the capstone
+statement-list classifier (`genShape_of_compileStmtListFuel?`) and the main-result
+in-program fact (`mainBlocks`) to conclude, from the FIRST arm of `block_category`
+(`block ∈ context.main.blocks`), that the block is `BlockGenShape`-classified.
+
+This is precisely the main-body case of the eventual `hInv` split: given the main-body
+membership, hand the per-disjunct supplier dispatch a `BlockGenShape cfg block` fact.
+No runtime data — purely static provenance ∘ classification.
+-/
+theorem main_blockGenShape
+    {source : Structured.Program}
+    {entryShapes : TypedCfgCompiler.ProcEntryShapes}
+    {cfg : TypedCfg.Program}
+    (context :
+      TypedCfgPreservation.Program.GeneratedContext source entryShapes cfg)
+    {block : TypedCfg.Block}
+    (hMem : block ∈ context.main.blocks) :
+    InteractionBlockGenShape.BlockGenShape cfg block := by
+  obtain ⟨hCompile, hMem'⟩ :=
+    TypedCfgPreservation.Program.GeneratedContext.main_stmtList_provenance
+      context hMem
+  exact
+    InteractionBlockGenShape.genShape_of_compileStmtListFuel?
+      hCompile context.mainBlocks block hMem'
 
 end Structured
 end EvmCompiler
