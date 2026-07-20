@@ -2,6 +2,7 @@ import EvmCompiler.Structured.InteractionFrameConsistentCallLeg
 import EvmCompiler.Structured.InteractionHInvAssemblyRegular
 import EvmCompiler.Structured.InteractionHInvAssembly
 import EvmCompiler.Structured.TypedCfgPreservation.StackRealizesEntry
+import EvmCompiler.Structured.TokenBottomShape
 
 /-!
 # The `hInv` assembly — the strengthened `openStep`-jump invariant and its `AllEntriesRealized`
@@ -238,6 +239,34 @@ theorem stackRealizes_of_realizedWitnessFC_of_token_last
   exact
     TypedCfgPreservation.stackRealizes_of_stateRel_of_token_last_of_tokens_cons
       hRel hFits hLast
+
+/-- **The total block-entry `StackRealizes` bridge** (session 49, frontier item 2).  Case-splits
+the block's input token position and dispatches to the matching per-entry bridge:
+
+* token-free (`returnTokenDepth? = none`) ⇒ project to the bare `realizedWitness` and close via
+  `stackRealizes_of_realizedWitness_of_returnTokenDepth?_eq_none`;
+* token-owning (`returnTokenDepth? = some _`) ⇒ the static token-at-bottom fact
+  `TokenBottomOrNone block.input` pins the token to the bottom slot, discharging the
+  `hLast` hypothesis of `stackRealizes_of_realizedWitnessFC_of_token_last`.
+
+The `TokenBottomOrNone block.input` premise is the static fact (frontier item 1) supplied at the
+call site from the block's `BlockGenShapeReg` classification; here the bridge is total *modulo*
+that premise. -/
+theorem stackRealizes_of_realizedWitnessFC
+    {source : Structured.Program} {cfg : TypedCfg.Program}
+    {calls : List TypedCfgCompiler.DispatchSite}
+    {label : Assembly.Label} {state : EVMState} {block : TypedCfg.Block}
+    (hReal : realizedWitnessFC source cfg calls label state)
+    (hFind : cfg.findBlock? label = some block)
+    (hTB : TokenBottomShape.TokenBottomOrNone block.input) :
+    TypedCfg.StackRealizes block.input state := by
+  cases hDepth : block.input.returnTokenDepth? with
+  | none =>
+      exact stackRealizes_of_realizedWitness_of_returnTokenDepth?_eq_none
+        (realizedWitnessFC.realizedWitness hReal) hFind hDepth
+  | some d =>
+      exact stackRealizes_of_realizedWitnessFC_of_token_last hReal hFind
+        (TokenBottomShape.returnTokenDepth?_eq_pred_length_of_tokenBottomOrNone hTB hDepth)
 
 end InteractionFrameConsistent
 end Structured
