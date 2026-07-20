@@ -209,14 +209,6 @@ SOLC_VERSION="$COMPOUND_COMET_SOLC_VERSION" "$PYTHON_BIN" \
   --forge-evm-version "$COMPOUND_COMET_FORGE_EVM_VERSION" \
   "${COMPARE_CALLDATA[@]}" > "$COMPARE"
 
-printf 'compound_comet_bridge_smoke=pass\n'
-printf 'repo_ref=%s\n' "$ACTUAL_REF"
-printf 'source_pragma_relaxed=1\n'
-printf 'solc_version=%s\n' "$COMPOUND_COMET_SOLC_VERSION"
-printf 'forge_evm_version=%s\n' "$COMPOUND_COMET_FORGE_EVM_VERSION"
-printf 'math_fallback_compare_calls=%s\n' "$(
-  sed -n 's/^calls=//p' "$COMPARE"
-)"
 "$PYTHON_BIN" - "$DECODE_CHECK" "$SUMMARY" "$BACKEND_CHECK" "$COMPARE" <<'PY'
 import json
 import sys
@@ -262,3 +254,15 @@ if "contract_call_compare=pass" not in compare_lines:
 if "calls=16" not in compare_lines:
     raise SystemExit("Compound Comet Forge comparison did not run 16 calls")
 PY
+
+# Summary AFTER the verifier: the pass token must never precede the checks
+# it reports on (a stdout consumer grepping for '=pass' would otherwise see
+# a false pass even when the verifier aborts the script nonzero).
+printf 'compound_comet_bridge_smoke=pass\n'
+printf 'repo_ref=%s\n' "$ACTUAL_REF"
+printf 'source_pragma_relaxed=1\n'
+printf 'solc_version=%s\n' "$COMPOUND_COMET_SOLC_VERSION"
+printf 'forge_evm_version=%s\n' "$COMPOUND_COMET_FORGE_EVM_VERSION"
+printf 'math_fallback_compare_calls=%s\n' "$(
+  sed -n 's/^calls=//p' "$COMPARE"
+)"
