@@ -236,6 +236,394 @@ theorem append
 
 end GenShapeResult
 
+/-!
+## The block-generation classification capstone mutual
+
+Mirrors `activeResult_of_compile*` (`TypedCfgCompilerActive.lean:77`) but concludes
+`GenShapeResult result cfg`, threading `BlocksInProgram result cfg` down the recursion
+(each sub-result's `BlocksInProgram` follows from block-list inclusion) and emitting the
+matching `BlockGenShape` disjunct at each block.  No `ReturnTokenActive` invariant is
+needed — the classification is purely structural.
+-/
+
+mutual
+
+theorem genShape_of_compileBlockFuel?
+    {fuel : Nat} {block : Structured.Block}
+    {ctx : TypedCfgCompiler.Context} {supply : LabelSupply}
+    {entry regular : Assembly.Label} {input : TypedCfg.Shape}
+    {result : TypedCfgCompiler.Result} {cfg : TypedCfg.Program}
+    (hCompile :
+      TypedCfgCompiler.compileBlockFuel? fuel block ctx
+          supply entry input regular = some result)
+    (hBlocks : TypedCfgPreservation.BlocksInProgram result cfg) :
+    GenShapeResult result cfg := by
+  cases fuel with
+  | zero =>
+      simp [TypedCfgCompiler.compileBlockFuel?] at hCompile
+  | succ compilerFuel =>
+      unfold TypedCfgCompiler.compileBlockFuel? at hCompile
+      exact genShape_of_compileStmtListFuel? hCompile hBlocks
+
+theorem genShape_of_compileStmtListFuel?
+    {fuel : Nat} {stmts : List Structured.Stmt}
+    {ctx : TypedCfgCompiler.Context} {supply : LabelSupply}
+    {entry regular : Assembly.Label} {input : TypedCfg.Shape}
+    {result : TypedCfgCompiler.Result} {cfg : TypedCfg.Program}
+    (hCompile :
+      TypedCfgCompiler.compileStmtListFuel? fuel stmts ctx
+          supply entry input regular = some result)
+    (hBlocks : TypedCfgPreservation.BlocksInProgram result cfg) :
+    GenShapeResult result cfg := by
+  cases fuel with
+  | zero =>
+      simp [TypedCfgCompiler.compileStmtListFuel?] at hCompile
+  | succ compilerFuel =>
+      cases stmts with
+      | nil =>
+          simp [TypedCfgCompiler.compileStmtListFuel?,
+            TypedCfgCompiler.mkBlock?] at hCompile
+          cases hCompile
+          intro block hMem
+          have hFind := hBlocks block hMem
+          simp only [List.mem_singleton] at hMem
+          subst block
+          exact BlockGenShape.nilJoin hFind
+      | cons stmt rest =>
+          rcases
+              TypedCfgPreservation.Block.components_of_compileStmtListFuel?_cons
+                hCompile with
+            ⟨headResult, hHead, hNoTail | hTail⟩
+          · rcases hNoTail with ⟨_hFallthrough, rfl⟩
+            exact genShape_of_compileStmtFuel? hHead hBlocks
+          · rcases hTail with
+              ⟨tailInput, tailResult,
+                _hFallthrough, hTailCompile, rfl⟩
+            have hHeadBlocks :=
+              TypedCfgPreservation.BlocksInProgram.left_of_append hBlocks
+            have hTailBlocks :=
+              TypedCfgPreservation.BlocksInProgram.right_of_append hBlocks
+            exact
+              (genShape_of_compileStmtFuel? hHead hHeadBlocks).append
+                (genShape_of_compileStmtListFuel? hTailCompile hTailBlocks)
+
+theorem genShape_of_compileStmtFuel?
+    {fuel : Nat} {stmt : Structured.Stmt}
+    {ctx : TypedCfgCompiler.Context} {supply : LabelSupply}
+    {entry regular : Assembly.Label} {input : TypedCfg.Shape}
+    {result : TypedCfgCompiler.Result} {cfg : TypedCfg.Program}
+    (hCompile :
+      TypedCfgCompiler.compileStmtFuel? fuel stmt ctx
+          supply entry input regular = some result)
+    (hBlocks : TypedCfgPreservation.BlocksInProgram result cfg) :
+    GenShapeResult result cfg := by
+  cases fuel with
+  | zero =>
+      simp [TypedCfgCompiler.compileStmtFuel?] at hCompile
+  | succ compilerFuel =>
+      cases stmt with
+      | code code =>
+          obtain ⟨output, _hType, rfl⟩ :=
+            TypedCfgCompilerFacts.Stmt.components_of_compileStmtFuel?_code
+              hCompile
+          intro block hMem
+          simp only [List.mem_singleton] at hMem
+          subst block
+          exact BlockGenShape.codeHead hCompile hBlocks
+      | if_ cond body =>
+          obtain
+              ⟨output, _condition, bodyResult,
+                _hType, _hSource, _hHead, hBody, _hRequire, rfl⟩ :=
+            TypedCfgCompilerFacts.Stmt.components_of_compileStmtFuel?_if hCompile
+          have hBodyBlocks :
+              TypedCfgPreservation.BlocksInProgram bodyResult cfg := by
+            intro b hb
+            exact hBlocks b (List.mem_cons_of_mem _ hb)
+          have hBodyGen := genShape_of_compileBlockFuel? hBody hBodyBlocks
+          intro block hMem
+          simp only [List.mem_cons] at hMem
+          rcases hMem with rfl | hBodyMem
+          · exact BlockGenShape.ifHead hCompile hBlocks
+          · exact hBodyGen block hBodyMem
+      | switch scrutinee cases defaultBody =>
+          obtain
+              ⟨valueShape, _valueSlot, caseResult, defaultResult,
+                hType, _hSource, hHead, hCases, hDefault, rfl⟩ :=
+            TypedCfgCompilerFacts.Switch.components_of_compileStmtFuel?_switch
+              hCompile
+          have hPop :
+              TypedCfg.Instr.type? .pop valueShape =
+                some { valueShape with slots := valueShape.slots.tail } := by
+            rcases valueShape with ⟨slots, tail⟩
+            cases slots with
+            | nil => simp at hHead
+            | cons slot rest => simp [TypedCfg.Instr.type?]
+          have hCaseBlocks :
+              TypedCfgPreservation.BlocksInProgram caseResult cfg := by
+            intro b hb
+            exact hBlocks b
+              (by simp only [List.mem_cons, List.mem_append]; tauto)
+          have hDefaultBlocks :
+              TypedCfgPreservation.BlocksInProgram defaultResult cfg := by
+            intro b hb
+            exact hBlocks b
+              (by simp only [List.mem_cons, List.mem_append]; tauto)
+          have hCaseGen :=
+            genShape_of_compileCasesFuel? hHead hPop hCases hCaseBlocks
+          have hDefaultGen :=
+            genShape_of_compileDefaultFuel? hPop hDefault hDefaultBlocks
+          intro block hMem
+          simp only [List.mem_cons, List.mem_append] at hMem
+          rcases hMem with (rfl | hCaseMem) | hDefaultMem
+          · refine
+              BlockGenShape.codeHead
+                (codeFact_of_switchHead
+                  (compilerFuel := 0) (ctx := ctx) (supply := supply)
+                  (firstTest :=
+                    TypedCfgCompilerFacts.Switch.casesEntryLabel supply 0 cases)
+                  hType) ?_
+            intro b hb
+            simp only [List.mem_singleton] at hb
+            subst b
+            refine hBlocks _ ?_
+            simp
+          · exact hCaseGen block hCaseMem
+          · exact hDefaultGen block hDefaultMem
+      | for_ init cond post body =>
+          obtain
+              ⟨initResult, loopInput, condOutput, _condition,
+                bodyResult, postResult, hInit, _hInitFallthrough,
+                hType, hSource, _hHead, hBody, _hBodyRequire,
+                hPost, _hPostRequire, rfl⟩ :=
+            TypedCfgCompilerFacts.Loop.components_of_compileStmtFuel?_for hCompile
+          have hInitBlocks :
+              TypedCfgPreservation.BlocksInProgram initResult cfg := by
+            intro b hb
+            exact hBlocks b
+              (by simp only [List.mem_cons, List.mem_append]; tauto)
+          have hBodyBlocks :
+              TypedCfgPreservation.BlocksInProgram bodyResult cfg := by
+            intro b hb
+            exact hBlocks b
+              (by simp only [List.mem_cons, List.mem_append]; tauto)
+          have hPostBlocks :
+              TypedCfgPreservation.BlocksInProgram postResult cfg := by
+            intro b hb
+            exact hBlocks b
+              (by simp only [List.mem_cons, List.mem_append]; tauto)
+          have hInitGen := genShape_of_compileBlockFuel? hInit hInitBlocks
+          have hBodyGen := genShape_of_compileBlockFuel? hBody hBodyBlocks
+          have hPostGen := genShape_of_compileBlockFuel? hPost hPostBlocks
+          intro block hMem
+          have hFind := hBlocks block hMem
+          rcases List.mem_append.mp hMem with hBeforePost | hPostMem
+          rcases List.mem_append.mp hBeforePost with hBeforeBody | hBodyMem
+          rcases List.mem_append.mp hBeforeBody with hInitMem | hLoopMem
+          · exact hInitGen block hInitMem
+          · have hBlock :
+                block =
+                  { label := LabelSupply.label supply 0
+                    input := loopInput
+                    body := TypedCfgCompiler.Code.toCfg cond
+                    output := condOutput
+                    term :=
+                      .jumpi (LabelSupply.label supply 1) regular } := by
+              simpa using hLoopMem
+            subst block
+            exact BlockGenShape.forCond hType hSource hFind
+          · exact hBodyGen block hBodyMem
+          · exact hPostGen block hPostMem
+      | brk =>
+          unfold TypedCfgCompiler.compileStmtFuel? at hCompile
+          cases hLabel : ctx.breakLabel? with
+          | none =>
+              simp [TypedCfgCompiler.checkedJumpOrInvalid, hLabel] at hCompile
+          | some label =>
+              cases hShape : ctx.breakShape? with
+              | none =>
+                  simp [TypedCfgCompiler.checkedJumpOrInvalid,
+                    hLabel, hShape] at hCompile
+              | some expected =>
+                  by_cases hInput : input = expected
+                  · subst expected
+                    simp [TypedCfgCompiler.checkedJumpOrInvalid,
+                      hLabel, hShape, TypedCfgCompiler.mkBlock?] at hCompile
+                    cases hCompile
+                    intro block hMem
+                    have hFind := hBlocks block hMem
+                    simp only [List.mem_singleton] at hMem
+                    subst block
+                    exact BlockGenShape.nilJoin hFind
+                  · simp [TypedCfgCompiler.checkedJumpOrInvalid,
+                      hLabel, hShape, hInput] at hCompile
+      | cont =>
+          unfold TypedCfgCompiler.compileStmtFuel? at hCompile
+          cases hLabel : ctx.continueLabel? with
+          | none =>
+              simp [TypedCfgCompiler.checkedJumpOrInvalid, hLabel] at hCompile
+          | some label =>
+              cases hShape : ctx.continueShape? with
+              | none =>
+                  simp [TypedCfgCompiler.checkedJumpOrInvalid,
+                    hLabel, hShape] at hCompile
+              | some expected =>
+                  by_cases hInput : input = expected
+                  · subst expected
+                    simp [TypedCfgCompiler.checkedJumpOrInvalid,
+                      hLabel, hShape, TypedCfgCompiler.mkBlock?] at hCompile
+                    cases hCompile
+                    intro block hMem
+                    have hFind := hBlocks block hMem
+                    simp only [List.mem_singleton] at hMem
+                    subst block
+                    exact BlockGenShape.nilJoin hFind
+                  · simp [TypedCfgCompiler.checkedJumpOrInvalid,
+                      hLabel, hShape, hInput] at hCompile
+      | leave =>
+          unfold TypedCfgCompiler.compileStmtFuel? at hCompile
+          cases hLabel : ctx.leaveLabel? with
+          | none =>
+              simp [TypedCfgCompiler.checkedJumpOrInvalid, hLabel] at hCompile
+          | some label =>
+              cases hShape : ctx.leaveShape? with
+              | none =>
+                  simp [TypedCfgCompiler.checkedJumpOrInvalid,
+                    hLabel, hShape] at hCompile
+              | some expected =>
+                  by_cases hInput : input = expected
+                  · subst expected
+                    simp [TypedCfgCompiler.checkedJumpOrInvalid,
+                      hLabel, hShape, TypedCfgCompiler.mkBlock?] at hCompile
+                    cases hCompile
+                    intro block hMem
+                    have hFind := hBlocks block hMem
+                    simp only [List.mem_singleton] at hMem
+                    subst block
+                    exact BlockGenShape.nilJoin hFind
+                  · simp [TypedCfgCompiler.checkedJumpOrInvalid,
+                      hLabel, hShape, hInput] at hCompile
+      | call name =>
+          obtain ⟨proc, hLookup⟩ :=
+            TypedCfgCompilerFacts.Call.exists_lookup_of_compileStmtFuel?_call
+              hCompile
+          obtain
+              ⟨returnShape, _output, _hSource, _hAfter, _hType, rfl⟩ :=
+            TypedCfgCompilerFacts.Call.components_of_compileStmtFuel?_call
+              hLookup hCompile
+          intro block hMem
+          simp only [List.mem_singleton] at hMem
+          subst block
+          exact BlockGenShape.callHead hLookup hCompile hBlocks
+      | terminal kind =>
+          obtain ⟨_hSource, rfl⟩ :=
+            TypedCfgCompilerFacts.Stmt.components_of_compileStmtFuel?_terminal
+              hCompile
+          intro block hMem
+          have hFind := hBlocks block hMem
+          simp only [List.mem_singleton] at hMem
+          subst block
+          exact BlockGenShape.terminalHalt hFind
+
+theorem genShape_of_compileCasesFuel?
+    {fuel : Nat} {cases : List (Word × Structured.Block)}
+    {ctx : TypedCfgCompiler.Context}
+    {base supply idx : Nat} {regular : Assembly.Label}
+    {valueShape bodyShape : TypedCfg.Shape} {slot : TypedCfg.Slot}
+    {result : TypedCfgCompiler.Result} {cfg : TypedCfg.Program}
+    (hHead : valueShape.slots.head? = some slot)
+    (hPop : TypedCfg.Instr.type? .pop valueShape = some bodyShape)
+    (hCompile :
+      TypedCfgCompiler.compileCasesFuel? fuel cases ctx
+          base supply idx valueShape bodyShape regular = some result)
+    (hBlocks : TypedCfgPreservation.BlocksInProgram result cfg) :
+    GenShapeResult result cfg := by
+  cases fuel with
+  | zero =>
+      simp [TypedCfgCompiler.compileCasesFuel?] at hCompile
+  | succ compilerFuel =>
+      cases cases with
+      | nil =>
+          simp [TypedCfgCompiler.compileCasesFuel?] at hCompile
+          cases hCompile
+          intro block hMem
+          simp at hMem
+      | cons head rest =>
+          rcases head with ⟨caseValue, body⟩
+          obtain
+              ⟨bodyResult, tail, hBodyCompile, _hRequire,
+                hTailCompile, rfl⟩ :=
+            TypedCfgCompilerFacts.Switch.components_of_compileCasesFuel?_cons
+              hHead hPop hCompile
+          have hBodyBlocks :
+              TypedCfgPreservation.BlocksInProgram bodyResult cfg := by
+            intro b hb
+            exact hBlocks b
+              (by simp only [List.mem_cons, List.mem_append]; tauto)
+          have hTailBlocks :
+              TypedCfgPreservation.BlocksInProgram tail cfg := by
+            intro b hb
+            exact hBlocks b
+              (by simp only [List.mem_cons, List.mem_append]; tauto)
+          have hBodyGen :=
+            genShape_of_compileBlockFuel? hBodyCompile hBodyBlocks
+          have hTailGen :=
+            genShape_of_compileCasesFuel? hHead hPop hTailCompile hTailBlocks
+          intro block hMem
+          simp only [List.mem_cons, List.mem_append] at hMem
+          rcases hMem with (rfl | rfl | hBodyMem) | hTailMem
+          · refine BlockGenShape.switchTest hHead hBlocks ?_
+            simp
+          · refine BlockGenShape.caseEntryPop hPop hBlocks ?_
+            simp
+          · exact hBodyGen block hBodyMem
+          · exact hTailGen block hTailMem
+
+theorem genShape_of_compileDefaultFuel?
+    {fuel : Nat} {defaultBody : Option Structured.Block}
+    {ctx : TypedCfgCompiler.Context}
+    {supply : LabelSupply} {entry regular : Assembly.Label}
+    {valueShape bodyShape : TypedCfg.Shape}
+    {result : TypedCfgCompiler.Result} {cfg : TypedCfg.Program}
+    (hPop : TypedCfg.Instr.type? .pop valueShape = some bodyShape)
+    (hCompile :
+      TypedCfgCompiler.compileDefaultFuel? fuel defaultBody ctx
+          supply entry valueShape bodyShape regular = some result)
+    (hBlocks : TypedCfgPreservation.BlocksInProgram result cfg) :
+    GenShapeResult result cfg := by
+  cases fuel with
+  | zero =>
+      simp [TypedCfgCompiler.compileDefaultFuel?] at hCompile
+  | succ compilerFuel =>
+      cases defaultBody with
+      | none =>
+          have hEq :=
+            TypedCfgCompilerFacts.Switch.components_of_compileDefaultFuel?_none
+              hPop hCompile
+          subst hEq
+          intro block hMem
+          simp only [List.mem_singleton] at hMem
+          subst block
+          refine BlockGenShape.caseEntryPop hPop hBlocks ?_
+          simp
+      | some body =>
+          obtain ⟨bodyResult, hBodyCompile, _hRequire, rfl⟩ :=
+            TypedCfgCompilerFacts.Switch.components_of_compileDefaultFuel?_some
+              hPop hCompile
+          have hBodyBlocks :
+              TypedCfgPreservation.BlocksInProgram bodyResult cfg := by
+            intro b hb
+            exact hBlocks b (List.mem_cons_of_mem _ hb)
+          have hBodyGen :=
+            genShape_of_compileBlockFuel? hBodyCompile hBodyBlocks
+          intro block hMem
+          simp only [List.mem_cons] at hMem
+          rcases hMem with rfl | hBodyMem
+          · refine BlockGenShape.caseEntryPop hPop hBlocks ?_
+            simp
+          · exact hBodyGen block hBodyMem
+
+end
+
 end InteractionBlockGenShape
 end Structured
 end EvmCompiler
