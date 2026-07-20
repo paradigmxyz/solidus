@@ -725,6 +725,73 @@ theorem seamCancelProgram_wellTyped {program : Program}
   obtain ⟨b0, hb0mem, rfl⟩ := hb
   exact seamBlock_wellTyped hUnique hAll hb0mem
 
+/-! ## Runtime kernels for the pending-swap bisimulation (gate 2, session 63)
+
+The runtime frontier of Route A is a 2-state bisimulation.  At a fired seam the
+source `A` drops its trailing `swap d` while the unique-predecessor target `B`
+drops its leading `swap d`, so the two programs' states desync by a single
+`0 ↔ d+1` stack transposition across the `A → B` fallthrough edge and re-sync the
+moment `B`'s (dropped) head swap would have fired.  The whole-program lift rests
+on exactly two body-level facts:
+
+* the SOURCE side is `PeepholeOpen.openRunBody_append`: since `A.body =
+  A.body.dropLast ++ [swap d]`, the original `A` runs `A'`'s (`= dropLast`) body
+  and then one trailing `swap d` — this is where the pending desync is born;
+* the TARGET side is `openRunBody_swap_cons_resync` (below): `B` run from the
+  pending state is `Rel`-related, up to `SameRuntimeData`, to `B'` run from the
+  synced state, because `B`'s head swap maps the pending state back (up to
+  `SameRuntimeData`) to the synced one, after which both run the identical tail.
+
+`PendingSwap` names the inter-block state relation that the (still-open) 2-state
+source-threaded `openRunN` congruence carries at a fired target's entry. -/
+
+open Assembly (EVMState SameRuntimeData)
+open InteractionSemantics
+open InteractionCongruence
+
+/-- The pending-swap state relation across a fired seam's fallthrough edge: the
+ORIGINAL program's state `s_o` at the fired target's entry is one `swap d` away
+from being `SameRuntimeData` to the seam-cancelled program's state `s_c` at the
+same entry. -/
+def PendingSwap (d : Nat) (s_c s_o : EVMState) : Prop :=
+  ∃ next, EvmYul.swap (d + 1) s_o = .ok next ∧ SameRuntimeData next s_c
+
+/-- **Target-side re-sync kernel.**  The fired target `B` (`body = swap d ::
+rest`) run from the pending state `s_o` is `Rel`-related — up to
+`SameRuntimeData` — to the edited target `B'` (`body = rest`, entered at shape
+`middle`) run from the synced state `s_c`, whenever `B`'s head swap lands
+`SameRuntimeData` to `s_c`.  Direct from `openRunBody_swap_cons_ok` plus the
+existing `SameRuntimeData` body congruence `openRunBody_runtimeRel`. -/
+theorem openRunBody_swap_cons_resync
+    {d : Nat} {rest : List Instr} {input middle output : Shape}
+    {s_o s_c next : EVMState}
+    (hType : Instr.type? (.swap d) input = some middle)
+    (hRun : Instr.runState (.swap d) input s_o = .ok next)
+    (hBody : Block.bodyType? rest middle = some output)
+    (hIndep : rest.Forall Instr.ProgramCounterIndependent)
+    (hSync : SameRuntimeData next s_c) :
+    Simulation.Interaction.Rel (Instr.RuntimeAtRel output)
+      (InteractionSemantics.Block.openRunBody (.swap d :: rest) input s_o)
+      (InteractionSemantics.Block.openRunBody rest middle s_c) := by
+  rw [openRunBody_swap_cons_ok hType hRun]
+  exact InteractionCongruence.Block.openRunBody_runtimeRel hBody hIndep hSync
+
+/-- Bridge: the target kernel's sync hypothesis `SameRuntimeData next s_c` (with
+`next` the post-head-swap state) is exactly `PendingSwap d s_c s_o` unfolded
+through `runState_swap_eq`.  Feeds `openRunBody_swap_cons_resync` at a fired
+target entered in the pending state. -/
+theorem sameRuntimeData_next_of_pendingSwap
+    {d : Nat} {s_c s_o next : EVMState} (hd : d < 16) (input : Shape)
+    (hRun : Instr.runState (.swap d) input s_o = .ok next)
+    (hP : PendingSwap d s_c s_o) :
+    SameRuntimeData next s_c := by
+  obtain ⟨next', hswap, hsync⟩ := hP
+  rw [runState_swap_eq hd] at hRun
+  rw [hRun] at hswap
+  injection hswap with h
+  subst h
+  exact hsync
+
 end Peephole
 end TypedCfg
 end EvmCompiler
