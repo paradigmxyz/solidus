@@ -156,6 +156,86 @@ theorem proc_regular_labelShape
   subst hOut
   exact procExit generated hLookup
 
+/-!
+## Option-B threading combinators — the per-recursive-call regular-thread transporters
+
+The capstone mutual (`InteractionBlockGenShape.lean`) threads
+`BlocksInProgram result cfg` down the generation recursion.  Option B threads a
+second hypothesis alongside it — the **regular-thread**
+
+    HRegular result cfg regular := ∀ out, result.fallthrough? = some out →
+      LabelShape cfg regular out
+
+(exactly the external-successor form the head-construct suppliers consume).  These
+two combinators are what the strengthened mutual applies at each recursive descent to
+produce the sub-call's regular-thread from the enclosing one:
+
+* `regularThread_of_requireFallthrough` — SAME-`regular` inheritance: a sub-block
+  compiled with the *same* `regular` that `requireFallthrough?`s to the enclosing
+  fallthrough shape inherits the regular-thread.  Used by the `if`-body, the `switch`
+  case bodies / default body, and the loop-body/post (all compiled with a shared
+  continuation shape).
+
+* `regularThread_tail_of_cons` — SEQUENTIAL threading: in a `stmt :: rest`
+  decomposition the head is compiled with `regular := restLabel supply` (the tail's
+  own entry), and the tail's entry block — present in the same enclosing result — has
+  input exactly the head's fallthrough shape.  This is the "sequential continuation"
+  core of option B, discharging the head's regular-thread internally with NO boundary
+  appeal.
+
+Together with the boundary seeds (`main_regular_labelShape` / `proc_regular_labelShape`)
+these close every regular-thread obligation the strengthened capstone raises.
+-/
+
+/-- **Same-`regular` regular-thread inheritance.**  Given the enclosing regular-thread
+`hRegular` (whose result falls through to `expected`) and a sub-result compiled with
+the *same* `regular` whose `requireFallthrough?` pins it to that same `expected`, the
+sub-result inherits the regular-thread: any actual sub-fallthrough output is `expected`,
+whose `LabelShape cfg regular …` is the enclosing thread applied at `expected`. -/
+theorem regularThread_of_requireFallthrough
+    {cfg : TypedCfg.Program} {regular : Assembly.Label}
+    {result subResult : TypedCfgCompiler.Result} {expected : TypedCfg.Shape}
+    (hRegular :
+      ∀ out, result.fallthrough? = some out → LabelShape cfg regular out)
+    (hResultFall : result.fallthrough? = some expected)
+    (hSubRequire : subResult.requireFallthrough? expected = some ()) :
+    ∀ out, subResult.fallthrough? = some out → LabelShape cfg regular out := by
+  intro out hOut
+  have hExpected : out = expected := by
+    rcases
+        TypedCfgCompilerFacts.Result.requireFallthrough?_eq_some_iff.mp
+          hSubRequire with hNone | hSome
+    · rw [hOut] at hNone; exact absurd hNone (by simp)
+    · exact Option.some.inj (hOut.symm.trans hSome)
+  subst hExpected
+  exact hRegular out hResultFall
+
+/-- **Sequential (`stmt :: rest`) regular-thread for the head.**  The head statement of
+a nonempty list is compiled with `regular := restLabel supply` — the entry label of the
+compiled tail — and falls through to `tailInput`, exactly the tail entry block's input.
+Since the tail result is in-program, its entry block gives `LabelShape cfg
+(restLabel supply) tailInput`, discharging the head's regular-thread with no boundary
+appeal (the "sequential continuation" core of option B). -/
+theorem regularThread_tail_of_cons
+    {cfg : TypedCfg.Program}
+    {compilerFuel : Nat} {rest : List Structured.Stmt}
+    {ctx : TypedCfgCompiler.Context} {supply nextSupply : LabelSupply}
+    {regular : Assembly.Label} {tailInput : TypedCfg.Shape}
+    {headResult tailResult : TypedCfgCompiler.Result}
+    (hHeadFall : headResult.fallthrough? = some tailInput)
+    (hTailCompile :
+      TypedCfgCompiler.compileStmtListFuel? compilerFuel rest ctx
+          nextSupply (TypedCfgCompiler.restLabel supply) tailInput regular =
+        some tailResult)
+    (hTailBlocks : BlocksInProgram tailResult cfg) :
+    ∀ out, headResult.fallthrough? = some out →
+      LabelShape cfg (TypedCfgCompiler.restLabel supply) out := by
+  intro out hOut
+  have hEq : out = tailInput :=
+    Option.some.inj (hOut.symm.trans hHeadFall)
+  subst hEq
+  exact of_compileStmtListFuel? hTailCompile hTailBlocks
+
 end LabelShape
 end TypedCfgPreservation
 end Structured
