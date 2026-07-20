@@ -125,6 +125,109 @@ decreasing_by
   · simp only [List.length_cons]; omega
   · simp only [List.length_cons]; omega
 
+/-! ## Syntactic properties (step 2) -/
+
+/-- `remapZeroWidth` never changes an instruction's zero-width classification. -/
+@[simp] theorem isZeroWidth_remapZeroWidth (d : Nat) (instr : Instr) :
+    isZeroWidth (remapZeroWidth d instr) = isZeroWidth instr := by
+  cases instr <;> rfl
+
+/-- `remapZeroWidth` fixes every non-zero-width instruction. -/
+theorem remapZeroWidth_of_not_zeroWidth (d : Nat) {instr : Instr}
+    (h : isZeroWidth instr = false) : remapZeroWidth d instr = instr := by
+  cases instr <;> first | rfl | (simp [isZeroWidth] at h)
+
+/-- Every instruction in a maximal zero-width prefix is zero-width. -/
+theorem leadingZeroWidth_fst_all_zeroWidth (body : List Instr) :
+    ∀ instr ∈ (leadingZeroWidth body).1, isZeroWidth instr = true := by
+  induction body with
+  | nil => intro instr h; simp [leadingZeroWidth] at h
+  | cons head rest ih =>
+      intro instr hMem
+      unfold leadingZeroWidth at hMem
+      by_cases h : isZeroWidth head
+      · simp only [h, if_true] at hMem
+        simp only [List.mem_cons] at hMem
+        cases hMem with
+        | inl hEq => exact hEq ▸ h
+        | inr hTail => exact ih instr hTail
+      · simp only [h, if_false] at hMem
+        simp at hMem
+
+/-- The remainder after the maximal zero-width prefix is a suffix of the body:
+`leadingZeroWidth body = (pre, suf)` with `body = pre ++ suf`. -/
+theorem leadingZeroWidth_append (body : List Instr) :
+    (leadingZeroWidth body).1 ++ (leadingZeroWidth body).2 = body := by
+  induction body with
+  | nil => rfl
+  | cons head rest ih =>
+      unfold leadingZeroWidth
+      cases h : isZeroWidth head with
+      | true => simp only [h, if_true, List.cons_append, ih]
+      | false => simp [h]
+
+/-! ### Unfolding lemmas for the well-founded `normalizeBody` -/
+
+/-- Firing arm: a `swap d ; z* ; swap d` window collapses to the remapped run. -/
+theorem normalizeBody_fire (d : Nat) (rest rest' : List Instr)
+    (hTail : (leadingZeroWidth rest).2 = Instr.swap d :: rest') :
+    normalizeBody (Instr.swap d :: rest)
+      = (leadingZeroWidth rest).1.map (remapZeroWidth d) ++ normalizeBody rest' := by
+  rw [normalizeBody, hTail]; simp
+
+/-- Kept arm: the closing swap has a different depth. -/
+theorem normalizeBody_keep_swap (d d' : Nat) (rest rest' : List Instr)
+    (hTail : (leadingZeroWidth rest).2 = Instr.swap d' :: rest') (hNe : d ≠ d') :
+    normalizeBody (Instr.swap d :: rest) = Instr.swap d :: normalizeBody rest := by
+  rw [normalizeBody, hTail]; simp [hNe]
+
+/-- Kept arm: no closing swap after the zero-width run. -/
+theorem normalizeBody_keep_noTail (d : Nat) (rest : List Instr)
+    (hNoTail : ∀ d' rest', (leadingZeroWidth rest).2 ≠ Instr.swap d' :: rest') :
+    normalizeBody (Instr.swap d :: rest) = Instr.swap d :: normalizeBody rest := by
+  rw [normalizeBody]
+  split
+  · rename_i d' rest' hEq; exact absurd hEq (hNoTail d' rest')
+  · rfl
+
+/-- Generic arm: a non-swap head is kept verbatim. -/
+theorem normalizeBody_cons_generic (instr : Instr) (rest : List Instr)
+    (hNotSwap : ∀ d, instr ≠ Instr.swap d) :
+    normalizeBody (instr :: rest) = instr :: normalizeBody rest := by
+  cases instr with
+  | swap d => exact absurd rfl (hNotSwap d)
+  | _ => simp only [normalizeBody]
+
+/-- The normalization never grows a body. -/
+theorem normalizeBody_length_le :
+    ∀ body : List Instr, (normalizeBody body).length ≤ body.length := by
+  intro body
+  induction body using normalizeBody.induct with
+  | case1 => simp [normalizeBody]
+  | case2 rest d' rest' hTail ih =>
+      -- firing branch: `swap d' ; z* ; swap d'` (equal depths) — cancelled.
+      rw [normalizeBody_fire d' rest rest' hTail]
+      have hlen := leadingZeroWidth_length rest
+      have hsuf : (leadingZeroWidth rest).2.length = rest'.length + 1 := by
+        rw [hTail]; simp
+      simp only [List.length_append, List.length_map, List.length_cons]
+      omega
+  | case3 d rest d' rest' hTail hNe ih =>
+      -- window opens with `swap d ; z* ; swap d'`, `d ≠ d'` — kept.
+      rw [normalizeBody_keep_swap d d' rest rest' hTail hNe, List.length_cons,
+        List.length_cons]
+      omega
+  | case4 d rest hNoTail ih =>
+      -- window opens with `swap d` but no closing swap — kept.
+      rw [normalizeBody_keep_noTail d rest
+        (fun d' rest' h => hNoTail d' rest' h), List.length_cons, List.length_cons]
+      omega
+  | case5 instr rest hNotSwap ih =>
+      -- generic instruction: `instr :: normalizeBody rest`.
+      rw [normalizeBody_cons_generic instr rest (fun d h => hNotSwap d h),
+        List.length_cons, List.length_cons]
+      omega
+
 end Peephole
 end TypedCfg
 end EvmCompiler
