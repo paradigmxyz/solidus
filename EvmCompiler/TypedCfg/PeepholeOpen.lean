@@ -136,6 +136,43 @@ theorem openRunBody_swap_cons_ok
   rw [openRunBody_nonprim_cons (by intro op; simp)]
   simp [TypedCfg.Instr.runAt, hType, hRun, Option.elim]
 
+/-- One step of the open body evaluator, unfolded to the monadic `bind` of the
+head instruction's open step with the tail body evaluator.  This is the
+definitional cons-unfolding (regardless of whether the head is primitive). -/
+theorem openRunBody_cons_eq
+    (instr : Instr) (rest : List Instr) (shape : Shape) (state : EVMState) :
+    Block.openRunBody (instr :: rest) shape state =
+      Simulation.Interaction.bind (Instr.openRunAt instr shape state)
+        (fun r => Block.openRunBody rest r.2 r.1) := by
+  unfold Block.openRunBody
+  change
+    Simulation.Interaction.bind (Instr.openRunAt instr shape state)
+      (fun result => Block.openRunBody rest result.2 result.1) = _
+  rfl
+
+/-- **Body-concatenation run law for the open interaction evaluator.**
+Running `l1 ++ l2` is running `l1` then, from its resulting `(state, shape)`,
+running `l2`.  This is the interaction-monad `runBody (l1 ++ l2) = runBody l1 >>=
+runBody l2` fact (bind-associativity on the head), the sole runtime primitive the
+source side of the seam-cancel bisimulation needs (`A = (A.dropLast) ∘ swap`). -/
+theorem openRunBody_append :
+    ∀ (l1 l2 : List Instr) (shape : Shape) (state : EVMState),
+      Block.openRunBody (l1 ++ l2) shape state =
+        Simulation.Interaction.bind (Block.openRunBody l1 shape state)
+          (fun r => Block.openRunBody l2 r.2 r.1)
+  | [], l2, shape, state => by
+      simp only [List.nil_append]
+      change _ =
+        Simulation.Interaction.bind (Block.openRunBody [] shape state)
+          (fun r => Block.openRunBody l2 r.2 r.1)
+      rfl
+  | instr :: rest, l2, shape, state => by
+      rw [List.cons_append, openRunBody_cons_eq, openRunBody_cons_eq]
+      rw [Simulation.Interaction.bind_assoc]
+      congr 1
+      funext r
+      exact openRunBody_append rest l2 r.2 r.1
+
 open InteractionCongruence
 
 /-- `Instr.RuntimeAtRel` is transitive on the closed result carrier. -/
