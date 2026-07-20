@@ -149,6 +149,98 @@ theorem realizedWitness_of_codeHead_dispatch
   subst hNext
   exact realizedWitness_of_stateRel (hReg expected hFall) hStateRel hFits'
 
+/--
+**`ifHead` disjunct `hInv` leg.**  An `if` head block is the condition block
+`{ body := Code.toCfg cond, term := .jumpi bodyLabel regular }` (`bodyLabel =
+LabelSupply.label supply 0`), so the first jump lands `next = if cond then bodyLabel else
+regular` (exposed by `jump_state_rel_of_rel`).  Both targets expect the residual shape
+`{ output with slots := output.slots.tail }` (the `if`'s fallthrough): the `regular` case
+is the enriched `hReg` field; the `bodyLabel` case is the body entry, whose `LabelShape`
+is derived from the body compile fact carried inside the `.if_` compile
+(`components_of_compileStmtFuel?_if` → `of_compileBlockFuel?`).  The condition-block
+`DoneRel` is built directly by `openRunCondition_jumpi_toCfg`, exactly as in
+`realizedWitness_of_condBlock_jump`. -/
+theorem realizedWitness_of_ifHead_dispatch
+    {cfg : TypedCfg.Program}
+    {compilerFuel : Nat} {cond : Structured.Code} {body : Structured.Block}
+    {ctx : TypedCfgCompiler.Context} {supply : LabelSupply}
+    {entry regular next : Assembly.Label} {input : TypedCfg.Shape}
+    {result : TypedCfgCompiler.Result}
+    {source : RunState} {tokens : List Word} {target state' : EVMState}
+    {transcript : Simulation.Interaction.Transcript}
+    (hCompile :
+      TypedCfgCompiler.compileStmtFuel? (compilerFuel + 1) (.if_ cond body) ctx
+          supply entry input regular = some result)
+    (hBlocks : TypedCfgPreservation.BlocksInProgram result cfg)
+    (hFits :
+      TypedCfgCompiler.Shape.SourceFrameFits input source.evm.stack.length)
+    (hRel : TypedCfgPreservation.StateRel source tokens target)
+    (hReg :
+      ∀ out, result.fallthrough? = some out →
+        TypedCfgPreservation.LabelShape cfg regular out)
+    (hExec :
+      Simulation.Interaction.Executes
+        (TypedCfg.InteractionSemantics.Program.openStep cfg entry target)
+        transcript (Except.ok (TypedCfg.Outcome.jump next state'))) :
+    realizedWitness cfg next state' := by
+  obtain ⟨output, condition, bodyResult, hType, hSource, hHead,
+      hBodyCompile, hBodyRequire, hResultEq⟩ :=
+    TypedCfgCompilerFacts.Stmt.components_of_compileStmtFuel?_if hCompile
+  have hCondMem :
+      ({ label := entry
+         input := input
+         body := TypedCfgCompiler.Code.toCfg cond
+         output := output
+         term := .jumpi (LabelSupply.label supply 0) regular } :
+        TypedCfg.Block) ∈ result.blocks := by
+    rw [hResultEq]; simp
+  have hFind :
+      cfg.findBlock? entry =
+        some
+          { label := entry
+            input := input
+            body := TypedCfgCompiler.Code.toCfg cond
+            output := output
+            term := .jumpi (LabelSupply.label supply 0) regular } :=
+    hBlocks _ hCondMem
+  have hBodyBlocks : TypedCfgPreservation.BlocksInProgram bodyResult cfg := by
+    intro blk hMem
+    apply hBlocks
+    rw [hResultEq]
+    simp only [List.mem_cons]
+    exact Or.inr hMem
+  have hBodyLS :
+      TypedCfgPreservation.LabelShape cfg (LabelSupply.label supply 0)
+        { output with slots := output.slots.tail } :=
+    TypedCfgPreservation.LabelShape.of_compileBlockFuel? hBodyCompile hBodyBlocks
+  have hDoneRel :
+      Simulation.Interaction.Rel
+        (InteractionBranchPreservation.Condition.DoneRel
+          (LabelSupply.label supply 0) regular tokens
+          { output with slots := output.slots.tail })
+        (InteractionSemantics.Code.openRunCondition cond source)
+        (TypedCfg.InteractionSemantics.Program.openStep cfg entry target) := by
+    simp only [TypedCfg.InteractionSemantics.Program.openStep,
+      TypedCfg.Control.Program.step, hFind]
+    simpa using
+      InteractionBranchPreservation.Condition.openRunCondition_jumpi_toCfg
+        (entry := entry) (trueLabel := LabelSupply.label supply 0)
+        (falseLabel := regular) hType hSource hFits hRel
+  obtain ⟨srcState, cnd, hNext, hStateRel, hFits'⟩ :=
+    InteractionBranchPreservation.Condition.jump_state_rel_of_rel hDoneRel hExec
+  have hLS :
+      TypedCfgPreservation.LabelShape cfg next
+        { output with slots := output.slots.tail } := by
+    rw [hNext]
+    cases cnd with
+    | false =>
+        simp only [Bool.false_eq_true, if_false]
+        exact hReg _ (by rw [hResultEq])
+    | true =>
+        simp only [if_true]
+        exact hBodyLS
+  exact realizedWitness_of_stateRel hLS hStateRel hFits'
+
 end InteractionHInvDispatch
 end Structured
 end EvmCompiler
