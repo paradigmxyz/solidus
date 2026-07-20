@@ -309,6 +309,86 @@ theorem type?_window_relabel {d : Nat} {target : Shape} {s0 s1 s2 s3 : Shape}
     exact ⟨hs3slots.symm, hs3tail.symm⟩
   · rw [if_neg hCompat] at h2; simp at h2
 
+/-! ## `bindLocals` window preservation (single-name case)
+
+A single-name `bindLocals offset [name]` rebinds exactly one position, so it is a
+`set` — the same shape mutation as `bindScratch` — and its window cancellation is
+sound by the identical transposition argument.  The **multi-name** case is the
+documented frontier: when `[offset, offset+len)` straddles exactly one of the
+transposed positions `{0, d+1}`, the image is non-contiguous and cannot be a
+single `bindLocals` with the same name list — it needs either a firing guard
+(`len ≤ 1`) or a multi-instruction residue (see PEEPHOLE_PROGRESS §Session-57). -/
+
+theorem take_append_single_drop {α : Type _} :
+    ∀ (l : List α) (n : Nat) (a : α), n < l.length →
+      l.take n ++ a :: l.drop (n + 1) = l.set n a
+  | [], n, a, h => by simp at h
+  | x :: xs, 0, a, _ => by simp
+  | x :: xs, n + 1, a, h => by
+      have ih := take_append_single_drop xs n a (by simpa using h)
+      simp only [List.take_succ_cons, List.drop_succ_cons, List.cons_append,
+        List.set_cons_succ]
+      exact congrArg (x :: ·) ih
+
+/-- Single-name `bindLocals` types exactly as a `set` of the one bound slot. -/
+theorem type?_bindLocals_single (offset : Nat) (name : String) (s : Shape)
+    (h : offset < s.slots.length) :
+    Instr.type? (.bindLocals offset [name]) s
+      = some { s with slots := s.slots.set offset (.local name) } := by
+  simp only [Instr.type?, Shape.bindLocals?, Shape.length, List.length_cons,
+    List.length_nil, List.map_cons, List.map_nil, Nat.zero_add,
+    List.append_assoc, List.singleton_append]
+  rw [if_pos (by omega : offset + 1 ≤ s.slots.length)]
+  rw [take_append_single_drop s.slots offset (.local name) h]
+
+/-- **`bindLocals` (single name) window preservation.** -/
+theorem type?_window_bindLocals_single {d offset : Nat} {name : String}
+    {s0 s1 s2 s3 : Shape}
+    (h1 : Instr.type? (.swap d) s0 = some s1)
+    (h2 : Instr.type? (.bindLocals offset [name]) s1 = some s2)
+    (h3 : Instr.type? (.swap d) s2 = some s3) :
+    Instr.type? (remapZeroWidth d (.bindLocals offset [name])) s0 = some s3 := by
+  obtain ⟨h0, hd1⟩ := swap_bounds h1
+  obtain ⟨hs1slots, hs1tail⟩ := type?_swap_eq h1
+  obtain ⟨hs3slots, hs3tail⟩ := type?_swap_eq h3
+  -- side bound: offset < s1.slots.length (else bindLocals? = none)
+  have hOff1 : offset < s1.slots.length := by
+    by_contra hle
+    push_neg at hle
+    simp only [Instr.type?, Shape.bindLocals?, Shape.length, List.length_cons,
+      List.length_nil] at h2
+    rw [if_neg (by omega)] at h2
+    simp at h2
+  rw [type?_bindLocals_single offset name s1 hOff1] at h2
+  simp only [Option.some.injEq] at h2
+  subst h2
+  simp only at hs3slots hs3tail
+  -- side condition on s0
+  have hOff0 : remapDepth d offset < s0.slots.length := by
+    have hlt : offset < (swapPos 0 (d + 1) s0.slots).length := by
+      rw [← hs1slots]; exact hOff1
+    have heq := getElem?_swapPos_remapDepth d s0.slots offset h0 hd1
+    rw [List.getElem?_eq_getElem hlt] at heq
+    obtain ⟨hh, _⟩ := List.getElem?_eq_some_iff.mp heq.symm
+    exact hh
+  rw [remapZeroWidth, type?_bindLocals_single (remapDepth d offset) name s0 hOff0]
+  refine congrArg some ?_
+  have hlen : (swapPos 0 (d + 1) s0.slots).length = s0.slots.length :=
+    swapPos_length 0 (d + 1) s0.slots
+  have h0' : 0 < (swapPos 0 (d + 1) s0.slots).length := by rw [hlen]; exact h0
+  have hd1' : d + 1 < (swapPos 0 (d + 1) s0.slots).length := by rw [hlen]; exact hd1
+  have hslots : s3.slots = s0.slots.set (remapDepth d offset) (.local name) := by
+    rw [hs3slots]
+    simp only [hs1slots]
+    rw [swapPos_set_comm 0 (d + 1) (swapPos 0 (d + 1) s0.slots) offset
+        (.local name) h0' hd1',
+      swapPos_involutive 0 (d + 1) s0.slots h0 hd1, ← remapDepth_eq_transpIdx]
+  have htail : s3.tail = s0.tail := by rw [hs3tail, hs1tail]
+  obtain ⟨sl3, tl3⟩ := s3
+  simp only at hslots htail
+  subst hslots htail
+  rfl
+
 end Peephole
 end TypedCfg
 end EvmCompiler
