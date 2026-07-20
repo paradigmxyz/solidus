@@ -49,8 +49,7 @@ theorem block_wellTyped_peepholeProgram {program : Program} {block : Block}
     (peepholeBlock block).WellTyped (peepholeProgram program) := by
   refine ⟨?_, ?_⟩
   · simp only [peepholeBlock_body, peepholeBlock_input, peepholeBlock_output]
-    rw [peepholeBody_bodyType?]
-    exact hTyped.1
+    exact peepholeBody_bodyType? _ _ _ hTyped.1
   · simp only [peepholeBlock_output, peepholeBlock_term]
     rw [terminator_type?_peepholeProgram]
     exact hTyped.2

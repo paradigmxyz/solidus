@@ -31,31 +31,43 @@ namespace Peephole
 
 open Assembly (EVMState SameRuntimeData)
 
-/-- The peephole preserves a straight-line body's shape transition: cancelling
-`push v ; pop` pairs is stack-shape-neutral, so `bodyType?` is unchanged. -/
+/-- The peephole preserves a straight-line body's shape transition in the
+DIRECTIONAL sense: if the ORIGINAL body types `input` to `output`, so does the
+peepholed body.  (The reverse implication FAILS once the `swap d ; swap d` arm is
+added — a shallow `input` can make the original untypeable while the cancelled
+tail still types — so the invariant is stated one-way; every consumer supplies
+the `= some output` typing of the original body, which is exactly what the
+peephole-into-spine splice already carries.) -/
 theorem peepholeBody_bodyType? :
-    ∀ (body : List Instr) (input : Shape),
-      Block.bodyType? (peepholeBody body) input =
-        Block.bodyType? body input
-  | [], _ => rfl
-  | instr :: rest, input => by
-      have ih : ∀ s, Block.bodyType? (peepholeBody rest) s =
-          Block.bodyType? rest s := fun s => peepholeBody_bodyType? rest s
-      rw [peepholeBody_cons]
-      split
-      · -- cancel arm: instr = .push v, peepholeBody rest = .pop :: rest'
-        rename_i v rest' hPeep
-        have hkey := ih { input with slots := .literal v :: input.slots }
-        rw [hPeep] at hkey
-        have hPopType :
-            Instr.type? .pop { input with slots := .literal v :: input.slots } =
-              some input := by simp [Instr.type?]
-        simp only [Block.bodyType?, hPopType, Option.bind] at hkey
-        -- goal: bodyType? rest' input = bodyType? (.push v :: rest) input
-        simp only [Block.bodyType?, Instr.type?, Option.bind]
-        exact hkey
-      · -- keep arm
-        simp only [Block.bodyType?, ih]
+    ∀ (body : List Instr) (input output : Shape),
+      Block.bodyType? body input = some output →
+      Block.bodyType? (peepholeBody body) input = some output
+  | [], _, _, h => by simpa [peepholeBody_nil] using h
+  | instr :: rest, input, output, h => by
+      cases hHeadType : instr.type? input with
+      | none => simp [Block.bodyType?, hHeadType] at h
+      | some middle =>
+          have hTailType : Block.bodyType? rest middle = some output := by
+            simpa [Block.bodyType?, hHeadType] using h
+          rw [peepholeBody_cons]
+          split
+          · -- cancel arm: instr = .push v, peepholeBody rest = .pop :: rest'
+            rename_i v rest' hPeep
+            have hMiddle : middle =
+                { input with slots := .literal v :: input.slots } := by
+              simpa [Instr.type?] using hHeadType.symm
+            subst hMiddle
+            have ih := peepholeBody_bodyType? rest
+              { input with slots := .literal v :: input.slots } output hTailType
+            rw [hPeep] at ih
+            have hPopType :
+                Instr.type? .pop { input with slots := .literal v :: input.slots } =
+                  some input := by simp [Instr.type?]
+            -- goal: bodyType? rest' input = some output
+            simpa [Block.bodyType?, hPopType] using ih
+          · -- keep arm
+            simpa [Block.bodyType?, hHeadType] using
+              peepholeBody_bodyType? rest middle output hTailType
 
 open InteractionSemantics
 
@@ -167,10 +179,9 @@ theorem openRunBody_peephole_congr :
                   some input := by simp [Instr.type?]
             have hRestBodyType : Block.bodyType? rest' input = some output := by
               have ihPush := peepholeBody_bodyType? rest
-                { input with slots := .literal v :: input.slots }
+                { input with slots := .literal v :: input.slots } output hTailType
               rw [hPeep] at ihPush
-              simp only [Block.bodyType?, hPopType, Option.bind] at ihPush
-              exact ihPush.trans hTailType
+              simpa [Block.bodyType?, hPopType] using ihPush
             have hRest'PC : rest'.Forall Instr.ProgramCounterIndependent := by
               have hp := forall_pcIndependent_peephole hTailPC
               rw [hPeep] at hp
