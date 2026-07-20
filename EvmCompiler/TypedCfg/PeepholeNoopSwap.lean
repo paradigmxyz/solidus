@@ -66,6 +66,23 @@ def remapZeroWidth (d : Nat) : Instr → Instr
   | .relabel target => .relabel (remapShape d target)
   | other => other
 
+/-- The zero-width instructions whose `remapZeroWidth` residue is a single
+shape-preserving instruction: `bindScratch`, `relabel`, and single-name
+`bindLocals`.  Multi-name `bindLocals` (a straddling range) is excluded — its
+transposition image is non-contiguous, so it cannot be a single `bindLocals` with
+the same name list (see PEEPHOLE_PROGRESS §Session-57).  `normalizeBody` fires a
+window only when EVERY intervening zero-width instruction is `RemapSafe`, which
+makes the transform sound-by-construction. -/
+def RemapSafe : Instr → Bool
+  | .bindLocals _ names => names.length = 1
+  | .bindScratch _ _ _ => true
+  | .relabel _ => true
+  | _ => false
+
+theorem remapSafe_isZeroWidth {z : Instr} (h : RemapSafe z = true) :
+    isZeroWidth z = true := by
+  cases z <;> simp_all [RemapSafe, isZeroWidth]
+
 /-- Split a body into its maximal leading run of zero-width instructions and the
 remainder (which — when non-empty — begins with a non-zero-width instruction). -/
 def leadingZeroWidth : List Instr → List Instr × List Instr
@@ -107,7 +124,7 @@ def normalizeBody : List Instr → List Instr
   | .swap d :: rest =>
       match hTail : (leadingZeroWidth rest).2 with
       | .swap d' :: rest' =>
-          if d = d' then
+          if d = d' ∧ (leadingZeroWidth rest).1.all RemapSafe = true then
             (leadingZeroWidth rest).1.map (remapZeroWidth d) ++ normalizeBody rest'
           else
             .swap d :: normalizeBody rest
@@ -168,18 +185,28 @@ theorem leadingZeroWidth_append (body : List Instr) :
 
 /-! ### Unfolding lemmas for the well-founded `normalizeBody` -/
 
-/-- Firing arm: a `swap d ; z* ; swap d` window collapses to the remapped run. -/
+/-- Firing arm: a `swap d ; z* ; swap d` window with an all-`RemapSafe` interior
+run collapses to the remapped run. -/
 theorem normalizeBody_fire (d : Nat) (rest rest' : List Instr)
-    (hTail : (leadingZeroWidth rest).2 = Instr.swap d :: rest') :
+    (hTail : (leadingZeroWidth rest).2 = Instr.swap d :: rest')
+    (hSafe : (leadingZeroWidth rest).1.all RemapSafe = true) :
     normalizeBody (Instr.swap d :: rest)
       = (leadingZeroWidth rest).1.map (remapZeroWidth d) ++ normalizeBody rest' := by
-  rw [normalizeBody, hTail]; simp
+  rw [normalizeBody, hTail]; simp [hSafe]
 
 /-- Kept arm: the closing swap has a different depth. -/
 theorem normalizeBody_keep_swap (d d' : Nat) (rest rest' : List Instr)
     (hTail : (leadingZeroWidth rest).2 = Instr.swap d' :: rest') (hNe : d ≠ d') :
     normalizeBody (Instr.swap d :: rest) = Instr.swap d :: normalizeBody rest := by
   rw [normalizeBody, hTail]; simp [hNe]
+
+/-- Kept arm: the window closes on the same depth but the interior run contains a
+non-`RemapSafe` instruction, so firing is suppressed. -/
+theorem normalizeBody_keep_unsafe (d d' : Nat) (rest rest' : List Instr)
+    (hTail : (leadingZeroWidth rest).2 = Instr.swap d' :: rest')
+    (hUnsafe : (leadingZeroWidth rest).1.all RemapSafe = false) :
+    normalizeBody (Instr.swap d :: rest) = Instr.swap d :: normalizeBody rest := by
+  rw [normalizeBody, hTail]; simp [hUnsafe]
 
 /-- Kept arm: no closing swap after the zero-width run. -/
 theorem normalizeBody_keep_noTail (d : Nat) (rest : List Instr)
@@ -204,18 +231,28 @@ theorem normalizeBody_length_le :
   intro body
   induction body using normalizeBody.induct with
   | case1 => simp [normalizeBody]
-  | case2 rest d' rest' hTail ih =>
-      -- firing branch: `swap d' ; z* ; swap d'` (equal depths) — cancelled.
-      rw [normalizeBody_fire d' rest rest' hTail]
+  | case2 d rest d' rest' hTail hGuard ih =>
+      -- firing branch: `swap d ; z* ; swap d'` with `d = d'` and an all-safe run.
+      obtain ⟨hdd, hSafe⟩ := hGuard
+      subst hdd
+      rw [normalizeBody_fire d rest rest' hTail hSafe]
       have hlen := leadingZeroWidth_length rest
       have hsuf : (leadingZeroWidth rest).2.length = rest'.length + 1 := by
         rw [hTail]; simp
       simp only [List.length_append, List.length_map, List.length_cons]
       omega
-  | case3 d rest d' rest' hTail hNe ih =>
-      -- window opens with `swap d ; z* ; swap d'`, `d ≠ d'` — kept.
-      rw [normalizeBody_keep_swap d d' rest rest' hTail hNe, List.length_cons,
-        List.length_cons]
+  | case3 d rest d' rest' hTail hGuard ih =>
+      -- window opens with `swap d ; z* ; swap d'` but the guard fails — kept.
+      have hkeep : normalizeBody (Instr.swap d :: rest)
+          = Instr.swap d :: normalizeBody rest := by
+        by_cases hdd : d = d'
+        · have hUnsafe : (leadingZeroWidth rest).1.all RemapSafe = false := by
+            by_contra hne
+            simp only [Bool.not_eq_false] at hne
+            exact hGuard ⟨hdd, hne⟩
+          exact normalizeBody_keep_unsafe d d' rest rest' hTail hUnsafe
+        · exact normalizeBody_keep_swap d d' rest rest' hTail hdd
+      rw [hkeep, List.length_cons, List.length_cons]
       omega
   | case4 d rest hNoTail ih =>
       -- window opens with `swap d` but no closing swap — kept.

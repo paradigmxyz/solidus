@@ -391,20 +391,6 @@ theorem type?_window_bindLocals_single {d offset : Nat} {name : String}
 
 /-! ## Unified window `type?`-preservation (step-3 type capstone) -/
 
-/-- The zero-width instructions whose `remapZeroWidth` residue is a single
-shape-preserving instruction: `bindScratch`, `relabel`, and single-name
-`bindLocals`.  Multi-name `bindLocals` (a straddling range) is excluded — it is
-the documented frontier. -/
-def RemapSafe : Instr → Bool
-  | .bindLocals _ names => names.length = 1
-  | .bindScratch _ _ _ => true
-  | .relabel _ => true
-  | _ => false
-
-theorem remapSafe_isZeroWidth {z : Instr} (h : RemapSafe z = true) :
-    isZeroWidth z = true := by
-  cases z <;> simp_all [RemapSafe, isZeroWidth]
-
 /-- **Window `type?`-preservation.** For any remap-safe zero-width `z`, cancelling
 `swap d ; z ; swap d` in favour of `remapZeroWidth d z` reaches the identical
 output shape. -/
