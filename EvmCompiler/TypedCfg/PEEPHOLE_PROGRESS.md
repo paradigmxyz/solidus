@@ -5872,3 +5872,96 @@ done) + dispatch/programEnd coverage.  Full `scripts/opt_harness.sh check` = OK 
 UNCHANGED; delta +0.  **PROCESS NOTE:** this host is **zsh** — `${PIPESTATUS[0]}` is empty, so
 `lake build … | tail; echo $PIPESTATUS` MASKS failures; verify builds with `lake build … > log 2>&1;
 echo RC=$?` (no pipe) or zsh `$pipestatus[1]`.
+
+## Session-50 update (2026-07-20): frontier item 1 CLOSED — the per-entry static token-at-bottom fact `tokenBottomOrNone_of_findBlock?` + the SIDE-CONDITION-FREE total bridge `stackRealizes_of_realizedWitnessFC_total`; the classifier-threading mirror + all four `block_category` arms landed. Three green, axiom-clean commits. Step B (runner-level source threading) not reached: the genuine remaining sub-problem is isolated (a `Rel`→`Executes` connector), recipe below.
+
+Session 50's mandate (per §Session-49 frontier): (1) discharge the `TokenBottomOrNone` static fact
+via the classifier-threading mirror + dispatch/programEnd coverage, wiring the total bridge; (2)
+`openRunNPrefix_peephole_congr_of_source`; (3) OIC wiring; (4) stop at the green frontier.
+**Result: item 1 FULLY CLOSED; items 2–4 not reached.**  `peepholeBody`/public spine UNTOUCHED ⇒
+delta **+0**.  `compile_correct`/`compile_correct_creation` axioms UNCHANGED.  Full
+`scripts/opt_harness.sh check` = OK (43 theorems, axioms ⊆ `[propext, Classical.choice, Quot.sound]`).
+
+### LANDED (green, axiom-clean) — `EvmCompiler/Structured/TokenBottomThread.lean` (NEW), three commits
+* **COMMIT 1 (`34a1558e`) — the threading mutual.**  `TbResult` (`:40`, the per-fragment payload:
+  every emitted block input + the fallthrough output are `TokenBottomOrNone`), `TbResult.append`
+  (`:47`), and the additive 5-function mutual
+  `tbResult_of_compile{BlockFuel?(:67),StmtListFuel?(:84),StmtFuel?(:126),CasesFuel?(:347),DefaultFuel?(:397)}`
+  — the token-at-bottom mirror of `genShapeReg_of_compile*`.  Threads `TokenBottomOrNone input`,
+  concludes `TbResult result`; each transition is ONE banked op lemma from `TokenBottomShape.lean`
+  (`of_code_type?` / `_tail` / `_afterCall`), the fallthrough conjunct seeding the next fragment
+  under sequential composition.  Termination inferred (same recursive-call fuel structure as
+  `genShapeReg`).
+* **COMMIT 2 (`b67760dd`) — program arms + the static fact + the total bridge.**
+  `tbResult_of_compileBlock?` (`:450`, fuel-saturation wrapper); `tokenBottomOrNone_caller` (`:470`,
+  the token-free main root seed); `tokenBottomOrNone_of_adapter_frame` (`:477`, the adapter-route
+  seed — the relabel is length-preserving so `procEntry`'s bottom token survives to `bodyInput`);
+  `input_of_mkBlock?` (`:512`); `mem_procBlocks_tokenBottom` (`:534`, the additive `TokenBottomOrNone
+  input`-emitting mirror of `mem_procBlocks_provenance`, covering BOTH the `procEntry` no-adapter and
+  the relabel adapter routes — **this dissolves the §Session-49 open sub-item** by proving the
+  adapter seed IS token-at-bottom, so no `entryShapes = []` restriction is needed);
+  `main_tbResult` (`:690`); `proc_tokenBottom` (`:701`); **`tokenBottomOrNone_of_findBlock?` (`:721`,
+  THE static fact)** — `block_category` split, main/proc via the threading arms, dispatch =
+  `procExit` (`tokenBottomOrNone_procExit`), programEnd = main fallthrough (token-free-or-at-bottom);
+  and **`stackRealizes_of_realizedWitnessFC_total` (`:751`)** — composes the §Session-49 total bridge
+  `stackRealizes_of_realizedWitnessFC` (`InteractionHInvClose.lean:255`) with the static fact,
+  discharging its `TokenBottomOrNone` premise at ANY reached entry ⇒ side-condition-free
+  `StackRealizes block.input state` from `realizedWitnessFC` + `findBlock?`.
+* (COMMIT 3 = this doc update.)
+
+### DECISIVE FINDING (corrects the §Session-49 "open sub-item": adapter/dispatch/programEnd coverage)
+All three flagged categories are now covered with NO restriction on `entryShapes`:
+* **dispatch** — `dispatchBlock proc calls` has `input = Shape.procExit proc` (token at bottom),
+  direct `tokenBottomOrNone_procExit`.
+* **programEnd** — `input = main.fallthrough?.getD Shape.caller`; token-free (`caller`, empty slots)
+  in the `none` case, else the main body's fallthrough, `TokenBottomOrNone` by `main_tbResult.2`.
+* **adapter route** (the one that looked open) — `bodyInput` is NOT arbitrary: `relabelCompatible`
+  (`Syntax.lean:120`) forces `bodyInput.length = (procEntry proc).length = argc + 1`, and
+  `requireReturnTokenDepth? argc bodyInput` pins `returnTokenDepth? = some argc = some (length − 1)`.
+  So the relabel target is token-at-bottom too (`tokenBottomOrNone_of_adapter_frame`).  The proc arm
+  therefore needs no `entryShapes = []` hypothesis; it is total over arbitrary `GeneratedContext`.
+
+### THE FRONTIER (session 51) — Step B, then C/D
+The item-1 connector Step B needs is **already landed**: `stackRealizes_of_realizedWitnessFC_total`
+gives `StackRealizes block.input state` at any reached entry from `realizedWitnessFC` + `findBlock?`,
+side-condition free.  The remaining Step-B work is the RUNNER-LEVEL threading, which has one real
+structural sub-problem:
+
+1. **`openRunN_peephole_congr_of_source` / `openRunNPrefix_peephole_congr_of_source`** — mirror
+   `openRunN_peephole_congr` (`PeepholeProgram.lean:139`) but thread the source witness so that at
+   each `openStep` entry `realizedWitnessFC source cfg context.calls label state1` holds (⇒
+   `StackRealizes` via the total bridge, ready for the swap arm's depth guard).  **THE BLOCKER
+   (identified, not yet solved):** the existing congruence recurses via
+   `Simulation.Interaction.Rel.bind hStep (fun o1 o2 hOut => …)`; in the `hOut : RuntimeOutcomeRel`
+   `jump lbl` branch the continuation sees the *outcomes* but NOT a
+   `Simulation.Interaction.Executes (openStep cfg label state1) transcript (.ok (jump lbl s1'))`
+   fact — and re-establishing the successor witness needs exactly that Executes-jump to feed
+   `openStep_preserves_realizedWitnessFC` (`InteractionHInvClose.lean:107`) or to build a
+   `ReachesOpenStepAt.step` for the `AllEntriesRealized` object
+   (`InteractionEntryRealized.lean:134`, `= ∀ reached entry, realized`).  **Recipe:** either (a) a
+   small connector lemma extracting the left `Executes`-jump from the `Rel`/`RuntimeOutcomeRel` jump
+   branch (interaction-monad reasoning), then thread the witness by re-deriving at each successor via
+   `openStep_preserves_realizedWitnessFC`; or (b) re-decompose the `openRunN` fuel step WITHOUT
+   `Rel.bind` — case-analyze the left `openStep` outcome concretely (exposing its transcript/Executes)
+   and relate the peepholed side by hand.  Route (a) is smaller.  Seed the top witness at
+   `cfg.entry` via `realizedWitnessFC_of_stateRel_nil` (per §Session-49) +
+   `allEntriesRealized_realizedWitnessFC_of_context` (`InteractionHInvClose.lean:205`).
+2. **Step C** — once the runner `_of_source` exists, swap the OIC sites
+   (`OpenInteractionComposition.lean` prefix `:910`/`:943`, terminal `:1415`/`:1561`/`:1688`; the
+   `generated` `GeneratedContext`, `hWellTyped`, `hIndependent` are all in scope) to consume it,
+   seeding the witness at `cfg.entry` = `expressionsState.evm`.
+3. **Step D** (next after C) — add the `swap d :: swap d :: rest → rest` arm to `peepholeBody`;
+   `openRunBody_swap_swap_congr` (`PeepholeSwapOpen.lean:64`) then consumes the threaded
+   `StackRealizes` as its depth guard.  With the full bench.
+
+### Status handed to session 51
+Item 1 is **CLOSED**: `tokenBottomOrNone_of_findBlock?` (the static fact) + `stackRealizes_of_realizedWitnessFC_total`
+(side-condition-free per-entry `StackRealizes`) are green + axiom-clean, total over arbitrary
+`GeneratedContext` (all four `block_category` arms, incl. the adapter route, covered without an
+`entryShapes = []` restriction).  The complete classifier-threading mirror `tbResult_of_compile*` is
+banked.  Commits `34a1558e`, `b67760dd` (+ this doc update).  `scripts/opt_harness.sh check` = OK (43
+theorems, axioms ⊆ `[propext, Classical.choice, Quot.sound]`); `compile_correct`/`compile_correct_creation`
+UNCHANGED; delta +0.  **Next session:** Step B runner threading — solve the `Rel`→`Executes` connector
+(frontier item 1 above), then Steps C/D.  **PROCESS NOTE (unchanged):** host is **zsh**; verify builds
+with `lake build … > log 2>&1; echo RC=$?` (no pipe) — `${PIPESTATUS[0]}` is empty.  No foreground
+`sleep`; poll background tasks with an `until grep -q …; do sleep N; done` loop.
