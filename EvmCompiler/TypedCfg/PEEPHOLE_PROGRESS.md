@@ -6391,3 +6391,28 @@ The certified path `StackArtifact.compile?:60` = `(peepholeProgram cfg).compileC
 
 ### Files touched (session 58)
 Edited: `EvmCompiler/TypedCfg/PeepholeNoopSwap.lean` (guard).  Five NEW non-frozen modules: `PeepholeNoopSwapConj.lean`, `PeepholeNoopSwapRuntime.lean`, `PeepholeNoopSwapProgram.lean`, `PeepholeNoopSwapFuel.lean`, `Structured/PeepholeNoopSwapSourceCongr.lean`.  No frozen file touched; the certified spine is byte-identical (transform still unimported).  Seven green, axiom-clean commits.
+
+## Session-59 update (2026-07-20): THE SPLICE IS DONE — the combined transform `peepholeProgram (normalizeProgram cfg)` is **LIVE in the emitted-bytes path**; **live-but-inert on the corpus (byte delta +0)**.  Three green, axiom-clean commits.  `scripts/opt_harness.sh check` = **OK** (43 public theorems; axioms ⊆ `[propext, Classical.choice, Quot.sound]`).  `compile_correct` / `compile_correct_creation` **UNCHANGED** = `[propext, Classical.choice, Quot.sound]` (verified in the full Verification build).
+
+### What landed
+1. **`normalizeProgram_wellTyped`** (item 1, NEW module `EvmCompiler/TypedCfg/PeepholeNoopSwapSpine.lean`): the Route-3 analogue of `peepholeProgram_wellTyped` — `labelShape?_normalizeProgram` / `terminator_type?_normalizeProgram` / `emittedLabels_normalizeProgram` / `labelsUnique_normalizeProgram` / `block_wellTyped_normalizeProgram` (via `normalizeBody_bodyType?`).  (commit `c0c74125`)
+2. **The combined transform congruence chain** (item 2, NEW module `EvmCompiler/Structured/PeepholeNoopSwapCombined.lean`): `combined_programCounterIndependent`, `fuelBudget_combined_le` (`le_trans` of `fuelBudget_peepholeProgram_le (normalizeProgram cfg) (normalizeProgram_wellTyped …)` and `fuelBudget_normalizeProgram_le cfg`), and `openStep/openRunN/openRunNPrefix_combined_congr_of_source`.  The one-step combined congruence is `Rel.trans` of `openStep_normalize_congr_of_source` (LEFT tree `cfg`, carrying the successor witness) and `openStep_peephole_congr (program := normalizeProgram cfg)` (its per-found-block `StackRealizes` at `state2` discharged from `stackRealizes_of_realizedWitnessFC_total` on `cfg` through `findBlock?_normalizeProgram` + `normalizeBlock_input`), then `Rel.mono` collapsing `(RuntimeRel ∧ witness) ∘ RuntimeRel` to `RuntimeRel ∧ witness` via `Outcome.RuntimeRel.trans`.  **Same argument shape as the peephole `*_of_source` family**, so the OIC swaps are pure name changes.  (commit `c0c74125`)
+3. **THE SPLICE** (item 3, commit `452f7280`): `StackArtifact.compile?` (:60/:92/:147) now emits `(peepholeProgram (normalizeProgram cfg)).compileCertified?`.  The 5 OIC consumption sites rewired `peephole` → `combined` (`combined_programCounterIndependent`, `fuelBudget_combined_le`, `openRunN{,Prefix}_combined_congr_of_source`), and every `peepholeProgram cfg` value occurrence → `peepholeProgram (normalizeProgram cfg)`.  The DEAD-END (applying `…_peephole_congr_of_source` with `cfg := normalizeProgram cfg`, which needs a FALSE `GeneratedContext … (normalizeProgram cfg)`) is avoided exactly as the §Session-58 route prescribed — the combined congruence is relative to the real compiled `cfg`.  `EvmCompiler.Verification` full build green.
+
+### MEASUREMENT (pinned solc 0.8.26, `solidus-backend raw-summary`)
+| contract | runtime | creation | baseline | Δ | identical `swapN;swapN` adj (runtime) | baseline | Δ |
+|---|---|---|---|---|---|---|---|
+| AdversarialStackPressure | 8557 | 8591 | 8557/8591 | **+0** | 3 | 3 | 0 |
+| ExternalCallBox | 2791 | 2825 | 2791/2825 | **+0** | 61 | 61 | 0 |
+| MiniToken | 1991 | 2234 | — | — | 15 | 15 | 0 |
+| LoopBox | 923 | 957 | — | — | 15 | 15 | 0 |
+
+**Determinism:** all 4 contracts × {runtime, creation} **byte-identical across two independent compiles** (required, PASS).
+
+**INTERPRETATION — NOT a live byte delta.**  The combined transform is genuinely wired into the shipped bytes (the certificate is now `(peepholeProgram (normalizeProgram cfg)).compileCertified?` and `compile_correct` routes through it), but it **fires nowhere on the corpus**: byte counts and the identical-swap-pair counts (3/61/15/15) are all unchanged.  This confirms the §Session-55/56 ground truth — the removable `swap d ; swap d` and `swap d ; z* ; swap d` windows do **not occur at the TypedCfg block-body granularity** these passes operate on (the adjacent bytecode swap pairs are a lowering/compaction-phase artifact downstream of the cfg-body point).  The campaign's first *byte-shrinking* delta will require either a lowering-phase peephole (Route 1, breaks the frozen certificate contract) or a source/cfg-shape that actually produces the window — neither is this splice.
+
+### THE FRONTIER (session 60)
+The splice infrastructure is complete and live.  To produce a real byte delta the frontier is now **either** (a) a *corpus* whose cfg block bodies genuinely contain `swap d ; z* ; swap d` windows (find/synthesize one, then measure a shrink through the now-live spine), **or** (b) a Route-1 assembly/lowering-phase peephole with its own certified congruence at the lower altitude (strictly larger, and must not touch the frozen `Assembly/*` — needs a new non-frozen post-lowering pass module).  The cfg-body transform tower (sessions 3–59) is done and shipping.
+
+### Files touched (session 59)
+Two NEW non-frozen modules: `EvmCompiler/TypedCfg/PeepholeNoopSwapSpine.lean`, `EvmCompiler/Structured/PeepholeNoopSwapCombined.lean`.  Edited (both non-frozen): `EvmCompiler/Compiler/StackArtifact.lean` (splice + import), `EvmCompiler/Compiler/OpenInteractionComposition.lean` (5-site rewire + import).  No frozen file touched.  Three green, axiom-clean commits.
