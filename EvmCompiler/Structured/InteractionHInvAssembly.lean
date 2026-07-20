@@ -126,5 +126,61 @@ theorem main_blockGenShape
     InteractionBlockGenShape.genShape_of_compileStmtListFuel?
       hCompile context.mainBlocks block hMem'
 
+/--
+**Proc-body arm: block ⟶ `BlockGenShape` composite.**
+
+The proc-category sibling of `main_blockGenShape`.  From the SECOND arm of
+`block_category` (`block ∈ context.procBlocks`) the strengthened provenance root
+`procBlocks_provenance_inProgram` recovers, for some `proc ∈ source.procs`, the body
+compile fact `compileBlock? proc.body … = some bodyResult` already promoted to
+`BlocksInProgram bodyResult cfg`, together with the disjunction
+
+* `block ∈ bodyResult.blocks` — the block is a compiled-body block; feed the body
+  drill `genShape_of_compileBlock?` directly; or
+* `block` IS `proc`'s entry ADAPTER (`mkBlock? (ProcLabel.entry proc.name)
+  (Shape.procEntry proc) [.relabel input] (.jump (ProcLabel.body proc.name)) = some
+  block`) — invert the adapter `mkBlock?` (exactly as `mkBlock?_label_input`) to
+  expose the exact block shape and the `Instr.type? (.relabel input) …` fact, then
+  classify it via `BlockGenShape.procAdapter`, whose `findBlock?` fact follows from
+  `block ∈ cfg.blocks` (proc-blocks inclusion) + `LabelsUnique`.
+
+Purely static provenance ∘ classification; feeds the per-disjunct supplier dispatch.
+-/
+theorem proc_blockGenShape
+    {source : Structured.Program}
+    {entryShapes : TypedCfgCompiler.ProcEntryShapes}
+    {cfg : TypedCfg.Program}
+    (context :
+      TypedCfgPreservation.Program.GeneratedContext source entryShapes cfg)
+    {block : TypedCfg.Block}
+    (hMem : block ∈ context.procBlocks) :
+    InteractionBlockGenShape.BlockGenShape cfg block := by
+  obtain
+      ⟨proc, bsupply, entry, input, bodyResult,
+        hProcMem, hCompile, hBlocks, hDisj⟩ :=
+    context.procBlocks_provenance_inProgram hMem
+  rcases hDisj with hBody | hAdapter
+  · exact genShape_of_compileBlock? hCompile hBlocks block hBody
+  · -- adapter case: invert `mkBlock?` to pin `block`, then classify via `procAdapter`.
+    have hMemCfg : block ∈ cfg.blocks := by
+      rw [context.cfgEq]
+      simp only [List.append_assoc, List.mem_append]
+      tauto
+    have hFind :=
+      TypedCfg.Program.findBlock?_eq_some_of_mem context.wellTyped.1 hMemCfg
+    unfold TypedCfgCompiler.mkBlock? at hAdapter
+    cases hBT :
+        TypedCfg.Block.bodyType? [TypedCfg.Instr.relabel input]
+          (TypedCfgCompiler.Shape.procEntry proc) with
+    | none => simp [hBT] at hAdapter
+    | some output =>
+        simp [hBT] at hAdapter
+        have hType :
+            TypedCfg.Instr.type? (.relabel input)
+              (TypedCfgCompiler.Shape.procEntry proc) = some output := by
+          simpa [TypedCfg.Block.bodyType?] using hBT
+        subst hAdapter
+        exact InteractionBlockGenShape.BlockGenShape.procAdapter hType hFind
+
 end Structured
 end EvmCompiler
