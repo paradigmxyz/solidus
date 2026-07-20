@@ -1,5 +1,6 @@
 import EvmCompiler.Structured.InteractionBlockGenShape
 import EvmCompiler.Structured.InteractionLabelShapeTransport
+import EvmCompiler.Structured.InteractionHInvObligations
 
 /-!
 # Strengthened block-generation classification — the external-`regular` `LabelShape` thread
