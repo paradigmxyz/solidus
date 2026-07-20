@@ -42,8 +42,12 @@ on:
 permissions:
   contents: read
 
+# The group includes the EVENT NAME: the `pull_request_target: labeled` arm
+# (scoring-requested comment) must not share a group with the `pull_request`
+# gate runs — with a shared group + cancel-in-progress, a maintainer applying
+# the label would silently CANCEL that PR's in-flight proof-gate run.
 concurrency:
-  group: arena-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  group: arena-${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -96,7 +100,13 @@ jobs:
   # ---------------------------------------------------------------------------
   gates:
     name: standard CI gates
-    if: github.event_name == 'pull_request'
+    # Not on `edited`: a body edit does not change the code, and GitHub does
+    # not refresh the test-merge for it either — so re-running the ~90-minute
+    # Lean gate set would exercise the SAME stale merge the previous run
+    # already covered (and the merge-freshness job above still fails loudly
+    # if the base has advanced). `edited` re-runs only the cheap body-derived
+    # checks (freshness + based-on). Skipped jobs satisfy required checks.
+    if: github.event_name == 'pull_request' && github.event.action != 'edited'
     uses: ./.github/workflows/ci.yml
     permissions:
       contents: read
