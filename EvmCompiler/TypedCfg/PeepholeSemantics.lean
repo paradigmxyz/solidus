@@ -217,56 +217,14 @@ theorem BodySafe.peephole {body : List Instr}
     (h : BodySafe body) : BodySafe (peepholeBody body) :=
   fun i hi => h i (mem_peepholeBody hi)
 
-/-- **Peephole preservation (closed level).** On a safe straight-line body,
-cancelling `push v ; pop` pairs preserves the observable `runBody` result:
-same output shape, `SameRuntimeData` final state, and identical error
-behaviour. -/
-theorem peepholeBody_runBody_erase :
-    ∀ (body : List Instr) (shape : Shape) (state : EVMState),
-      BodySafe body →
-        (Block.runBody (peepholeBody body) shape state).map eraseFst =
-          (Block.runBody body shape state).map eraseFst
-  | [], _, _, _ => by simp [peepholeBody]
-  | instr :: rest, shape, state, hSafe => by
-      rw [peepholeBody_cons]
-      split
-      · -- cancel arm: instr = .push v, peepholeBody rest = .pop :: rest'
-        rename_i v rest' hPeep
-        -- One `push` step of the RHS.
-        have hpush :
-            Block.runBody (Instr.push v :: rest) shape state =
-              Block.runBody rest
-                { shape with slots := .literal v :: shape.slots }
-                (state.replaceStackAndIncrPC (state.stack.push v) 33) := by
-          simp [Block.runBody, Instr.runAt, Instr.type?, Instr.runState,
-            Option.elim, Bind.bind, Except.bind]
-        -- kernel: the `pop` after the `push` restores runtime data.
-        obtain ⟨popSt, hPop, hPopRel⟩ :=
-          pop_after_push_sameRuntimeData state v 33
-        -- One `pop` step collapsing the peepholed tail back to `rest'`.
-        have hpop :
-            Block.runBody (Instr.pop :: rest')
-                { shape with slots := .literal v :: shape.slots }
-                (state.replaceStackAndIncrPC (state.stack.push v) 33) =
-              Block.runBody rest' shape popSt := by
-          simp only [Block.runBody, Instr.runAt, Instr.type?, Instr.runState,
-            Option.elim, Bind.bind, Except.bind, hPop]
-        -- peephole IH on the tail, specialised to the pushed shape/state.
-        have ih :=
-          peepholeBody_runBody_erase rest
-            { shape with slots := .literal v :: shape.slots }
-            (state.replaceStackAndIncrPC (state.stack.push v) 33)
-            hSafe.tail
-        rw [hPeep] at ih
-        -- safety of the exposed tail `rest'`.
-        have hBodySafeRest' : BodySafe rest' :=
-          (hPeep ▸ hSafe.tail.peephole : BodySafe (Instr.pop :: rest')).tail
-        -- congruence carries the pc-shift through `rest'`.
-        have hcong := runBody_map_erase rest' shape hBodySafeRest' hPopRel
-        rw [hpush, ← ih, hpop, hcong]
-      · -- keep arm: peepholeBody (instr :: rest) = instr :: peepholeBody rest
-        exact runBody_cons_congr _ shape state
-          (fun sh st => peepholeBody_runBody_erase rest sh st hSafe.tail)
+-- NOTE (session 54, Obstacle A): the closed-level preservation theorem
+-- `peepholeBody_runBody_erase` and its dead lift
+-- `PeepholeBlock.Block.run_peephole_runtimeRel` were RETIRED here.  The
+-- `swap d ; swap d → ε` arm is UNSOUND without a runtime depth guard, which the
+-- `BodySafe`-only closed signature cannot supply, and the public compile spine
+-- routes every block through the OPEN interaction semantics
+-- (`openRunBody_peephole_congr`, which carries the `StackRealizes` guard).  The
+-- `PeepholeBlock` module was imported by nobody; both are removed.
 
 end Peephole
 end TypedCfg

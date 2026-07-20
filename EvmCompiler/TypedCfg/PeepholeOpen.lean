@@ -5,11 +5,12 @@ import EvmCompiler.TypedCfg.PeepholeOpenStackRealizes
 /-!
 # Peephole preservation at the OPEN interaction level
 
-Milestone (d): lift the `push v ; pop → ε` cancellation from the closed
-block level (`PeepholeBlock.Block.run_peephole_runtimeRel`) to the OPEN
-interaction semantics `InteractionSemantics.Block.openRun`, which is the
-semantics the public compile spine actually routes every block through
-(call-bearing blocks included).
+Milestone (d): the `push v ; pop → ε` (and `swap d ; swap d → ε`) cancellation
+at the OPEN interaction semantics `InteractionSemantics.Block.openRun`, which is
+the semantics the public compile spine actually routes every block through
+(call-bearing blocks included).  This OPEN level (not a closed `runBody`
+variant) is the sole crown path; the swap arm's runtime depth guard
+(`StackRealizes`) only exists here.
 
 The single genuinely-new lemma is `openRunBody_peephole_congr`: the peepholed
 body, run from a state `state1`, is `Simulation.Interaction.Rel`-related (up to
