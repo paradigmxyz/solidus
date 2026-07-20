@@ -279,7 +279,10 @@ inductive BlockGenShapeReg (cfg : TypedCfg.Program) : TypedCfg.Block → Prop wh
               body := [.relabel relabelTarget]
               output := output
               term := .jump bodyLabel })
-      (hBodyShape : LabelShape cfg bodyLabel output) :
+      (hBodyShape : LabelShape cfg bodyLabel output)
+      (hTransport :
+        ∀ n, TypedCfgCompiler.Shape.SourceFrameFits blockInput n →
+          TypedCfgCompiler.Shape.SourceFrameFits output n) :
       BlockGenShapeReg cfg
         { label := entry
           input := blockInput

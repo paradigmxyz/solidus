@@ -113,7 +113,7 @@ theorem proc_blockGenShapeReg
   have hLookup :
       Structured.ProcList.lookup? proc.name source.procs = some proc :=
     Structured.ProcList.lookup?_eq_some_of_mem hSourceWF.1 hProcMem rfl
-  rcases hDisj with hBody | ⟨hEntry, hAdapter⟩
+  rcases hDisj with hBody | ⟨hEntry, hDepth, hAdapter⟩
   · -- body case: feed the strengthened body drill with the proc-boundary seeds.
     refine genShapeReg_of_compileBlock? hCompile hBlocks ?_ ?_ block hBody
     · exact fun out hout =>
@@ -151,10 +151,24 @@ theorem proc_blockGenShapeReg
           · exact (Option.some.inj hType).symm
           · exact absurd hType (by simp)
         subst hAdapter
-        refine BlockGenShapeReg.procAdapter hType hFind ?_
-        rw [hOutInput]
-        exact
-          TypedCfgPreservation.LabelShape.of_compileBlock? hCompile hBlocks
+        refine BlockGenShapeReg.procAdapter hType hFind ?_ ?_
+        · rw [hOutInput]
+          exact
+            TypedCfgPreservation.LabelShape.of_compileBlock? hCompile hBlocks
+        · -- SourceFrameFits transport across the (runtime-no-op) relabel:
+          -- procEntry proc and input both have returnTokenDepth? = some proc.argc,
+          -- so both frame-fits reduce to (n = proc.argc).
+          intro n hFits
+          rw [hOutInput]
+          have hProcDepth :
+              (TypedCfgCompiler.Shape.procEntry proc).returnTokenDepth? =
+                some proc.argc :=
+            TypedCfgCompilerFacts.Call.returnTokenDepth?_procEntry proc
+          exact
+            (TypedCfgCompilerFacts.Shape.sourceFrameFits_iff_eq_of_returnTokenDepth?_eq_some
+                hDepth).mpr
+              ((TypedCfgCompilerFacts.Shape.sourceFrameFits_iff_eq_of_returnTokenDepth?_eq_some
+                  hProcDepth).mp hFits)
 
 end InteractionBlockGenShapeRegular
 end Structured

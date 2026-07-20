@@ -413,6 +413,7 @@ theorem mem_procBlocks_provenance_subset_fallthrough
       (∀ b, b ∈ bodyResult.blocks → b ∈ procBlocks) ∧
       (block ∈ bodyResult.blocks ∨
         (entry = ProcLabel.body proc.name ∧
+          input.returnTokenDepth? = some proc.argc ∧
           TypedCfgCompiler.mkBlock? (ProcLabel.entry proc.name)
               (TypedCfgCompiler.Shape.procEntry proc) [.relabel input]
               (.jump (ProcLabel.body proc.name)) = some block)) := by
@@ -530,7 +531,11 @@ theorem mem_procBlocks_provenance_subset_fallthrough
                                     (fun b hb =>
                                       List.mem_cons_of_mem _
                                         (List.mem_append_left _ hb)),
-                                    Or.inr ⟨rfl, by rw [hEq]; exact hAdapter⟩⟩
+                                    Or.inr
+                                      ⟨rfl,
+                                       TypedCfgCompilerFacts.Shape.requireReturnTokenDepth?_eq_some_iff.mp
+                                         hFrame,
+                                       by rw [hEq]; exact hAdapter⟩⟩
                               · exact
                                   ⟨head, supply, ProcLabel.body head.name,
                                     bodyInput, compiled,
@@ -655,6 +660,7 @@ theorem procBlocks_provenance_inProgram_fallthrough
       BlocksInProgram bodyResult cfg ∧
       (block ∈ bodyResult.blocks ∨
         (entry = ProcLabel.body proc.name ∧
+          input.returnTokenDepth? = some proc.argc ∧
           TypedCfgCompiler.mkBlock? (ProcLabel.entry proc.name)
               (TypedCfgCompiler.Shape.procEntry proc) [.relabel input]
               (.jump (ProcLabel.body proc.name)) = some block)) := by
