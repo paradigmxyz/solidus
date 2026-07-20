@@ -59,7 +59,7 @@ theorem realizedWitnessFC_of_dispatch_arm
         transcript (Except.ok (TypedCfg.Outcome.jump next state'))) :
     realizedWitnessFC sourceProgram cfg context.calls next state' := by
   -- Unify the entry witness block with the dispatch block to pin the exit shape.
-  obtain ⟨bodyState, tokens, block, hFindReal, hStateRel, hFits0, hFC⟩ := hReal
+  obtain ⟨bodyState, tokens, block, hFindReal, hStateRel, hFits0, hFC, _hLive⟩ := hReal
   have hFindDispatch :
       cfg.findBlock? (ProcLabel.exit proc.name) =
         some (TypedCfgCompiler.dispatchBlock proc context.calls) :=
@@ -85,8 +85,11 @@ theorem realizedWitnessFC_of_dispatch_arm
     rw [← hReturns]; exact hFC
   have hHead : FrameHeadConsistent sourceProgram cfg context.calls frame site.token :=
     (FrameConsistent_cons_cons.mp hFCcons).1
+  have hContLive :
+      FrameContinuationLive cfg context.calls site.token rest :=
+    (FrameConsistent_cons_cons.mp hFCcons).2.1
   have hTail : FrameConsistent sourceProgram cfg context.calls returns rest :=
-    (FrameConsistent_cons_cons.mp hFCcons).2
+    (FrameConsistent_cons_cons.mp hFCcons).2.2
   -- Instantiate the head consistency at the selected site + the exiting proc.
   have hLookupSite :
       Structured.ProcList.lookup? site.procName sourceProgram.procs = some proc := by
@@ -109,7 +112,7 @@ theorem realizedWitnessFC_of_dispatch_arm
       hFits.2 proc.retc
         (TypedCfgCompilerFacts.Call.returnTokenDepth?_procExit proc)
     rw [hDepth, hRetc]
-  refine realizedWitnessFC_of_stateRel hLabelShape hChildRel ?_ ?_
+  refine realizedWitnessFC_of_stateRel hLabelShape hChildRel ?_ ?_ ?_
   · -- child frame-fit at the restored caller stack length
     have hLen :
         (({ bodyState with returns := returns } : RunState).withEVM
@@ -127,6 +130,11 @@ theorem realizedWitnessFC_of_dispatch_arm
       simp [RunState.withEVM_returns]
     rw [hReturned]
     exact hTail
+  · -- child liveness: the caller continuation `callerInput` owning a return token forces the
+    -- residual realization `rest` to be non-empty — exactly the head frame's continuation-liveness
+    -- coupling, read off the entry `FrameConsistent`.
+    intro d hd
+    exact hContLive site callerInput hMem rfl hLabelShape (by simp [hd])
 
 end InteractionFrameConsistent
 end Structured

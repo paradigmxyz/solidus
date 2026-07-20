@@ -93,7 +93,7 @@ theorem realizedWitnessFC_of_codeHead_dispatch
     realizedWitnessFC sourceProgram cfg calls next state' := by
   -- The `.code` result is the single entry block with `input := input`; find it in the cfg and
   -- unify with the entry witness block to pin `block.input = input`.
-  obtain ⟨codeOutput, _hType, hResultEq⟩ :=
+  obtain ⟨codeOutput, hCodeType, hResultEq⟩ :=
     TypedCfgCompilerFacts.Stmt.components_of_compileStmtFuel?_code hCompile
   have hCodeMem :
       ({ label := entry
@@ -111,7 +111,7 @@ theorem realizedWitnessFC_of_codeHead_dispatch
             output := codeOutput
             term := .jump regular } :=
     hBlocks _ hCodeMem
-  obtain ⟨source, tokens, block, hFindReal, hStateRel, hFits0, hFC⟩ := hReal
+  obtain ⟨source, tokens, block, hFindReal, hStateRel, hFits0, hFC, hLive⟩ := hReal
   have hBlockEq :
       block =
         { label := entry
@@ -136,9 +136,19 @@ theorem realizedWitnessFC_of_codeHead_dispatch
       (fun _t _o hExec' =>
         InteractionConstructCoupling.stmt_openRun_code_only_regular hExec')
   subst hNext
-  exact
+  -- child input `expected` is the code output shape; owning a token there ⇒ the entry `input`
+  -- owns one (reverse code-transport) ⇒ `hLive` fires.
+  have hExpEq : expected = codeOutput := by
+    have h := hFall; rw [hResultEq] at h; simp at h; exact h.symm
+  refine
     realizedWitnessFC_of_stateRel (hReg expected hFall) hStateRel' hFits'
-      (by rw [hReturns]; exact hFC)
+      (by rw [hReturns]; exact hFC) ?_
+  intro d hd
+  rw [hExpEq] at hd
+  obtain ⟨id_, hIn⟩ :=
+    TypedCfgPreservation.BasicInstr.Code.input_returnTokenDepth?_eq_some_of_output
+      hCodeType hd
+  exact hLive id_ hIn
 
 end InteractionFrameConsistent
 end Structured

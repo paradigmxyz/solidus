@@ -97,7 +97,7 @@ theorem realizedWitnessFC_of_callHead_dispatch
             output := output
             term := .jump (ProcLabel.entry name) } :=
     hBlocks _ hCallMem
-  obtain ⟨source, tokens, block, hFindReal, hStateRel, hFits0, hFC⟩ := hReal
+  obtain ⟨source, tokens, block, hFindReal, hStateRel, hFits0, hFC, hLive⟩ := hReal
   have hBlockEq :
       block =
         { label := entry
@@ -169,27 +169,47 @@ theorem realizedWitnessFC_of_callHead_dispatch
       simp only [List.length_drop]
       rw [Nat.add_comm proc.retc (source.evm.stack.length - proc.argc)]
       exact hFit
+  -- Establish the pushed frame's continuation liveness: its return continuation is `regular`
+  -- (shape `returnShape`), which owns a token exactly when the entry call block's `input` does
+  -- (reverse afterCall-transport), and then the entry's own `hLive` forces `tokens ≠ []`.
+  have hPushLive :
+      FrameContinuationLive cfg context.calls (Structured.Stmt.callToken supply) tokens := by
+    intro site' callerInput hSite'Mem hTok' hLabelShape' hCallerOwns
+    have hSiteEq : S = site' :=
+      List.inj_on_of_nodup_map context.tokensUnique hSMem hSite'Mem
+        (by rw [hSdef]; exact hTok'.symm)
+    have hSite'Ret : site'.returnLabel = regular := by rw [← hSiteEq, hSdef]
+    rw [hSite'Ret] at hLabelShape'
+    have hCallerEq : callerInput = returnShape :=
+      TypedCfgPreservation.LabelShape.eq hLabelShape' (hReg returnShape hFall)
+    rw [hCallerEq] at hCallerOwns
+    obtain ⟨rd, hRD⟩ := Option.isSome_iff_exists.mp hCallerOwns
+    obtain ⟨id_, hIn⟩ :=
+      TypedCfgCompilerFacts.Shape.returnTokenDepth?_some_of_afterCall_some hReturnShape hRD
+    exact hLive id_ hIn
   -- Land the child witness through the bare call machinery, threading the strengthened FC.
   obtain ⟨targetFinal, hStep, hChildRel⟩ :=
     InteractionCallPreservation.Call.openStep_entry_of_compileStmtFuel?
       hLookup hCompile hBlocks hStateRel hSplit hProcWF
-  refine realizedWitnessFC_of_pure_jump hStep hChildRel hExec hEntryShape hFitsChild ?_
-  -- child `FrameConsistent`: pushed head prepended to the transported entry tail
-  show
-    FrameConsistent sourceProgram cfg context.calls
-      ((source.withEVM
-          { source.evm with stack := source.evm.stack.take proc.argc }).pushReturn
-        (source.evm.stack.drop proc.argc) proc.retc).returns
-      (Structured.Stmt.callToken supply :: tokens)
-  have hReturnsEq :
-      ((source.withEVM
+  refine realizedWitnessFC_of_pure_jump hStep hChildRel hExec hEntryShape hFitsChild ?_ ?_
+  · -- child `FrameConsistent`: pushed head prepended to the transported entry tail
+    show
+      FrameConsistent sourceProgram cfg context.calls
+        ((source.withEVM
             { source.evm with stack := source.evm.stack.take proc.argc }).pushReturn
-          (source.evm.stack.drop proc.argc) proc.retc).returns =
-        { callerStack := source.evm.stack.drop proc.argc, retc := proc.retc } ::
-          source.returns := by
-    simp [RunState.pushReturn, RunState.withEVM]
-  rw [hReturnsEq]
-  exact FrameConsistent.cons hPushHead hFC
+          (source.evm.stack.drop proc.argc) proc.retc).returns
+        (Structured.Stmt.callToken supply :: tokens)
+    have hReturnsEq :
+        ((source.withEVM
+              { source.evm with stack := source.evm.stack.take proc.argc }).pushReturn
+            (source.evm.stack.drop proc.argc) proc.retc).returns =
+          { callerStack := source.evm.stack.drop proc.argc, retc := proc.retc } ::
+            source.returns := by
+      simp [RunState.pushReturn, RunState.withEVM]
+    rw [hReturnsEq]
+    exact FrameConsistent.cons hPushHead hPushLive hFC
+  · -- child liveness: the callee-entry realization tokens `callToken :: tokens` are non-empty.
+    intro _ _; simp
 
 end InteractionFrameConsistent
 end Structured

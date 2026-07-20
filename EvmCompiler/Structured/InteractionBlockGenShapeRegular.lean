@@ -337,7 +337,8 @@ inductive BlockGenShapeReg (cfg : TypedCfg.Program)
       (hBodyShape : LabelShape cfg bodyLabel output)
       (hTransport :
         ∀ n, TypedCfgCompiler.Shape.SourceFrameFits blockInput n →
-          TypedCfgCompiler.Shape.SourceFrameFits output n) :
+          TypedCfgCompiler.Shape.SourceFrameFits output n)
+      (hInputActive : (blockInput.returnTokenDepth?).isSome) :
       BlockGenShapeReg cfg sourceProgram calls
         { label := entry
           input := blockInput

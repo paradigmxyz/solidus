@@ -69,12 +69,37 @@ def FrameHeadConsistent
           (frame.retc + frame.callerStack.length)
 
 /--
+**Continuation liveness coupling** (session 48).
+
+A head frame realized by `token`, sitting atop a residual activation whose realization tokens are
+`tokens`, is *continuation-live* when: for every registered call site sharing `token` whose
+recorded return continuation `site.returnLabel` expects a shape that itself **owns a return
+token**, the residual `tokens` is non-empty.
+
+The point: `site.returnLabel`'s shape owns a return token exactly when the caller (whose
+activation is the residual `tokens`) is itself inside a live procedure — in which case the caller
+must have at least one pending realization token, i.e. `tokens ≠ []`.  This is the missing
+below-token coupling the dispatch (pop) arm needs to re-establish the successor witness's local
+liveness (`realizedWitnessFC`'s `hLive` conjunct) at the popped caller continuation, and the
+callHead (push) arm establishes it for the pushed frame from the caller's own `hLive`. -/
+def FrameContinuationLive
+    (cfg : TypedCfg.Program)
+    (calls : List TypedCfgCompiler.DispatchSite)
+    (token : Word) (tokens : List Word) : Prop :=
+  ∀ (site : TypedCfgCompiler.DispatchSite) (callerInput : TypedCfg.Shape),
+    site ∈ calls →
+    site.token = token →
+    TypedCfgPreservation.LabelShape cfg site.returnLabel callerInput →
+    (callerInput.returnTokenDepth?).isSome →
+    tokens ≠ []
+
+/--
 **Whole-activation source frame-consistency.**
 
 Lockstep recursion over the ghost return frames `source.returns` and the realization tokens
-`tokens`: every pending frame is `FrameHeadConsistent`.  (Mismatched lengths never arise under
-a `StateRel` witness — `realizeStack` forces equal lengths — so the off-diagonal cases are
-`True`.) -/
+`tokens`: every pending frame is `FrameHeadConsistent` and continuation-live.  (Mismatched
+lengths never arise under a `StateRel` witness — `realizeStack` forces equal lengths — so the
+off-diagonal cases are `True`.) -/
 def FrameConsistent
     (sourceProgram : Structured.Program)
     (cfg : TypedCfg.Program)
@@ -83,6 +108,7 @@ def FrameConsistent
   | [], [] => True
   | frame :: returns, token :: tokens =>
       FrameHeadConsistent sourceProgram cfg calls frame token ∧
+        FrameContinuationLive cfg calls token tokens ∧
         FrameConsistent sourceProgram cfg calls returns tokens
   | [], _ :: _ => True
   | _ :: _, [] => True
@@ -99,6 +125,7 @@ theorem FrameConsistent_cons_cons
     {token : Word} {tokens : List Word} :
     FrameConsistent sourceProgram cfg calls (frame :: returns) (token :: tokens) =
       (FrameHeadConsistent sourceProgram cfg calls frame token ∧
+        FrameContinuationLive cfg calls token tokens ∧
         FrameConsistent sourceProgram cfg calls returns tokens) := rfl
 
 /-- Nil activations are vacuously consistent (the entry-seed case). -/
@@ -117,19 +144,20 @@ theorem FrameConsistent.tail
     {token : Word} {tokens : List Word}
     (h : FrameConsistent sourceProgram cfg calls (frame :: returns) (token :: tokens)) :
     FrameConsistent sourceProgram cfg calls returns tokens :=
-  (FrameConsistent_cons_cons.mp h).2
+  (FrameConsistent_cons_cons.mp h).2.2
 
-/-- **Push/head construction.**  Prepending a head-consistent frame preserves consistency
-(the callHead push). -/
+/-- **Push/head construction.**  Prepending a head-consistent, continuation-live frame preserves
+consistency (the callHead push). -/
 theorem FrameConsistent.cons
     {sourceProgram : Structured.Program} {cfg : TypedCfg.Program}
     {calls : List TypedCfgCompiler.DispatchSite}
     {frame : ReturnDest} {returns : List ReturnDest}
     {token : Word} {tokens : List Word}
     (hHead : FrameHeadConsistent sourceProgram cfg calls frame token)
+    (hLive : FrameContinuationLive cfg calls token tokens)
     (hRest : FrameConsistent sourceProgram cfg calls returns tokens) :
     FrameConsistent sourceProgram cfg calls (frame :: returns) (token :: tokens) :=
-  FrameConsistent_cons_cons.mpr ⟨hHead, hRest⟩
+  FrameConsistent_cons_cons.mpr ⟨hHead, hLive, hRest⟩
 
 /--
 **The strengthened realized predicate** (frontier item 1).
@@ -149,7 +177,8 @@ def realizedWitnessFC
       cfg.findBlock? label = some block ∧
       TypedCfgPreservation.StateRel source tokens state ∧
       TypedCfgCompiler.Shape.SourceFrameFits block.input source.evm.stack.length ∧
-      FrameConsistent sourceProgram cfg calls source.returns tokens
+      FrameConsistent sourceProgram cfg calls source.returns tokens ∧
+      (∀ d, block.input.returnTokenDepth? = some d → tokens ≠ [])
 
 /-- **Projection.**  The strengthened predicate forgets its frame-consistency conjunct to
 recover the bare `realizedWitness` — the free weakening the final `AllEntriesRealized`
@@ -160,7 +189,7 @@ theorem realizedWitnessFC.realizedWitness
     {label : Assembly.Label} {state : EVMState}
     (h : realizedWitnessFC sourceProgram cfg calls label state) :
     realizedWitness cfg label state := by
-  obtain ⟨source, tokens, block, hFind, hRel, hFits, _hFC⟩ := h
+  obtain ⟨source, tokens, block, hFind, hRel, hFits, _hFC, _hLive⟩ := h
   exact ⟨source, tokens, block, hFind, hRel, hFits⟩
 
 /--
@@ -179,12 +208,13 @@ theorem realizedWitnessFC_of_stateRel
     (hStateRel : TypedCfgPreservation.StateRel source tokens target)
     (hFits :
       TypedCfgCompiler.Shape.SourceFrameFits input source.evm.stack.length)
-    (hFC : FrameConsistent sourceProgram cfg calls source.returns tokens) :
+    (hFC : FrameConsistent sourceProgram cfg calls source.returns tokens)
+    (hLive : ∀ d, input.returnTokenDepth? = some d → tokens ≠ []) :
     realizedWitnessFC sourceProgram cfg calls entry target := by
   obtain ⟨block, hFind, hInputEq⟩ := hLabelShape
-  refine ⟨source, tokens, block, hFind, hStateRel, ?_, hFC⟩
-  rw [hInputEq]
-  exact hFits
+  refine ⟨source, tokens, block, hFind, hStateRel, ?_, hFC, ?_⟩
+  · rw [hInputEq]; exact hFits
+  · rw [hInputEq]; exact hLive
 
 /-- **Entry seed.**  At the program entry the source activation is empty
 (`RunState.initial`), so the frame-consistency conjunct is vacuous and the strengthened seed
@@ -199,10 +229,12 @@ theorem realizedWitnessFC_of_stateRel_nil
     (hFits :
       TypedCfgCompiler.Shape.SourceFrameFits input source.evm.stack.length)
     (hReturns : source.returns = [])
-    (hTokens : tokens = []) :
+    (hTokens : tokens = [])
+    (hDepthNone : input.returnTokenDepth? = none) :
     realizedWitnessFC sourceProgram cfg calls entry target :=
   realizedWitnessFC_of_stateRel hLabelShape hStateRel hFits
     (by rw [hReturns, hTokens]; exact FrameConsistent.nil)
+    (fun _ hd => by rw [hDepthNone] at hd; exact absurd hd (by simp))
 
 open TypedCfg.InteractionSemantics.Program (AllEntriesRealized)
 

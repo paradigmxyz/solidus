@@ -87,10 +87,10 @@ theorem realizedWitnessFC_of_blockGenShapeReg
           hPopTransport hExec
   | nilJoin hFindN hExit =>
       exact realizedWitnessFC_of_nilJoin_dispatch hReal hFindN hExit hExec
-  | procAdapter hType hFindA hBodyShape hTransport =>
+  | procAdapter hType hFindA hBodyShape hTransport hInputActive =>
       exact
         realizedWitnessFC_of_procAdapter_dispatch hReal hType hFindA hBodyShape
-          hTransport hExec
+          hTransport hInputActive hExec
   | terminalHalt hFindT =>
       exact realizedWitnessFC_of_terminalHalt_dispatch hFindT hExec
 
@@ -120,7 +120,7 @@ theorem openStep_preserves_realizedWitnessFC
         transcript (Except.ok (TypedCfg.Outcome.jump n s))) :
     realizedWitnessFC source cfg context.calls n s := by
   have hReal2 := hReal
-  obtain ⟨src, tokens, block, hFind, hStateRel, hFits, hFC⟩ := hReal2
+  obtain ⟨src, tokens, block, hFind, hStateRel, hFits, hFC, hLive⟩ := hReal2
   have hLabel : block.label = e := by
     have h := hFind
     unfold TypedCfg.Program.findBlock? at h

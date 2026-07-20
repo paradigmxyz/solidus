@@ -69,12 +69,13 @@ theorem realizedWitnessFC_of_pure_jump
       TypedCfgCompiler.Shape.SourceFrameFits
         childInput childSource.evm.stack.length)
     (hFC :
-      FrameConsistent sourceProgram cfg calls childSource.returns childTokens) :
+      FrameConsistent sourceProgram cfg calls childSource.returns childTokens)
+    (hLive : ∀ d, childInput.returnTokenDepth? = some d → childTokens ≠ []) :
     realizedWitnessFC sourceProgram cfg calls next state' := by
   obtain ⟨hNext, hStateRel⟩ :=
     InteractionCallPreservation.Call.jump_state_rel_of_pure hStep hChildRel hExec
   subst hNext
-  exact realizedWitnessFC_of_stateRel hLabelShape hStateRel hFits hFC
+  exact realizedWitnessFC_of_stateRel hLabelShape hStateRel hFits hFC hLive
 
 /--
 **`nilJoin` disjunct strengthened `hInv` leg.**  The identity fallthrough's `openStep`
@@ -102,7 +103,7 @@ theorem realizedWitnessFC_of_nilJoin_dispatch
         (TypedCfg.InteractionSemantics.Program.openStep cfg entry target)
         transcript (Except.ok (TypedCfg.Outcome.jump next state'))) :
     realizedWitnessFC sourceProgram cfg calls next state' := by
-  obtain ⟨source, tokens, block, hFindReal, hStateRel, hFits, hFC⟩ := hReal
+  obtain ⟨source, tokens, block, hFindReal, hStateRel, hFits, hFC, hLive⟩ := hReal
   have hBlockEq :
       block =
         { label := entry
@@ -139,7 +140,7 @@ theorem realizedWitnessFC_of_nilJoin_dispatch
             (TypedCfg.Outcome.jump exitLabel target))
     simp [Simulation.Interaction.bind]
   exact
-    realizedWitnessFC_of_pure_jump hStep hStateRel hExec hExit hFits hFC
+    realizedWitnessFC_of_pure_jump hStep hStateRel hExec hExit hFits hFC hLive
 
 /--
 **`terminalHalt` disjunct strengthened `hInv` leg.**  A halt block never
@@ -194,12 +195,13 @@ theorem realizedWitnessFC_of_procAdapter_dispatch
     (hTransport :
       ∀ n, TypedCfgCompiler.Shape.SourceFrameFits blockInput n →
         TypedCfgCompiler.Shape.SourceFrameFits output n)
+    (hInputActive : (blockInput.returnTokenDepth?).isSome)
     (hExec :
       Simulation.Interaction.Executes
         (TypedCfg.InteractionSemantics.Program.openStep cfg entry target)
         transcript (Except.ok (TypedCfg.Outcome.jump next state'))) :
     realizedWitnessFC sourceProgram cfg calls next state' := by
-  obtain ⟨source, tokens, block, hFindReal, hStateRel, hFits, hFC⟩ := hReal
+  obtain ⟨source, tokens, block, hFindReal, hStateRel, hFits, hFC, hLive⟩ := hReal
   have hBlockEq :
       block =
         { label := entry
@@ -209,6 +211,11 @@ theorem realizedWitnessFC_of_procAdapter_dispatch
           term := .jump bodyLabel } :=
     Option.some.inj (hFindReal.symm.trans hFind)
   subst hBlockEq
+  -- The adapter block's input `blockInput` always owns the return token (it is the proc-entry
+  -- shape), so the entry's local liveness already forces `tokens ≠ []`; the child obligation is
+  -- then trivial (its conclusion holds unconditionally).
+  obtain ⟨bd, hbd⟩ := Option.isSome_iff_exists.mp hInputActive
+  have hTokensNe : tokens ≠ [] := hLive bd hbd
   -- The relabel-body block's `openStep` reduces to the silent `pure (.jump bodyLabel target)`.
   have hStep :
       TypedCfg.InteractionSemantics.Program.openStep cfg entry target =
@@ -246,7 +253,7 @@ theorem realizedWitnessFC_of_procAdapter_dispatch
     rfl
   exact
     realizedWitnessFC_of_pure_jump hStep hStateRel hExec hBodyShape
-      (hTransport _ hFits) hFC
+      (hTransport _ hFits) hFC (fun _ _ => hTokensNe)
 
 /--
 **`caseEntryPop` disjunct strengthened `hInv` leg.**  The switch case-entry `pop` block pops
@@ -281,7 +288,7 @@ theorem realizedWitnessFC_of_caseEntryPop_dispatch
         (TypedCfg.InteractionSemantics.Program.openStep cfg entry target)
         transcript (Except.ok (TypedCfg.Outcome.jump next state'))) :
     realizedWitnessFC sourceProgram cfg calls next state' := by
-  obtain ⟨source, tokens, block, hFindReal, hStateRel, hFits, hFC⟩ := hReal
+  obtain ⟨source, tokens, block, hFindReal, hStateRel, hFits, hFC, hLive⟩ := hReal
   have hFindPop := hBlocks _ hMem
   have hBlockEq :
       block =
@@ -292,15 +299,31 @@ theorem realizedWitnessFC_of_caseEntryPop_dispatch
           term := .jump label } :=
     Option.some.inj (hFindReal.symm.trans hFindPop)
   subst hBlockEq
+  -- `.pop` drops the top slot, so `output = { input with slots := input.slots.tail }`; the child
+  -- input owning a token forces the entry input to own one too, whence `hLive` fires.
+  have hOutTail : output = { input with slots := input.slots.tail } := by
+    simp only [TypedCfg.Instr.type?] at hType
+    cases hs : input.slots with
+    | nil => rw [hs] at hType; simp at hType
+    | cons h rest =>
+        rw [hs] at hType
+        simp only [Option.some.injEq] at hType
+        subst hType
+        simp [hs]
   obtain ⟨stack, value, hPop, hPopFits⟩ := hPopTransport source hFits
   obtain ⟨targetFinal, hStep, hFinalRel⟩ :=
     InteractionSwitchPreservation.Switch.openStep_pop_jump
       hBlocks hMem hType hStateRel hPop
   rw [hStep] at hExec
   cases hExec
-  exact
+  refine
     realizedWitnessFC_of_stateRel hExit hFinalRel hPopFits
-      (by simpa using hFC)
+      (by simpa using hFC) ?_
+  intro d hd
+  rw [hOutTail] at hd
+  obtain ⟨id_, hIn⟩ :=
+    TypedCfgCompilerFacts.Shape.returnTokenDepth?_some_of_tail_some hd
+  exact hLive id_ hIn
 
 /--
 **`switchTest` disjunct strengthened `hInv` leg.**  The switch scrutinee test performs a
@@ -335,7 +358,7 @@ theorem realizedWitnessFC_of_switchTest_dispatch
         (TypedCfg.InteractionSemantics.Program.openStep cfg testLabel target)
         transcript (Except.ok (TypedCfg.Outcome.jump next state'))) :
     realizedWitnessFC sourceProgram cfg calls next state' := by
-  obtain ⟨source, tokens, block, hFindReal, hStateRel, hFits, hFC⟩ := hReal
+  obtain ⟨source, tokens, block, hFindReal, hStateRel, hFits, hFC, hLive⟩ := hReal
   have hFindTest := hBlocks _ hMem
   have hBlockEq :
       block =
@@ -352,11 +375,13 @@ theorem realizedWitnessFC_of_switchTest_dispatch
       hBlocks hMem hHead hStateRel hPop
   rw [hStep] at hExec
   cases hExec
+  -- Both switch continuations expect `valueShape`, the entry block's own input, and keep the
+  -- realization `tokens`; the entry's `hLive` transports unchanged.
   by_cases hEq : caseValue = value
   · rw [if_pos hEq]
-    exact realizedWitnessFC_of_stateRel hCaseShape hFinalRel hFits hFC
+    exact realizedWitnessFC_of_stateRel hCaseShape hFinalRel hFits hFC hLive
   · rw [if_neg hEq]
-    exact realizedWitnessFC_of_stateRel hNextShape hFinalRel hFits hFC
+    exact realizedWitnessFC_of_stateRel hNextShape hFinalRel hFits hFC hLive
 
 end InteractionFrameConsistent
 end Structured

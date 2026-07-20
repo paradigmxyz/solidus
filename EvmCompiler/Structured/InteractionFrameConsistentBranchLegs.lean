@@ -128,7 +128,7 @@ theorem realizedWitnessFC_of_ifHead_dispatch
             term := .jumpi (LabelSupply.label supply 0) regular } :=
     hBlocks _ hCondMem
   -- Unify the entry witness block with the condition block, extracting the entry witness data.
-  obtain ⟨source, tokens, block, hFindReal, hStateRel, hFits0, hFC⟩ := hReal
+  obtain ⟨source, tokens, block, hFindReal, hStateRel, hFits0, hFC, hLive⟩ := hReal
   have hBlockEq :
       block =
         { label := entry
@@ -179,9 +179,17 @@ theorem realizedWitnessFC_of_ifHead_dispatch
     | true =>
         simp only [if_true]
         exact hBodyLS
-  exact
+  refine
     realizedWitnessFC_of_stateRel hLS hStateRel2 hFits'
-      (by rw [hReturns]; exact hFC)
+      (by rw [hReturns]; exact hFC) ?_
+  -- child input `{output with slots := output.slots.tail}` owns a token ⇒ so does the entry
+  -- `input` (tail-lift then the reverse code-transport lemma) ⇒ `hLive` gives `tokens ≠ []`.
+  intro d hd
+  obtain ⟨od, hOut⟩ :=
+    TypedCfgCompilerFacts.Shape.returnTokenDepth?_some_of_tail_some hd
+  obtain ⟨id_, hIn⟩ :=
+    TypedCfgPreservation.BasicInstr.Code.input_returnTokenDepth?_eq_some_of_output hType hOut
+  exact hLive id_ hIn
 
 /--
 **`forCond` disjunct strengthened `hInv` leg.**  Mirrors the bare
@@ -217,7 +225,7 @@ theorem realizedWitnessFC_of_forCond_dispatch
         (TypedCfg.InteractionSemantics.Program.openStep cfg label target)
         transcript (Except.ok (TypedCfg.Outcome.jump next state'))) :
     realizedWitnessFC sourceProgram cfg calls next state' := by
-  obtain ⟨source, tokens, block, hFindReal, hStateRel, hFits0, hFC⟩ := hReal
+  obtain ⟨source, tokens, block, hFindReal, hStateRel, hFits0, hFC, hLive⟩ := hReal
   have hBlockEq :
       block =
         { label := label
@@ -253,9 +261,15 @@ theorem realizedWitnessFC_of_forCond_dispatch
     cases cnd with
     | false => simp only [Bool.false_eq_true, if_false]; exact hFalseShape
     | true => simp only [if_true]; exact hTrueShape
-  exact
+  refine
     realizedWitnessFC_of_stateRel hLS hStateRel2 hFits'
-      (by rw [hReturns]; exact hFC)
+      (by rw [hReturns]; exact hFC) ?_
+  intro d hd
+  obtain ⟨od, hOut⟩ :=
+    TypedCfgCompilerFacts.Shape.returnTokenDepth?_some_of_tail_some hd
+  obtain ⟨id_, hIn⟩ :=
+    TypedCfgPreservation.BasicInstr.Code.input_returnTokenDepth?_eq_some_of_output hType hOut
+  exact hLive id_ hIn
 
 end InteractionFrameConsistent
 end Structured

@@ -163,7 +163,7 @@ theorem proc_blockGenShapeReg
           · exact (Option.some.inj hType).symm
           · exact absurd hType (by simp)
         subst hAdapter
-        refine BlockGenShapeReg.procAdapter hType hFind ?_ ?_
+        refine BlockGenShapeReg.procAdapter hType hFind ?_ ?_ ?_
         · rw [hOutInput]
           exact
             TypedCfgPreservation.LabelShape.of_compileBlock? hCompile hBlocks
@@ -181,6 +181,8 @@ theorem proc_blockGenShapeReg
                 hDepth).mpr
               ((TypedCfgCompilerFacts.Shape.sourceFrameFits_iff_eq_of_returnTokenDepth?_eq_some
                   hProcDepth).mp hFits)
+        · -- the adapter's input is the proc-entry shape, which owns the return token
+          rw [TypedCfgCompilerFacts.Call.returnTokenDepth?_procEntry proc]; rfl
 
 end InteractionBlockGenShapeRegular
 end Structured
