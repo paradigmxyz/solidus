@@ -2,33 +2,40 @@ import EvmCompiler.TypedCfg.PeepholeSeamCancel
 import EvmCompiler.TypedCfg.Lower
 
 /-!
-# Route-α seam canceller: emitted-tail-swap identification (session-70)
+# Route-α seam canceller: conjugating, clean-seam variant (session-70/71)
 
-PEEPHOLE_PROGRESS §Session-70 established, by per-instruction provenance
-measurement on the ExternalCallBox corpus, that:
+PEEPHOLE_PROGRESS §Session-70/71 established, by per-instruction provenance +
+`wellTyped?`/`lower?` probes on the ExternalCallBox corpus, the exact shape of the
+61 removable `SWAPn;SWAPn` seams and the **corrected** transform:
 
-* all 61 removable `SWAPn;SWAPn` seams are **block-body → block-body** fallthrough
-  seams (`A.term = .jump G`, `refCount G = 1`, `A` emits `…swap d` as its last
-  body instruction, `G` emits `swap d` as its first) — **0** are terminator
-  (return-dispatch) lowered (`removeBuriedUnder` ends in `pop`, never a swap), and
-* the shipped `sourceFire?` (`PeepholeSeamCancel.lean`) fires on **0/1030** blocks
-  because it keys the tail swap on `a.body.getLast?`, while the real source blocks
-  are `A.body = [.swap 0, .bindLocals …]`: the swap is the last *emitted*
-  instruction but a trailing **zero-lowering, runtime-identity** `.bindLocals`
-  (`lower? = some []`, `runState _ s = .ok s`) is the CFG-last, so `getLast?`
-  misses the swap.
+* Every source block of a firing seam has body **exactly** `[.swap d,
+  .bindLocals 0 names]` (`d + 1 < names.length`), terminator `.jump G`, `G` a
+  unique-predecessor non-entry block whose head is `.swap d`. The `.bindLocals`
+  lowers to `[]` and runs as an EVMState identity, so `A` *emits* only `swap d`,
+  which abuts `G`'s head `swap d` after `elideFallthroughJumps` — the removable
+  pair (§60, confirmed 61/61).
 
-This leaf is the **static half** of the Route-α correction: it re-keys the tail
-swap on the last body instruction with **non-empty lowering** (`effTailSwap?`),
-and removes *that* swap (`removeEffTail`) while retaining the trailing binds
-(`dropLast` would wrongly delete the `.bindLocals` and leave the swap emitted —
-an unsound half-cancel). Structural preservation (label / terminator / block
-count / `findBlock?` / label-uniqueness) is proved here, mirroring the
-`seamCancelProgram` spine. The runtime pending-swap bisimulation for the new edit
-is the frontier (the trailing binds are runtime identities, so the EVMState
-invariant is expected to carry through unchanged — only the `Shape` threading is
-new); this leaf is imported by **nobody** in the spine and hence cannot affect the
-`compile_correct` axioms.
+* **The naive "drop the swap, keep the bind" edit is UNSOUND at the type level.**
+  The trailing `bindLocals 0 names` *relabels* the swapped slots; dropping the
+  upstream swap makes it mislabel the runtime values (probe: it named position 0
+  `param` where `param_1` actually sits). The sound edit must **conjugate the
+  bind's names** through the `0 ↔ d+1` transposition:
+  `bindLocals 0 names ↦ bindLocals 0 (swapPos 0 (d+1) names)`, re-typing the
+  source `output` as `remapShape d output` (exactly as the shipped
+  `seamCancelProgram` does). `bindLocals` is a runtime identity for *any* names,
+  so the runtime is untouched by the name permutation.
+
+* Because these blocks emit a **single** swap (head = emitted-tail), a swap shared
+  by a chain `C → A → B` would be double-claimed. The `2 ≤ length`-distinct-index
+  disjointness of the shipped canceller does not hold here, so a seam fires only
+  when **both endpoints' swaps are private** (`cleanSrc?` / `cleanTgt?`): the
+  source is not itself a seam target and its target is not itself a seam source.
+  On ECB this fires on 53/61 seams (8 dropped to overlap), yielding a **well-typed,
+  lowerable** program (`wellTyped? = true`, probe) with a real byte delta.
+
+This leaf is the **static half** of the corrected Route-α transform. It is
+imported by **nobody** in the spine and hence cannot affect the `compile_correct`
+axioms; the runtime pending-swap bisimulation + splice is the remaining frontier.
 -/
 
 namespace EvmCompiler
@@ -37,126 +44,122 @@ namespace Peephole
 
 open TypedCfg (Instr Shape Terminator Block Program Label)
 
-/-- A trailing "no-op" body instruction that is skipped when locating the
-emitted-tail swap. These are the **length-preserving, zero-lowering** binds:
-`bindLocals` and `bindScratch`. Both
+/-- Conjugate a body instruction by the `0 ↔ d+1` transposition. Only the trailing
+`bindLocals` name list is permuted (a runtime no-op — `bindLocals` is an EVMState
+identity for any names). Everything else is fixed. -/
+def conjBind (d : Nat) : Instr → Instr
+  | .bindLocals off names => .bindLocals off (swapPos 0 (d + 1) names)
+  | other => other
 
-* lower to the empty assembly program (`Instr.lower? = some []`, `Lower.lean:52-53`),
-  so they are transparent to the emitted bytes, AND
-* are typed by a **length-only** gate (`length_of_type?_bindLocals` /
-  `length_of_type?_bindScratch`: `output.length = input.length`), so removing an
-  upstream swap cannot break their typing — the key to the corrected re-typing.
-
-`relabel` is deliberately EXCLUDED even though it also lowers to `[]`: its typing
-gate (`relabelCompatible`, `slotsAgree`) inspects the concrete slots, so removing
-an upstream swap could change whether it type-checks. Excluding it keeps the
-transform conservatively sound (a swap trailed by a `relabel` simply does not
-fire); it costs no ECB seam (all measured trailing binds are `bindLocals`). -/
-def lowersToNothing (i : Instr) : Bool :=
-  match i with
-  | .bindLocals _ _ => true
-  | .bindScratch _ _ _ => true
-  | _ => false
-
-/-- The last body instruction with **non-empty** lowering — i.e. the last
-instruction that actually emits bytes. Trailing zero-lowering binds are skipped. -/
-def emittedTail? (body : List Instr) : Option Instr :=
-  (body.filter (fun i => !lowersToNothing i)).getLast?
-
-/-- The depth of the emitted-tail swap, if the last emitting body instruction is a
-`.swap d`. This is the `getLast?`-with-trailing-binds-skipped replacement for the
-shipped `sourceFire?`'s `a.body.getLast?` key. -/
-def effTailSwap? (body : List Instr) : Option Nat :=
-  match emittedTail? body with
-  | some (.swap d) => some d
-  | _ => none
-
-/-- Remove the last **emitting** body instruction (the tail swap), keeping the
-trailing zero-lowering binds in place. `dropLast` would remove the trailing bind
-instead of the swap. -/
-def removeEffTail (body : List Instr) : List Instr :=
-  let rev := body.reverse
-  match rev.dropWhile lowersToNothing with
-  | [] => body
-  | _ :: rest => ((rev.takeWhile lowersToNothing) ++ rest).reverse
-
-/-- The seam-cancelled **output** shape of a source-firing block: re-type the
-edited body (`removeEffTail`, i.e. the tail swap gone but the trailing binds
-retained) from the block's `input`. This is the corrected replacement for the
-shipped `remapShape d block.output` — which is only valid when the swap is
-literally last. When the trailing binds are non-trivial the true output is the
-transposition **conjugated through the binds' shape maps**, which is exactly what
-re-running `bodyType?` on the edited body computes. The `fallback` (the original
-`output`) is used only in the impossible `none` case (a firing source block always
-re-types by `bodyType?_removeEffTail_eq_some`). -/
-def reTypeOut (input : Shape) (body' : List Instr) (fallback : Shape) : Shape :=
-  (Block.bodyType? body' input).getD fallback
-
-/-- Corrected source-side firing: block `a` heads a firing seam if its terminator
-is `.jump G` to a unique-predecessor, non-entry block `G` whose head swap matches
-`a`'s **emitted-tail** swap. -/
-def sourceFireEff? (program : Program) (a : Block) : Option Nat :=
+/-- Raw source-firing predicate. Block `a` heads a removable seam iff it emits
+**exactly** `[.swap d, .bindLocals 0 names]` (with `d + 1 < names.length`) and
+jumps to a unique-predecessor, non-entry block `b` whose head is `.swap d`. -/
+def srcRaw? (program : Program) (a : Block) : Option Nat :=
   match a.term with
   | .jump bLabel =>
       if bLabel ≠ program.entry ∧ refCount program bLabel = 1 then
-        match program.findBlock? bLabel with
-        | some b =>
-            match effTailSwap? a.body, b.body.head? with
-            | some d, some (.swap d') =>
-                if d = d' ∧ 2 ≤ a.body.length ∧ 2 ≤ b.body.length then
-                  some d
-                else
-                  none
-            | _, _ => none
-        | none => none
-      else
-        none
+        match program.findBlock? bLabel, a.body with
+        | some b, [.swap d, .bindLocals 0 names] =>
+            match b.body.head? with
+            | some (.swap d') =>
+                if d = d' ∧ d + 1 < names.length ∧ 2 ≤ b.body.length then some d
+                else none
+            | _ => none
+        | _, _ => none
+      else none
   | _ => none
 
-/-- Corrected target-side firing (mirror of `targetFire?`, using `sourceFireEff?`). -/
-def targetFireEff? (program : Program) (b : Block) : Option Nat :=
+/-- Raw target-firing predicate (mirror of the shipped `targetFire?`, using
+`srcRaw?`). -/
+def tgtRaw? (program : Program) (b : Block) : Option Nat :=
   if b.label ≠ program.entry ∧ refCount program b.label = 1 then
     match program.blocks.find? (fun a => a.term == Terminator.jump b.label) with
-    | some a => sourceFireEff? program a
+    | some a => srcRaw? program a
     | none => none
-  else
-    none
+  else none
 
-/-- Per-block corrected seam edit: drop the emitted-tail swap if `block` heads a
-firing seam (re-typing `output`), and drop the head swap if `block` tails a firing
-seam (re-typing `input`). Both firing decisions read the **original** program. -/
+/-- Clean source-firing: `a` source-fires, is **not** itself a seam target, and its
+target block is **not** itself a seam source (both endpoint swaps private). -/
+def cleanSrc? (program : Program) (a : Block) : Option Nat :=
+  match srcRaw? program a with
+  | some d =>
+      if tgtRaw? program a = none then
+        match a.term with
+        | .jump bLabel =>
+            match program.findBlock? bLabel with
+            | some b => if srcRaw? program b = none then some d else none
+            | none => none
+        | _ => none
+      else none
+  | none => none
+
+/-- Clean target-firing: `b` target-fires, is **not** itself a seam source, and its
+sole predecessor is **not** itself a seam target. -/
+def cleanTgt? (program : Program) (b : Block) : Option Nat :=
+  match tgtRaw? program b with
+  | some d =>
+      if srcRaw? program b = none then
+        match program.blocks.find? (fun a => a.term == Terminator.jump b.label) with
+        | some a => if tgtRaw? program a = none then some d else none
+        | none => none
+      else none
+  | none => none
+
+/-- Per-block corrected seam edit. A clean source drops its head/emitted swap and
+**conjugates** the trailing bind (re-typing `output` by `remapShape d`); a clean
+target drops its head swap (re-typing `input` by `remapShape d`). The two are
+disjoint (`cleanSrc?_cleanTgt?_disjoint`), so the nesting order is immaterial. -/
 def seamBlockEff (program : Program) (block : Block) : Block :=
-  let block1 :=
-    match sourceFireEff? program block with
-    | some _ =>
-        { block with
-          output := reTypeOut block.input (removeEffTail block.body) block.output,
-          body := removeEffTail block.body }
-    | none => block
-  match targetFireEff? program block with
-  | some d => { block1 with input := remapShape d block1.input, body := block1.body.tail }
-  | none => block1
+  match cleanSrc? program block with
+  | some d =>
+      { block with output := remapShape d block.output,
+                   body := (block.body.tail).map (conjBind d) }
+  | none =>
+      match cleanTgt? program block with
+      | some d =>
+          { block with input := remapShape d block.input, body := block.body.tail }
+      | none => block
 
 /-- Whole-program corrected seam cancellation. -/
 def seamCancelProgramEff (program : Program) : Program :=
   { program with blocks := program.blocks.map (seamBlockEff program) }
 
+/-! ## Disjointness of the source/target edits -/
+
+/-- A block is never simultaneously a clean source and a clean target: `cleanSrc?`
+requires `tgtRaw? = none` while `cleanTgt?` requires `tgtRaw? ≠ none`. -/
+theorem cleanSrc?_cleanTgt?_disjoint (program : Program) (block : Block) :
+    cleanSrc? program block = none ∨ cleanTgt? program block = none := by
+  by_cases hs : cleanSrc? program block = none
+  · exact Or.inl hs
+  · refine Or.inr ?_
+    -- cleanSrc? ≠ none ⟹ tgtRaw? = none ⟹ cleanTgt? = none.
+    have hT : tgtRaw? program block = none := by
+      by_contra hT
+      apply hs
+      unfold cleanSrc?
+      split
+      · rw [if_neg hT]
+      · rfl
+    unfold cleanTgt?
+    split
+    · rename_i d heq; rw [hT] at heq; exact absurd heq (by simp)
+    · rfl
+
 /-! ## Structural preservation (label / terminator / count / lookup / uniqueness)
 
 The corrected edits only touch `input` / `output` / `body`, never `label` or
-`term`, so the whole-program label structure is invariant — exactly as for the
-shipped `seamCancelProgram`. These are the structural obligations the WellTyped /
-runtime tower will consume. -/
+`term`, so the whole-program label structure is invariant. -/
 
 @[simp] theorem seamBlockEff_label (program : Program) (block : Block) :
     (seamBlockEff program block).label = block.label := by
   unfold seamBlockEff
-  cases sourceFireEff? program block <;> cases targetFireEff? program block <;> rfl
+  cases cleanSrc? program block <;> cases cleanTgt? program block <;> rfl
 
 @[simp] theorem seamBlockEff_term (program : Program) (block : Block) :
     (seamBlockEff program block).term = block.term := by
   unfold seamBlockEff
-  cases sourceFireEff? program block <;> cases targetFireEff? program block <;> rfl
+  cases cleanSrc? program block <;> cases cleanTgt? program block <;> rfl
 
 @[simp] theorem seamCancelProgramEff_entry (program : Program) :
     (seamCancelProgramEff program).entry = program.entry := rfl
