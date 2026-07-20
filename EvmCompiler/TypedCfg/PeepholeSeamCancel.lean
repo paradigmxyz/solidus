@@ -1361,6 +1361,22 @@ theorem targetFire?_entry_eq_none {program : Program} {b : Block}
   rintro ⟨hne, _⟩
   exact hne hlabel
 
+/-- **Entry seed (SeamStepRel).**  At the program entry, equal states satisfy
+`SeamStepRel` via its `SameRuntimeData` branch: `findBlock? entry` is either
+`none` or a block whose `targetFire?` is `none` (by `targetFire?_entry_eq_none`,
+the entry guard).  This is the whole-program bisimulation's entry seed. -/
+theorem seamStepRel_entry (program : Program) (s : EVMState) :
+    SeamStepRel program program.entry s s := by
+  unfold SeamStepRel
+  cases hf : program.findBlock? program.entry with
+  | none => exact SameRuntimeData.refl s
+  | some b =>
+      have hlabel : b.label = program.entry := by
+        unfold Program.findBlock? at hf
+        have := List.find?_some hf; simpa using this
+      simp only [targetFire?_entry_eq_none hlabel]
+      exact SameRuntimeData.refl s
+
 end Peephole
 end TypedCfg
 end EvmCompiler

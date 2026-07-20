@@ -108,6 +108,29 @@ def SeamCombinedOutcomeRel {source : Structured.Program}
     ∨ (InteractionCongruence.Block.RuntimeOutcomeRel a b ∧
         ∀ (next : Label) (s : EVMState), a ≠ .ok (.jump next s))
 
+/-! ## Entry seed for the whole-program seam-combined bisimulation -/
+
+/-- **Entry seed (`SeamCombinedStepRel`).**  At `cfg.entry` with equal states the
+combined invariant holds: `realizedWitnessFC` at entry (from the generated
+context), `SameRuntimeData` reflexivity, and `SeamStepRel` at entry (its
+`SameRuntimeData` branch, via the entry guard `seamStepRel_entry`).  This is the
+drop-in seed the OIC congruence sites feed to `openRunN_seamCombined_congr_of_source`,
+replacing the combined seed `⟨realizedWitnessFC_entry_of_generated, SameRuntimeData.refl⟩`. -/
+theorem seamCombinedStepRel_entry_of_generated
+    {source : Structured.Program}
+    {entryShapes : Structured.TypedCfgCompiler.ProcEntryShapes}
+    {cfg : TypedCfg.Program}
+    (context :
+      Structured.TypedCfgPreservation.Program.GeneratedContext source entryShapes cfg)
+    {sourceState : Structured.RunState} {cfgState : EVMState}
+    (hStateRel : Structured.TypedCfgPreservation.StateRel sourceState [] cfgState) :
+    SeamCombinedStepRel (source := source) (cfg := cfg) context.calls
+      cfg.entry cfgState cfgState := by
+  refine ⟨cfgState, realizedWitnessFC_entry_of_generated context hStateRel,
+    SameRuntimeData.refl cfgState, ?_⟩
+  have h := seamStepRel_entry (peepholeProgram (normalizeProgram cfg)) cfgState
+  simpa using h
+
 /-! ## Source-threaded one-step seam-combined congruence -/
 
 /-- **Source-threaded one-step seam-combined congruence.**  `Rel.trans` of the
