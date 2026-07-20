@@ -475,7 +475,7 @@ theorem compiledBlock_fuelBudget_seamBlock_le {program : Program} {b0 : Block}
               | some tc => simp only [List.length_append]; omega
   | some e =>
       obtain ⟨hpreDrop, hswapType, hsplit⟩ := sourceFire_body_facts hTyped hs
-      obtain ⟨bLabel, B, hterm, href, hfind, hla, hhd, hal, hbl⟩ := sourceFire?_spec hs
+      obtain ⟨bLabel, B, hterm, _, href, hfind, hla, hhd, hal, hbl⟩ := sourceFire?_spec hs
       have hTermJump : ∀ s : Shape, b0.term.lowerAt? s = some [Assembly.Instr.jump bLabel] := by
         intro s; rw [hterm]; rfl
       cases ht : targetFire? program b0 with

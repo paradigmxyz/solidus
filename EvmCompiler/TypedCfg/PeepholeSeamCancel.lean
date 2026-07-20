@@ -55,8 +55,8 @@ fallthroughs to a unique-predecessor block `b` whose head swap matches `a`'s tai
 swap, both bodies having length ≥ 2. -/
 def sourceFire? (program : Program) (a : Block) : Option Nat :=
   match a.term with
-  | .fallthrough bLabel =>
-      if refCount program bLabel = 1 then
+  | .jump bLabel =>
+      if bLabel ≠ program.entry ∧ refCount program bLabel = 1 then
         match program.findBlock? bLabel with
         | some b =>
             match a.body.getLast?, b.body.head? with
@@ -72,10 +72,12 @@ def sourceFire? (program : Program) (a : Block) : Option Nat :=
   | _ => none
 
 /-- Does block `b` tail a firing seam?  `b` (a unique-predecessor block) has a
-head swap dropped iff its sole predecessor `a` heads a firing seam into it. -/
+head swap dropped iff its sole predecessor `a` heads a firing seam into it.  The
+entry block never fires as a seam target (guard `b.label ≠ program.entry`): the
+runtime starts there with no pending desync, so its head swap must be preserved. -/
 def targetFire? (program : Program) (b : Block) : Option Nat :=
-  if refCount program b.label = 1 then
-    match program.blocks.find? (fun a => a.term == Terminator.fallthrough b.label) with
+  if b.label ≠ program.entry ∧ refCount program b.label = 1 then
+    match program.blocks.find? (fun a => a.term == Terminator.jump b.label) with
     | some a => sourceFire? program a
     | none => none
   else
@@ -344,7 +346,8 @@ Structured unpackings of `sourceFire?` / `targetFire?` returning `some d`. -/
 /-- Everything `sourceFire? program a = some d` asserts. -/
 theorem sourceFire?_spec {program : Program} {a : Block} {d : Nat}
     (h : sourceFire? program a = some d) :
-    ∃ bLabel b, a.term = Terminator.fallthrough bLabel ∧
+    ∃ bLabel b, a.term = Terminator.jump bLabel ∧
+      bLabel ≠ program.entry ∧
       refCount program bLabel = 1 ∧ program.findBlock? bLabel = some b ∧
       a.body.getLast? = some (Instr.swap d) ∧ b.body.head? = some (Instr.swap d) ∧
       2 ≤ a.body.length ∧ 2 ≤ b.body.length := by
@@ -352,7 +355,8 @@ theorem sourceFire?_spec {program : Program} {a : Block} {d : Nat}
   split at h
   case h_1 bLabel hterm =>
     split at h
-    · rename_i href
+    · rename_i hguard
+      obtain ⟨hne, href⟩ := hguard
       split at h
       · rename_i b hfind
         split at h
@@ -363,7 +367,7 @@ theorem sourceFire?_spec {program : Program} {a : Block} {d : Nat}
             subst hdd
             have hd : d1 = d := Option.some.inj h
             subst hd
-            exact ⟨bLabel, b, hterm, href, hfind, hla, hhd, hal, hbl⟩
+            exact ⟨bLabel, b, hterm, hne, href, hfind, hla, hhd, hal, hbl⟩
           · exact absurd h (by simp)
         · exact absurd h (by simp)
       · exact absurd h (by simp)
@@ -375,11 +379,12 @@ theorem targetFire?_spec {program : Program} {b : Block} {d : Nat}
     (h : targetFire? program b = some d) :
     refCount program b.label = 1 ∧
       ∃ a, program.blocks.find?
-            (fun a => a.term == Terminator.fallthrough b.label) = some a ∧
+            (fun a => a.term == Terminator.jump b.label) = some a ∧
           sourceFire? program a = some d := by
   unfold targetFire? at h
   split at h
-  · rename_i href
+  · rename_i hguard
+    obtain ⟨_, href⟩ := hguard
     split at h
     · rename_i a hfind
       exact ⟨href, a, hfind, h⟩
@@ -427,7 +432,7 @@ theorem labelShape?_seamCancelProgram (program : Program) (L : Label) :
 theorem output_bound_of_sourceFire {program : Program} {a : Block} {d : Nat}
     (hTyped : a.WellTyped program) (h : sourceFire? program a = some d) :
     d + 1 < a.output.slots.length := by
-  obtain ⟨bLabel, b, hterm, href, hfind, hla, hhd, hal, hbl⟩ := sourceFire?_spec h
+  obtain ⟨bLabel, b, hterm, _, href, hfind, hla, hhd, hal, hbl⟩ := sourceFire?_spec h
   have hsplit : a.body.dropLast ++ [Instr.swap d] = a.body :=
     List.dropLast_append_getLast? _ (Option.mem_def.mpr hla)
   have hbody := hTyped.1
@@ -464,25 +469,30 @@ theorem input_bound_of_head_swap {program : Program} {b : Block} {d : Nat}
 theorem targetFire?_target_of_sourceFire {program : Program} {a B : Block}
     {bLabel : Label} {d : Nat}
     (hmem : a ∈ program.blocks)
-    (hterm : a.term = Terminator.fallthrough bLabel)
+    (hterm : a.term = Terminator.jump bLabel)
     (hfind : program.findBlock? bLabel = some B)
     (href : refCount program bLabel = 1)
     (h : sourceFire? program a = some d) :
     targetFire? program B = some d := by
+  have hne : bLabel ≠ program.entry := by
+    obtain ⟨bLabel', _, hterm', hne', _⟩ := sourceFire?_spec h
+    rw [hterm] at hterm'
+    have heq : bLabel' = bLabel := by injection hterm' with h'; exact h'.symm
+    rw [heq] at hne'; exact hne'
   have hBlabel : B.label = bLabel := by
     unfold Program.findBlock? at hfind
     have := List.find?_some hfind; simpa using this
   unfold targetFire?
-  rw [hBlabel, if_pos href]
+  rw [hBlabel, if_pos ⟨hne, href⟩]
   cases hf : program.blocks.find?
-      (fun a => a.term == Terminator.fallthrough bLabel) with
+      (fun a => a.term == Terminator.jump bLabel) with
   | none =>
       exfalso
-      have hp : (a.term == Terminator.fallthrough bLabel) = true := by rw [hterm]; simp
+      have hp : (a.term == Terminator.jump bLabel) = true := by rw [hterm]; simp
       exact (List.find?_eq_none.mp hf) a hmem hp
   | some a' =>
       have ha'mem := List.mem_of_find?_eq_some hf
-      have ha'term : a'.term = Terminator.fallthrough bLabel := by
+      have ha'term : a'.term = Terminator.jump bLabel := by
         have := List.find?_some hf; simpa using this
       have hEq : a' = a := by
         by_cases hne : a' = a
@@ -500,8 +510,8 @@ theorem head_swap_of_targetFire {program : Program} {b : Block} {d : Nat}
     (h : targetFire? program b = some d) :
     b.body.head? = some (Instr.swap d) := by
   obtain ⟨href, a, hfind, hsrc⟩ := targetFire?_spec h
-  obtain ⟨bLabel, b', hterm, href', hfind', hla, hhd, hal, hbl⟩ := sourceFire?_spec hsrc
-  have haterm : a.term = Terminator.fallthrough b.label := by
+  obtain ⟨bLabel, b', hterm, hne', href', hfind', hla, hhd, hal, hbl⟩ := sourceFire?_spec hsrc
+  have haterm : a.term = Terminator.jump b.label := by
     have := List.find?_some hfind; simpa using this
   rw [hterm] at haterm
   have hbl_eq : bLabel = b.label := by injection haterm
@@ -528,7 +538,7 @@ theorem targetFire?_none_of_sourceFire_none {program : Program} {b0 bL : Block}
     have := List.find?_some hfind; simpa using this
   rw [hbLlabel] at href hf
   have ha'mem := List.mem_of_find?_eq_some hf
-  have ha'term : a'.term = Terminator.fallthrough L := by
+  have ha'term : a'.term = Terminator.jump L := by
     have := List.find?_some hf; simpa using this
   by_cases hEq : a' = b0
   · subst hEq; simp [hs] at hsrc
@@ -615,10 +625,10 @@ theorem blockWellTyped_of_mem {program : Program} {b : Block}
     b.WellTyped program :=
   (List.forall_iff_forall_mem.mp hAll) b hmem
 
-/-- A `.fallthrough`'s type-check, reduced once its target shape is known. -/
-theorem type?_fallthrough_some {program : Program} {shape : Shape} {next : Label}
+/-- A `.jump`'s type-check, reduced once its target shape is known. -/
+theorem type?_jump_some {program : Program} {shape : Shape} {next : Label}
     {ts : Shape} (h : program.labelShape? next = some ts) :
-    (Terminator.fallthrough next).type? program shape =
+    (Terminator.jump next).type? program shape =
       (if shape.compatible ts then some () else none) := by
   simp [Terminator.type?, Terminator.typeWith?, h]
 
@@ -634,7 +644,7 @@ theorem seamBlock_term_type? {program : Program} {b0 : Block}
   | none =>
       rw [term_type?_seamCancelProgram_eq hmem hs]; exact hTyped.2
   | some d =>
-      obtain ⟨bLabel, B, hterm, href, hfind, hla, hhd, hal, hbl⟩ :=
+      obtain ⟨bLabel, B, hterm, _, href, hfind, hla, hhd, hal, hbl⟩ :=
         sourceFire?_spec hs
       have hBmem : B ∈ program.blocks := by
         unfold Program.findBlock? at hfind; exact List.mem_of_find?_eq_some hfind
@@ -652,8 +662,8 @@ theorem seamBlock_term_type? {program : Program} {b0 : Block}
       have hbi : d + 1 < B.input.slots.length :=
         input_bound_of_head_swap hBTyped hhd
       have horig := hTyped.2
-      rw [hterm, type?_fallthrough_some hpls] at horig
-      rw [hterm, type?_fallthrough_some hls, compatible_remapShape_eq hbo hbi]
+      rw [hterm, type?_jump_some hpls] at horig
+      rw [hterm, type?_jump_some hls, compatible_remapShape_eq hbo hbi]
       exact horig
 
 /-- The seam body-typing obligation (four fire cases). -/
@@ -678,9 +688,9 @@ theorem seamBlock_bodyType? {program : Program} {b0 : Block}
           exact bodyType?_dropHead_swap hbody
   | some ds =>
       have hla : b0.body.getLast? = some (Instr.swap ds) := by
-        obtain ⟨_, _, _, _, _, hla, _, _, _⟩ := sourceFire?_spec hs; exact hla
+        obtain ⟨_, _, _, _, _, _, hla, _, _, _⟩ := sourceFire?_spec hs; exact hla
       have hlen : 2 ≤ b0.body.length := by
-        obtain ⟨_, _, _, _, _, _, _, hal, _⟩ := sourceFire?_spec hs; exact hal
+        obtain ⟨_, _, _, _, _, _, _, _, hal, _⟩ := sourceFire?_spec hs; exact hal
       have hsplit : b0.body.dropLast ++ [Instr.swap ds] = b0.body :=
         List.dropLast_append_getLast? _ (Option.mem_def.mpr hla)
       cases ht : targetFire? program b0 with
@@ -971,7 +981,7 @@ theorem sourceFire_body_facts {program : Program} {b0 : Block} {e : Nat}
     Block.bodyType? b0.body.dropLast b0.input = some (remapShape e b0.output) ∧
       Instr.type? (.swap e) (remapShape e b0.output) = some b0.output ∧
       b0.body.dropLast ++ [Instr.swap e] = b0.body := by
-  obtain ⟨bLabel, b, hterm, href, hfind, hla, hhd, hal, hbl⟩ := sourceFire?_spec hs
+  obtain ⟨bLabel, b, hterm, _, href, hfind, hla, hhd, hal, hbl⟩ := sourceFire?_spec hs
   have hsplit : b0.body.dropLast ++ [Instr.swap e] = b0.body :=
     List.dropLast_append_getLast? _ (Option.mem_def.mpr hla)
   have hbody := hTyped.1
@@ -1078,7 +1088,7 @@ theorem seamBlock_body_rel {program : Program} {b0 : Block}
           have hRun : Instr.runState (.swap d) b0.input s_o = .ok next := by
             rw [runState_swap_eq hd16]; exact hswapNext
           have hlen : 2 ≤ b0.body.length := by
-            obtain ⟨_, _, _, _, _, _, _, hal, _⟩ := sourceFire?_spec hs; exact hal
+            obtain ⟨_, _, _, _, _, _, _, _, hal, _⟩ := sourceFire?_spec hs; exact hal
           have hhdSwap : b0.body.head? = some (Instr.swap d) :=
             head_swap_of_targetFire hUnique hmem ht
           have hd2 : b0.body.dropLast = Instr.swap d :: b0.body.dropLast.tail :=
@@ -1253,11 +1263,11 @@ theorem openRun_seamCancel_congr {program : Program} {b0 : Block}
                       | halt kind hSt => exact Or.inr ⟨.ok (.halt kind hSt), by simp⟩
                       | invalid hSt => exact Or.inr ⟨.ok (.invalid hSt), by simp⟩
       | some e =>
-          obtain ⟨bLabel, B, hterm, href, hfind, hla, hhd, hal, hbl⟩ :=
+          obtain ⟨bLabel, B, hterm, _, href, hfind, hla, hhd, hal, hbl⟩ :=
             sourceFire?_spec hsrc
           simp only [hsrc] at hrel
           rw [hterm]
-          simp only [TypedCfg.Block.runTermChecked_fallthrough, TypedCfg.Block.runTerm]
+          simp only [TypedCfg.Block.runTermChecked_jump, TypedCfg.Block.runTerm]
           refine Simulation.Interaction.Rel.done ?_
           refine Or.inl ⟨bLabel, lpair.1, rpair.1, rfl, rfl, ?_⟩
           have htf : targetFire? program B = some e :=
@@ -1327,84 +1337,29 @@ theorem seamCancelProgram_programCounterIndependent {program : Program}
   obtain ⟨b0, hb0mem, rfl⟩ := hb
   exact seamBlock_programCounterIndependent (h b0 hb0mem)
 
-/-! ## Fallthrough-freeness ⟹ the seam cancellation is the identity (session-68)
+/-! ## Entry-seed: the entry block never fires as a seam target (session-69)
 
-Both firing predicates key on a `Terminator.fallthrough` terminator:
-`sourceFire?` pattern-matches the block's own `.term` against `.fallthrough _`,
-and `targetFire?` searches the block list for a predecessor whose `.term` is
-`.fallthrough b.label`.  A program that carries **no** `.fallthrough` terminator
-therefore fires neither seam, so every `seamBlock` is the identity and
-`seamCancelProgram` is the identity.
+The whole-program bisimulation seeds at the entry with equal states, which can
+only satisfy the `SameRuntimeData` disjunct of `SeamStepRel`, i.e. requires
+`targetFire? program program.entry-block = none`.  With the `.jump`-retargeted
+predicate the entry *can* be the static target of a `.jump`, so — unlike the
+§68 `.fallthrough` regime, where no generated block ever fell through — this is
+NOT automatic.  The firing predicate therefore carries an explicit
+`b.label ≠ program.entry` guard (see `sourceFire?` / `targetFire?`), which makes
+the entry seed a one-line corollary and needs no generated-cfg reachability
+invariant.  Dropping the entry block's head swap would be unsound anyway: the
+runtime enters the program there with no pending desync to absorb it. -/
 
-This is the concrete kernel of the Session-68 finding.  The generated TypedCfg
-program — and hence `peepholeProgram (normalizeProgram cfg)`, both passes
-preserving `.term` exactly — contains **no** `.fallthrough` terminator: the
-generator emits sequential continuation as `Terminator.jump (restLabel …)` (a
-jump to a `refCount`-1 label), never `Terminator.fallthrough`.  The
-`TypedCfgCompiler.Result.fallthrough?` field the compiler threads is an
-`Option Shape` metadatum recording "this fragment has a regular exit path",
-NOT the terminator constructor the seam predicates match.  The `jump G ; label G`
-→ redundant `swap;swap` elision this transform targets happens at
-`Assembly.Compact.prepare` (`elideFallthroughJumps`), strictly downstream of the
-TypedCfg altitude (see PEEPHOLE_PROGRESS §60).  Consequently the seam splice is
-provably byte-inert on the real spine. -/
-
-/-- A program is fallthrough-free when no block carries a `.fallthrough`
-terminator. -/
-def NoFallthrough (program : Program) : Prop :=
-  ∀ b ∈ program.blocks, ∀ L, b.term ≠ Terminator.fallthrough L
-
-/-- On a fallthrough-free program, `sourceFire?` never fires. -/
-theorem sourceFire?_eq_none_of_noFallthrough {program : Program} {b : Block}
-    (hb : b ∈ program.blocks) (h : NoFallthrough program) :
-    sourceFire? program b = none := by
-  unfold sourceFire?
-  cases hterm : b.term with
-  | fallthrough L => exact absurd hterm (h b hb L)
-  | jump t => rfl
-  | jumpi t f => rfl
-  | returnDispatch n s => rfl
-  | halt k => rfl
-  | invalid => rfl
-
-/-- On a fallthrough-free program, `targetFire?` never fires (no predecessor with
-a `.fallthrough` terminator exists to be found). -/
-theorem targetFire?_eq_none_of_noFallthrough {program : Program} (b : Block)
-    (h : NoFallthrough program) :
+/-- The entry block never fires as a seam target: the `b.label ≠ program.entry`
+guard in `targetFire?` returns `none` immediately.  This is the entry seed for
+the whole-program bisimulation (equal states ⟹ `SameRuntimeData` disjunct). -/
+theorem targetFire?_entry_eq_none {program : Program} {b : Block}
+    (hlabel : b.label = program.entry) :
     targetFire? program b = none := by
   unfold targetFire?
-  have hfind :
-      program.blocks.find? (fun a => a.term == Terminator.fallthrough b.label)
-        = none := by
-    rw [List.find?_eq_none]
-    intro a ha
-    simp only [beq_iff_eq]
-    exact h a ha b.label
-  by_cases hr : refCount program b.label = 1
-  · rw [if_pos hr, hfind]
-  · rw [if_neg hr]
-
-/-- On a fallthrough-free program, every per-block seam edit is the identity. -/
-theorem seamBlock_eq_of_noFallthrough {program : Program} {b : Block}
-    (hb : b ∈ program.blocks) (h : NoFallthrough program) :
-    seamBlock program b = b := by
-  unfold seamBlock
-  rw [sourceFire?_eq_none_of_noFallthrough hb h,
-    targetFire?_eq_none_of_noFallthrough b h]
-
-/-- **The seam cancellation is the identity on a fallthrough-free program.**
-Since neither seam ever fires, `seamCancelProgram program = program` verbatim
-(blocks, labels, count, entry, terminators, and bodies all unchanged). -/
-theorem seamCancelProgram_eq_of_noFallthrough {program : Program}
-    (h : NoFallthrough program) :
-    seamCancelProgram program = program := by
-  unfold seamCancelProgram
-  have hmap : program.blocks.map (seamBlock program) = program.blocks := by
-    conv_rhs => rw [← List.map_id program.blocks]
-    apply List.map_congr_left
-    intro b hb
-    rw [seamBlock_eq_of_noFallthrough hb h, id]
-  rw [hmap]
+  rw [if_neg]
+  rintro ⟨hne, _⟩
+  exact hne hlabel
 
 end Peephole
 end TypedCfg
