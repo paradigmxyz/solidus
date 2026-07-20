@@ -208,7 +208,14 @@ inductive BlockGenShapeReg (cfg : TypedCfg.Program) : TypedCfg.Block → Prop wh
           input := valueShape
           body := [.dup 0, .push caseValue, .prim .eq]
           output := TypedCfgCompilerFacts.Switch.testOutput valueShape
-          term := .jumpi caseLabel nextTest } ∈ result.blocks) :
+          term := .jumpi caseLabel nextTest } ∈ result.blocks)
+      (hPopExists :
+        ∀ source : RunState,
+          TypedCfgCompiler.Shape.SourceFrameFits valueShape source.evm.stack.length →
+            ∃ (stack : EvmYul.Stack Word) (value : Word),
+              source.evm.stack.pop = some (stack, value))
+      (hCaseShape : LabelShape cfg caseLabel valueShape)
+      (hNextShape : LabelShape cfg nextTest valueShape) :
       BlockGenShapeReg cfg
         { label := testLabel
           input := valueShape
@@ -227,7 +234,15 @@ inductive BlockGenShapeReg (cfg : TypedCfg.Program) : TypedCfg.Block → Prop wh
           body := [.pop]
           output := output
           term := .jump label } ∈ result.blocks)
-      (hExit : LabelShape cfg label output) :
+      (hExit : LabelShape cfg label output)
+      (hPopTransport :
+        ∀ source : RunState,
+          TypedCfgCompiler.Shape.SourceFrameFits input source.evm.stack.length →
+            ∃ (stack : EvmYul.Stack Word) (value : Word),
+              source.evm.stack.pop = some (stack, value) ∧
+                TypedCfgCompiler.Shape.SourceFrameFits output
+                  (source.withEVM
+                    { source.evm with stack := stack }).evm.stack.length) :
       BlockGenShapeReg cfg
         { label := entry
           input := input
@@ -454,7 +469,7 @@ theorem genShapeReg_of_compileStmtFuel?
       | switch scrutinee cases defaultBody =>
           obtain
               ⟨valueShape, _valueSlot, caseResult, defaultResult,
-                hType, _hSource, hHead, hCases, hDefault, rfl⟩ :=
+                hType, hSource, hHead, hCases, hDefault, rfl⟩ :=
             TypedCfgCompilerFacts.Switch.components_of_compileStmtFuel?_switch
               hCompile
           have hPop :
@@ -464,6 +479,9 @@ theorem genShapeReg_of_compileStmtFuel?
             cases slots with
             | nil => simp at hHead
             | cons slot rest => simp [TypedCfg.Instr.type?]
+          have hValueSource :
+              1 ≤ TypedCfgCompiler.Shape.sourceLength valueShape :=
+            TypedCfgCompilerFacts.Shape.requireSourceWords?_eq_some_iff.mp hSource
           have hCaseBlocks : BlocksInProgram caseResult cfg := by
             intro b hb
             exact hBlocks b
@@ -472,6 +490,11 @@ theorem genShapeReg_of_compileStmtFuel?
             intro b hb
             exact hBlocks b
               (by simp only [List.mem_cons, List.mem_append]; tauto)
+          have hDefaultShape :
+              LabelShape cfg (LabelSupply.label supply 1) valueShape :=
+            LabelShape.of_hasEntry
+              (TypedCfgCompilerFacts.Switch.default_hasEntry hPop hDefault)
+              hDefaultBlocks
           have hCaseGen :=
             genShapeReg_of_compileCasesFuel? hHead hPop hCases hCaseBlocks
               (fun out hout => by
@@ -479,7 +502,7 @@ theorem genShapeReg_of_compileStmtFuel?
                   hHead hPop hCases] at hout
                 obtain rfl := Option.some.inj hout
                 exact hRegular _ rfl)
-              hCtx
+              hCtx hValueSource hDefaultShape
           have hDefaultGen :=
             genShapeReg_of_compileDefaultFuel? hPop hDefault hDefaultBlocks
               (fun out hout => by
@@ -487,7 +510,7 @@ theorem genShapeReg_of_compileStmtFuel?
                   hPop hDefault] at hout
                 obtain rfl := Option.some.inj hout
                 exact hRegular _ rfl)
-              hCtx
+              hCtx hValueSource
           intro block hMem
           simp only [List.mem_cons, List.mem_append] at hMem
           rcases hMem with (rfl | hCaseMem) | hDefaultMem
@@ -711,7 +734,10 @@ theorem genShapeReg_of_compileCasesFuel?
           base supply idx valueShape bodyShape regular = some result)
     (hBlocks : BlocksInProgram result cfg)
     (hRegular : HRegular result cfg regular)
-    (hCtx : CtxExitsShaped cfg ctx) :
+    (hCtx : CtxExitsShaped cfg ctx)
+    (hValueSource : 1 ≤ TypedCfgCompiler.Shape.sourceLength valueShape)
+    (hDefaultShape :
+      LabelShape cfg (LabelSupply.label base 1) valueShape) :
     GenShapeResultReg result cfg := by
   cases fuel with
   | zero =>
@@ -749,13 +775,31 @@ theorem genShapeReg_of_compileCasesFuel?
                   hHead hPop hTailCompile] at hout
                 obtain rfl := Option.some.inj hout
                 exact hRegular _ rfl)
-              hCtx
+              hCtx hValueSource hDefaultShape
           intro block hMem
           simp only [List.mem_cons, List.mem_append] at hMem
           rcases hMem with (rfl | rfl | hBodyMem) | hTailMem
-          · exact BlockGenShapeReg.switchTest hHead hBlocks (by simp)
-          · refine BlockGenShapeReg.caseEntryPop hPop hBlocks (by simp) ?_
-            exact LabelShape.of_compileBlockFuel? hBodyCompile hBodyBlocks
+          · -- the switch test block
+            have hNextShape :
+                LabelShape cfg
+                  (TypedCfgCompilerFacts.Switch.nextTestLabel base idx rest)
+                  valueShape := by
+              cases rest with
+              | nil => exact hDefaultShape
+              | cons headNext restNext =>
+                  exact LabelShape.of_hasEntry
+                    (TypedCfgCompilerFacts.Switch.cases_cons_test_hasEntry
+                      hHead hPop hTailCompile) hTailBlocks
+            exact BlockGenShapeReg.switchTest hHead hBlocks (by simp)
+              (InteractionHInvObligations.switchTest_popExists hValueSource)
+              (LabelShape.of_hasEntry
+                (TypedCfgCompilerFacts.Switch.cases_cons_case_hasEntry
+                  hHead hPop hCompile) hBlocks)
+              hNextShape
+          · -- the case-entry pop block
+            refine BlockGenShapeReg.caseEntryPop hPop hBlocks (by simp)
+              (LabelShape.of_compileBlockFuel? hBodyCompile hBodyBlocks) ?_
+            exact InteractionHInvObligations.caseEntryPop_popTransport hValueSource hPop
           · exact hBodyGen block hBodyMem
           · exact hTailGen block hTailMem
 
@@ -771,7 +815,8 @@ theorem genShapeReg_of_compileDefaultFuel?
           supply entry valueShape bodyShape regular = some result)
     (hBlocks : BlocksInProgram result cfg)
     (hRegular : HRegular result cfg regular)
-    (hCtx : CtxExitsShaped cfg ctx) :
+    (hCtx : CtxExitsShaped cfg ctx)
+    (hValueSource : 1 ≤ TypedCfgCompiler.Shape.sourceLength valueShape) :
     GenShapeResultReg result cfg := by
   cases fuel with
   | zero =>
@@ -786,8 +831,9 @@ theorem genShapeReg_of_compileDefaultFuel?
           intro block hMem
           simp only [List.mem_singleton] at hMem
           subst block
-          refine BlockGenShapeReg.caseEntryPop hPop hBlocks (by simp) ?_
-          exact hRegular _ rfl
+          refine BlockGenShapeReg.caseEntryPop hPop hBlocks (by simp)
+            (hRegular _ rfl) ?_
+          exact InteractionHInvObligations.caseEntryPop_popTransport hValueSource hPop
       | some body =>
           obtain ⟨bodyResult, hBodyCompile, hBodyRequire, rfl⟩ :=
             TypedCfgCompilerFacts.Switch.components_of_compileDefaultFuel?_some
@@ -802,8 +848,9 @@ theorem genShapeReg_of_compileDefaultFuel?
           intro block hMem
           simp only [List.mem_cons] at hMem
           rcases hMem with rfl | hBodyMem
-          · refine BlockGenShapeReg.caseEntryPop hPop hBlocks (by simp) ?_
-            exact LabelShape.of_compileBlockFuel? hBodyCompile hBodyBlocks
+          · refine BlockGenShapeReg.caseEntryPop hPop hBlocks (by simp)
+              (LabelShape.of_compileBlockFuel? hBodyCompile hBodyBlocks) ?_
+            exact InteractionHInvObligations.caseEntryPop_popTransport hValueSource hPop
           · exact hBodyGen block hBodyMem
 
 end
