@@ -5406,3 +5406,92 @@ modulo the single additive `hFinish` (FrameSafe frame facts + return-site proven
 piece before the `hInv` case-split.  Full `lake build` green; `scripts/opt_harness.sh check` = OK
 (43 theorems, axioms ⊆ `[propext, Classical.choice, Quot.sound]`);
 `compile_correct`/`compile_correct_creation` axioms UNCHANGED; delta +0.
+
+## Session-45 update (2026-07-20): `hFinish` REDUCED to two clean source-frame-safety atoms + DECISIVE FINDING — the atoms are NOT derivable from `realizedWitness` as defined (concrete counterexample); the `hInv` endgame needs a STRENGTHENED realized predicate, not a composite-level `hSourceFrameSafe`. One green, axiom-clean commit; `hInv`/Step B stay closed behind that strengthening.
+
+Session 45's mandate (per §Session-44 frontier): (1) discharge `hFinish`; (2) the `hInv`
+case-split; (3) Step B.  **Result: ONE green, axiom-clean commit** banking the `hFinish`
+finisher-reduction substrate, plus a decisive design finding that corrects the §Session-44
+recipe.  Items 2/3 stay blocked — see the finding.  `peepholeBody`/public spine UNTOUCHED ⇒
+delta **+0**; full `scripts/opt_harness.sh check` = OK (43 theorems, axioms ⊆ `[propext,
+Classical.choice, Quot.sound]`); `compile_correct`/`compile_correct_creation` axioms UNCHANGED.
+
+### DECISIVE FINDING (corrects §Session-44 frontier item 1): `hFinish` is UNPROVABLE against the current `realizedWitness`; the recipe "thread `hSourceFrameSafe` at the composite level" does NOT work
+The §Session-44 recipe framed `hFinish` as dischargeable by threading a program-level
+`hSourceFrameSafe` additively at the composite `hInv` assembly (mirroring `hSourceWF`).  That is
+**mathematically impossible** with `realizedWitness` as currently defined
+(`InteractionBoundedOwnerRealized.lean:313`):
+
+* `realizedWitness cfg (ProcLabel.exit proc.name) target` only asserts *some* source witness
+  `bodyState` with `StateRel bodyState tokens target` and `SourceFrameFits (procExit proc) …`.
+* `StateRel`/`realizeStack` (`TypedCfgPreservation/Core.lean:17,51`) place **no** constraint on a
+  ghost return frame's `retc`: realization consumes only the head *token* and the *contents* of
+  `frame.callerStack`, never a length law or `frame.retc`.
+* **Concrete counterexample:** `bodyState.returns = [{ callerStack := [], retc := proc.retc + 1 }]`,
+  `bodyState.evm.stack` of length `proc.retc`, `tokens = [site.token]`.  Then
+  `StateRel bodyState [site.token] target` holds (with `target.stack = bodyState.evm.stack ++
+  [site.token]`) and `SourceFrameFits (procExit proc) proc.retc` holds, yet
+  `attachReturns? frame bodyState.evm.stack = none` (`proc.retc ≠ frame.retc`), so **no**
+  `stack`/`callerInput` witnessing `hFinish` exist.
+
+Because the composite `hInv` quantifies over `realized := realizedWitness cfg` — whose source
+witness is existential and per-entry — a program-level `hSourceFrameSafe` cannot constrain it.
+Closing `hInv` therefore requires **strengthening the realized predicate itself** to carry a
+per-witness source frame-consistency invariant.
+
+### LANDED (green, axiom-clean) — all in `InteractionDispatchInversion.lean`
+* **`9b5f23c4`** — the `hFinish` finisher-reduction substrate (isolates the atoms):
+  * **`attachReturns?_of_procExit_fit`** (`:147`) — computational core of `hFinish` part (a):
+    at a `procExit` shape a popped frame with `frame.retc = proc.retc` reattaches its return
+    vector onto `frame.callerStack` (`attachReturns? … = some (stack ++ callerStack)`).
+  * **`dispatch_hFinish_of_frameConsistent`** (`:192`) — discharges the `attachReturns?`-existential
+    `hFinish`, reducing it to exactly the **two irreducible source-frame-safety atoms** per return
+    frame: `frame.retc = proc.retc` and `∃ callerInput, LabelShape cfg site.returnLabel callerInput
+    ∧ SourceFrameFits callerInput (bodyState.evm.stack.length + frame.callerStack.length)`.  Carries
+    the full design note + counterexample.
+  * **`realizedWitness_of_dispatch_arm_of_frameConsistent`** (`:470`) — composes
+    `realizedWitness_of_dispatch_arm` with the reducer, so the eventual `hInv` dispatch arm consumes
+    only the two clean atoms (the plug-in point for the strengthened predicate).
+
+### THE FRONTIER (session 46) — strengthen the realized predicate, then discharge the atoms, then `hInv`, then Step B
+The bare `realizedWitness` is too weak for the dispatch arm (finding above).  The remaining work,
+in order:
+
+1. **Strengthen the realized predicate** to `realizedWitnessFS cfg` = `realizedWitness cfg` PLUS a
+   per-witness **source frame-consistency** conjunct on `(source, tokens)` (a `StateRel`-companion
+   defined by recursion over `source.returns`/`tokens`, mirroring `realizeStack`), asserting for each
+   pending return frame: (i) its `retc` equals the owning proc's `retc`, and (ii) a caller
+   continuation shape it fits + a `LabelShape` at the frame's return label.  This is what lets the
+   dispatch arm produce `hCons` for `realizedWitness_of_dispatch_arm_of_frameConsistent`.
+   * **Cost:** the 9 `BlockGenShapeReg` legs (`InteractionHInvDispatch.lean`) + the entry seed
+     (`realizedWitness_of_stateRel`) must be re-established for the strengthened predicate.  Most
+     legs relay the source unchanged (nilJoin/terminalHalt/code/if/forCond/switchTest keep
+     `source.returns`); callHead/procAdapter/caseEntryPop and the dispatch arm shift it (`pushReturn`
+     / `popReturn?`) — those need the invariant's push/pop preservation lemmas.  This is the genuine
+     multi-lemma effort; budget it as its own session.  Alternative framing: prove the invariant is
+     preserved by `openStep`-jumps once and thread it through `realized_of_reaches_of_invariant` as a
+     STRENGTHENED `realized` (`realizedWitness ∧ FrameConsistent`), then weaken to `realizedWitness`
+     for the final `AllEntriesRealized` consumer (`FrameConsistent`→`True` weakening is free).
+2. **Discharge the two atoms** at the dispatch arm from the strengthened predicate's frame-consistency
+   conjunct (feeds `hCons`).  Atom (ii)'s `LabelShape cfg site.returnLabel _` may alternatively come
+   from a **calls-provenance** thread over `context.calls` (ProcsShaped-style: each registered
+   `DispatchSite.returnLabel` = a compiled call's `regular` block, in-program with the `afterCall`
+   returnShape) — a source-run-free structural bank worth landing independently if the strengthened
+   predicate does not already carry the caller shape.
+3. **`hInv` assembly** (unchanged shape): `block_category context hFind` → 4 arms; main/proc → the 9
+   `BlockGenShapeReg` legs; dispatch → `realizedWitness_of_dispatch_arm_of_frameConsistent` (feed
+   `hCons` from item 1); programEnd → `programEnd_openStep_no_jump`.  Then
+   `AllEntriesRealized.of_openStep_invariant` with `realized := realizedWitness cfg` (or the weakened
+   strengthened predicate), entry witness `realizedWitness_of_stateRel`.
+4. Then Step B (`openRunNPrefix_peephole_congr_of_source`).
+
+### Status handed to session 46
+Landed (green + axiom-clean, `9b5f23c4`): the `hFinish` finisher-reduction substrate
+(`attachReturns?_of_procExit_fit`, `dispatch_hFinish_of_frameConsistent`,
+`realizedWitness_of_dispatch_arm_of_frameConsistent`) — `hFinish` now reduces to the two
+source-frame-safety atoms, and the dispatch arm has a clean atoms-only interface.  **Blocker
+re-scoped by the finding:** `hInv` is NOT one composite-level `hSourceFrameSafe` away; it needs the
+realized predicate strengthened with a per-witness source frame-consistency invariant (frontier
+item 1), which subsumes both atoms.  Full `scripts/opt_harness.sh check` = OK (43 theorems, axioms ⊆
+`[propext, Classical.choice, Quot.sound]`); `compile_correct`/`compile_correct_creation` axioms
+UNCHANGED; delta +0.
