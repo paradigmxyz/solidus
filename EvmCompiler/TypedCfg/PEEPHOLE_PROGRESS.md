@@ -4410,3 +4410,112 @@ runtime-hyp transports) → `of_openStep_invariant` → Step B.  `compile_correc
 `compile_correct_creation` UNCHANGED (frozen `Correctness.lean` untouched); delta +0;
 `opt_harness.sh check` PASSES.  New module `InteractionBlockGenShape.lean` wired into
 `EvmCompiler.Verification`.
+
+## Session-36 update (2026-07-19): three hInv-assembly ingredients landed — the public `compileBlock?`-level classifier wrapper, the localized dispatch `StateRel`⟶`popReturn?` derivation, and the MAIN-body `block ⟶ BlockGenShape` composite; all green + axiom-clean.  The proc-body composite's precise blocker isolated (a `BlocksInProgram bodyResult cfg` gap in `procBlocks_provenance`)
+
+Session 36's mandate: (1) the dispatch `StateRel`⟶frame-facts residual, (2) the full
+`hInv` assembly (block_category → root → drill/capstone → per-disjunct supplier +
+runtime-hyp transports) → `of_openStep_invariant` → (if it closes) Step B.  **Result:
+three green, axiom-clean commits banking the static assembly ingredients now reachable
+from the §Session-35 capstone; the FULL `hInv` did NOT close (the genuine remaining
+blockers — the target-block `LabelShape` transports and the proc-body `BlocksInProgram`
+gap — are isolated below, unchanged in essence from every prior session's honest
+assessment).**  No red code, no sorries; `peepholeBody`/public spine UNTOUCHED ⇒ delta
+**+0**.  `opt_harness.sh check` PASSES (43 public theorems, axioms ⊆ [propext,
+Classical.choice, Quot.sound]); `compile_correct`/`compile_correct_creation` UNCHANGED.
+
+### LANDED (green, axiom-clean) — new module `InteractionHInvAssembly.lean`, wired into `EvmCompiler.Verification`
+All `#print axioms` ⊆ `[propext, Classical.choice, Quot.sound]` (`dispatch_popReturn?_of_stateRel`
+is even tighter: `[propext, Quot.sound]`).  Namespace `EvmCompiler.Structured`.
+* **`62b7ee8e`** — TWO ingredients:
+  * **`genShape_of_compileBlock?`** (`InteractionHInvAssembly.lean:56`) — the public
+    `compileBlock?`-level wrapper over the §Session-35 fuel-indexed capstone
+    `genShape_of_compileBlockFuel?`, exactly mirroring `activeResult_of_compileBlock?`
+    (`TypedCfgCompilerActive.lean:514`).  Proof: unfold `compileBlock?` to
+    `compileBlockFuel? (blockFuel block + 1)` via a `have hFuel := by simpa
+    [compileBlock?] using hCompile`, then `exact genShape_of_compileBlockFuel? hFuel hBlocks`.
+    (NOTE — the `apply … ?_ hBlocks` form FAILS: the `?_` metavar for the fuel-indexed
+    `hCompile` unifies against the implicit `{fuel : Nat}` and surfaces a stray `⊢ ℕ`
+    goal; the explicit `have hFuel` with the pinned `blockFuel block + 1` fuel avoids it.)
+  * **`dispatch_popReturn?_of_stateRel`** (`:96`) — the localized `StateRel`⟶frame-fact
+    derivation for `block_category`'s DISPATCH arm (item 1).  From `StateRel bodyState
+    (token :: tokens) target` concludes `∃ frame returns, bodyState.returns = frame ::
+    returns ∧ bodyState.popReturn? = some (frame, {bodyState with returns := returns})`
+    — i.e. the exact `hPop` the return-dispatch successor supplier
+    `realizedWitness_of_dispatch_jump` (`InteractionRealizedWitnessSuccessor.lean:149`)
+    consumes.  Proof = `StateRel.returns_cons_of_tokens_cons`
+    (`TypedCfgPreservation/Core.lean:74`) ∘ `simp only [RunState.popReturn?, hReturns]`.
+    **This discharges `hPop` from the `realizedWitness` `StateRel` ALONE — no source run.**
+* **`dba3d361`** — **`main_blockGenShape`** (`:127`) — the MAIN-body arm of the eventual
+  `hInv` split: from `block ∈ context.main.blocks` (block_category's first arm) concludes
+  `BlockGenShape cfg block`.  Proof = `main_stmtList_provenance` (root,
+  `InteractionBlockProvenanceRoot.lean:49`) ∘ `genShape_of_compileStmtListFuel?` (capstone)
+  ∘ `context.mainBlocks` (`Core.lean:3505`, the `BlocksInProgram context.main cfg` fact).
+  Purely static provenance-∘-classification; feeds the per-disjunct supplier dispatch.
+
+### KEY FINDING — the dispatch frame-facts split cleanly into hPop (StateRel-derivable) vs hAttach/hRetc (procedure-identity, NOT StateRel-derivable)
+The §Session-31 note framed all three dispatch frame-facts (`hPop`/`hAttach`/`hRetc`) as a
+single "StateRel⟶frame-facts residual".  This session **proves the split is real**:
+* `hPop` IS derivable from the exit-block `StateRel` alone (`dispatch_popReturn?_of_stateRel`
+  above) — the return token at the token-list head forces `bodyState.returns ≠ []`, so
+  `popReturn?` succeeds deterministically.
+* `hAttach : attachReturns? frame bodyState.evm.stack = some stack` needs
+  `bodyState.evm.stack.length = frame.retc` (`EffectSemantics.lean:247`), and
+  `hRetc : frame.retc = proc.retc` pins the popped frame's `retc` to the EXITED procedure.
+  Neither is `StateRel`-derivable: `realizeStack` (`Core.lean:17`) appends the caller
+  frame BENEATH the source stack and never constrains `source.evm.stack.length` against
+  `frame.retc`.  These are **procedure-identity** facts — the popped frame's `retc` must
+  match the procedure whose exit block we are at — supplied by the same site provenance
+  (`hLookup`/`hSiteProc`/`hSiteMem`) the dispatch arm recovers, NOT by `realizedWitness`.
+So item 1 is *partially* static: `hPop` banked; `hAttach`/`hRetc` are correctly the
+provenance side's job (they ride the `openStep_dispatch` frame-model chain that the
+site-coupling produces, exactly as `openRun_call_exec_under` supplies them internally).
+
+### THE FRONTIER (sharpened for session 37)
+1. **Proc-body composite `proc_blockGenShape`** (the sibling of `main_blockGenShape`).
+   BLOCKER isolated: `procBlocks_provenance` (`InteractionProcBlockProvenance.lean:210`)
+   hands back, for the body case, `compileBlock? proc.body … = some bodyResult` with only
+   `block ∈ bodyResult.blocks` — but `genShape_of_compileBlock?` needs `BlocksInProgram
+   bodyResult cfg` (ALL of `bodyResult`'s blocks in cfg), which the provenance does NOT
+   expose.  Two routes: (a) strengthen `mem_procBlocks_provenance`'s induction to ALSO
+   emit `bodyResult.blocks ⊆ procBlocks` (a NEW sibling lemma — additive; the induction
+   already tracks `procBlocks = body.blocks ++ tailBlocks`, so the subset is right there);
+   (b) tie `bodyResult` to the `ProcFragment.result` of `procFragment_of_lookup?`
+   (`Core.lean:3525`, which DOES give `BlocksInProgram fragment.result cfg`) via a
+   traversal-determinism argument + `proc ∈ procs ⟶ lookup? = some proc` (proc-name
+   uniqueness).  Route (a) is the cleaner additive win.  The ADAPTER sub-case needs
+   `BlockGenShape.procAdapter` (`InteractionBlockGenShape.lean:180`): unfold the adapter's
+   `mkBlock? (ProcLabel.entry proc.name) (procEntry proc) [.relabel input] (.jump (body
+   proc.name)) = some adapter` to expose the `Instr.type? (.relabel input) …` fact + the
+   exact block shape, then `findBlock?` via `block ∈ procBlocks ⊆ cfg` + `LabelsUnique`.
+2. **Assemble `hInv`** — the remaining bulk, UNCHANGED in essence.  With `main_blockGenShape`
+   (+ the pending `proc_blockGenShape`) supplying `BlockGenShape cfg block` at each
+   compiled-construct entry, the `hInv` split is: get `⟨source, tokens, block, hFind,
+   hStateRel, hFits⟩` from `realizedWitness cfg e t`; `block_category hFind` → 4 arms;
+   programEnd → `programEnd_openStep_no_jump`; main/proc → `main_blockGenShape`/
+   `proc_blockGenShape` → `cases` the `BlockGenShape` → dispatch each disjunct to its
+   supplier (`realizedWitness_of_{code,if,call}_compile`, `_condBlock_jump`, `_test_jump`,
+   `_pop_jump`, `_join_jump`, `_adapter_jump`, `halt_openStep_no_jump`); dispatch →
+   `dispatch_popReturn?_of_stateRel` (hPop, this session) + site provenance (hAttach/hRetc)
+   + `realizedWitness_of_dispatch_jump`.  **THE genuine remaining substance is the
+   per-supplier RUNTIME-HYP transports** — chiefly `hLabelShape : LabelShape cfg next
+   restShape` for the TARGET block `next` (every supplier needs the jumped-TO block's
+   declared input shape to match the construct's residual shape), plus `hFits` for the
+   child frame.  `hLabelShape` is a CFG-linkage fact (the compile fact's
+   `result.fallthrough?`/successor label = the block declared at `next`); it is the
+   never-yet-closed piece.  This is where sessions 26→35 kept stopping, and it remains the
+   real frontier — the classification (now COMPLETE for main, pending for proc) was only
+   ever the *input* to the suppliers, not the transports.
+3. Then Step B (`openRunNPrefix_peephole_congr_of_source`); do NOT add the swap arm to
+   `peepholeBody` until the whole invariant is green.
+
+### Status handed to session 37
+Landed: `InteractionHInvAssembly.lean` — `genShape_of_compileBlock?` (`:56`),
+`dispatch_popReturn?_of_stateRel` (`:96`), `main_blockGenShape` (`:127`), all green +
+axiom-clean, wired into `EvmCompiler.Verification`.  Commits `62b7ee8e` (wrapper + dispatch
+hPop) / `dba3d361` (main composite).  `scripts/opt_harness.sh check` = OK (43 public
+theorems, axioms ⊆ `[propext, Classical.choice, Quot.sound]`); `compile_correct`/
+`compile_correct_creation` UNCHANGED (frozen `Correctness.lean` untouched); delta +0.
+Item 1 (dispatch residual) is `hPop`-banked with `hAttach`/`hRetc` proven to be
+provenance-side (not `StateRel`-derivable).  The main-body classification arm is banked;
+proc-body classification + the `hInv` target-`LabelShape` transports are the frontier.
