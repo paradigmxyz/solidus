@@ -6869,3 +6869,60 @@ Both §72 frontier items are thus confirmed genuinely multi-session / contract-b
 
 ### Files touched (session 73)
 `EvmCompiler/TypedCfg/PEEPHOLE_PROGRESS.md` ONLY (this note). No `.lean` change, no frozen file, no codegen change. `compile_correct`/`compile_correct_creation` axioms UNCHANGED = `[propext, Classical.choice, Quot.sound]`.
+
+## Session-74 update (2026-07-20): **STRATEGY + START — opportunity scan picks THE big vein (shuffle-window canonicalisation, 22 244 B / 43 % of the worst-8 sample) and the transform algebra is BANKED green; but a decisive pre/post-compaction provenance probe proves the ENTIRE vein is a `Compact.prepare` (FROZEN) cross-block artifact — 0 reducible at cfg-body altitude, ALL of it (ASP 7430 · ECB 412 · DynStorage 5798) created by `elideFallthroughJumps`. The §60/§68/§73 pattern, generalised from adjacent-pairs to full permutations.** Green, axiom-neutral leaf `EvmCompiler/TypedCfg/ShuffleCanon.lean` (imported by nobody). NO splice (a cfg-body splice is byte-identical, §68-style). `compile_correct`/`compile_correct_creation` axioms UNCHANGED. No frozen file touched.
+
+### THE OPPORTUNITY SCAN (probes OUTSIDE the repo commit; solc 0.8.26 via-IR + Yul optimizer; LIVE shipped runtime bytecode; worst-8 size-ratio contracts, 51 547 B)
+Opcode histogram of the shipped bytecode (`scratch/probe_hist.py`, `probe_perm.py`):
+
+| opcode family | count | bytes | % of sample |
+|---|---|---|---|
+| **SWAP** | 28 423 | 28 423 | **55.1 %** |
+| PUSH | 4 457 | 12 169 | 23.6 % |
+| DUP | 2 711 | 2 711 | 5.3 % |
+| POP | 2 011 | 2 011 | 3.9 % |
+| JUMPDEST | 1 349 | 1 349 | 2.6 % |
+| JUMP | 961 | 961 | 1.9 % |
+
+`AdversarialStackPressure` (15.4× vs solc) is **90.4 % SWAP** (7731 of 8302 ops). Every emitted SWAP sits in a maximal run; minimising each run to a same-net-permutation swap list (star-transposition decomposition, correct-by-construction, gated "fire only if shorter") recovers **22 244 B = 43.2 % of the sample** (97 % of the 22 890 B perm-min ideal). Per-contract recoverable: ASP 7484, DynStorage 6056, PostCancun 2456, Semantic 2372, CreateLifecycle 1948, ReentrantTryCatch 1206, EffectOrdering 946, ECB 422. Runs up to length **240** (ASP) collapsing to **0–1** swaps (repeated `swap1;swap2;…;swapN` rotations returning to identity).
+
+Other patterns were negligible or non-cheap: `DUPn;POP` = 1×, `PUSHn;POP` = 0× (solc's Yul optimizer already removes dead push/dup-pop); `PUSH1 0x00` (should be `PUSH0`) = 971 B but provenance unprobed (likely frozen serialisation — deferred side-probe); adjacent `SWAPn;SWAPn` = 122 (the §72 seam residual, subsumed).
+
+### RANKED CAMPAIGN TABLE
+| # | campaign | recoverable (sample) | difficulty | verdict |
+|---|---|---|---|---|
+| **a** | **shuffle-window canonicalisation** (rewrite any swap run to its minimal same-permutation form) | **22 244 B (43 %)** | HIGH — provenance = 100 % post-compaction cross-block (see below); needs assembly-post-pass OR cfg-cross-block-anticipation altitude | **CHOSEN** (subsumes b) |
+| b | multi-pending chain seams (§72/§73 residual) | ~16 B (ECB) | HIGH — non-local multi-pending invariant | subsumed by (a) at full-permutation generality |
+| c | dup/pop, push/pop family | ~2 B | LOW | not worth it (solc already removes) |
+| d | block-merge for refCount-1 jump chains | ~2 310 B (JUMP+JUMPDEST) | MED — compaction already elides fallthrough jumps; residual is real control flow | lower priority; synergistic with (a) |
+| e | `PUSH1 0x00 → PUSH0` | 971 B | UNKNOWN — provenance unprobed | deferred cheap side-probe |
+
+### THE DECISIVE PROVENANCE FINDING (Lean probes; reconstruct `finalCfg = seamCancelProgramEff (peepholeProgram (normalizeProgram cfg0))`, `finalCfg.lower? = certified.target` verified byte-exact)
+Two independent measurements, **each refuting the cfg-body-altitude deduction** (the §70-73 lesson: MEASURE, don't deduce):
+
+1. **Emitted swap runs are 100 % single-block, and 100 % irreducible PRE-compaction.** A per-instruction provenance probe (`scratch/probe_swaprun.lean`, `probe_emitprov.lean`) found **0 / 400 (ECB), 0 / 2574 (DynStorage) emitted swap runs cross a block boundary** — every run is one block's body/term. Yet running the same `canonSwaps` over the pre-compaction lowered image `L` yields **canon-saving = 0** on every contract (body-only and term-only alike).
+
+2. **ALL reducibility is created by `Assembly.Compact.prepare`.** Scanning `prepare L` (`scratch/probe_compact.lean`):
+
+| contract | L (pre) len | pre canon-saving | P (post) len | **post canon-saving** |
+|---|---|---|---|---|
+| AdversarialStackPressure | 10 600 | **0** | 8 259 | **7 430** |
+| ExternalCallBox | 3 745 | **0** | 1 881 | **412** |
+| DynamicStorageSurfaceBox | 21 870 | **0** | 12 510 | **5 798** |
+
+`elideFallthroughJumps` merges fallthrough-adjacent blocks, concatenating one block's tail swaps with the next block's head swaps into longer runs whose *net* permutation is reducible. Pre-compaction every block's run is already minimal. This is exactly §60's seam phenomenon, generalised from `SWAPn;SWAPn` adjacent pairs to arbitrary permutations — and the post-8259/12510 numbers reproduce the shipped-bytecode python figures (7484 / 6056).
+
+### VERDICT + WHAT LANDED
+* **The 22k-byte vein is real but lives 100 % post-compaction, across merged fallthrough seams, in the FROZEN `Assembly/Compact.lean`.** A cfg-BODY transform (`shuffleCanonProgram`, banked) fires on nothing in the real corpus (byte delta 0, `wellTyped?`/`lower?` byte-identical — verified). Splicing it is §68-style byte-identical inert, so it was **NOT spliced** (never-ship-inert).
+* **BANKED green** (`ShuffleCanon.lean`, commit `2e2afb83`, imported by nobody ⟹ cannot touch axioms): the reusable, altitude-independent **permutation algebra** (`applySwap`, `netStack`, `maxDepth`, `sortStep`/`sortToId`/`starDecompose`, `canonSwaps` + `canonSwaps_length_le`), the block-body rewrite (`swapDepth?`, `emitRun`, `canonBodyGo`/`canonBody`, `canonBlock`, `shuffleCanonProgram`), and full structural preservation (`findBlock?_`, `emittedLabels_`, `labelsUnique_`, `emittedLabelsUnique_`, `entry_findBlock?_`). `canonSwaps` validated on sanity cases (`[0,0,0,0]→[]`, `[0,1,0,1,0,1]→[]`, `[0,1]` irreducible-3-cycle kept) and on the live corpus cfg (`wellTyped?` + `lower?` preserved ⟹ same permutation ⟹ same shape threading, the type-preservation half confirmed empirically).
+
+### SHARPENED FRONTIER — the successor's two legal routes to the vein (both multi-session)
+The permutation minimiser is done and altitude-independent; only the **run extraction** changes. Neither touches `Compact.lean`.
+1. **Assembly post-pass (Route 1).** Apply the swap-run canonicaliser to the assembly program *after* `prepare`, in a non-frozen wrapper, proving assembly-level semantic preservation (pure stack-permutation equality through the frozen open-interpreter fuel/pc model). Captures the full 22k; new assembly-altitude correctness cone (larger, but the transform is pure-permutation-equality — cleaner than the §62-67 pending-swap bisimulation).
+2. **Cfg cross-block anticipation (Route 2).** At cfg level, identify the fallthrough chains `elideFallthroughJumps` *will* merge (refCount-1 non-entry seams, as §72's canceller already does) and canonicalise the concatenated would-be-merged swap run, reusing the §72 seam tower. This is the §72/§73-named "non-local matching / multi-pending" invariant generalised from 2-swap cancellation to full permutations — with the payoff now quantified at **100× the §72 seam delta (43 % vs 0.43 %)**, which reframes its priority.
+
+### GATES
+`scripts/opt_harness.sh check` = **OK** (see below). `#print axioms` confirms `Solidus.compile_correct` / `Solidus.compile_correct_creation` = `[propext, Classical.choice, Quot.sound]` — UNCHANGED (the new leaf is imported by nobody). No frozen file touched. No splice ⟹ codegen byte-identical to §72 (corpus −0.43 % shipped state intact) ⟹ no determinism double-compile, no bench re-run.
+
+### Files touched (session 74)
+NEW `EvmCompiler/TypedCfg/ShuffleCanon.lean` (green, imported by nobody); `EvmCompiler/TypedCfg/PEEPHOLE_PROGRESS.md` (this note). Uncommitted scratch probes under `scratch_probe/` (`probe_hist.py`, `probe_perm.py`, `probe_canon.py`, `probe_swaprun.lean`, `probe_shufflecanon.lean`, `probe_grouping.lean`, `probe_emitprov.lean`, `probe_compact.lean`) + hand-generated solc IR JSON. No frozen file touched. `compile_correct`/`compile_correct_creation` axioms UNCHANGED = `[propext, Classical.choice, Quot.sound]`.
