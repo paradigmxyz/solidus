@@ -6714,3 +6714,63 @@ The splice is byte-inert on the corpus, so by §68's "don't add inert surface to
 
 ### Files touched (session 69)
 `EvmCompiler/TypedCfg/PeepholeSeamCancel.lean` (predicate retarget + entry-seed lemmas), `EvmCompiler/Structured/PeepholeSeamCombined.lean` (entry seed + finished-variant bridges), `EvmCompiler/Compiler/StackArtifact.lean` (splice + import), `EvmCompiler/Compiler/OpenInteractionComposition.lean` (4 core + 4 wrapper rewires + import), + this doc.  No frozen file touched.  `compile_correct`/`compile_correct_creation` axioms UNCHANGED = `[propext, Classical.choice, Quot.sound]`.
+
+## Session-70 update (2026-07-20): **EMPIRICAL RECONCILIATION — §69's terminator-lowering root cause is REFUTED; §60's body-to-body seam is CONFIRMED. The real defect: `sourceFire?`'s `getLast?`/`dropLast` are fooled by a trailing zero-lowering, runtime-IDENTITY `bindLocals` masking the tail swap.** Route decision: **Route α** — correct the seam canceller's tail-swap identification + edit at the (correct) TypedCfg block-body altitude, reusing the §61-69 tower. No live byte delta yet (the runtime-tower re-derivation for the corrected edit is the frontier; never-commit-red). Docs + green static-prefix commits only. `compile_correct`/`compile_correct_creation` axioms UNCHANGED = `[propext, Classical.choice, Quot.sound]`. No frozen file touched.
+
+### THE MEASUREMENT (probe run from `scratch_probe/` OUTSIDE the repo commit; solc 0.8.26 via-IR + Yul optimizer; ECB runtime)
+Reconstructed the EXACT spliced pipeline: `artifact.codeArtifact.compiled.cfg` → `finalCfg := seamCancelProgram (peepholeProgram (normalizeProgram cfg))`; `L := compiled.certified.target` (lowered, pre-compaction); `P := compact.physicalSource` (post-compaction). Verified `finalCfg.lower? = L` (`decide = true`) and reconstructed `L` with **per-instruction provenance** by lowering each block in `blocksInLoweringOrder?` and tagging every emitted asm instr with `(blockIdx, LABEL | body[i]=<cfgInstr> | TERM)`. Tagged reconstruction is byte-exact vs `L` (**0 mismatches**, len 3851).
+
+| quantity | value |
+|---|---|
+| `finalCfg` blocks | 1030 |
+| `L` length (pre-compaction) | 3851 |
+| `P` length (post-compaction) | 1987 |
+| `P` adjacent-equal `SWAPn;SWAPn` pairs | **61** (reproduces §59/§69 baseline exactly) |
+| seams matching `swap, jump G, label G, swap` in `L` | **61** |
+| &nbsp;&nbsp;→ **body-tail → body-head** seams | **61 / 61** |
+| &nbsp;&nbsp;→ **terminator-involved** seams | **0 / 61** |
+| blocks where the shipped `sourceFire?` fires | **0 / 1030** |
+
+Every seam is SWAP1 (cfg `.swap 0` → opcode 0x90). Representative provenance (probe output):
+```
+seam j=71  d=SWAP1 G=generated 21_100   PRE B23.body[0]=swap 0   POST B24.body[0]=swap 0
+seam j=139 d=SWAP1 G=generated 40_100   PRE B42.body[0]=swap 0   POST B43.body[0]=swap 0
+```
+i.e. `L` locally is `label A ; swap1 ; jump G ; label G ; swap1 ; …` where **both** swaps are BLOCK-BODY instructions (`A.body[0]` and `G.body[0]`), NOT terminator-lowered.
+
+### RECONCILIATION — who was right
+* **§60 CONFIRMED.** The 61 pairs are cross-block **fallthrough body-to-body seams**: `A.term = .jump G`, `G` laid out immediately after `A`, gap `[jump G ; label G]` elided by `elideFallthroughJumps`, abutting `A`'s emitted tail swap with `G`'s emitted head swap. All body-body (0 terminator).
+* **§69 REFUTED.** §69 attributed the pre-jump swap to `returnDispatchCase`/`removeBuriedUnder` (terminator lowering). This is impossible: `removeBuriedUnder depth = liftBuriedToTop depth ++ [.prim .pop]` **ends in `pop`, never a swap** (`Assembly/StackShuffle.lean:56-57`), so a return-dispatch case seam would abut `pop ; swap`, not `swap ; swap`. Measured terminator-involved seams = **0**. §69's "block-body altitude is the wrong altitude" conclusion is therefore WRONG — the altitude is RIGHT.
+
+### THE ACTUAL ROOT CAUSE OF THE ZERO-FIRE (decisive, source-airtight)
+`sourceFire? program a` keys the tail swap on **`a.body.getLast? = some (.swap d)`** (`PeepholeSeamCancel.lean:62`). But the 61 source blocks look like `A.body = [.swap 0, .bindLocals …]` (`bodyLen` 2/3/4; probe `A.body.getLast? = bindLocals` on all sampled seams). The swap is at `body[0]`; the CFG-**last** instruction is a **`.bindLocals`** that lowers to `[]` (`Lower.lean:52`). So:
+* the **emitted** last instruction of `A` before `jump G` is the swap (from `body[0]`), because everything after it lowers to nothing, but
+* `a.body.getLast?` sees the trailing `.bindLocals`, not the swap ⟹ `sourceFire?` returns `none`.
+
+`bindLocals`/`bindScratch`/`relabel` are all **zero-lowering** (`Instr.lower? = some []`) **and runtime IDENTITIES** on `EVMState` (`Semantics.lean:78-83`: `runState _ state = .ok state`); they only re-thread the typed `Shape` (`Typing.lean:46-51`). So they are transparent to the emitted bytes and to the EVMState pending-swap invariant, and opaque only to the typed shape. The fix must identify the tail swap as **the last body instruction with non-empty lowering** (skipping trailing zero-lowering binds) and remove *that* swap — not `dropLast`, which would remove the `bindLocals` and leave the swap emitted (an UNSOUND half-cancel: `A` keeps its swap while `G` loses its head swap).
+
+### ROUTE DECISION — **Route α** (correct the canceller at the TypedCfg block-body altitude)
+Evidence forces the altitude: the seams ARE block-body (61/61), and the entire §61-69 congruence tower (WellTyped preservation, pending-swap runtime bisimulation, fuel bound, halted bridges, entry seed, and the §69 OIC/StackArtifact splice plumbing) already lives at exactly this altitude and is **reusable**. The change is localized:
+1. **Predicate** (`sourceFire?`): replace `a.body.getLast?` with the last **non-empty-lowering** body instruction (`effectiveTailSwap?`), i.e. drop trailing instrs whose `lower? = some []`, then require `.swap d`. Same for the length guard.
+2. **Edit** (`seamBlock` source arm): replace `body := block.body.dropLast` with "remove the last non-empty-lowering swap, retain the trailing binds", re-typing `output` through `remapShape d` as before. The target arm (`body.tail`, drop `G.body[0]` head swap) is already correct.
+3. **Tower re-derivation** (the frontier): the runtime pending-swap bisimulation (§62-67) is stated over `dropLast`. Because the trailing binds are **runtime identities**, `runBody A.body state = runBody (prefix ++ [swap d]) state` on the EVMState (binds don't touch state), so the EVMState pending-swap invariant carries through UNCHANGED; the extra work is purely **shape-level** — threading the trailing binds' `Shape` transformations through `remapShape` (the WellTyped half). This is the §61-69 mathematics with the swap no longer literally last; no new runtime kernel is expected (mirrors §64/§65's "assembly not discovery").
+
+**Rejected — Route (a)/Lower.lean (terminator shuffle):** the mandate's emission-side candidate presumed the pre-jump swap came from terminator lowering. Measured **0/61** terminator-involved; `removeBuriedUnder` ends in `pop`. There is nothing to fix in `Lower.lean`'s terminator shuffle. Premise refuted.
+**Rejected as primary — Route (b)/assembly-compaction altitude:** larger, new correctness altitude in the frozen `Compact`/`GasfulBridge` cone, and it DISCARDS the banked §61-69 tower. Kept as fallback only if the Route α shape-threading proves harder than the block-body edit.
+
+Note a soundness bonus surfaced by the measurement: the cfg-level cancellation is sound **regardless of layout adjacency** — `A` (emitted) `…swap d ; jump G` then `G` (emitted) `swap d ; …` are consecutive in EXECUTION (jump preserves the stack) and `refCount G = 1` (unique predecessor, measured 61/61), so `swap d ∘ swap d = id` across the seam whether or not compaction merges them. Removing both saves 2 bytes per firing seam (≈122 B on ECB runtime) even without the compaction adjacency.
+
+### METHOD / files
+Probe: `scratch_probe/probe.lean` (+ `ecb_solc_out.json` generated by solc 0.8.26 with `viaIR`, `optimizer.details.yul`, requesting `irOptimizedAst`+`metadata`; selection `objectSelector := .runtime`, evmVersion read from solc metadata). Run OUTSIDE the repo commit, NOT committed. `scripts/opt_harness.sh check` unaffected by the docs edit. No frozen file touched. `compile_correct`/`compile_correct_creation` axioms UNCHANGED = `[propext, Classical.choice, Quot.sound]`.
+
+### GREEN PREFIX BANKED + FRONTIER SHARPENED (validated empirically)
+New non-frozen leaf `EvmCompiler/TypedCfg/PeepholeSeamCancelEff.lean` (imported by **nobody** ⟹ cannot touch axioms), the **static half** of Route α:
+* `lowersToNothing` / `emittedTail?` / `effTailSwap?` — the emitted-tail-swap key (last body instr with non-empty lowering, trailing binds skipped); `removeEffTail` — remove that swap, retain trailing binds; `sourceFireEff?` / `targetFireEff?` / `seamBlockEff` / `seamCancelProgramEff`.
+* Structural preservation proved green (mirrors the `seamCancelProgram` spine): `seamBlockEff_{label,term}`, `seamCancelProgramEff_{entry,blocks}`, `findBlock?_seamCancelProgramEff`, `emittedLabels_…`, `labelsUnique_…`, `emittedLabelsUnique_…`, `entry_findBlock?_…`.
+
+**Empirical validation (same ECB probe):** `sourceFireEff?` fires on **61/1030** blocks and `targetFireEff?` on **61/1030** — i.e. it identifies **exactly** the measured 61 seams, versus the shipped `sourceFire?`'s **0**. Block count / entry preserved (1030, entry unchanged).
+
+**FRONTIER (sharpened, now with a concrete failing probe):** `(seamCancelProgramEff finalCfg).lower? = none`. The predicate is right, but the edit's **output re-typing is not yet consistent** when binds trail the swap: the shipped edit re-types with `remapShape d block.output` (the swap's `0↔d+1` transposition), which is correct only when the swap is literally last. With `A.body = prefix ++ [swap d] ++ binds`, `output = type?(binds)(remapShape d (type?(prefix) input))` whereas after removing the swap `output' = type?(binds)(type?(prefix) input)` — related by the transposition **conjugated through the binds' shape maps**, not by a bare `remapShape d`. Threading the trailing binds' `Shape` transformations through the re-typing (so `Block.lower?` succeeds) is the shape-level frontier; the EVMState pending-swap invariant is expected to carry through unchanged because the binds are runtime identities (`Semantics.lean:78-83`). This is the §61-69 shape half re-derived for "swap not literally last", plus the runtime-tower port (§62-67) and the §69 OIC/StackArtifact splice reuse. No live byte delta until `lower?` succeeds on the corrected output; never-commit-red ⟹ deferred to a successor session.
+
+### Files touched (session 70)
+`EvmCompiler/TypedCfg/PEEPHOLE_PROGRESS.md` (this note), NEW `EvmCompiler/TypedCfg/PeepholeSeamCancelEff.lean` (static-half leaf, imported by nobody). No frozen file touched. No splice ⟹ emitted bytes UNCHANGED (byte-identical to §59/§69: 8557/8591·3, 2791/2825·61, 1991/2234·15, 923/957·15). `compile_correct`/`compile_correct_creation` axioms UNCHANGED = `[propext, Classical.choice, Quot.sound]`.
