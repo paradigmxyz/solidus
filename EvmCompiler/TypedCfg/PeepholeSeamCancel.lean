@@ -1327,6 +1327,85 @@ theorem seamCancelProgram_programCounterIndependent {program : Program}
   obtain ⟨b0, hb0mem, rfl⟩ := hb
   exact seamBlock_programCounterIndependent (h b0 hb0mem)
 
+/-! ## Fallthrough-freeness ⟹ the seam cancellation is the identity (session-68)
+
+Both firing predicates key on a `Terminator.fallthrough` terminator:
+`sourceFire?` pattern-matches the block's own `.term` against `.fallthrough _`,
+and `targetFire?` searches the block list for a predecessor whose `.term` is
+`.fallthrough b.label`.  A program that carries **no** `.fallthrough` terminator
+therefore fires neither seam, so every `seamBlock` is the identity and
+`seamCancelProgram` is the identity.
+
+This is the concrete kernel of the Session-68 finding.  The generated TypedCfg
+program — and hence `peepholeProgram (normalizeProgram cfg)`, both passes
+preserving `.term` exactly — contains **no** `.fallthrough` terminator: the
+generator emits sequential continuation as `Terminator.jump (restLabel …)` (a
+jump to a `refCount`-1 label), never `Terminator.fallthrough`.  The
+`TypedCfgCompiler.Result.fallthrough?` field the compiler threads is an
+`Option Shape` metadatum recording "this fragment has a regular exit path",
+NOT the terminator constructor the seam predicates match.  The `jump G ; label G`
+→ redundant `swap;swap` elision this transform targets happens at
+`Assembly.Compact.prepare` (`elideFallthroughJumps`), strictly downstream of the
+TypedCfg altitude (see PEEPHOLE_PROGRESS §60).  Consequently the seam splice is
+provably byte-inert on the real spine. -/
+
+/-- A program is fallthrough-free when no block carries a `.fallthrough`
+terminator. -/
+def NoFallthrough (program : Program) : Prop :=
+  ∀ b ∈ program.blocks, ∀ L, b.term ≠ Terminator.fallthrough L
+
+/-- On a fallthrough-free program, `sourceFire?` never fires. -/
+theorem sourceFire?_eq_none_of_noFallthrough {program : Program} {b : Block}
+    (hb : b ∈ program.blocks) (h : NoFallthrough program) :
+    sourceFire? program b = none := by
+  unfold sourceFire?
+  cases hterm : b.term with
+  | fallthrough L => exact absurd hterm (h b hb L)
+  | jump t => rfl
+  | jumpi t f => rfl
+  | returnDispatch n s => rfl
+  | halt k => rfl
+  | invalid => rfl
+
+/-- On a fallthrough-free program, `targetFire?` never fires (no predecessor with
+a `.fallthrough` terminator exists to be found). -/
+theorem targetFire?_eq_none_of_noFallthrough {program : Program} (b : Block)
+    (h : NoFallthrough program) :
+    targetFire? program b = none := by
+  unfold targetFire?
+  have hfind :
+      program.blocks.find? (fun a => a.term == Terminator.fallthrough b.label)
+        = none := by
+    rw [List.find?_eq_none]
+    intro a ha
+    simp only [beq_iff_eq]
+    exact h a ha b.label
+  by_cases hr : refCount program b.label = 1
+  · rw [if_pos hr, hfind]
+  · rw [if_neg hr]
+
+/-- On a fallthrough-free program, every per-block seam edit is the identity. -/
+theorem seamBlock_eq_of_noFallthrough {program : Program} {b : Block}
+    (hb : b ∈ program.blocks) (h : NoFallthrough program) :
+    seamBlock program b = b := by
+  unfold seamBlock
+  rw [sourceFire?_eq_none_of_noFallthrough hb h,
+    targetFire?_eq_none_of_noFallthrough b h]
+
+/-- **The seam cancellation is the identity on a fallthrough-free program.**
+Since neither seam ever fires, `seamCancelProgram program = program` verbatim
+(blocks, labels, count, entry, terminators, and bodies all unchanged). -/
+theorem seamCancelProgram_eq_of_noFallthrough {program : Program}
+    (h : NoFallthrough program) :
+    seamCancelProgram program = program := by
+  unfold seamCancelProgram
+  have hmap : program.blocks.map (seamBlock program) = program.blocks := by
+    conv_rhs => rw [← List.map_id program.blocks]
+    apply List.map_congr_left
+    intro b hb
+    rw [seamBlock_eq_of_noFallthrough hb h, id]
+  rw [hmap]
+
 end Peephole
 end TypedCfg
 end EvmCompiler
