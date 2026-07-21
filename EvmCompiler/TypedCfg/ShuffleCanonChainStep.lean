@@ -629,6 +629,80 @@ theorem openRun_chainCanon_congr {program : Program} {residual : Label → List 
                 rw [houtEq]
                 exact chainOutcome_srd_resync htargets hSRD
 
+/-- An edit-table entry's label is a block label, so the block exists. -/
+theorem findBlock?_ne_none_of_editTable_lookup {program : Program} {label : Label} {e : Edit}
+    (hUnique : program.LabelsUnique)
+    (h : (editTable program).lookup label = some e) :
+    program.findBlock? label ≠ none := by
+  have hmem := ShuffleCanon.lookup_mem h
+  unfold editTable at hmem
+  split at hmem
+  · simp only [List.not_mem_nil] at hmem
+  · rename_i ordered hord
+    obtain ⟨b, rest, hsuf, _, hmem', _⟩ := ShuffleCanon.scanEdits_mem hmem
+    obtain ⟨hd, tl, hchain, _, hcases⟩ := ShuffleCanon.chainEdits_fired hmem'
+    rcases hcases with heq | ⟨C, hC, hCeq⟩
+    · rw [Prod.mk.injEq] at heq
+      have hhdmem : hd ∈ program.blocks :=
+        ShuffleCanon.growChain_mem_blocks hord hsuf (hchain ▸ List.mem_cons_self ..)
+      rw [heq.1, Program.findBlock?_eq_some_of_mem hUnique hhdmem]; simp
+    · rw [Prod.mk.injEq] at hCeq
+      have hCmem : C ∈ program.blocks :=
+        ShuffleCanon.growChain_mem_blocks hord hsuf
+          (hchain ▸ List.mem_cons_of_mem hd hC)
+      rw [hCeq.1, Program.findBlock?_eq_some_of_mem hUnique hCmem]; simp
+
+/-! ## The whole-program chain-canonicalisation step congruence -/
+
+/-- **Whole-program one-step chain-canonicalisation congruence.**  Lifts the
+block-level congruence through `findBlock?` (which commutes with the transform,
+`findBlock?_chainCanonProgram`): a found block dispatches to
+`openRun_chainCanon_congr`; a missing label yields synchronised `invalid`
+outcomes (the entry invariant is `SameRuntimeData` there, since edit-table labels
+are block labels). -/
+theorem openStep_chainCanon_congr {program : Program} {residual : Label → List Nat}
+    {label : Label} {s_o s_c : EVMState}
+    (hUnique : program.LabelsUnique) (hTyped : program.WellTyped)
+    (hIndependent : program.ProgramCounterIndependent)
+    (hSpec : ChainResidualSpec program residual)
+    (hReal_o : ∀ b0, program.findBlock? label = some b0 → StackRealizes b0.input s_o)
+    (hReal_c : ∀ b0, program.findBlock? label = some b0 →
+      StackRealizes (ShuffleCanon.applyEdit (editTable program) b0).input s_c)
+    (hStep : ChainStepRel program residual label s_o s_c) :
+    Simulation.Interaction.Rel (ChainOutcomeRel program residual)
+      (InteractionSemantics.Program.openStep program label s_o)
+      (InteractionSemantics.Program.openStep (chainCanonProgram program) label s_c) := by
+  unfold InteractionSemantics.Program.openStep Control.Program.step
+  rw [ShuffleCanon.findBlock?_chainCanonProgram]
+  cases hFind : program.findBlock? label with
+  | none =>
+      simp only [hFind, Option.map_none]
+      -- The entry invariant is SRD: a missing label cannot be a consumed edit.
+      have hSRD : SameRuntimeData s_o s_c := by
+        unfold ChainStepRel at hStep
+        cases hlk : (editTable program).lookup label with
+        | none => rw [hlk] at hStep; exact hStep
+        | some e =>
+            cases e with
+            | head _ _ => rw [hlk] at hStep; exact hStep
+            | consumed _ =>
+                exact absurd hFind (findBlock?_ne_none_of_editTable_lookup hUnique hlk)
+      exact Simulation.Interaction.Rel.done
+        (Or.inr ⟨.ok (InteractionCongruence.Outcome.RuntimeRel.invalid hSRD), by simp⟩)
+  | some b0 =>
+      simp only [hFind, Option.map_some]
+      have hMem : b0 ∈ program.blocks := by
+        unfold TypedCfg.Program.findBlock? at hFind
+        exact List.mem_of_find?_eq_some hFind
+      have hb0Indep : b0.ProgramCounterIndependent :=
+        (List.forall_iff_forall_mem.mp hIndependent) b0 hMem
+      have hlabel : b0.label = label := by
+        unfold TypedCfg.Program.findBlock? at hFind
+        have := List.find?_some hFind; simpa using this
+      rw [← hlabel] at hStep
+      exact openRun_chainCanon_congr hUnique hTyped hSpec hMem hb0Indep hStep
+        (hReal_o b0 hFind) (hReal_c b0 hFind)
+
 end Peephole
 end TypedCfg
 end EvmCompiler
