@@ -261,14 +261,17 @@ theorem sortFoldr_inv (b0 : List Nat) (n : Nat)
       (List.foldr (fun i st => sortStep st i) (b0, []) (List.range' k m)).1
         = applySwaps (List.foldr (fun i st => sortStep st i) (b0, []) (List.range' k m)).2 b0 ∧
       (∀ j, k ≤ j → j < n →
-        (List.foldr (fun i st => sortStep st i) (b0, []) (List.range' k m)).1[j]! = j) := by
+        (List.foldr (fun i st => sortStep st i) (b0, []) (List.range' k m)).1[j]! = j) ∧
+      (∀ e ∈ (List.foldr (fun i st => sortStep st i) (b0, []) (List.range' k m)).2,
+        1 ≤ e ∧ e < n) := by
   intro m
   induction m with
   | zero =>
       intro k hk hkm
       simp only [List.range'_zero, List.foldr_nil]
-      refine ⟨hlen0, hperm0, by simp [applySwaps], ?_⟩
-      intro j hj1 hj2; omega
+      refine ⟨hlen0, hperm0, by simp [applySwaps], ?_, ?_⟩
+      · intro j hj1 hj2; omega
+      · intro e he; exact absurd he (by simp)
   | succ m ih =>
       intro k hk hkm
       have IH := ih (k + 1) (by omega) (by omega)
@@ -277,7 +280,7 @@ theorem sortFoldr_inv (b0 : List Nat) (n : Nat)
           List.foldr (fun i st => sortStep st i) (b0, []) (List.range' (k + 1) m) = inner
           at IH ⊢
       obtain ⟨b, acc⟩ := inner
-      obtain ⟨hIlen, hIperm, hIacc, hIsuf⟩ := IH
+      obtain ⟨hIlen, hIperm, hIacc, hIsuf, hIbnd⟩ := IH
       dsimp only at hIlen hIperm hIacc hIsuf ⊢
       -- basic facts
       have hkn : k < n := by omega
@@ -302,7 +305,7 @@ theorem sortFoldr_inv (b0 : List Nat) (n : Nat)
       by_cases hpk : p = k
       · -- sw = []
         simp only [hpk, beq_self_eq_true, if_true, applySwaps_nil, List.append_nil]
-        refine ⟨hIlen, hIperm, hIacc, ?_⟩
+        refine ⟨hIlen, hIperm, hIacc, ?_, hIbnd⟩
         intro j hj1 hj2
         rcases Nat.eq_or_lt_of_le hj1 with hjk | hjk
         · rw [← hjk]; exact hpk ▸ hbp!
@@ -315,7 +318,7 @@ theorem sortFoldr_inv (b0 : List Nat) (n : Nat)
           -- st.1 = applySwaps [k] b = applySwap k b
           have hrun : applySwaps [k] b = applySwap k b := by
             rw [applySwaps_cons, applySwaps_nil]
-          refine ⟨?_, ?_, ?_, ?_⟩
+          refine ⟨?_, ?_, ?_, ?_, ?_⟩
           · rw [length_applySwaps, hIlen]
           · rw [hrun]; exact (applySwap_perm k b).trans hIperm
           · rw [applySwaps_append, ← hIacc]
@@ -334,6 +337,11 @@ theorem sortFoldr_inv (b0 : List Nat) (n : Nat)
               apply getElem!_of_getElem?
               rw [applySwap_getElem?_high k j b (by omega) (by omega)]
               exact getElem?_of_getElem! (by rw [hIlen]; exact hj2) (hIsuf j (by omega) hj2)
+          · intro e he
+            rw [List.mem_append] at he
+            rcases he with he | he
+            · exact hIbnd e he
+            · simp only [List.mem_singleton] at he; subst he; exact ⟨hk, hkn⟩
         · -- sw = [p, k]
           have hp0' : (p == 0) = false := by simp [hp0]
           simp only [hpk', Bool.false_eq_true, if_false, hp0']
@@ -342,7 +350,7 @@ theorem sortFoldr_inv (b0 : List Nat) (n : Nat)
           have hb1k : k < b1.length := by rw [hb1, length_applySwap]; exact hkb
           have hrun : applySwaps [p, k] b = applySwap k b1 := by
             rw [applySwaps_cons, applySwaps_cons, applySwaps_nil, hb1]
-          refine ⟨?_, ?_, ?_, ?_⟩
+          refine ⟨?_, ?_, ?_, ?_, ?_⟩
           · rw [length_applySwaps, hIlen]
           · rw [hrun]
             exact (applySwap_perm k b1).trans ((applySwap_perm p b).trans hIperm)
@@ -361,6 +369,14 @@ theorem sortFoldr_inv (b0 : List Nat) (n : Nat)
               rw [applySwap_getElem?_high k j b1 (by omega) (by omega), hb1,
                   applySwap_getElem?_high p j b (by omega) (by omega)]
               exact getElem?_of_getElem! (by rw [hIlen]; exact hj2) (hIsuf j (by omega) hj2)
+          · intro e he
+            rw [List.mem_append] at he
+            rcases he with he | he
+            · exact hIbnd e he
+            · simp only [List.mem_cons, List.not_mem_nil, or_false] at he
+              rcases he with he | he <;> subst he
+              · exact ⟨by omega, hpn⟩
+              · exact ⟨hk, hkn⟩
 
 /-! ## Selection-sort round-trip and (P1) -/
 
@@ -392,7 +408,7 @@ theorem sortToId_correct (b0 : List Nat)
           (List.foldr (fun i st => sortStep st i) (b0, []) (List.range' 1 (n - 1))).2 := by
       unfold sortToId
       rw [← hn, List.foldl_reverse, hL]
-    obtain ⟨hIlen, hIperm, hIacc, hIsuf⟩ :=
+    obtain ⟨hIlen, hIperm, hIacc, hIsuf, _⟩ :=
       sortFoldr_inv b0 n rfl hperm (n - 1) 1 (le_refl 1) (by omega)
     set st := List.foldr (fun i st => sortStep st i) (b0, []) (List.range' 1 (n - 1)) with hst
     -- position 0 also holds its identity value (nodup + suffix)
