@@ -254,9 +254,11 @@ theorem openStep_chainCombinedEff_core
       label s_mid s_final)
     (hReal_o : ∀ b0, (preChainProgram cfg).findBlock? label = some b0 →
       StackRealizes b0.input s_mid)
-    (hReal_c : ∀ b0, (preChainProgram cfg).findBlock? label = some b0 →
-      StackRealizes (applyEdit (editTable (preChainProgram cfg)) b0).input s_final)
-    (hFeasO : ∀ p ∈ residual (preChainProgram cfg) label, p + 1 ≤ s_mid.stack.length) :
+    (hReal_c : ∀ b0 body out, (preChainProgram cfg).findBlock? label = some b0 →
+      (editTable (preChainProgram cfg)).lookup label = some (Edit.head body out) →
+      StackRealizes b0.input s_final)
+    (hFeasO : ∀ body out, (editTable (preChainProgram cfg)).lookup label = some (Edit.head body out) →
+      ∀ p ∈ residual (preChainProgram cfg) label, p + 1 ≤ s_mid.stack.length) :
     Simulation.Interaction.Rel
       (ChainCombinedOutcomeRelEff (source := source) (cfg := cfg) context.calls)
       (InteractionSemantics.Program.openStep cfg label s1)
@@ -608,6 +610,77 @@ theorem residual_head_feasO
   have hbound := (bodyRunPositions_bound m.body hChain hmType p hpm).2
   have hwbound := hwalk m hmg
   omega
+
+/-! ## The source-threaded one-step combined congruence (`_of_source`)
+
+The fuel-composable one-step congruence that DROPS the explicit `s_mid` and the three
+per-entry feasibility facts of `openStep_chainCombinedEff_core`, deriving them from the
+combined invariant `ChainCombinedStepRelEff`:
+
+* `hReal_o` — `stackRealizes_preChain_of_seamCombined` (§86).
+* `hReal_c` — needed only at fired heads (`headBlock_rel_discharged`), where the chain
+  leg is `SameRuntimeData` (a head is never consumed), so `s_mid.stack = s_final.stack`
+  transports `hReal_o`'s `StackRealizes b0.input` from `s_mid` to `s_final`.
+* `hFeasO` — needed only at fired heads (`hmergedBd`), discharged by the just-banked
+  residual-arithmetic bridge `residual_head_feasO`.
+
+The head-gating of `hReal_c`/`hFeasO` (in `openStep_chainCanon_congr`) is what makes the
+consumed/ordinary cases vanish: both facts are consumed *only* in the head branch of
+`openRun_chainCanon_congr`, so they need never be proven at non-head labels (where the
+residual is not a length-preserving chain permutation and feasibility can genuinely
+fail). -/
+theorem openStep_chainCombinedEff_congr_of_source
+    {source : Structured.Program}
+    {entryShapes : Structured.TypedCfgCompiler.ProcEntryShapes}
+    {cfg : TypedCfg.Program}
+    (context :
+      Structured.TypedCfgPreservation.Program.GeneratedContext source entryShapes cfg)
+    (hSourceWF : source.WF)
+    (hTyped : cfg.WellTyped) (hIndependent : cfg.ProgramCounterIndependent)
+    {label : Label} {s1 s_final : EVMState}
+    (hStep : ChainCombinedStepRelEff (source := source) (cfg := cfg)
+      context.calls label s1 s_final) :
+    Simulation.Interaction.Rel
+      (ChainCombinedOutcomeRelEff (source := source) (cfg := cfg) context.calls)
+      (InteractionSemantics.Program.openStep cfg label s1)
+      (InteractionSemantics.Program.openStep
+        (chainCanonProgram (preChainProgram cfg)) label s_final) := by
+  obtain ⟨s_mid, hSeamComb, hChainStep⟩ := hStep
+  set Q := preChainProgram cfg with hQ
+  have hTypedQ : Q.WellTyped :=
+    seamCancelProgramEff_wellTyped
+      (peepholeProgram_wellTyped (normalizeProgram_wellTyped hTyped))
+  -- hReal_o : the seam-transported per-entry `StackRealizes` at `s_mid` (§86).
+  have hReal_o : ∀ b0, Q.findBlock? label = some b0 → StackRealizes b0.input s_mid :=
+    fun b0 hFind => stackRealizes_preChain_of_seamCombined context hSourceWF hSeamComb b0 hFind
+  -- hReal_c : needed only at heads; there the chain leg is SRD, transporting hReal_o.
+  have hReal_c : ∀ b0 body out, Q.findBlock? label = some b0 →
+      (editTable Q).lookup label = some (Edit.head body out) →
+      StackRealizes b0.input s_final := by
+    intro b0 body out hFind hlk
+    have hSRD : SameRuntimeData s_mid s_final := by
+      have h := hChainStep
+      simp only [ChainStepRel, hlk] at h
+      exact h
+    have hro := hReal_o b0 hFind
+    unfold StackRealizes at hro ⊢
+    rw [← SameRuntimeData.stack_eq hSRD]; exact hro
+  -- hFeasO : needed only at heads; the residual-arithmetic bridge.
+  have hFeasO : ∀ body out, (editTable Q).lookup label = some (Edit.head body out) →
+      ∀ p ∈ residual Q label, p + 1 ≤ s_mid.stack.length := by
+    intro body out hlk
+    cases hFind : Q.findBlock? label with
+    | none => exact absurd hFind (findBlock?_ne_none_of_editTable_lookup hTypedQ.1 hlk)
+    | some b0 =>
+        have hb0label : b0.label = label := by
+          unfold TypedCfg.Program.findBlock? at hFind
+          have := List.find?_some hFind; simpa using this
+        have hb0mem : b0 ∈ Q.blocks := by
+          unfold TypedCfg.Program.findBlock? at hFind; exact List.mem_of_find?_eq_some hFind
+        subst hb0label
+        exact residual_head_feasO context hSourceWF hTyped hIndependent hb0mem hlk hSeamComb
+  exact openStep_chainCombinedEff_core context hSourceWF hTyped hIndependent
+    hSeamComb hChainStep hReal_o hReal_c hFeasO
 
 end Peephole
 end TypedCfg

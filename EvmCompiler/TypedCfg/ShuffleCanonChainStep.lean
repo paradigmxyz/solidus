@@ -534,8 +534,10 @@ theorem openRun_chainCanon_congr {program : Program} {residual : Label → List 
     {s_o s_c : EVMState}
     (hStep : ChainStepRel program residual b0.label s_o s_c)
     (hReal_o : StackRealizes b0.input s_o)
-    (hReal_c : StackRealizes (ShuffleCanon.applyEdit (editTable program) b0).input s_c)
-    (hFeasO : ∀ p ∈ residual b0.label, p + 1 ≤ s_o.stack.length) :
+    (hReal_c : ∀ body out, (editTable program).lookup b0.label = some (Edit.head body out) →
+      StackRealizes b0.input s_c)
+    (hFeasO : ∀ body out, (editTable program).lookup b0.label = some (Edit.head body out) →
+      ∀ p ∈ residual b0.label, p + 1 ≤ s_o.stack.length) :
     Simulation.Interaction.Rel (ChainOutcomeRel program residual)
       (InteractionSemantics.Block.openRun b0 s_o)
       (InteractionSemantics.Block.openRun (ShuffleCanon.applyEdit (editTable program) b0) s_c) := by
@@ -545,7 +547,7 @@ theorem openRun_chainCanon_congr {program : Program} {residual : Label → List 
       -- Untouched block: transformed = original, SRD entry, plain runtime congruence.
       have hEb : ShuffleCanon.applyEdit (editTable program) b0 = b0 := by
         unfold ShuffleCanon.applyEdit; rw [hlk]
-      rw [hEb] at hReal_c ⊢
+      rw [hEb]
       simp only [ChainStepRel, hlk] at hStep
       have hbody := InteractionCongruence.Block.openRunBody_runtimeRel
         hb0Typed.1 hIndep hStep
@@ -567,17 +569,18 @@ theorem openRun_chainCanon_congr {program : Program} {residual : Label → List 
           obtain ⟨B, merged, ds, helig, hb0term, hlkB, hbodyEq, hident, hresEq⟩ :=
             hSpec.head hmem hlk
           have hmergedBd : ∀ p ∈ merged.map (· + 1), p + 1 ≤ s_o.stack.length := by
-            intro p hp; apply hFeasO p; rw [hresEq]; exact hp
+            intro p hp; apply hFeasO body out hlk p; rw [hresEq]; exact hp
+          have hReal_c' : StackRealizes b0.input s_c := hReal_c body out hlk
           have hEb : ShuffleCanon.applyEdit (editTable program) b0
               = { b0 with body := body, output := out } := by
             unfold ShuffleCanon.applyEdit; rw [hlk]
-          rw [hEb] at hReal_c ⊢
+          rw [hEb]
           simp only [ChainStepRel, hlk] at hStep
           have htypeBody : Block.bodyType? body b0.input = some out :=
             (ShuffleCanon.head_edit_spec hUnique hmem hlk).1
           have hbody := headBlock_rel_discharged (program := program) (b0 := b0)
             (body := body) (out := out) (merged := merged) (ds := ds) (rest := residual B.label)
-            hb0Typed helig hbodyEq htypeBody hident hmergedBd hStep hReal_o hReal_c
+            hb0Typed helig hbodyEq htypeBody hident hmergedBd hStep hReal_o hReal_c'
           unfold InteractionSemantics.Block.openRun Control.Block.run
           refine Simulation.Interaction.Rel.bind_custom hbody ?_
           intro leftDone rightDone hDone
@@ -594,7 +597,7 @@ theorem openRun_chainCanon_congr {program : Program} {residual : Label → List 
           have hEb : ShuffleCanon.applyEdit (editTable program) b0
               = { b0 with input := out, output := out, body := [] } := by
             unfold ShuffleCanon.applyEdit; rw [hlk]
-          rw [hEb] at hReal_c ⊢
+          rw [hEb]
           simp only [ChainStepRel, hlk] at hStep
           rcases hdich with ⟨D, hb0term, hlkD, hres⟩ | ⟨houtEq, hres, htargets⟩
           · -- interior: residual b0.label = bodyRunPositions b0.body ++ residual D.label
@@ -669,9 +672,10 @@ theorem openStep_chainCanon_congr {program : Program} {residual : Label → List
     (hIndependent : program.ProgramCounterIndependent)
     (hSpec : ChainResidualSpec program residual)
     (hReal_o : ∀ b0, program.findBlock? label = some b0 → StackRealizes b0.input s_o)
-    (hReal_c : ∀ b0, program.findBlock? label = some b0 →
-      StackRealizes (ShuffleCanon.applyEdit (editTable program) b0).input s_c)
-    (hFeasO : ∀ p ∈ residual label, p + 1 ≤ s_o.stack.length)
+    (hReal_c : ∀ b0 body out, program.findBlock? label = some b0 →
+      (editTable program).lookup label = some (Edit.head body out) → StackRealizes b0.input s_c)
+    (hFeasO : ∀ body out, (editTable program).lookup label = some (Edit.head body out) →
+      ∀ p ∈ residual label, p + 1 ≤ s_o.stack.length)
     (hStep : ChainStepRel program residual label s_o s_c) :
     Simulation.Interaction.Rel (ChainOutcomeRel program residual)
       (InteractionSemantics.Program.openStep program label s_o)
@@ -705,7 +709,8 @@ theorem openStep_chainCanon_congr {program : Program} {residual : Label → List
         have := List.find?_some hFind; simpa using this
       rw [← hlabel] at hStep hFeasO
       exact openRun_chainCanon_congr hUnique hTyped hSpec hMem hb0Indep hStep
-        (hReal_o b0 hFind) (hReal_c b0 hFind) hFeasO
+        (hReal_o b0 hFind)
+        (fun body out hlk => hReal_c b0 body out hFind (hlabel ▸ hlk)) hFeasO
 
 end Peephole
 end TypedCfg
