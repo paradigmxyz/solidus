@@ -145,6 +145,34 @@ def chainCanonProgram (program : Program) : Program :=
 /-- Empty body is a (trivial) chain body. -/
 @[simp] theorem chainBodyDepths?_nil : chainBodyDepths? [] = some [] := rfl
 
+/-! ## `growChain` structure -/
+
+/-- A grown chain always begins with its seed block. -/
+theorem growChain_head (prog : Program) (b : Block) (bs : List Block) :
+    ∃ t, growChain prog b bs = b :: t := by
+  cases bs with
+  | nil => exact ⟨[], rfl⟩
+  | cons nxt rest =>
+      unfold growChain
+      by_cases h : chainStep prog b nxt = true
+      · rw [if_pos h]; exact ⟨growChain prog nxt rest, rfl⟩
+      · rw [if_neg h]; exact ⟨[], rfl⟩
+
+/-- Consecutive members of a grown chain are `chainStep`-linked. -/
+theorem growChain_chain' (prog : Program) (b : Block) (bs : List Block) :
+    List.Chain' (fun x y => chainStep prog x y = true) (growChain prog b bs) := by
+  induction bs generalizing b with
+  | nil => exact List.chain'_singleton b
+  | cons nxt rest ih =>
+      unfold growChain
+      by_cases h : chainStep prog b nxt = true
+      · rw [if_pos h]
+        obtain ⟨t, ht⟩ := growChain_head prog nxt rest
+        have ihn := ih nxt
+        rw [ht] at ihn ⊢
+        exact List.IsChain.cons_cons h ihn
+      · rw [if_neg h]; exact List.isChain_singleton b
+
 /-! ## Fail-closed head typing (the reusable WellTyped crux)
 
 `chainEdits` emits a `.head` edit **only** when its (relabel-terminated) canonical body
