@@ -949,6 +949,60 @@ theorem chainCanonProgram_WellTyped {program : Program} (h : program.WellTyped) 
         | head body out => exact head_term_type? hUnique hb0mem hlk
         | consumed out => exact consumed_term_type? hUnique hTyped hb0mem hlk
 
+/-! ## The ProgramCounterIndependent gate -/
+
+/-- Every instruction a fired head's canonical body emits (`.swap`/`.relabel` only)
+is program-counter independent (`effects = {}` for both). -/
+theorem editTable_head_body_pcIndependent {program : Program} {l : Label}
+    {body : List Instr} {out : Shape}
+    (hlk : (editTable program).lookup l = some (Edit.head body out)) :
+    body.Forall Instr.ProgramCounterIndependent := by
+  have hmemtbl := lookup_mem hlk
+  unfold editTable at hmemtbl
+  split at hmemtbl
+  · simp only [List.not_mem_nil] at hmemtbl
+  · rename_i ordered hord
+    obtain ⟨b, rest, _hsuf, _hlen, hmem, _hsub⟩ := scanEdits_mem hmemtbl
+    obtain ⟨hd, tl, _hchain, _hbody, hcases⟩ := chainEdits_fired hmem
+    rcases hcases with heq | ⟨C, _hC, hCeq⟩
+    · rw [Prod.mk.injEq, Edit.head.injEq] at heq
+      obtain ⟨_, hbodyeq, _⟩ := heq
+      subst hbodyeq
+      rw [List.forall_iff_forall_mem]
+      intro i hi
+      rw [List.mem_append] at hi
+      rcases hi with hi | hi
+      · rw [List.mem_map] at hi
+        obtain ⟨d, _, rfl⟩ := hi
+        rfl
+      · rw [List.mem_singleton] at hi
+        subst hi
+        rfl
+    · rw [Prod.mk.injEq] at hCeq; exact absurd hCeq.2 (by simp)
+
+/-- **The ProgramCounterIndependent gate.**  The cross-block chain canonicalisation
+preserves whole-program `ProgramCounterIndependent`. -/
+theorem chainCanonProgram_programCounterIndependent {program : Program}
+    (h : program.ProgramCounterIndependent) :
+    (chainCanonProgram program).ProgramCounterIndependent := by
+  unfold Program.ProgramCounterIndependent at h ⊢
+  rw [chainCanonProgram_blocks]
+  rw [List.forall_iff_forall_mem] at h ⊢
+  intro b hb
+  rw [List.mem_map] at hb
+  obtain ⟨b0, hb0mem, rfl⟩ := hb
+  unfold Block.ProgramCounterIndependent
+  rw [applyEdit_body_eq]
+  cases hlk : (editTable program).lookup b0.label with
+  | none =>
+      have hb0 := h b0 hb0mem
+      unfold Block.ProgramCounterIndependent at hb0
+      exact hb0
+  | some e =>
+      cases e with
+      | head body out => exact editTable_head_body_pcIndependent hlk
+      | consumed out => trivial
+
 end ShuffleCanon
 end TypedCfg
 end EvmCompiler
