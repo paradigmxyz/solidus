@@ -7354,3 +7354,50 @@ NEW `EvmCompiler/TypedCfg/ShuffleCanonChainCombined.lean` (green, imported by no
 
 ### Files touched (session 86)
 `EvmCompiler/TypedCfg/ShuffleCanonChainCombined.lean` (extended with `stackRealizes_preChain_of_seamCombined`, still imported by nobody); `EvmCompiler/TypedCfg/PEEPHOLE_PROGRESS.md` (this note).  No frozen file touched.  `compile_correct`/`compile_correct_creation` axioms UNCHANGED = `[propext, Classical.choice, Quot.sound]`.  Commit: `1c319984` (bank `hReal_o` / frontier 1).
+
+## Session-87 update (2026-07-21): **THE MECHANICAL HALVES OF THE §86 (A)/(B)/(C) ROUTE ARE BANKED GREEN + AXIOM-CLEAN — part (B) length-constancy in full, part (A)'s jump-target adjacency + the run-forward inductive STEP (`seamCombinedStepRelEff_propagate_jump`), and part (C)'s member-applicable length connector. The ONE genuinely-hard residual is now pinned to a single missing lemma: "a chain member's `openStep` evaluates to a `.done` jump" (the Interaction-monad `runBody`-success evaluation). `chainCanon` still NOT live.** All work in the existing orphan leaf `EvmCompiler/TypedCfg/ShuffleCanonChainCombined.lean` (imported by **nobody** ⟹ cannot touch the `compile_correct` cone). `scripts/opt_harness.sh check` = **OK** (43 theorems; axioms ⊆ `[propext, Classical.choice, Quot.sound]`); `#print axioms Solidus.compile_correct` / `compile_correct_creation` = `[propext, Classical.choice, Quot.sound]` UNCHANGED. No frozen file touched. **No splice yet** (chainCanon NOT live ⟹ codegen byte-identical to §72, corpus −0.43% shipped state intact ⟹ no bytes/gas measured, no double-compile).
+
+### WHAT LANDED (green, axiom-clean; file:line in `ShuffleCanonChainCombined.lean`)
+**Commit `49afa1a0` — part (B), length-constancy (the §86 route's mechanical half B):**
+* **`bodyRunPositions_pos`** (`:158`) — every runtime swap position a chain body produces is `≥ 1` (each is `d + 1`).
+* **`runSwaps_stack_length`** (`:172`) — a depth-positive `runSwaps` run preserves stack length exactly (each successful `EvmYul.swap p`, `p ≥ 1`, is length-stable via `swap_ok_stack_length`).
+* **`runBody_chain_stack_length`** (`:189`) — **part (B) proper**: a `ChainInstr`-only body (swap depths `< 16`) runs through `Block.runBody` leaving stack length unchanged, via the §79 `runBody_chain_state` bridge + `runSwaps_stack_length`.
+
+**Commit `f4a39972` — parts (A)/(C) static scaffolding:**
+* **`runBody_chainBodyOk_stack_length`** (`:203`) — part (B) in **member form**: discharges the `ChainInstr` hypothesis from `chainBodyOk` (via the existing `chainInstr_of_chainBodyDepths`, `ShuffleCanonChainStep.lean:179`), so length-constancy applies directly to real `growChain` members. This is the atom part (C)'s assembly calls to transport a member's length back to the head.
+* **`growChain_member_term_jump`** (`:226`) — **part (A)'s jump-target spine**: each non-last `growChain` member's terminator is exactly `jump <next member>.label`, from `growChain_chain'` + `chainStep_spec` via `List.IsChain.getElem`. This is the adjacency the run-forward induction walks head→m₂→m₃→….
+
+**Commit `9ac6a623` — part (A) inductive step:**
+* **`seamCombinedStepRelEff_propagate_jump`** (`:317`) — **the single run-forward step of (A)**. Given `SeamCombinedStepRelEff` at `label` and BOTH bisimilar runs (`cfg` and `Q := preChainProgram cfg`) taking a synchronised `.done` jump to the same `nxt`, the invariant re-seeds at `nxt`. Proof: `openStep_seamCombinedEff_congr_of_source` gives `Simulation.Interaction.Rel SeamCombinedOutcomeRelEff (openStep cfg …) (openStep Q …)`; `rw` both openSteps to their `.done` jump forms, `cases` the `Rel` (only the `done` constructor survives the index unification), then read the `jump` disjunct of `SeamCombinedOutcomeRelEff` (the runtime non-jump disjunct `∀ next s, a ≠ .ok (.jump …)` is refuted by the `cfg`-side jump).
+
+### HOW THE ROUTE NOW STANDS — three of four pieces green; the fourth is a single pinned lemma
+The §86 (A)/(B)/(C) route is now assembled except for ONE piece. Mapping the route onto banked names:
+* **(B) length-constancy — DONE** (`runBody_chain_stack_length` / member form). `s_mid_m.stack.length = s_mid.stack.length` reduces to iterating this across the run's member bodies (jumps pass state through unchanged, `runTerm … (.jump …) s = .jump … s`, `Semantics.lean:112`).
+* **(C) per-member witness — DONE** (`stackRealizes_preChain_of_seamCombined`, §86): at ANY reached label where `SeamCombinedStepRelEff` holds, `StackRealizes m.input s_mid_m`, i.e. `m.input.length ≤ s_mid_m.stack.length`. Combined with (B): `m.input.length ≤ s_mid.stack.length`. Then `hFeasO`/consumed-`hReal_c` follow by the §85/§86 swap-feasibility arithmetic.
+* **(A) reaches-each-member — the INDUCTIVE STEP is DONE** (`seamCombinedStepRelEff_propagate_jump`); the jump TARGETS are DONE (`growChain_member_term_jump`). What remains is the OUTER induction stitching these: an induction over `growChain` that, at each member, (i) shows `openStep cfg`/`openStep Q` both produce the `.done` jump `propagate_jump` consumes, then (ii) applies `propagate_jump` to advance to the next member and collects the `stackRealizes_preChain` witness there.
+
+### THE SINGLE REMAINING BLOCKER (pinned precisely — the genuinely-new content)
+Step (i) above is the **only** un-banked lemma: **"a chain member's `openStep` evaluates to a `.done` jump"** —
+```
+Q.findBlock? m.label = some m → chainBodyOk m → StackRealizes m.input s →
+  (swap depths < 16) → m.term = .jump nxt →
+  InteractionSemantics.Program.openStep Q m.label s = .done (.ok (.jump nxt s'))  ∧  s'.stack.length = s.stack.length
+```
+This is the ONE place the **Interaction-monad** `runBody` (`Instr.openRunState`, `Simulation.Interaction`) must be evaluated — distinct from the **Except** `Block.runBody` (`Semantics.Block.runBody`) that parts (B)/(C) use. `openStep = Control.Program.step Instr.openRunState`; `Control.Block.run` runs the body in the Interaction monad, checks `output = m.output`, then `runTermChecked m.output (.jump nxt) s' = .ok (.jump nxt s')` (`Semantics.lean:171`, state passes through). No reusable "member openStep = jump" lemma exists (searched); the nearest machinery is inside `ShuffleCanonChainStep`'s `ChainStepRel` congruence, which already threads the Interaction-monad body but does not expose this shape. This is exactly the multi-block-ahead evaluation §84/§85 flagged for the oracle (disabled this session and last). It is a genuine bridge lemma, NOT closable to green with a `sorry` (hard no-red), hence pinned rather than attempted-partial.
+
+### REMAINING FRONTIER (in order)
+1. **The member-`openStep`-is-a-done-jump bridge** (above) — the Interaction-monad `runBody`-success evaluation for a `chainBodyOk` member given `StackRealizes m.input`. Then the outer `growChain` run induction: `propagate_jump` at each member + `stackRealizes_preChain` witness + (B) length transport ⟹ `∀ m ∈ growChain, m.input.length ≤ s_mid.stack.length` ⟹ `hFeasO` + consumed `hReal_c` ⟹ the source-threaded `openStep_chainCombinedEff_congr_of_source` (drops `s_mid`/`hReal_o`/`hReal_c`/`hFeasO`).
+2. **The fuel bound `fuelBudget_chainCanonProgram_le`** — global chain-rebalancing sum over `editTable`/`growChain` (head absorbs `canonSwaps merged` ≤ `merged.length` via `canonSwaps_length_le`; consumed members drop to ~0). Independent of the invariant.
+3. **`openRunN`/`openRunNPrefix` fuel congruences + halted bridges** (mirror `PeepholeSeamCombinedEff.lean:185-335`).
+4. **Splice** (compose-after `seamCancelProgramEff` at `StackArtifact.lean:64` + `OpenInteractionComposition.lean`, **NO double-fire guard** — overlap is ∅ by construction per §85). Then **MEASURE** (bytes vs 8551/8585, 2685/2719, 1965/2204, 897/931; determinism; full bench vs shipped −0.43%; expect ECB −412 / ASP −7430 per §77).
+
+### NEXT-SESSION RECIPE
+1. Read §77, §82-§86, and this note. Reuse (all DONE): `runBody_chain_stack_length` / `runBody_chainBodyOk_stack_length` (part B), `stackRealizes_preChain_of_seamCombined` (part C, §86), `growChain_member_term_jump` (part A adjacency), `seamCombinedStepRelEff_propagate_jump` (part A step), `openStep_chainCombinedEff_core` (§85), `chainResidualSpec` (§84, unconditional).
+2. Bank the **member-`openStep`-is-a-done-jump bridge** (frontier 1, the ONE remaining lemma) — evaluate `Control.Program.step Instr.openRunState` on a `chainBodyOk` member; mirror the Interaction-monad body threading inside `ShuffleCanonChainStep`'s `ChainStepRel` congruence. **Consult the oracle (once re-enabled)** for this bridge; it is the single genuinely-new blocker.
+3. Then the outer `growChain` run induction (assemble `propagate_jump` + witness + (B) transport into the invariant), then the fuel bound (frontier 2), fuel congruences (frontier 3), splice + measure (frontier 4).
+
+### GATES (session 87)
+`scripts/opt_harness.sh check` = **OK** (43 public theorems; axioms ⊆ `[propext, Classical.choice, Quot.sound]`). `lake build EvmCompiler.TypedCfg.ShuffleCanonChainCombined` = RC=0 (green orphan leaf). `#print axioms Solidus.compile_correct` / `compile_correct_creation` = `[propext, Classical.choice, Quot.sound]` — UNCHANGED (leaf imported by nobody). `#print axioms` of all five new lemmas = ⊆ `[propext, Classical.choice, Quot.sound]`. No frozen file touched. No splice ⟹ codegen byte-identical to §72 (corpus −0.43% intact) ⟹ no determinism double-compile, no bench re-run, no bytes/gas measured.
+
+### Files touched (session 87)
+`EvmCompiler/TypedCfg/ShuffleCanonChainCombined.lean` (extended with the five lemmas above, still imported by nobody); `EvmCompiler/TypedCfg/PEEPHOLE_PROGRESS.md` (this note). No frozen file touched. `compile_correct`/`compile_correct_creation` axioms UNCHANGED = `[propext, Classical.choice, Quot.sound]`. Commits: `49afa1a0` (part B length-constancy), `f4a39972` (parts A/C scaffolding), `9ac6a623` (part A inductive step).
