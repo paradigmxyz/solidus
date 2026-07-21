@@ -85,6 +85,66 @@ theorem chainCombinedStepRelEff_entry_of_generated
   have h := chainStepRel_entry (preChainProgram cfg) (residual (preChainProgram cfg)) cfgState
   simpa [preChainProgram] using h
 
+/-! ## Frontier 1: the seam-transported per-entry `StackRealizes` at `s_mid` (free) -/
+
+/-- **`hReal_o` for the pre-chain program (source-derived).**  At any reached label,
+the `Q := preChainProgram cfg` block's input is realized by the intermediate seam
+state `s_mid`.  This is exactly the seam layer's `hReal_cP` derivation
+(`PeepholeSeamCombinedEff.lean:118-148`): `stackRealizes_of_realizedWitnessFC_total`
+on `cfg` at `s1`, transported through `SameRuntimeData.stack_eq` and the
+`SeamStepRelEff` length-preservation (`pendingSwap_stack_length` / `remapShape_length`),
+since `Q`'s block `= seamBlockEff P (·)` preserves input length.  Lifted from `P`'s
+block to `Q`'s via `findBlock?_seamCancelProgramEff`. -/
+theorem stackRealizes_preChain_of_seamCombined
+    {source : Structured.Program}
+    {entryShapes : Structured.TypedCfgCompiler.ProcEntryShapes}
+    {cfg : TypedCfg.Program}
+    (context :
+      Structured.TypedCfgPreservation.Program.GeneratedContext source entryShapes cfg)
+    (hSourceWF : source.WF)
+    {label : Label} {s1 s_mid : EVMState}
+    (hStep : SeamCombinedStepRelEff (source := source) (cfg := cfg)
+      context.calls label s1 s_mid) :
+    ∀ b0, (preChainProgram cfg).findBlock? label = some b0 → StackRealizes b0.input s_mid := by
+  obtain ⟨state2, hReal, hRel, hStepP⟩ := hStep
+  set P := peepholeProgram (normalizeProgram cfg) with hP
+  intro bQ hFindQ
+  rw [preChainProgram, ← hP, findBlock?_seamCancelProgramEff] at hFindQ
+  cases hfP : P.findBlock? label with
+  | none => rw [hfP] at hFindQ; simp at hFindQ
+  | some b0 =>
+      rw [hfP] at hFindQ
+      simp only [Option.map_some, Option.some.injEq] at hFindQ
+      subst hFindQ
+      have hFindP' := hfP
+      rw [hP, findBlock?_peepholeProgram, findBlock?_normalizeProgram] at hFindP'
+      cases hf0 : cfg.findBlock? label with
+      | none => rw [hf0] at hFindP'; simp at hFindP'
+      | some bcfg =>
+          rw [hf0] at hFindP'
+          simp only [Option.map_some, Option.some.injEq] at hFindP'
+          have hInputEq : b0.input = bcfg.input := by rw [← hFindP']; simp
+          have hRcfg : bcfg.input.length ≤ s1.stack.length :=
+            Structured.TokenBottomThread.stackRealizes_of_realizedWitnessFC_total
+              context hSourceWF hReal hf0
+          have hLen12 : s1.stack.length = state2.stack.length :=
+            congrArg List.length (SameRuntimeData.stack_eq hRel)
+          rw [seamBlockEff_input_cleanTgt]
+          unfold StackRealizes
+          cases htf : cleanTgt? P b0 with
+          | none =>
+              simp only [htf, hInputEq]
+              simp only [SeamStepRelEff, hfP, htf] at hStepP
+              have h3 : state2.stack.length = s_mid.stack.length :=
+                congrArg List.length (SameRuntimeData.stack_eq hStepP)
+              omega
+          | some d =>
+              simp only [htf, remapShape_length, hInputEq]
+              simp only [SeamStepRelEff, hfP, htf] at hStepP
+              have h3 : state2.stack.length = s_mid.stack.length :=
+                pendingSwap_stack_length hStepP
+              omega
+
 /-! ## The core one-step composition (explicit intermediate state) -/
 
 /-- **Core one-step chain-combined composition.**  `Rel.trans` of the source-threaded
