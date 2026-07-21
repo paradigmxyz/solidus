@@ -352,6 +352,46 @@ theorem seamCombinedStepRelEff_propagate_jump
         exact hnext
       · exact absurd rfl (hnj nxt s1')
 
+/-- **Jump-propagation from the `Q`-side jump alone.**  The run-forward induction only
+observes the `Q := preChainProgram cfg` run stepping to a `.done` jump (via
+`member_openStep_done_jump`); the `cfg`-side jump is *derived* here from the bisimulation.
+Since `openStep cfg _ s1` and `openStep Q _ s_mid` are `Rel`-related and the `Q` side is a
+`.done`, the `cfg` side is a `.done` too (`Rel` pairs `done` with `done`, `request` with
+`request`), and reading the `jump` disjunct of `SeamCombinedOutcomeRelEff` re-seeds the
+invariant at `nxt`.  This drops the explicit `cfg`-jump hypothesis of
+`seamCombinedStepRelEff_propagate_jump`. -/
+theorem seamCombinedStepRelEff_propagate_jump_of_Q
+    {source : Structured.Program}
+    {entryShapes : Structured.TypedCfgCompiler.ProcEntryShapes}
+    {cfg : TypedCfg.Program}
+    (context :
+      Structured.TypedCfgPreservation.Program.GeneratedContext source entryShapes cfg)
+    (hSourceWF : source.WF)
+    (hTyped : cfg.WellTyped) (hIndependent : cfg.ProgramCounterIndependent)
+    {label nxt : Label} {s1 s_mid s_nxt : EVMState}
+    (hStep : SeamCombinedStepRelEff (source := source) (cfg := cfg)
+      context.calls label s1 s_mid)
+    (hQ : InteractionSemantics.Program.openStep (preChainProgram cfg) label s_mid
+      = Simulation.Interaction.done (Except.ok (TypedCfg.Outcome.jump nxt s_nxt))) :
+    ∃ s1', SeamCombinedStepRelEff (source := source) (cfg := cfg)
+      context.calls nxt s1' s_nxt := by
+  have hRel :=
+    openStep_seamCombinedEff_congr_of_source context hSourceWF hTyped hIndependent hStep
+  rw [preChainProgram] at hQ
+  cases hcfgStep : InteractionSemantics.Program.openStep cfg label s1 with
+  | request q k => rw [hcfgStep, hQ] at hRel; cases hRel
+  | done c =>
+      rw [hcfgStep, hQ] at hRel
+      cases hRel with
+      | done hdone =>
+          rcases hdone with ⟨n, sa, sc, ha, hc, hnext⟩ | ⟨hrr, hnj⟩
+          · rw [Except.ok.injEq, Outcome.jump.injEq] at hc
+            obtain ⟨rfl, rfl⟩ := hc
+            exact ⟨sa, hnext⟩
+          · exfalso
+            cases hrr with
+            | ok hok => cases hok; exact hnj _ _ rfl
+
 /-! ## Part (A) step (i): a chain member's `openStep` is a `.done` jump
 
 The single Interaction-monad evaluation the run-forward induction needs.  A chain-eligible
