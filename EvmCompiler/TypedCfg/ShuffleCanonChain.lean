@@ -145,6 +145,34 @@ def chainCanonProgram (program : Program) : Program :=
 /-- Empty body is a (trivial) chain body. -/
 @[simp] theorem chainBodyDepths?_nil : chainBodyDepths? [] = some [] := rfl
 
+/-! ## Fail-closed head typing (the reusable WellTyped crux)
+
+`chainEdits` emits a `.head` edit **only** when its (relabel-terminated) canonical body
+already type-checks `head.input → finalOut`.  This lemma extracts that guarantee — the
+body half of the future head `WellTyped` obligation — directly from the firing branch,
+and pins the consumed tail structure.  (The remaining WellTyped work is the terminator
+obligation + edit-table/refCount consistency, mirroring §72's
+`seamBlockEff_term_type?` / `cleanTgt?_none_of_cleanSrc?_none`.) -/
+theorem chainEdits_head_spec {chain : List Block} {l : Label}
+    {body : List Instr} {out : Shape} {rest : List (Label × Edit)}
+    (h : chainEdits chain = (l, .head body out) :: rest) :
+    ∃ hd tl, chain = hd :: tl ∧ l = hd.label ∧
+      Block.bodyType? body hd.input = some out ∧
+      out = (chain.getLastD hd).output ∧
+      rest = tl.map (fun b => (b.label, Edit.consumed out)) := by
+  cases chain with
+  | nil => simp only [chainEdits, reduceCtorEq] at h
+  | cons hd tl =>
+      simp only [chainEdits] at h
+      split at h
+      · rename_i hc
+        simp only [List.cons.injEq, Prod.mk.injEq, Edit.head.injEq] at h
+        obtain ⟨⟨hl, hbody, hout⟩, hrest⟩ := h
+        subst hout
+        refine ⟨hd, tl, rfl, hl.symm, ?_, rfl, hrest.symm⟩
+        rw [← hbody]; exact eq_of_beq hc
+      · simp only [reduceCtorEq] at h
+
 /-! ## Structural preservation (bodies/shapes only ⇒ labels/terms/entry fixed) -/
 
 @[simp] theorem applyEdit_label (tbl : List (Label × Edit)) (block : Block) :
