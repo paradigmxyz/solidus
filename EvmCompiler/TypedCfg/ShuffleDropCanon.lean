@@ -1,4 +1,5 @@
 import EvmCompiler.TypedCfg.ShuffleCanon
+import EvmCompiler.TypedCfg.ShuffleCanonPerm
 
 /-!
 # Shuffle-drop window canonicalisation (session-95, "the post-chain vein")
@@ -251,6 +252,241 @@ theorem entry_findBlock?_shuffleDropProgram {program : Program}
   cases hFind : program.findBlock? program.entry with
   | none => exact absurd hFind h
   | some block => simp
+
+/-! ## Drop-aware naturality and the gather factoring (the §75 analogue)
+
+`runDrop` is built from `applySwap` and `List.tail`, both natural under `List.map`.
+Hence `runDrop` factors through the net window permutation-with-drops, exactly as
+`applySwaps` did in `ShuffleCanonType` — the substrate the net-effect minimiser's
+correctness rests on. -/
+
+/-- `SDOp.apply` is natural under `List.map`. -/
+theorem SDOp.apply_map {α β : Type _} (f : α → β) (o : SDOp) (l : List α) :
+    o.apply (l.map f) = (o.apply l).map f := by
+  cases o with
+  | swap d => simpa [SDOp.apply] using ShuffleCanon.applySwap_map f (d + 1) l
+  | pop => cases l with
+    | nil => rfl
+    | cons a l => rfl
+
+/-- `runDrop` is natural under `List.map`. -/
+theorem runDrop_map {α β : Type _} (f : α → β) (ops : List SDOp) (l : List α) :
+    runDrop ops (l.map f) = (runDrop ops l).map f := by
+  induction ops generalizing l with
+  | nil => rfl
+  | cons o ops ih => rw [runDrop_cons, runDrop_cons, SDOp.apply_map, ih]
+
+/-- **The gather factoring.** `runDrop ops xs` is the net window trace
+`runDrop ops (range xs.length)` used to gather from `xs`.  Drop-aware analogue of
+`ShuffleCanon.applySwaps_eq_gather`. -/
+theorem runDrop_eq_gather {α : Type _} [Inhabited α] (ops : List SDOp)
+    (xs : List α) :
+    runDrop ops xs = (runDrop ops (List.range xs.length)).map (fun j => xs[j]!) := by
+  conv_lhs => rw [← ShuffleCanon.range_map_getElem! xs]
+  rw [runDrop_map]
+
+/-- **Net-trace congruence.** Two windows with equal net trace on the shared length
+window act identically on any list. -/
+theorem runDrop_congr_of_range {α : Type _} [Inhabited α]
+    (ops qs : List SDOp) (xs : List α)
+    (h : runDrop ops (List.range xs.length) = runDrop qs (List.range xs.length)) :
+    runDrop ops xs = runDrop qs xs := by
+  rw [runDrop_eq_gather ops xs, runDrop_eq_gather qs xs, h]
+
+/-! ## Window locality: a wide-enough window is preserved as a suffix
+
+`fits ops n` says a length-`n` window is wide enough to observe `ops` without the
+operations ever reaching below position `n`: each swap depth is in range at the
+current (post-pop) width and every pop has a head to drop.  Under `fits`, the tail
+below the window is carried through untouched — the drop-aware analogue of
+`ShuffleCanon.applySwaps_append_left`. -/
+
+/-- Width sufficiency: the window never shrinks below the reach of the remaining
+ops. Each `.pop` shrinks the observed width by one. -/
+def fits : List SDOp → Nat → Prop
+  | [], _ => True
+  | .swap d :: rest, n => d + 1 < n ∧ fits rest n
+  | .pop :: rest, n => 0 < n ∧ fits rest (n - 1)
+
+/-- **Locality.** If a length-`xs` window fits `ops`, the sub-window `ys` below it
+is preserved verbatim as a suffix. -/
+theorem runDrop_append_left {α : Type _} (ops : List SDOp) (xs ys : List α)
+    (h : fits ops xs.length) :
+    runDrop ops (xs ++ ys) = runDrop ops xs ++ ys := by
+  induction ops generalizing xs with
+  | nil => rfl
+  | cons o ops ih =>
+      cases o with
+      | swap d =>
+          obtain ⟨hd, hrest⟩ := h
+          simp only [runDrop_cons, SDOp.apply]
+          rw [ShuffleCanon.applySwap_append_left (d + 1) xs ys hd,
+              ih (ShuffleCanon.applySwap (d + 1) xs) (by
+                rwa [ShuffleCanon.length_applySwap])]
+      | pop =>
+          obtain ⟨h0, hrest⟩ := h
+          have hxs : xs ≠ [] := by
+            intro hnil; rw [hnil] at h0; exact absurd h0 (by simp)
+          obtain ⟨a, xs', rfl⟩ : ∃ a xs', xs = a :: xs' := by
+            cases xs with
+            | nil => exact absurd rfl hxs
+            | cons a xs' => exact ⟨a, xs', rfl⟩
+          simp only [runDrop_cons, SDOp.apply, List.cons_append, List.tail_cons]
+          exact ih xs' (by simpa using hrest)
+
+/-! ## Reusable realization lemmas (pops as `drop`, position-swaps as `applySwaps`) -/
+
+/-- A run of `.pop`s drops that many head slots. -/
+theorem runDrop_replicate_pop {α : Type _} (k : Nat) (xs : List α) :
+    runDrop (List.replicate k .pop) xs = xs.drop k := by
+  induction k generalizing xs with
+  | zero => simp [runDrop]
+  | succ k ih =>
+      rw [List.replicate_succ, runDrop_cons, SDOp.apply, ih]
+      cases xs with
+      | nil => simp
+      | cons a xs => simp [List.drop_succ_cons]
+
+/-- A `.swap`-only window built from a **position** list `ps` (each `≥ 1`) realises
+`ShuffleCanon.applySwaps ps` (recall `SDOp.swap d = applySwap (d+1)`, so position
+`p` is depth `p - 1`). -/
+theorem runDrop_swapmap {α : Type _} (ps : List Nat) (xs : List α)
+    (h : ∀ p ∈ ps, 1 ≤ p) :
+    runDrop (ps.map (fun p => SDOp.swap (p - 1))) xs =
+      ShuffleCanon.applySwaps ps xs := by
+  induction ps generalizing xs with
+  | nil => rfl
+  | cons p ps ih =>
+      simp only [List.map_cons, runDrop_cons, SDOp.apply,
+        ShuffleCanon.applySwaps_cons]
+      have hp : p - 1 + 1 = p := by have := h p (by simp); omega
+      rw [hp, ih _ (fun q hq => h q (by simp [hq]))]
+
+/-- Every element of a net trace came from the input window. -/
+theorem runDrop_mem (ops : List SDOp) (l : List Nat)
+    {x : Nat} (hx : x ∈ runDrop ops l) : x ∈ l := by
+  induction ops generalizing l with
+  | nil => simpa using hx
+  | cons o ops ih =>
+      rw [runDrop_cons] at hx
+      have hstep : x ∈ o.apply l := ih (o.apply l) hx
+      cases o with
+      | swap d =>
+          simp only [SDOp.apply] at hstep
+          exact (ShuffleCanon.applySwap_perm (d + 1) l).mem_iff.1 hstep
+      | pop =>
+          simp only [SDOp.apply] at hstep
+          exact List.mem_of_mem_tail hstep
+
+/-- A net trace of a `Nodup` window is `Nodup`. -/
+theorem runDrop_nodup (ops : List SDOp) {l : List Nat} (hl : l.Nodup) :
+    (runDrop ops l).Nodup := by
+  induction ops generalizing l with
+  | nil => simpa using hl
+  | cons o ops ih =>
+      rw [runDrop_cons]
+      apply ih
+      cases o with
+      | swap d =>
+          simp only [SDOp.apply]
+          exact (ShuffleCanon.applySwap_perm (d + 1) l).nodup_iff.2 hl
+      | pop =>
+          simp only [SDOp.apply]
+          exact hl.sublist (List.tail_sublist l)
+
+/-! ## The drop-aware net-effect minimiser
+
+`netEffect ops` (`= runDrop ops (range N)`, `N = sdDepth + popCount + 1`) is the
+list of surviving original slots, top-first.  The minimal-length realisation of the
+same net effect (a *permutation-then-drop*): bring the `popCount` dead slots to the
+top and pop them, having reused `ShuffleCanon.starDecompose` on the survivor
+permutation.  Concretely, realise the window permutation whose net image is
+`dead ++ survivors` (`dead` = the complement of the survivors in `range N`), then
+drop the `popCount` dead heads.  Fired only when strictly shorter, so the length
+bound is immediate. -/
+
+/-- The dropped original slots: the complement of the survivors in `range N`. -/
+def deadSlots (ops : List SDOp) : List Nat :=
+  (List.range (sdDepth ops + popCount ops + 1)).filter
+    (fun j => decide (j ∉ netEffect ops))
+
+/-- The realisation: canonical survivor-then-drop permutation, then the pops. -/
+def realize (ops : List SDOp) : List SDOp :=
+  (ShuffleCanon.starDecompose (deadSlots ops ++ netEffect ops)).map
+      (fun p => SDOp.swap (p - 1))
+    ++ List.replicate (popCount ops) SDOp.pop
+
+/-- The minimiser: fire the realisation only when strictly shorter (fail-open on
+savings, never lengthens — the cross-pop successor to `canonAcrossPops`). -/
+def minimizeWindow (ops : List SDOp) : List SDOp :=
+  if (realize ops).length < ops.length then realize ops else ops
+
+/-- **Length bound.** The minimiser never lengthens a window (gated). -/
+theorem minimizeWindow_length_le (ops : List SDOp) :
+    (minimizeWindow ops).length ≤ ops.length := by
+  unfold minimizeWindow
+  split
+  · exact Nat.le_of_lt (by assumption)
+  · exact Nat.le_refl _
+
+/-! ## Type-preservation kernel for the extended `{SWAP, POP}` alphabet
+
+The single `.pop` typing dictionary (`type?` on a `.pop` drops the head slot,
+leaving the frame `tail` fixed) plus the forward window-threading fact: a
+`{SWAP,POP}` window's typed `Shape` transition threads the slots by exactly
+`runDrop` and preserves the frame `tail` — the drop-aware analogue of
+`ShuffleCanonType.bodyType?_map_swap_eq`.  `bodyType?` through a `.pop` is a
+tail-shape step, matching `SDOp.apply .pop = List.tail`. -/
+
+/-- **The `.pop` typing dictionary.** `type? .pop` succeeds iff the slots are
+non-empty, and then drops the head slot while leaving the frame `tail` fixed. -/
+theorem type?_pop_eq_tail {input output : Shape}
+    (hType : Instr.type? .pop input = some output) :
+    input.slots ≠ [] ∧
+      output = { slots := input.slots.tail, tail := input.tail } := by
+  cases input with
+  | mk slots tail =>
+    cases slots with
+    | nil => simp [Instr.type?] at hType
+    | cons a rest =>
+        simp only [Instr.type?, Option.some.injEq] at hType
+        subst hType
+        exact ⟨by simp, by simp⟩
+
+/-- **Per-op shape step.**  Applying one shuffle-drop op at the type level threads
+the slots by `SDOp.apply` and leaves the frame `tail` fixed. -/
+theorem type?_sdOp_slots (op : SDOp) {input output : Shape}
+    (hType : Instr.type? (sdToInstr op) input = some output) :
+    output.slots = op.apply input.slots ∧ output.tail = input.tail := by
+  cases op with
+  | swap d =>
+      obtain ⟨_, _, hEq⟩ := ShuffleCanon.type?_swap_eq_applySwap (d := d) hType
+      rw [hEq]; exact ⟨rfl, rfl⟩
+  | pop =>
+      obtain ⟨_, hEq⟩ := type?_pop_eq_tail hType
+      rw [hEq]; exact ⟨rfl, rfl⟩
+
+/-- **Forward window threading.**  If a `{SWAP,POP}` window types from `input`, its
+output slots are exactly `runDrop ops input.slots` and its frame `tail` is fixed. -/
+theorem bodyType?_sdWindow_eq (ops : List SDOp) (input out : Shape)
+    (hType : Block.bodyType? (ops.map sdToInstr) input = some out) :
+    out.slots = runDrop ops input.slots ∧ out.tail = input.tail := by
+  induction ops generalizing input with
+  | nil =>
+      simp only [List.map_nil, Block.bodyType?, Option.some.injEq] at hType
+      subst hType; exact ⟨rfl, rfl⟩
+  | cons o ops ih =>
+      simp only [List.map_cons, Block.bodyType?] at hType
+      cases hMid : Instr.type? (sdToInstr o) input with
+      | none => rw [hMid] at hType; simp at hType
+      | some mid =>
+          rw [hMid] at hType
+          obtain ⟨hslots, htail⟩ := type?_sdOp_slots o hMid
+          obtain ⟨hout, houttail⟩ := ih mid hType
+          rw [runDrop_cons]
+          refine ⟨?_, ?_⟩
+          · rw [hout, hslots]
+          · rw [houttail, htail]
 
 end ShuffleDropCanon
 end TypedCfg
