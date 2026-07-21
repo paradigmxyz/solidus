@@ -6979,3 +6979,47 @@ NEW `EvmCompiler/TypedCfg/ShuffleCanonType.lean` (imported by **nobody** ⟹ can
 ### Files touched (session 75)
 NEW `EvmCompiler/TypedCfg/ShuffleCanonType.lean` (green, imported by nobody); `EvmCompiler/TypedCfg/PEEPHOLE_PROGRESS.md` (this note). No frozen file touched. `compile_correct`/`compile_correct_creation` axioms UNCHANGED = `[propext, Classical.choice, Quot.sound]`.
 
+## Session-76 update (2026-07-20): **(P1) CLOSED + the entire single-block WellTyped gate CLOSED. The §75 frontier (P1 selection-sort realisability + the two mechanical supports + the discharge of `canonSwaps_bodyType?_preserve`'s two hypotheses + the lift to `canonBody`/`canonBlock`/`shuffleCanonProgram`) is fully proved green and axiom-clean.** Route-2 is now: everything at cfg-body altitude for the *single-block* shuffle canonicaliser is verified; the only remaining work before a live splice is the **chain transform** (multi-block `PendingPerm σ`) — NOT started this session, documented as the sharpened frontier below. New leaf `EvmCompiler/TypedCfg/ShuffleCanonPerm.lean` (imported by nobody ⟹ cannot touch the `compile_correct` cone). `scripts/opt_harness.sh check` = **OK** (43 theorems; axioms ⊆ `[propext, Classical.choice, Quot.sound]`); `compile_correct`/`compile_correct_creation` = `[propext, Classical.choice, Quot.sound]` UNCHANGED. No frozen file touched. No splice (still no live byte delta — the chain transform is what fires).
+
+### THE (P1) CORRECTION (measure, don't assume — the §70-73 lesson again)
+`ShuffleCanon.lean:94` flagged `netStack (starDecompose t) t.length = t` as "the frontier correctness lemma" for **arbitrary** `t`. A decisive numeric probe (`scratch model.py` over all perms n≤7 + the `[0,0]` witness) proved it **FALSE in general**: `t = [0,0]` gives `netStack (starDecompose [0,0]) 2 = [1,0] ≠ [0,0]`. It holds **exactly for permutations of `range t.length`** — which is always the case at the one call site, where `starDecompose` is applied to `netStack ps (maxDepth ps + 1)`, a permutation of `range` of its own length by construction. So the banked lemma carries that hypothesis and is fed by `netStack_perm_range`.
+
+### WHAT LANDED (green, axiom-clean) — `EvmCompiler/TypedCfg/ShuffleCanonPerm.lean` (815 lines)
+**Inverse structure + permutation preservation**
+* `getElem?_applySwap` (`:60`) — `applySwap k` reindexes by the involution `swapIdx k` (transpose `0`↔`k`) on the active window; `applySwap_involutive` (`:89`), `applySwaps_reverse_cancel` (`:172`, reversed run = inverse), `applySwap_perm` (`:143`, multiset preservation via `List.count_set`).
+
+**(P1) selection-sort realisability**
+* `sortFoldr_inv` (`:255`) — the combinatorial core: a **downward `foldr` invariant** ("processed suffix `[k,n)` already in place") over `range' k m` (`k+m=n`), carrying length=n, `Perm … (range n)`, `working = applySwaps acc b0`, the suffix-in-place claim, AND (5th conjunct, session-76) every accumulated swap position ∈ `[1,n)` (needs the perm to know `findIdx k < n`).
+* `sortToId_correct` (`:393`) — `applySwaps (sortToId t) t = range t.length` (perm input), via the invariant + nodup at position 0.
+* **`netStack_starDecompose_of_perm` (`:449`) = (P1)** — `netStack (starDecompose t) t.length = t` for `t ~ range t.length`, via `sortToId_correct` + `applySwaps_reverse_cancel` (the inverse trick avoids reasoning about `starDecompose` directly).
+* `netStack_perm_range` (`:464`), `netStack_length` — feed P1 at the call site.
+
+**The two mechanical supports (§75 (i)/(ii))**
+* `starDecompose_elem_bounds` (`:489`) — canonical positions ∈ `[1, t.length)` (from the 5th invariant conjunct via `sortToId_elem_bounds`).
+* `mem_le_maxDepth` (`:517`, + `foldl_max_le`/`maxDepth_le` `:610`).
+* window-extension: `applySwap_append_left` → `applySwaps_append_left` → `range_split` → `netStack_window_extend` (`:561`) → **`netStack_congr_window` (`:570`)** — equal `netStack` over window `W` ⟹ equal over any wider `L` (positions `< W ≤ L`; the tail `range' W (L-W)` is identity-fixed).
+* `bodyType?_map_swap_bound` (`:578`) — a typed `.swap` run bounds every depth (`< 16`, in range), lengths preserved.
+
+**The discharge + the single-block gate**
+* **`canonSwaps_bodyType?_preserve_uncond` (`:619`)** — discharges BOTH `hNet` and `hBound` of `ShuffleCanonType.canonSwaps_bodyType?_preserve`; **no side hypotheses**. Fired branch: `W = maxDepth(r.map(·+1))+1 ≤ 17` (depths `< 16`) and `W ≤ input.slots.length`, canon depths land in `[0,16)`, net window permutation preserved by P1 and lifted `L≥W` by `netStack_congr_window`; `(c.map(·-1)).map(·+1)=c` (canon positions `≥ 1`). Unfired: identity.
+* `canonBodyGo_bodyType?_preserve`/`canonBody_bodyType?_preserve` (`:763`) — lift over interleaved swap-runs + non-swap instrs (`bodyType?_append` + `swapDepth?_eq_some`).
+* `labelShape?_shuffleCanonProgram` (`:773`)/`term_type?_shuffleCanonProgram` (`:780`) — terminator typing is invariant under the canonicalisation (it reads `.input`, preserved by `canonBlock` §74).
+* `canonBlock_WellTyped` (`:787`), **`shuffleCanonProgram_WellTyped` (`:800`)** — the **single-block WellTyped gate**: `program.WellTyped → (shuffleCanonProgram program).WellTyped`, combining the §74 structural lemmas (LabelsUnique/entry/EmittedLabelsUnique) with the new body-typing + terminator invariance.
+
+### SHARPENED FRONTIER — the CHAIN transform (the actual live vein; not started)
+The single-block canonicaliser (`shuffleCanonProgram`) is now fully WellTyped-verified but fires on **nothing in the real corpus** (§74: every emitted run is one block's body, already minimal PRE-compaction; the 22k-byte vein is created by `Compact.prepare`'s fallthrough merges). The payoff needs the **chain** transform that anticipates those merges at cfg altitude (§75 Route 2, the §72 canceller generalised from `PendingSwap d` to `PendingPerm σ`). Remaining, in order:
+1. **Chain identification** — reuse §72's refCount-1 non-entry fallthrough-chain locator (`cleanSrc?`/refCount machinery in `PeepholeSeamCancel*`). Bank the pure def + a `WellTyped`-preservation proof of the *static* rewrite (concatenate each chain's would-be-merged swap runs, canonicalise the net permutation via the now-verified `canonSwaps`, redistribute all swaps to the chain head / empty interior blocks — sound because refCount-1 interior entries are unobserved). The banked single-block lemmas (`canonSwaps_bodyType?_preserve_uncond`, the `applySwaps`/`netStack` algebra) carry over verbatim; the new content is only the block-concatenation typing (compose `bodyType?_append` across the chain).
+2. **`PendingPerm σ` runtime invariant** — generalise `PeepholeSeamCancelEffRuntime.lean`'s `SeamStepRelEff`/`SeamOutcomeRelEff` congruence + `PeepholeSeamCombinedEff.lean` fuel bound from a single `swap (d+1)` residual to a residual list `σ : List Nat` (birth accumulates each block's net permutation; resync applies `canonSwaps` at the chain end). Composition is an induction over the chain (σ is a *value*, not a proof that grows) — `canonSwaps_length_le` already bounds emitted length.
+3. **Splice** at the EXISTING `seamCancelProgramEff` seam (`StackArtifact.compile?:64` + OIC) — no new certificate/layout contract. Only then measure bytes + double-compile determinism.
+
+### NEXT-SESSION RECIPE
+1. Read this note + §74/§75. The single-block gate is DONE — do not redo it; import `ShuffleCanonPerm` and reuse `canonSwaps_bodyType?_preserve_uncond` + the `applySwaps`/`netStack`/`netStack_congr_window` algebra.
+2. Build the chain **static** prefix first (identification + block-concatenation `WellTyped` preservation), banking it green as an orphan leaf, BEFORE any runtime bisimulation — same discipline as §57/§61/§71 (transform + syntactic + type-preservation FIRST).
+3. Then port the `PendingSwap d → PendingPerm σ` runtime tower; splice; measure. Consider the oracle skill only if the `PendingPerm` composition induction resists.
+
+### GATES (session 76)
+`scripts/opt_harness.sh check` = **OK** (43 public theorems; axioms ⊆ `[propext, Classical.choice, Quot.sound]`). `#print axioms` on `Solidus.compile_correct` / `compile_correct_creation` = `[propext, Classical.choice, Quot.sound]` — UNCHANGED (new leaf imported by nobody). No frozen file touched. No splice ⟹ codegen byte-identical to §72 (corpus −0.43% shipped state intact) ⟹ no determinism double-compile, no bench re-run.
+
+### Files touched (session 76)
+NEW `EvmCompiler/TypedCfg/ShuffleCanonPerm.lean` (green, imported by nobody); `EvmCompiler/TypedCfg/PEEPHOLE_PROGRESS.md` (this note). No frozen file touched. `compile_correct`/`compile_correct_creation` axioms UNCHANGED = `[propext, Classical.choice, Quot.sound]`. Commits: `80e1805b` (P1), `d3e37591` (acc-bounds), `b0f94181` (supports), `4df73d5e` (unconditional discharge), `3f383094` (single-block WellTyped gate).
+
