@@ -172,6 +172,114 @@ theorem netStack_canonSwaps_positions (r : List Nat) (L : Nat)
     simp only [hc] at hfire ⊢
     rw [if_neg hfire]
 
+/-! ## Chain-body side-condition helpers (ChainInstr / depth bounds / feasibility) -/
+
+/-- A chain-eligible body (`chainBodyDepths? = some _`) consists only of
+`ChainInstr` instructions. -/
+theorem chainInstr_of_chainBodyDepths :
+    ∀ {body : List Instr} {ds : List Nat},
+      ShuffleCanon.chainBodyDepths? body = some ds →
+      ∀ i ∈ body, ChainInstr i
+  | [], _, _, i, hi => absurd hi (List.not_mem_nil)
+  | Instr.swap d :: rest, ds, h, i, hi => by
+      simp only [ShuffleCanon.chainBodyDepths?, Option.map_eq_some_iff] at h
+      obtain ⟨ds', hds', rfl⟩ := h
+      rcases List.mem_cons.1 hi with rfl | hi'
+      · simp [ChainInstr]
+      · exact chainInstr_of_chainBodyDepths hds' i hi'
+  | Instr.bindLocals _ _ :: rest, ds, h, i, hi => by
+      simp only [ShuffleCanon.chainBodyDepths?] at h
+      rcases List.mem_cons.1 hi with rfl | hi'
+      · simp [ChainInstr]
+      · exact chainInstr_of_chainBodyDepths h i hi'
+
+/-- The canonicalised head body `(swaps).map .swap ++ [.relabel t]` is all
+`ChainInstr`. -/
+theorem chainInstr_canonBody (r : List Nat) (t : Shape) :
+    ∀ i ∈ (r.map Instr.swap ++ [Instr.relabel t]), ChainInstr i := by
+  intro i hi
+  rw [List.mem_append] at hi
+  rcases hi with hi | hi
+  · rw [List.mem_map] at hi; obtain ⟨d, _, rfl⟩ := hi; simp [ChainInstr]
+  · simp only [List.mem_singleton] at hi; subst hi; simp [ChainInstr]
+
+/-- Every `.swap` in a `bodyType?`-checked body has depth `< 16`. -/
+theorem chain_swap_lt16 :
+    ∀ (body : List Instr) {input out : Shape},
+      Block.bodyType? body input = some out →
+      ∀ d, Instr.swap d ∈ body → d < 16
+  | [], _, _, _, _, hd => absurd hd List.not_mem_nil
+  | instr :: rest, input, out, hType, d, hd => by
+      rw [bodyType?_cons, Option.bind_eq_some_iff] at hType
+      obtain ⟨mid, htype, hrest⟩ := hType
+      rcases List.mem_cons.1 hd with rfl | hd'
+      · exact (Instr.length_of_type?_swap htype).1
+      · exact chain_swap_lt16 rest hrest d hd'
+
+/-- **Position feasibility.**  In a `bodyType?`-checked chain body, every runtime
+position `p ∈ bodyRunPositions body` satisfies `1 ≤ p` and `p + 1 ≤ input.length`
+(the swap-depth typing bound, propagated by length-preserving bookkeeping). -/
+theorem bodyRunPositions_bound :
+    ∀ (body : List Instr) {input out : Shape},
+      (∀ i ∈ body, ChainInstr i) →
+      Block.bodyType? body input = some out →
+      ∀ p ∈ bodyRunPositions body, 1 ≤ p ∧ p + 1 ≤ input.length
+  | [], _, _, _, _, p, hp => by simp only [bodyRunPositions, List.not_mem_nil] at hp
+  | instr :: rest, input, out, hChain, hType, p, hp => by
+      rw [bodyType?_cons, Option.bind_eq_some_iff] at hType
+      obtain ⟨mid, htype, hrest⟩ := hType
+      have hChainTail : ∀ i ∈ rest, ChainInstr i :=
+        fun i hi => hChain i (List.mem_cons_of_mem _ hi)
+      have hHead : ChainInstr instr := hChain instr List.mem_cons_self
+      cases instr with
+      | swap d =>
+          obtain ⟨_, hdlen, hmidlen⟩ := Instr.length_of_type?_swap htype
+          simp only [bodyRunPositions, List.mem_cons] at hp
+          rcases hp with rfl | hp
+          · exact ⟨by omega, by omega⟩
+          · have h := bodyRunPositions_bound rest hChainTail hrest p hp
+            rw [hmidlen] at h; exact h
+      | bindLocals _ _ =>
+          simp only [bodyRunPositions] at hp
+          have h := bodyRunPositions_bound rest hChainTail hrest p hp
+          rw [Instr.length_of_type?_bindLocals htype] at h; exact h
+      | bindScratch _ _ _ =>
+          simp only [bodyRunPositions] at hp
+          have h := bodyRunPositions_bound rest hChainTail hrest p hp
+          rw [Instr.length_of_type?_bindScratch htype] at h; exact h
+      | relabel _ =>
+          simp only [bodyRunPositions] at hp
+          have h := bodyRunPositions_bound rest hChainTail hrest p hp
+          rw [Instr.length_of_type?_relabel htype] at h; exact h
+      | push _ => exact absurd hHead (by simp [ChainInstr])
+      | returnToken _ => exact absurd hHead (by simp [ChainInstr])
+      | prim _ => exact absurd hHead (by simp [ChainInstr])
+      | pop => exact absurd hHead (by simp [ChainInstr])
+      | dup _ => exact absurd hHead (by simp [ChainInstr])
+      | unwind _ => exact absurd hHead (by simp [ChainInstr])
+
+/-- `canonSwaps` of the empty run is empty. -/
+theorem canonSwaps_nil : ShuffleCanon.canonSwaps [] = [] := by decide
+
+/-- **The netStack lift from a position bound.**  If every position of the
+merged run stays within the stack window `L`, the merged run and its
+`canonSwaps` induce the same `netStack` over `L` (handling the empty run, where
+both sides are `List.range L`). -/
+theorem netStack_canonSwaps_bound (r : List Nat) (L : Nat)
+    (hb : ∀ p ∈ r.map (· + 1), p + 1 ≤ L) :
+    ShuffleCanon.netStack (r.map (· + 1)) L
+      = ShuffleCanon.netStack ((ShuffleCanon.canonSwaps r).map (· + 1)) L := by
+  rcases r with _ | ⟨d, ds⟩
+  · rw [canonSwaps_nil]
+  · have hmem : (d + 1) ∈ (d :: ds).map (· + 1) := by simp
+    have hL : d + 1 + 1 ≤ L := hb _ hmem
+    have hwin : ShuffleCanon.maxDepth ((d :: ds).map (· + 1)) + 1 ≤ L := by
+      have hle : ShuffleCanon.maxDepth ((d :: ds).map (· + 1)) ≤ L - 1 :=
+        ShuffleCanon.maxDepth_le _ (L - 1) (fun q hq => by
+          have := hb q hq; omega)
+      omega
+    exact (netStack_canonSwaps_positions (d :: ds) L hwin).symm
+
 /-! ## The carried invariant + disjunctive outcome relation -/
 
 open ShuffleCanon (editTable Edit chainCanonProgram)
