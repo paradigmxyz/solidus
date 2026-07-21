@@ -135,6 +135,56 @@ theorem residualAux_of_run {program : Program} :
           simp only [residualAux, hfind, hterm, hlkD, hIH]
           simp only [List.flatMap_cons]
 
+/-! ## Consumed members are chain-eligible -/
+
+/-- A `chainStep`-linked successor is chain-eligible. -/
+theorem chainStep_chainBodyOk_nxt {prog : Program} {a nxt : Block}
+    (h : ShuffleCanon.chainStep prog a nxt = true) :
+    (chainBodyDepths? nxt.body).isSome := by
+  unfold ShuffleCanon.chainStep ShuffleCanon.chainBodyOk at h
+  simp only [Bool.and_eq_true] at h
+  exact h.1.1.2
+
+/-- **Consumed members are chain-eligible** (the first conjunct of
+`ChainResidualSpec.consumed`): a consumed block's body is `.swap`/`.bindLocals` only,
+so `chainBodyDepths?` succeeds.  A consumed member is a non-head chain member, hence has
+a `chainStep`-predecessor whose step guard forces `chainBodyOk` of the member. -/
+theorem consumed_chainBodyOk {program : Program} (hUnique : program.LabelsUnique)
+    {b0 : Block} {out : Shape}
+    (hb0mem : b0 ∈ program.blocks)
+    (hlk : (editTable program).lookup b0.label = some (Edit.consumed out)) :
+    ∃ ds, chainBodyDepths? b0.body = some ds := by
+  have hmemtbl := ShuffleCanon.lookup_mem hlk
+  unfold editTable at hmemtbl
+  split at hmemtbl
+  · simp only [List.not_mem_nil] at hmemtbl
+  · rename_i ordered hord
+    obtain ⟨b, rest, hsuf, _hlen, hmem, _hsub⟩ := ShuffleCanon.scanEdits_mem hmemtbl
+    obtain ⟨hd, tl, hchain, _hbody, hcases⟩ := ShuffleCanon.chainEdits_fired hmem
+    have hCcase : ∃ C ∈ tl, (b0.label, Edit.consumed out) =
+        (C.label, Edit.consumed ((ShuffleCanon.growChain program b rest).getLastD hd).output) := by
+      rcases hcases with heq | hc
+      · rw [Prod.mk.injEq] at heq; exact absurd heq.2 (by simp)
+      · exact hc
+    obtain ⟨C, hCtl, hCeq⟩ := hCcase
+    have hb0label : b0.label = C.label := by rw [Prod.mk.injEq] at hCeq; exact hCeq.1
+    have hCblocks : C ∈ program.blocks :=
+      ShuffleCanon.growChain_mem_blocks hord hsuf (hchain ▸ List.mem_cons_of_mem hd hCtl)
+    have hb0C : b0 = C := by
+      have h1 : program.findBlock? b0.label = some b0 :=
+        Program.findBlock?_eq_some_of_mem hUnique hb0mem
+      rw [hb0label, Program.findBlock?_eq_some_of_mem hUnique hCblocks] at h1
+      exact ((Option.some.injEq _ _).mp h1).symm
+    -- C has a chainStep-predecessor, so C is chain-eligible.
+    have hgc := ShuffleCanon.growChain_chain' program b rest
+    rw [hchain] at hgc
+    obtain ⟨P, _, hstep⟩ := ShuffleCanon.chainStep_pred_of_mem_tail hgc hCtl
+    have hOk : (chainBodyDepths? C.body).isSome := chainStep_chainBodyOk_nxt hstep
+    rw [hb0C]
+    cases hd' : chainBodyDepths? C.body with
+    | none => rw [hd'] at hOk; simp at hOk
+    | some ds => exact ⟨ds, rfl⟩
+
 end Peephole
 end TypedCfg
 end EvmCompiler
