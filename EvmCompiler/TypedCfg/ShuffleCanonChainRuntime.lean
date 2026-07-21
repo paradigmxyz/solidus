@@ -130,3 +130,38 @@ theorem runSwaps_ok :
         rw [hswap]; exact hrun'
       · rw [hstk', hs1stack, ShuffleCanon.applySwaps_cons]
       · rw [hshared', hs1, replaceStack_shared]
+
+/-! ## Part C — the resync crux: equal `netStack` runs land `SameRuntimeData` -/
+
+/-- `SameRuntimeData` from equal shared state and equal stack (pc/execLength are
+erased). -/
+theorem sameRuntimeData_of {s1 s2 : EVMState}
+    (hshared : s1.toSharedState = s2.toSharedState) (hstack : s1.stack = s2.stack) :
+    SameRuntimeData s1 s2 := by
+  cases s1 with
+  | mk sh1 pc1 st1 el1 =>
+    cases s2 with
+    | mk sh2 pc2 st2 el2 =>
+      simp_all [SameRuntimeData, eraseRuntimeControl]
+
+/-- **The resync crux (the §76 P1/P2 algebra, at runtime).**  Two depth-feasible
+`.swap`-runs `ps`, `qs` with the *same* `netStack` over the stack window, launched
+from the same state, land in `SameRuntimeData` states.  This is exactly the fact
+that "net permutations equal by construction ⟹ the states re-converge" (item 2
+resync at chain exit): both realise the same `applySwaps` on the stack, and swaps
+touch nothing else runtime-visible. -/
+theorem runSwaps_resync {ps qs : List Nat} {s : EVMState}
+    (hpos_p : ∀ p ∈ ps, 1 ≤ p) (hpos_q : ∀ q ∈ qs, 1 ≤ q)
+    (hlen_p : ∀ p ∈ ps, p + 1 ≤ s.stack.length)
+    (hlen_q : ∀ q ∈ qs, q + 1 ≤ s.stack.length)
+    (hnet : ShuffleCanon.netStack ps s.stack.length
+      = ShuffleCanon.netStack qs s.stack.length) :
+    ∃ s1 s2, runSwaps ps s = .ok s1 ∧ runSwaps qs s = .ok s2 ∧
+      SameRuntimeData s1 s2 := by
+  obtain ⟨s1, hr1, hstk1, hsh1⟩ := runSwaps_ok ps s hpos_p hlen_p
+  obtain ⟨s2, hr2, hstk2, hsh2⟩ := runSwaps_ok qs s hpos_q hlen_q
+  refine ⟨s1, s2, hr1, hr2, ?_⟩
+  apply sameRuntimeData_of
+  · rw [hsh1, hsh2]
+  · rw [hstk1, hstk2]
+    exact ShuffleCanon.applySwaps_congr_of_netStack ps qs s.stack hnet
