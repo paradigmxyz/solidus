@@ -96,6 +96,11 @@ inductive Edit where
   | consumed (out : Shape)
   deriving Repr
 
+/-- The new output shape an edit installs (`out` in both constructors). -/
+def Edit.out : Edit → Shape
+  | .head _ o => o
+  | .consumed o => o
+
 /-- Edits for one grown chain (length ≥ 2).  Fail-closed: emits nothing unless the
 canonicalised head body types `head.input → finalOut`. -/
 def chainEdits (chain : List Block) : List (Label × Edit) :=
@@ -287,6 +292,14 @@ theorem mem_chainEdits_of_mem_chain {chain : List Block} {P : Block}
   | inr hP =>
       exact ⟨_, List.mem_cons.mpr (Or.inr (List.mem_map.mpr ⟨P, hP, rfl⟩))⟩
 
+/-- Every edit a chain emits installs the chain's `finalOut`. -/
+theorem chainEdits_snd_out {chain : List Block} {p : Label × Edit}
+    (h : p ∈ chainEdits chain) :
+    ∃ hd tl, chain = hd :: tl ∧ p.2.out = (chain.getLastD hd).output := by
+  obtain ⟨hd, tl, hchain, _hbody, hcases⟩ := chainEdits_fired h
+  refine ⟨hd, tl, hchain, ?_⟩
+  rcases hcases with heq | ⟨_C, _hC, heq⟩ <;> rw [heq] <;> rfl
+
 /-! ## `chainStep` unpacking -/
 
 theorem chainStep_spec {prog : Program} {a nxt : Block} (h : chainStep prog a nxt = true) :
@@ -315,7 +328,7 @@ predecessor, and has `refCount = 1`.  The refCount-1 uniqueness is what forbids 
 theorem consumed_predecessor {program : Program} {L : Label} {out : Shape}
     (h : (L, Edit.consumed out) ∈ editTable program) :
     ∃ P, P ∈ program.blocks ∧ P.term = Terminator.jump L ∧ refCount program L = 1 ∧
-      ∃ eP, (P.label, eP) ∈ editTable program := by
+      ∃ eP, (P.label, eP) ∈ editTable program ∧ eP.out = out := by
   unfold editTable at h
   split at h
   · simp only [List.not_mem_nil] at h
@@ -342,8 +355,15 @@ theorem consumed_predecessor {program : Program} {L : Label} {out : Shape}
     have hne : chainEdits (growChain program b rest) ≠ [] := by
       intro he; rw [he] at hmem; exact absurd hmem (by simp)
     obtain ⟨e, heP⟩ := mem_chainEdits_of_mem_chain hne hPmem
-    refine ⟨P, hPblocks, hterm, href, e, ?_⟩
-    unfold editTable; rw [hord]; exact hsub _ heP
+    have hout : out = ((growChain program b rest).getLastD hd).output := by
+      rw [Prod.mk.injEq, Edit.consumed.injEq] at hCeq; exact hCeq.2
+    obtain ⟨hd'', _tl'', hchain'', heout⟩ := chainEdits_snd_out heP
+    rw [hchain] at hchain''
+    injection hchain'' with hhd _
+    have heout' : e.out = ((growChain program b rest).getLastD hd'').output := heout
+    refine ⟨P, hPblocks, hterm, href, e, ?_, ?_⟩
+    · unfold editTable; rw [hord]; exact hsub _ heP
+    · rw [heout', ← hhd]; exact hout.symm
 
 /-! ## `List.lookup` ↔ membership helpers (`Label` is `LawfulBEq`) -/
 
@@ -724,7 +744,7 @@ theorem untouched_target_not_consumed {program : Program} {b0 : Block} {L : Labe
     (hLmem : L ∈ b0.term.targets) (out : Shape) :
     (editTable program).lookup L ≠ some (Edit.consumed out) := by
   intro hlk
-  obtain ⟨P, hPmem, hPterm, href, eP, hePmem⟩ := consumed_predecessor (lookup_mem hlk)
+  obtain ⟨P, hPmem, hPterm, href, eP, hePmem, _⟩ := consumed_predecessor (lookup_mem hlk)
   have hLP : L ∈ P.term.targets := by rw [hPterm]; simp [Terminator.targets]
   by_cases hPb0 : P = b0
   · subst hPb0
