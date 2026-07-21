@@ -369,6 +369,120 @@ theorem last_member_no_consumed_target {program : Program}
   exact absurd hPC (by simp)
 
 
+
+/-! ## Eligibility helpers -/
+
+theorem chainStep_chainBodyOk_a {prog : Program} {a nxt : Block}
+    (h : ShuffleCanon.chainStep prog a nxt = true) :
+    (chainBodyDepths? a.body).isSome := by
+  unfold ShuffleCanon.chainStep ShuffleCanon.chainBodyOk at h
+  simp only [Bool.and_eq_true] at h
+  exact h.1.1.1.2
+
+/-- Every member of a fired chain is chain-eligible. -/
+theorem chain_all_eligible {program : Program} {b : Block} {rest : List Block}
+    (hlen : 2 ≤ (ShuffleCanon.growChain program b rest).length) :
+    ∀ x ∈ ShuffleCanon.growChain program b rest, (chainBodyDepths? x.body).isSome := by
+  intro x hx
+  have hgc := ShuffleCanon.growChain_chain' program b rest
+  obtain ⟨tl, hchain⟩ := ShuffleCanon.growChain_head program b rest
+  rw [hchain] at hx hgc hlen
+  rw [List.mem_cons] at hx
+  cases hx with
+  | inl hx =>
+      subst hx
+      cases tl with
+      | nil => simp at hlen
+      | cons D tl' =>
+          obtain ⟨hstep, _⟩ := List.isChain_cons_cons.mp hgc
+          exact chainStep_chainBodyOk_a hstep
+  | inr hx =>
+      obtain ⟨P, _, hstep⟩ := ShuffleCanon.chainStep_pred_of_mem_tail hgc hx
+      exact chainStep_chainBodyOk_nxt hstep
+
+/-! ## Fired-chain tail is consumed -/
+
+theorem chain_tail_consumed {program : Program} (hUnique : program.LabelsUnique)
+    {b : Block} {rest : List Block} {hd : Block} {tl : List Block}
+    (hchain : ShuffleCanon.growChain program b rest = hd :: tl)
+    (hfired : ShuffleCanon.chainEdits (ShuffleCanon.growChain program b rest) ≠ [])
+    (hsub : ∀ q ∈ ShuffleCanon.chainEdits (ShuffleCanon.growChain program b rest),
+        q ∈ editTable program)
+    {D : Block} (hD : D ∈ tl) :
+    (editTable program).lookup D.label
+      = some (Edit.consumed ((ShuffleCanon.growChain program b rest).getLastD hd).output) := by
+  obtain ⟨hd', tl', hchain', heq'⟩ := ShuffleCanon.chainEdits_entries hfired
+  rw [hchain] at hchain'; injection hchain' with hh ht; subst hh; subst ht
+  have hmem : (D.label,
+      Edit.consumed ((ShuffleCanon.growChain program b rest).getLastD hd).output)
+      ∈ ShuffleCanon.chainEdits (ShuffleCanon.growChain program b rest) := by
+    rw [heq']
+    exact List.mem_cons.mpr (Or.inr (List.mem_map.mpr ⟨D, hD, rfl⟩))
+  exact ShuffleCanon.lookup_editTable_eq_of_mem hUnique (hsub _ hmem)
+
+/-! ## IsResidualRun for the consumed tail -/
+
+theorem isResidualRun_tail_suffix {program : Program} (hUnique : program.LabelsUnique)
+    {ordered : List Block} (hord : program.blocksInLoweringOrder? = some ordered)
+    {b : Block} {rest : List Block} (hsuf : (b :: rest) <:+ ordered)
+    {hd : Block} {tl : List Block}
+    (hchain : ShuffleCanon.growChain program b rest = hd :: tl)
+    (hfired : ShuffleCanon.chainEdits (ShuffleCanon.growChain program b rest) ≠ [])
+    (hsub : ∀ q ∈ ShuffleCanon.chainEdits (ShuffleCanon.growChain program b rest),
+        q ∈ editTable program)
+    {Z : Block} (hZlast : (ShuffleCanon.growChain program b rest).getLast? = some Z) :
+    ∀ cs : List Block, cs <:+ tl → cs ≠ [] → IsResidualRun program cs := by
+  intro cs
+  induction cs with
+  | nil => intro _ hne; exact absurd rfl hne
+  | cons C cs' ih =>
+      intro hsufcs _
+      have hCtl : C ∈ tl := hsufcs.subset List.mem_cons_self
+      have hCchain : C ∈ ShuffleCanon.growChain program b rest := by
+        rw [hchain]; exact List.mem_cons_of_mem hd hCtl
+      have hCblocks : C ∈ program.blocks :=
+        ShuffleCanon.growChain_mem_blocks hord hsuf hCchain
+      have hCfind : program.findBlock? C.label = some C :=
+        Program.findBlock?_eq_some_of_mem hUnique hCblocks
+      cases cs' with
+      | nil =>
+          have hClast : C = Z := by
+            obtain ⟨p, hp⟩ := hsufcs
+            have hg : (ShuffleCanon.growChain program b rest).getLast? = some C := by
+              rw [hchain, ← hp, ← List.cons_append, List.getLast?_concat]
+            have := hZlast.symm.trans hg
+            exact ((Option.some.injEq _ _).mp this.symm)
+          refine ⟨hCfind, ?_⟩
+          rw [hClast]
+          exact last_member_no_consumed_target hUnique hord hsuf hZlast
+      | cons D rest' =>
+          have hCDchain : (C :: D :: rest') <:+ ShuffleCanon.growChain program b rest := by
+            refine hsufcs.trans ?_
+            rw [hchain]; exact List.tail_suffix (hd :: tl)
+          have hCD : ShuffleCanon.chainStep program C D = true := by
+            have hgc := ShuffleCanon.growChain_chain' program b rest
+            have hsub' : List.IsChain (fun x y => ShuffleCanon.chainStep program x y = true)
+                (C :: D :: rest') := List.IsChain.suffix hgc hCDchain
+            exact (List.isChain_cons_cons.mp hsub').1
+          obtain ⟨hCDterm, _, _⟩ := ShuffleCanon.chainStep_spec hCD
+          have hDtl : D ∈ tl := hsufcs.subset (List.mem_cons_of_mem C List.mem_cons_self)
+          have hDconsumed := chain_tail_consumed hUnique hchain hfired hsub hDtl
+          have hsufD : (D :: rest') <:+ tl :=
+            (List.tail_suffix (C :: D :: rest')).trans hsufcs
+          exact ⟨hCfind, hCDterm, ⟨_, hDconsumed⟩, ih hsufD (by simp)⟩
+
+/-! ## residual computed from a run -/
+
+theorem residual_flatMap_of_run {program : Program} {C : Block} {cs : List Block}
+    (hlen : (C :: cs).length ≤ program.blocks.length)
+    (hrun : IsResidualRun program (C :: cs)) :
+    residual program C.label
+      = (C :: cs).flatMap (fun b => bodyRunPositions b.body) := by
+  unfold residual
+  exact residualAux_of_run cs C program.blocks.length hrun hlen
+
+
+
 end Peephole
 end TypedCfg
 end EvmCompiler
