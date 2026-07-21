@@ -1,4 +1,5 @@
 import EvmCompiler.TypedCfg.Syntax
+import EvmCompiler.TypedCfg.Typing
 
 /-!
 # Block-reorder canonicalisation (session-99, "the jump-threading vein")
@@ -58,6 +59,7 @@ This module is imported by nobody ⟹ it cannot touch the `compile_correct` cone
 namespace EvmCompiler.TypedCfg.BlockReorder
 
 open EvmCompiler.TypedCfg
+open List
 
 /-- The unconditional-jump fallthrough candidate of a block: the target label of
 its terminator when that terminator is an unconditional `jump`. -/
@@ -173,5 +175,279 @@ verbatim — the transform changes only the ORDER, never a block's contents. -/
 theorem reorderProgram_blocks_mem (p : Program) {b : Block}
     (hb : b ∈ (reorderProgram p).blocks) : b ∈ p.blocks :=
   layoutBlocks_mem p (by simpa using hb)
+
+/-! ## The equality core (session-100)
+
+The reorder is a *pure permutation* of the block list, so the label-addressed
+`findBlock?` is extensionally unchanged.  Because the cfg operational semantics
+(`InteractionSemantics.openStep`/`openRunN`) read `source` **only** through
+`source.findBlock?`, this extensional equality is the whole semantic content of
+the reorder at the cfg altitude.  The chain is:
+
+* `growLayout_spec` — every chain emits `Nodup`, `placed`-disjoint labels and the
+  outgoing `placed` set is exactly the incoming set plus the emitted labels;
+* `foldLabels_spec` / `foldl_seed_mem` — the layout fold is `Nodup` and covers
+  every original block label;
+* `layoutBlocks_coverage` + the banked `layoutBlocks_mem` — block membership is
+  preserved *both ways* (a genuine permutation);
+* `reorderProgram_blocks_perm`, `reorderProgram_labelsUnique`, and
+  `findBlock?_reorderProgram` — the observable conclusions.
+-/
+
+/-- `lookup?` returns a block whose label is the queried one. -/
+theorem lookup?_label {blocks : List Block} {l : Label} {b : Block}
+    (h : lookup? blocks l = some b) : b.label = l := by
+  unfold lookup? at h
+  have hp := List.find?_some h
+  simp only [beq_iff_eq] at hp
+  exact hp
+
+/-- Master `growLayout` invariant: the emitted blocks' labels are `Nodup`, each
+emitted label is disjoint from the incoming `placed` set, and the outgoing
+`placed` set is exactly the incoming set plus the emitted labels. -/
+theorem growLayout_spec (blocks : List Block) :
+    ∀ (fuel : Nat) (start : Label) (placed : List Label),
+      ((growLayout blocks fuel start placed).1.map Block.label).Nodup ∧
+      (∀ b' ∈ (growLayout blocks fuel start placed).1, b'.label ∉ placed) ∧
+      (∀ l, l ∈ (growLayout blocks fuel start placed).2 ↔
+          l ∈ (growLayout blocks fuel start placed).1.map Block.label ∨
+            l ∈ placed) := by
+  intro fuel
+  induction fuel with
+  | zero =>
+      intro start placed
+      simp [growLayout]
+  | succ fuel ih =>
+      intro start placed
+      rw [growLayout]
+      split
+      · simp
+      · rename_i hcns
+        have hstart : start ∉ placed := fun hmem =>
+          hcns (List.contains_iff_mem.mpr hmem)
+        split
+        · simp
+        · rename_i b hl
+          have hblabel : b.label = start := lookup?_label hl
+          split
+          · rename_i t _hs
+            obtain ⟨ihNodup, ihDisj, ihPlaced⟩ := ih t (start :: placed)
+            cases hg : growLayout blocks fuel t (start :: placed) with
+            | mk rest placed' =>
+                rw [hg] at ihNodup ihDisj ihPlaced
+                simp only [hg]
+                refine ⟨?_, ?_, ?_⟩
+                · simp only [List.map_cons, List.nodup_cons]
+                  refine ⟨?_, ihNodup⟩
+                  rw [List.mem_map]
+                  rintro ⟨b', hb'rest, hb'eq⟩
+                  apply ihDisj b' hb'rest
+                  rw [hb'eq, hblabel]
+                  exact List.mem_cons_self ..
+                · intro b' hb'
+                  rcases List.mem_cons.mp hb' with h | h
+                  · subst h; rw [hblabel]; exact hstart
+                  · exact fun hp =>
+                      ihDisj b' h (List.mem_cons_of_mem _ hp)
+                · intro l
+                  rw [ihPlaced l]
+                  simp only [List.map_cons, List.mem_cons, hblabel]
+                  tauto
+          · rename_i _hs
+            refine ⟨?_, ?_, ?_⟩
+            · simp
+            · intro b' hb'
+              simp only [List.mem_singleton] at hb'
+              subst hb'; rw [hblabel]; exact hstart
+            · intro l
+              simp only [List.map_cons, List.map_nil,
+                List.mem_cons, hblabel]
+              tauto
+
+/-- Fold invariant: the outgoing `placed` set tracks exactly the emitted-block
+labels, and those labels are `Nodup`. -/
+theorem foldLabels_spec (blocks : List Block) (n : Nat) :
+    ∀ (ss : List Label) (acc : List Block × List Label),
+      (∀ l, l ∈ acc.2 ↔ l ∈ acc.1.map Block.label) →
+      (acc.1.map Block.label).Nodup →
+      (∀ l, l ∈ (ss.foldl (fun st s =>
+                  let g := growLayout blocks n s st.2
+                  (st.1 ++ g.1, g.2)) acc).2 ↔
+            l ∈ (ss.foldl (fun st s =>
+                  let g := growLayout blocks n s st.2
+                  (st.1 ++ g.1, g.2)) acc).1.map Block.label) ∧
+      ((ss.foldl (fun st s =>
+                  let g := growLayout blocks n s st.2
+                  (st.1 ++ g.1, g.2)) acc).1.map Block.label).Nodup := by
+  intro ss
+  induction ss with
+  | nil => intro acc h1 h2; exact ⟨h1, h2⟩
+  | cons s rest ih =>
+      intro acc h1 h2
+      rw [List.foldl_cons]
+      apply ih
+      · intro l
+        obtain ⟨_gN, gD, gP⟩ := growLayout_spec blocks n s acc.2
+        dsimp only
+        rw [gP l, h1 l, List.map_append, List.mem_append]
+        tauto
+      · obtain ⟨gN, gD, _gP⟩ := growLayout_spec blocks n s acc.2
+        dsimp only
+        rw [List.map_append]
+        apply List.Nodup.append h2 gN
+        intro a ha
+        rw [List.mem_map]
+        rintro ⟨b', hb'g, hb'eq⟩
+        have haAcc2 : a ∈ acc.2 := (h1 a).mpr ha
+        rw [← hb'eq] at haAcc2
+        exact gD b' hb'g haAcc2
+
+/-- One `growLayout` chain seeded at `start` places `start` whenever the block
+exists and there is fuel. -/
+theorem growLayout_start_mem (blocks : List Block) {n : Nat} (hn : 0 < n)
+    (start : Label) (placed : List Label) {b : Block}
+    (hlk : lookup? blocks start = some b) :
+    start ∈ (growLayout blocks n start placed).2 := by
+  obtain ⟨fuel, rfl⟩ := Nat.exists_eq_succ_of_ne_zero (Nat.pos_iff_ne_zero.mp hn)
+  obtain ⟨_, _, gP⟩ := growLayout_spec blocks (fuel + 1) start placed
+  rw [gP start]
+  by_cases hc : placed.contains start
+  · exact Or.inr (List.contains_iff_mem.mp hc)
+  · left
+    have hblabel : b.label = start := lookup?_label hlk
+    simp only [growLayout, if_neg hc, hlk]
+    cases succLabel? b <;> simp [hblabel]
+
+/-- The fold's `placed` set is monotone. -/
+theorem foldl_placed_mono (blocks : List Block) (n : Nat) :
+    ∀ (ss : List Label) (acc : List Block × List Label) (l : Label),
+      l ∈ acc.2 →
+      l ∈ (ss.foldl (fun st s =>
+              let g := growLayout blocks n s st.2
+              (st.1 ++ g.1, g.2)) acc).2 := by
+  intro ss
+  induction ss with
+  | nil => intro acc l hl; exact hl
+  | cons s rest ih =>
+      intro acc l hl
+      rw [List.foldl_cons]
+      apply ih
+      obtain ⟨_, _, gP⟩ := growLayout_spec blocks n s acc.2
+      dsimp only
+      exact (gP l).mpr (Or.inr hl)
+
+/-- Every seed with an existing block ends up placed after the whole fold. -/
+theorem foldl_seed_mem (blocks : List Block) {n : Nat} (hn : 0 < n) :
+    ∀ (ss : List Label) (acc : List Block × List Label) (s : Label) {b : Block},
+      s ∈ ss → lookup? blocks s = some b →
+      s ∈ (ss.foldl (fun st x =>
+              let g := growLayout blocks n x st.2
+              (st.1 ++ g.1, g.2)) acc).2 := by
+  intro ss
+  induction ss with
+  | nil => intro acc s b hmem _; simp at hmem
+  | cons x rest ih =>
+      intro acc s b hmem hlk
+      rw [List.foldl_cons]
+      rcases List.mem_cons.mp hmem with h | h
+      · subst h
+        apply foldl_placed_mono blocks n rest
+        dsimp only
+        exact growLayout_start_mem blocks hn s acc.2 hlk
+      · exact ih _ s h hlk
+
+/-- Coverage: every original block is laid out. -/
+theorem layoutBlocks_coverage (p : Program) (h : p.LabelsUnique)
+    {b0 : Block} (hb0 : b0 ∈ p.blocks) : b0 ∈ layoutBlocks p := by
+  have hseed : b0.label ∈ (p.entry :: p.blocks.map Block.label) :=
+    List.mem_cons_of_mem _ (List.mem_map.mpr ⟨b0, hb0, rfl⟩)
+  have hlk : lookup? p.blocks b0.label = some b0 := by
+    unfold lookup?
+    have := Program.findBlock?_eq_some_of_mem h hb0
+    unfold Program.findBlock? at this
+    exact this
+  have hpos : 0 < p.blocks.length := List.length_pos_of_mem hb0
+  have hin : b0.label ∈
+      ((p.entry :: p.blocks.map Block.label).foldl (fun st x =>
+          let g := growLayout p.blocks p.blocks.length x st.2
+          (st.1 ++ g.1, g.2)) ([], [])).2 :=
+    foldl_seed_mem p.blocks hpos _ ([], []) b0.label hseed hlk
+  obtain ⟨hH1, _hND⟩ :=
+    foldLabels_spec p.blocks p.blocks.length (p.entry :: p.blocks.map Block.label)
+      ([], []) (by intro l; simp) (by simp)
+  have hlab : b0.label ∈ (layoutBlocks p).map Block.label := by
+    have := (hH1 b0.label).mp hin
+    simpa [layoutBlocks] using this
+  rw [List.mem_map] at hlab
+  obtain ⟨b', hb'mem, hb'eq⟩ := hlab
+  have hb'p : b' ∈ p.blocks := layoutBlocks_mem p hb'mem
+  have hbb : b' = b0 := by
+    have h1 := Program.findBlock?_eq_some_of_mem h hb'p
+    have h2 := Program.findBlock?_eq_some_of_mem h hb0
+    rw [hb'eq] at h1
+    rw [h1] at h2
+    exact Option.some.inj h2
+  rw [← hbb]; exact hb'mem
+
+/-- The reordered program's block labels are `Nodup` (uniquely labelled). -/
+theorem layoutBlocks_labels_nodup (p : Program) :
+    ((layoutBlocks p).map Block.label).Nodup := by
+  have := (foldLabels_spec p.blocks p.blocks.length
+    (p.entry :: p.blocks.map Block.label) ([], [])
+    (by intro l; simp) (by simp)).2
+  simpa [layoutBlocks] using this
+
+/-- The reorder preserves whole-program `LabelsUnique`. -/
+theorem reorderProgram_labelsUnique (p : Program) :
+    (reorderProgram p).LabelsUnique := by
+  rw [← Program.blockLabels_nodup_iff]
+  simpa [reorderProgram] using layoutBlocks_labels_nodup p
+
+/-- Block-membership is preserved exactly (both directions ⟹ a permutation). -/
+theorem layoutBlocks_mem_iff (p : Program) (h : p.LabelsUnique) {b : Block} :
+    b ∈ layoutBlocks p ↔ b ∈ p.blocks :=
+  ⟨fun hb => layoutBlocks_mem p hb, fun hb => layoutBlocks_coverage p h hb⟩
+
+/-- The block list is a genuine permutation. -/
+theorem reorderProgram_blocks_perm (p : Program) (h : p.LabelsUnique) :
+    (reorderProgram p).blocks.Perm p.blocks := by
+  rw [reorderProgram_blocks]
+  have hnd1 : (layoutBlocks p).Nodup :=
+    (layoutBlocks_labels_nodup p).of_map _
+  have hnd2 : p.blocks.Nodup :=
+    (Program.blockLabels_nodup_iff p |>.mpr h).of_map _
+  exact (List.perm_ext_iff_of_nodup hnd1 hnd2).mpr
+    (fun b => layoutBlocks_mem_iff p h)
+
+/-- **THE EQUALITY CORE.**  `findBlock?` is extensionally unchanged by the
+reorder — hence every cfg observation that reads `source` only through
+`findBlock?` is literally invariant. -/
+theorem findBlock?_reorderProgram (p : Program) (h : p.LabelsUnique) :
+    ∀ l, (reorderProgram p).findBlock? l = p.findBlock? l := by
+  intro l
+  cases hp : p.findBlock? l with
+  | none =>
+      cases hr : (reorderProgram p).findBlock? l with
+      | none => rfl
+      | some b' =>
+          exfalso
+          have hb'mem : b' ∈ (reorderProgram p).blocks :=
+            List.mem_of_find?_eq_some hr
+          have hb'lab : b'.label = l := by
+            have := List.find?_some hr; simpa using this
+          have hb'p : b' ∈ p.blocks := reorderProgram_blocks_mem p hb'mem
+          have hcontra := Program.findBlock?_eq_some_of_mem h hb'p
+          rw [hb'lab, hp] at hcontra
+          exact absurd hcontra (by simp)
+  | some b =>
+      have hbmem : b ∈ p.blocks := List.mem_of_find?_eq_some hp
+      have hblab : b.label = l := by
+        have := List.find?_some hp; simpa using this
+      have hbr : b ∈ (reorderProgram p).blocks := by
+        rw [reorderProgram_blocks]; exact layoutBlocks_coverage p h hbmem
+      have hres :=
+        Program.findBlock?_eq_some_of_mem (reorderProgram_labelsUnique p) hbr
+      rw [hblab] at hres
+      exact hres
 
 end EvmCompiler.TypedCfg.BlockReorder
