@@ -198,6 +198,66 @@ theorem fuelBudget_of_lower {b : Block} (h : b.lower?.isSome) :
         simp only [↓reduceIte, hterm]
     · simp [hout] at h
 
+/-! ## Chain-structure helpers (terminator invariance, `chainBodyOk`) -/
+
+/-- Both bodies of a `chainStep` link are chain-eligible. -/
+theorem chainStep_bodyOk {prog : Program} {a nxt : Block}
+    (h : chainStep prog a nxt = true) : chainBodyOk a = true ∧ chainBodyOk nxt = true := by
+  unfold chainStep at h
+  simp only [Bool.and_eq_true] at h
+  exact ⟨h.1.1.1.2, h.1.1.2⟩
+
+/-- Every member of a `chainStep`-chain is either terminated by a `jump` (it has a
+successor) or is the chain's last block. -/
+theorem term_jump_or_getLastD (prog : Program) :
+    ∀ (chain : List Block) (dflt : Block),
+      List.Chain' (fun x y => chainStep prog x y = true) chain →
+      ∀ b ∈ chain, (∃ L, b.term = Terminator.jump L) ∨ b = chain.getLastD dflt
+  | [], _, _, b, hb => by simp at hb
+  | [x], dflt, _, b, hb => by
+      rw [List.mem_singleton] at hb; exact Or.inr (by rw [hb]; rfl)
+  | x :: y :: rest, dflt, hc, b, hb => by
+      obtain ⟨hxy, hrest⟩ := List.isChain_cons_cons.mp hc
+      rw [List.mem_cons] at hb
+      rcases hb with hb | hb
+      · exact Or.inl ⟨y.label, by rw [hb]; exact (chainStep_spec hxy).1⟩
+      · have := term_jump_or_getLastD prog (y :: rest) dflt hrest b hb
+        rcases this with h | h
+        · exact Or.inl h
+        · exact Or.inr (by rw [h]; simp only [List.getLastD_cons])
+
+/-- Every member of a `chainStep`-chain is chain-eligible (`chainBodyOk`), given the
+chain has at least two blocks (so the last block has a predecessor). -/
+theorem chainBodyOk_of_mem_chain {prog : Program} :
+    ∀ (chain : List Block),
+      List.Chain' (fun x y => chainStep prog x y = true) chain →
+      ∀ b ∈ chain, b ≠ chain.getLastD b → chainBodyOk b = true
+  | [], _, b, hb, _ => by simp at hb
+  | [_], _, b, hb, hne => by
+      rw [List.mem_singleton] at hb; exact absurd (by rw [hb]; rfl) hne
+  | x :: y :: rest, hc, b, hb, _ => by
+      obtain ⟨hxy, hrest⟩ := List.isChain_cons_cons.mp hc
+      rw [List.mem_cons] at hb
+      rcases hb with hb | hb
+      · rw [hb]; exact (chainStep_bodyOk hxy).1
+      · -- b ∈ y :: rest, and every member of a chainStep-chain that has a
+        -- predecessor is `chainBodyOk` (as the `nxt` of some step)
+        obtain ⟨P, _hP, hPC⟩ :=
+          chainStep_pred_of_mem_tail (List.isChain_cons_cons.mpr ⟨hxy, hrest⟩) hb
+        exact (chainStep_bodyOk hPC).2
+
+/-- **Terminator invariance across the chain.**  Every member's terminator lowers
+identically at the chain's `finalOut` as at its own output: non-last members are
+`jump`-terminated (shape-independent), the last member has `finalOut = its output`. -/
+theorem term_lowerAt?_finalOut_eq {prog : Program} {chain : List Block} {hd : Block}
+    (hchain : chain = hd :: chain.tail)
+    (hc : List.Chain' (fun x y => chainStep prog x y = true) chain) :
+    ∀ b ∈ chain, b.term.lowerAt? (chain.getLastD hd).output = b.term.lowerAt? b.output := by
+  intro b hb
+  rcases term_jump_or_getLastD prog chain hd hc b hb with ⟨L, hjump⟩ | hlast
+  · rw [hjump]; rfl
+  · rw [hlast]
+
 /-- `applyEdit` is the identity on any block whose label is absent from the
 edit table, so it leaves the compiled fuel budget unchanged.  This is the
 zero-difference contribution of every non-chain block in the global sum. -/
