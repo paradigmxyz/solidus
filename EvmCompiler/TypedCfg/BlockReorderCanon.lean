@@ -1,5 +1,7 @@
 import EvmCompiler.TypedCfg.Syntax
 import EvmCompiler.TypedCfg.Typing
+import EvmCompiler.TypedCfg.InteractionSemantics
+import EvmCompiler.TypedCfg.Certificate
 
 /-!
 # Block-reorder canonicalisation (session-99, "the jump-threading vein")
@@ -449,5 +451,172 @@ theorem findBlock?_reorderProgram (p : Program) (h : p.LabelsUnique) :
         Program.findBlock?_eq_some_of_mem (reorderProgram_labelsUnique p) hbr
       rw [hblab] at hres
       exact hres
+
+/-! ## Literal semantic equality (session-100)
+
+Because `Control.Program.step` reads `program` **only** through
+`program.findBlock?`, and `findBlock?` is extensionally preserved
+(`findBlock?_reorderProgram`), the whole-program CFG operational semantics is
+**literally equal** under the reorder — no simulation/step-relation is needed
+(contrast the `chainCanon` `ChainCombinedStepRelEff` machinery, which exists only
+because chain-canon rewrites block bodies).  This realizes the §99 frontier
+item 2 ("the congruence should be simpler … a `simp`/congruence one-liner"). -/
+
+/-- `Control.Program.step` is literally equal for programs with the same
+`findBlock?`. -/
+theorem step_findBlock_congr {M : Type → Type}
+    [Monad M] [MonadExceptOf EVMException M]
+    (runState : TypedCfg.Instr → Shape → EVMState → M EVMState)
+    {P1 P2 : Program} (h : ∀ l, P1.findBlock? l = P2.findBlock? l)
+    (label : Label) (state : EVMState) :
+    Control.Program.step runState P1 label state =
+      Control.Program.step runState P2 label state := by
+  unfold Control.Program.step
+  rw [h label]
+
+/-- The whole fuel-bounded runner is literally equal for programs with the same
+`findBlock?`. -/
+theorem runNWithStopAs_findBlock_congr {M : Type → Type} {Result : Type}
+    [Monad M] [MonadExceptOf EVMException M]
+    (runState : TypedCfg.Instr → Shape → EVMState → M EVMState)
+    (stopJump : Label → EVMState → Bool)
+    (exhausted : Label → EVMState → Result)
+    (stopped : Nat → TypedCfg.Outcome → Result)
+    {P1 P2 : Program} (h : ∀ l, P1.findBlock? l = P2.findBlock? l) :
+    ∀ (fuel : Nat) (label : Label) (state : EVMState),
+      Control.Program.runNWithStopAs runState stopJump exhausted stopped
+          P1 fuel label state =
+        Control.Program.runNWithStopAs runState stopJump exhausted stopped
+          P2 fuel label state := by
+  intro fuel
+  induction fuel with
+  | zero => intro label state; rfl
+  | succ fuel ih =>
+      intro label state
+      simp only [Control.Program.runNWithStopAs,
+        step_findBlock_congr runState h label state]
+      apply bind_congr
+      intro outcome
+      cases outcome with
+      | jump next state' =>
+          by_cases hs : stopJump next state' <;> simp [hs, ih]
+      | fallthrough state' => rfl
+      | returnDispatch state' => rfl
+      | halt kind state' => rfl
+      | invalid state' => rfl
+
+/-- The whole-program CFG run is literally unchanged by the reorder. -/
+theorem openRunN_reorderProgram (Q : Program) (h : Q.LabelsUnique)
+    (fuel : Nat) (label : Label) (state : EVMState) :
+    InteractionSemantics.Program.openRunN (reorderProgram Q) fuel label state =
+      InteractionSemantics.Program.openRunN Q fuel label state := by
+  unfold InteractionSemantics.Program.openRunN
+    InteractionSemantics.Program.openRunNWithStop
+    Control.Program.runNWithStop
+  exact runNWithStopAs_findBlock_congr _ _ _ _
+    (findBlock?_reorderProgram Q h) fuel label state
+
+/-- The canonical finite-prefix CFG semantics is literally unchanged — the
+reorder analog of `openRunNPrefix_chainCombinedEff_congr_of_source`, but an
+**equality** rather than a relation. -/
+theorem openRunNPrefix_reorderProgram (Q : Program) (h : Q.LabelsUnique)
+    (fuel : Nat) (label : Label) (state : EVMState) :
+    InteractionSemantics.Program.openRunNPrefix (reorderProgram Q) fuel label state =
+      InteractionSemantics.Program.openRunNPrefix Q fuel label state := by
+  unfold InteractionSemantics.Program.openRunNPrefix
+  rw [openRunN_reorderProgram Q h]
+
+/-- The result-carrying stopped run is literally unchanged. -/
+theorem openRunNResultWithStop_reorderProgram (Q : Program) (h : Q.LabelsUnique)
+    (stopJump : Label → EVMState → Bool)
+    (fuel : Nat) (label : Label) (state : EVMState) :
+    InteractionSemantics.Program.openRunNResultWithStop stopJump
+        (reorderProgram Q) fuel label state =
+      InteractionSemantics.Program.openRunNResultWithStop stopJump
+        Q fuel label state := by
+  unfold InteractionSemantics.Program.openRunNResultWithStop
+    Control.Program.runNResultWithStop
+  exact runNWithStopAs_findBlock_congr _ _ _ _
+    (findBlock?_reorderProgram Q h) fuel label state
+
+/-- One open CFG step is literally unchanged by the reorder. -/
+theorem openStep_reorderProgram (Q : Program) (h : Q.LabelsUnique)
+    (label : Label) (state : EVMState) :
+    InteractionSemantics.Program.openStep (reorderProgram Q) label state =
+      InteractionSemantics.Program.openStep Q label state := by
+  unfold InteractionSemantics.Program.openStep
+  exact step_findBlock_congr _ (findBlock?_reorderProgram Q h) label state
+
+/-! ## Static-gate preservation (permutation-invariant folds) -/
+
+/-- `labelShape?` is preserved (it reads the program only through `findBlock?`). -/
+theorem labelShape?_reorderProgram (Q : Program) (h : Q.LabelsUnique) :
+    ∀ l, (reorderProgram Q).labelShape? l = Q.labelShape? l := by
+  intro l
+  unfold Program.labelShape?
+  rw [findBlock?_reorderProgram Q h]
+
+/-- Block typing is preserved (it reads the program only through `labelShape?`). -/
+theorem block_wellTyped_reorderProgram (Q : Program) (h : Q.LabelsUnique)
+    (b : Block) :
+    Block.WellTyped (reorderProgram Q) b ↔ Block.WellTyped Q b := by
+  unfold Block.WellTyped Terminator.type?
+  rw [show (reorderProgram Q).labelShape? = Q.labelShape? from
+        funext (labelShape?_reorderProgram Q h)]
+
+/-- `AllBlocksTyped` is preserved. -/
+theorem allBlocksTyped_reorderProgram (Q : Program) (h : Q.LabelsUnique)
+    (hA : Q.AllBlocksTyped) : (reorderProgram Q).AllBlocksTyped := by
+  unfold Program.AllBlocksTyped at hA ⊢
+  rw [List.forall_iff_forall_mem] at hA ⊢
+  intro b hb
+  exact (block_wellTyped_reorderProgram Q h b).mpr
+    (hA b (reorderProgram_blocks_mem Q hb))
+
+/-- `EmittedLabels` is a permutation of the original. -/
+theorem emittedLabels_reorderProgram_perm (Q : Program) (h : Q.LabelsUnique) :
+    (reorderProgram Q).EmittedLabels.Perm Q.EmittedLabels := by
+  unfold Program.EmittedLabels
+  exact (reorderProgram_blocks_perm Q h).flatMap_right _
+
+/-- `EmittedLabelsUnique` is preserved (`Nodup` is permutation-invariant). -/
+theorem emittedLabelsUnique_reorderProgram (Q : Program) (h : Q.LabelsUnique)
+    (hE : Q.EmittedLabelsUnique) : (reorderProgram Q).EmittedLabelsUnique := by
+  unfold Program.EmittedLabelsUnique at hE ⊢
+  exact (emittedLabels_reorderProgram_perm Q h).nodup_iff.mpr hE
+
+/-- The entry block still exists. -/
+theorem findBlock?_entry_reorderProgram (Q : Program) (h : Q.LabelsUnique)
+    (hE : Q.findBlock? Q.entry ≠ none) :
+    (reorderProgram Q).findBlock? (reorderProgram Q).entry ≠ none := by
+  rw [reorderProgram_entry, findBlock?_reorderProgram Q h]; exact hE
+
+/-- **`WellTyped` is preserved by the reorder.** -/
+theorem wellTyped_reorderProgram (Q : Program) (hW : Q.WellTyped) :
+    (reorderProgram Q).WellTyped := by
+  obtain ⟨hU, hA, hEntry, hEmit⟩ := hW
+  exact ⟨reorderProgram_labelsUnique Q,
+    allBlocksTyped_reorderProgram Q hU hA,
+    findBlock?_entry_reorderProgram Q hU hEntry,
+    emittedLabelsUnique_reorderProgram Q hU hEmit⟩
+
+/-- **`ProgramCounterIndependent` is preserved** (a per-block, program-free
+predicate — only block membership matters). -/
+theorem programCounterIndependent_reorderProgram (Q : Program)
+    (hP : Q.ProgramCounterIndependent) :
+    (reorderProgram Q).ProgramCounterIndependent := by
+  unfold Program.ProgramCounterIndependent at hP ⊢
+  rw [List.forall_iff_forall_mem] at hP ⊢
+  intro b hb
+  exact hP b (reorderProgram_blocks_mem Q hb)
+
+/-- **The fuel budget is exactly preserved** (a `.sum` over the permuted
+blocks — even sharper than `chainCanon`'s `≤`). -/
+theorem fuelBudget_reorderProgram_eq (Q : Program) (h : Q.LabelsUnique) :
+    InteractionSemantics.CompiledProgram.fuelBudget (reorderProgram Q) =
+      InteractionSemantics.CompiledProgram.fuelBudget Q := by
+  unfold InteractionSemantics.CompiledProgram.fuelBudget
+  exact ((reorderProgram_blocks_perm Q h).map
+    InteractionSemantics.CompiledBlock.fuelBudget).sum_nat
 
 end EvmCompiler.TypedCfg.BlockReorder
