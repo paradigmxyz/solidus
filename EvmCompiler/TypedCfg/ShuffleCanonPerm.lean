@@ -694,6 +694,122 @@ theorem canonSwaps_bodyType?_preserve_uncond (r : List Nat) (input out : Shape)
         (fun q hq => (hcW q hq).2) hpsW hWL hcnet
     · rw [if_neg hfire]
 
+/-! ## Lift: `canonBody` preserves `bodyType?` (the single-block gate) -/
+
+/-- `bodyType?` splits over `++` as an `Option.bind`. -/
+theorem bodyType?_append (A B : List Instr) (input : Shape) :
+    Block.bodyType? (A ++ B) input =
+      (Block.bodyType? A input).bind (fun s => Block.bodyType? B s) := by
+  induction A generalizing input with
+  | nil => rfl
+  | cons i A ih =>
+      simp only [List.cons_append, Block.bodyType?]
+      cases i.type? input with
+      | none => rfl
+      | some s => simpa using ih s
+
+/-- `swapDepth?` identifies exactly `.swap` instructions. -/
+theorem swapDepth?_eq_some {i : Instr} {d : Nat} (h : swapDepth? i = some d) :
+    i = .swap d := by
+  cases i <;> simp_all [swapDepth?]
+
+/-- **Run-accumulator preservation.**  Threading `run` as a pending swap prefix,
+`canonBodyGo` preserves the body typing of `run.map .swap ++ body`. -/
+theorem canonBodyGo_bodyType?_preserve (body : List Instr) :
+    ∀ (run : List Nat) (input out : Shape),
+      Block.bodyType? ((run.map Instr.swap) ++ body) input = some out →
+      Block.bodyType? (canonBodyGo run body) input = some out := by
+  induction body with
+  | nil =>
+      intro run input out hType
+      rw [List.append_nil] at hType
+      simpa only [canonBodyGo, emitRun] using
+        canonSwaps_bodyType?_preserve_uncond run input out hType
+  | cons i rest ih =>
+      intro run input out hType
+      cases hsd : swapDepth? i with
+      | some d =>
+          have hi : i = .swap d := swapDepth?_eq_some hsd
+          simp only [canonBodyGo, hsd]
+          apply ih (run ++ [d]) input out
+          rw [List.map_append]
+          simpa only [List.map_cons, List.map_nil, List.append_assoc, List.cons_append,
+            List.nil_append, hi] using hType
+      | none =>
+          simp only [canonBodyGo, hsd]
+          -- hType : bodyType? (run.map swap ++ i :: rest) input = some out
+          rw [bodyType?_append] at hType
+          rw [bodyType?_append]
+          -- reduce the emitRun prefix via the uncond run lemma
+          cases hpre : Block.bodyType? (run.map Instr.swap) input with
+          | none => rw [hpre] at hType; simp at hType
+          | some s1 =>
+              rw [hpre] at hType
+              simp only [Option.bind_some] at hType
+              have hemit : Block.bodyType? (emitRun run) input = some s1 :=
+                canonSwaps_bodyType?_preserve_uncond run input s1 hpre
+              rw [hemit]
+              simp only [Option.bind_some]
+              -- hType : bodyType? (i :: rest) s1 = some out
+              -- goal:  bodyType? (i :: canonBodyGo [] rest) s1 = some out
+              simp only [Block.bodyType?] at hType ⊢
+              cases hit : i.type? s1 with
+              | none => rw [hit] at hType; simp at hType
+              | some s2 =>
+                  rw [hit] at hType
+                  exact ih [] s2 out (by simpa using hType)
+
+/-- **`canonBody` preserves `bodyType?`** on typed bodies. -/
+theorem canonBody_bodyType?_preserve (body : List Instr) (input out : Shape)
+    (hType : Block.bodyType? body input = some out) :
+    Block.bodyType? (canonBody body) input = some out := by
+  have := canonBodyGo_bodyType?_preserve body [] input out (by simpa using hType)
+  simpa only [canonBody] using this
+
+/-! ## Lift: `canonBlock` / `shuffleCanonProgram` preserve `WellTyped` -/
+
+/-- `labelShape?` is invariant under the canonicalisation (it reads `.input`,
+which `canonBlock` preserves). -/
+theorem labelShape?_shuffleCanonProgram (program : Program) (label : Label) :
+    (shuffleCanonProgram program).labelShape? label = program.labelShape? label := by
+  unfold Program.labelShape?
+  rw [findBlock?_shuffleCanonProgram, Option.map_map]
+  rfl
+
+/-- Terminator typing is invariant under the canonicalisation. -/
+theorem term_type?_shuffleCanonProgram (program : Program) (term : Terminator)
+    (shape : Shape) :
+    term.type? (shuffleCanonProgram program) shape = term.type? program shape := by
+  unfold Terminator.type?
+  rw [funext (labelShape?_shuffleCanonProgram program)]
+
+/-- **`canonBlock` preserves `WellTyped`** (into the canonicalised program). -/
+theorem canonBlock_WellTyped (program : Program) (block : Block)
+    (h : block.WellTyped program) :
+    (canonBlock block).WellTyped (shuffleCanonProgram program) := by
+  obtain ⟨hbody, hterm⟩ := h
+  refine ⟨?_, ?_⟩
+  · rw [canonBlock_input, canonBlock_output]
+    show Block.bodyType? (canonBody block.body) block.input = some block.output
+    exact canonBody_bodyType?_preserve block.body block.input block.output hbody
+  · rw [canonBlock_output, canonBlock_term, term_type?_shuffleCanonProgram]
+    exact hterm
+
+/-- **`shuffleCanonProgram` preserves whole-program `WellTyped`** — the
+single-block gate, the last piece before the chain transform. -/
+theorem shuffleCanonProgram_WellTyped (program : Program) (h : program.WellTyped) :
+    (shuffleCanonProgram program).WellTyped := by
+  obtain ⟨hLU, hAllTyped, hEntry, hEmit⟩ := h
+  refine ⟨labelsUnique_shuffleCanonProgram hLU, ?_,
+    entry_findBlock?_shuffleCanonProgram hEntry, emittedLabelsUnique_shuffleCanonProgram hEmit⟩
+  unfold Program.AllBlocksTyped at hAllTyped ⊢
+  rw [List.forall_iff_forall_mem] at hAllTyped
+  rw [shuffleCanonProgram_blocks, List.forall_iff_forall_mem]
+  intro b hb
+  rw [List.mem_map] at hb
+  obtain ⟨b0, hb0mem, rfl⟩ := hb
+  exact canonBlock_WellTyped program b0 (hAllTyped b0 hb0mem)
+
 end ShuffleCanon
 end TypedCfg
 end EvmCompiler
