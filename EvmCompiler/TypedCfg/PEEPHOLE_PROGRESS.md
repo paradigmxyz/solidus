@@ -7606,3 +7606,80 @@ The fuel bound is a **standalone green orphan lemma**; `chainCanon` is still NOT
 
 ### Files touched (session 94)
 `EvmCompiler/Compiler/StackArtifact.lean` (fallback certified choice + `CertifiedChoice` + parts clause); `EvmCompiler/Compiler/OpenInteractionComposition.lean` (8 leaves → `CertifiedChoice`; 4 `_seam`/`_chain`/dispatcher splits; imports); `EvmCompiler/TypedCfg/PEEPHOLE_PROGRESS.md` (this note). No frozen file touched. `compile_correct`/`compile_correct_creation` axioms UNCHANGED = `[propext, Classical.choice, Quot.sound]`. Commit: `4cb5de68` (splice) + this note.
+
+## Session-95 update (2026-07-21): **FRESH POST-CHAIN OPPORTUNITY SCAN + CAMPAIGN START. The §74 profile is confirmed STALE: `chainCanon` (LIVE @94) consumed the SWAP vein (55 %→21 % of sample bytes; pure-swap residual now only 646 B / 2.2 %). The new dominant reducible structure is the mixed `{SWAP,POP}` "shuffle-drop" window (`SWAPn;POP` teardowns), savings ceiling 2 480 B / 8.5 % of the worst-9 sample.** Chosen campaign = **shuffle-drop chain canonicalisation** (extend `chainCanon`'s alphabet `SWAP`→`SWAP∪POP`). Static prefix banked green + axiom-clean in NEW orphan leaf `EvmCompiler/TypedCfg/ShuffleDropCanon.lean` (imported by nobody ⟹ cannot touch the `compile_correct` cone). `scripts/opt_harness.sh check` gate below. `#print axioms compile_correct` / `compile_correct_creation` = `[propext, Classical.choice, Quot.sound]` — UNCHANGED. No frozen file touched. No splice (no live byte delta yet — the cross-pop minimiser is what fires).
+
+### THE FRESH SCAN (probes OUTSIDE the repo commit; LIVE shipped runtime bytecode via `lake exe solidus-backend`; worst-9 size-ratio contracts, **29 140 B**, byte-identical to the recorded `opt_last_run.json`)
+Opcode FAMILY histogram of the LIVE post-chain runtime bytecode (`s95/probe_hist.py`):
+
+| opcode family | count | bytes | % of sample | vs §74 (pre-chain) |
+|---|---|---|---|---|
+| **PUSH** | 4 428 | **12 074** | **41.4 %** | was 23.6 % — now #1 |
+| **SWAP** | 6 175 | 6 175 | **21.2 %** | **was 55.1 %** — chainCanon consumed it |
+| DUP | 2 705 | 2 705 | 9.3 % | was 5.3 % |
+| POP | 2 007 | 2 007 | 6.9 % | was 3.9 % |
+| JUMPDEST | 1 341 | 1 341 | 4.6 % | 2.6 % |
+| JUMP | 957 | 957 | 3.3 % | 1.9 % |
+| JUMPI | 579 | 579 | 2.0 % | — |
+| ADD | 616 | 616 | 2.1 % | — |
+
+PUSH breakdown: PUSH2 (2-byte jump/label addresses) 1 994× = 5 982 B (irreducible — real PCs); PUSH1 2 249× = 4 498 B. `AdversarialStackPressure` (the §74 90-% SWAP monster) is now **1 121 B total** (was 8 557) — chainCanon collapsed it; no longer in the worst list.
+
+### KNOWN-RESIDUAL LEDGER (measured against LIVE bytes — the §70/§74 "measure, don't deduce" discipline)
+| §73/§74 residual | §74 estimate | LIVE measurement (this session) | verdict |
+|---|---|---|---|
+| pure-swap perm reduction | 22 244 B (pre-chain) | **646 B / 2.2 %** (`s95/probe_perm.py`, net-star-decomp on live swap runs) | **EXHAUSTED by chainCanon**; residual is 2nd-order post-compaction, frozen provenance |
+| 8 chain-overlap pairs | — | subsumed into the 646 B (chainCanon merge-anticipation) | subsumed |
+| 4 swap2 compaction artifacts | — | `SWAPn;SWAPn` adjacent = **0** (was 122) | GONE (chainCanon) |
+| block-merge (JUMP+JUMPDEST) | ~2 310 B | JUMPDEST 1 341 + JUMP 957 = 2 298 B, but `PUSHn;JUMP;JUMPDEST` = 927 are genuine transfers; residual = real control flow, NEW cone | MED-HIGH difficulty, deferred |
+| `PUSH1 0x00 → PUSH0` | 971 B | **962 B** measured; backend emits ≈0 PUSH0 | **BLOCKED (frozen provenance — CONFIRMED)** — see below |
+| `DUPn;POP` / `PUSHn;POP` dead | ~2 B | 1× / 0× | dead (solc Yul opt already removes) |
+
+**PUSH0 provenance CONFIRMED FROZEN (the §74 "likely frozen serialisation" suspicion, now measured).** The width-minimal push serialisation lives in `Assembly/Compact.lean` (`pushOp?`/`encodePush`/`pushWidthAt?`), and the **frozen** gasful decode/gas cone is explicitly built on the invariant `compact_instr_decoded_ne_push0` (`Assembly/GasfulBridgeRecursive.lean:531`, `GasfulBridgeDecode.lean:386`): the certified target instruction set *excludes* `PUSH0` by construction. Emitting `PUSH0` requires (a) editing the mandate-frozen `Assembly/*` serialiser AND (b) extending the frozen decode/gas correctness cone to admit `0x5f`. Both are inside the frozen region ⟹ **out of mandate reach.** (There is no cfg-altitude substitution for a literal-0 push: `PUSH0` is a *serialisation* choice, and any alternative producing 0 is ≥1 byte or unsound.)
+
+### THE NEW VEIN — shuffle-drop windows (measured recoverability)
+Treating each maximal run of consecutive `.swap`/`.pop` instructions as one *shuffle-drop window* (permute-then-drop) and minimising to a same-net-effect op list. Interior `POP`s break swap runs and the survivor permutation (after drops) is frequently far simpler than the raw swap sequence. Savings **ceiling** (`s95/probe_drop.py`; ceiling = window_len − (necessary_pops + min_star_transpositions(survivor_perm))):
+
+| contract | windows | window bytes | ceiling min | savings ceiling |
+|---|---|---|---|---|
+| DynamicStorageSurfaceBox | 756 | 2 873 | 2 080 | **793 B** |
+| SemanticSurfaceBox | 306 | 1 139 | 752 | 387 B |
+| PostCancunPrecompileBoundary | 317 | 1 096 | 729 | 367 B |
+| CreateLifecycleSurfaceBox | 262 | 936 | 670 | 266 B |
+| ReentrantTryCatchSurfaceBox | 171 | 692 | 467 | 225 B |
+| ExternalCallBox | 157 | 508 | 328 | 180 B |
+| AdversarialStackPressure | 90 | 387 | 233 | 154 B |
+| EffectOrderingSurfaceBox | 74 | 306 | 200 | 106 B |
+| **worst-9 TOTAL** | **2 137** | **7 943** | **5 463** | **2 480 B (8.5 %)** |
+
+Bigram/trigram evidence (`s95/probe_ngram.py`): `SWAPn POP` 1 702×, `POP SWAPn POP` 537×, `SWAPn POP SWAPn` 1 065× — the teardown/stack-scheduling vein. (Caveat, §70 discipline: this is a *ceiling* on the SHIPPED post-compaction stream; the reachable fraction at cfg altitude depends on `chainCanon`'s merge-anticipation covering the mixed alphabet — the frontier task quantifies it. But `chainCanon` is the existence proof that cfg-altitude merge-anticipation reaches the post-compaction stream, exactly as §75 argued for pure swaps.)
+
+### RANKED CAMPAIGN TABLE
+| # | campaign | recoverable (worst-9) | difficulty (vs mature infra) | verdict |
+|---|---|---|---|---|
+| **a** | **shuffle-drop chain canonicalisation** (`SWAP`→`SWAP∪POP` window minimiser, spliced at the live `chainCanon` seam) | **≤ 2 480 B (8.5 %)** | **MED-HIGH** — reuses ENTIRE chain-seam splice + fuel machinery + `ShuffleCanon`/`chainCanon` algebra; NEW = drop-aware net-effect (`Shape.pop`-shrinking) algebra + cross-pop minimiser | **CHOSEN** |
+| b | block-merge / jump-threading (refCount-1 non-fallthrough) | ~2 300 B ceiling | HIGH — brand-new control-flow-rewrite correctness cone; perm/seam infra does NOT transfer | deferred (fallback) |
+| c | pure-swap 2nd-order re-canon | 646 B | HIGH — frozen-compaction provenance (same wall as §74) | not worth it |
+| d | `PUSH1 0x00 → PUSH0` | 962 B | BLOCKED — frozen `Assembly/*` serialiser + frozen `ne_push0` decode cone | out of mandate reach |
+| e | `DUPn;POP` / `PUSHn;POP` dead | ~2 B | LOW | dead (solc removes) |
+
+**DECISION: campaign (a), shuffle-drop chain canonicalisation.** Best difficulty-adjusted value: it is the DIRECT successor to the now-complete `chainCanon`, reusing the whole mature seam/chain splice template, fuel bound, and `ShuffleCanon` permutation algebra; only the alphabet (`SWAP`→`SWAP∪POP`) and the drop-aware net-effect algebra are new. (b) captures a comparable vein but needs an entirely new control-flow correctness cone with no infra reuse — deferred as fallback. (c)/(d)/(e) are frozen-blocked or exhausted.
+
+### WHAT LANDED (green, axiom-clean) — NEW `EvmCompiler/TypedCfg/ShuffleDropCanon.lean` (orphan, imported by nobody ⟹ `#print axioms` on its theorems ⊆ `[propext, Quot.sound]`)
+The **drop-aware window algebra + conservative transform + syntactic/structural kernels** (the §57/§61/§74 pattern: transform + syntactic + structural FIRST; net-effect/WellTyped/runtime AFTER):
+1. **Alphabet + semantics.** `SDOp` (`.swap d` / `.pop`), `SDOp.apply` (swap = `ShuffleCanon.applySwap (d+1)`, pop = `List.tail`), `runDrop` (fold) with `runDrop_nil`/`_cons`/`_append`; `popCount`, `sdDepth`, and the **net-effect simulator** `netEffect ops := runDrop ops (range (sdDepth+popCount+1))` — the semantic object the cross-pop minimiser canonicalises.
+2. **Instr ↔ SDOp bridge.** `sdOp?` / `isSDInstr` / `sdToInstr`.
+3. **Conservative transform** `canonAcrossPops` (the provably-correct FLOOR of the campaign): canonicalise each maximal `.swap` sub-run *between* pops with the banked `ShuffleCanon.canonSwaps`, pops untouched. `emitSwapRun`, `canonAcrossPopsGo`.
+4. **Syntactic kernel (PROVED).** `emitSwapRun_length_le` (via `canonSwaps_length_le`), `canonAcrossPopsGo_length_le`, **`canonAcrossPops_length_le`** — the transform never lengthens a window.
+5. **Body rewrite + structural preservation (PROVED).** `bodyGo`/`canonDropBody`/`canonDropBlock`/`shuffleDropProgram` (bodies only); `canonDropBlock_{label,input,output,term}`, `shuffleDropProgram_{entry,blocks}`, `findBlock?_`, `emittedLabels_`, `labelsUnique_`, `emittedLabelsUnique_`, `entry_findBlock?_shuffleDropProgram` — every label/shape/term preserved verbatim.
+
+### SHARPENED FRONTIER (the successor's route to the 2 480 B vein)
+1. **Drop-aware net-effect minimiser.** Replace the per-run `canonSwaps` in `canonAcrossPops` with a `netEffect`-based canonicaliser that cancels swaps *through* `POP` boundaries: from `netEffect ops` (survivors, top-first) build a minimal `permute-then-drop` realisation (star-decompose the survivor permutation + the necessary pops), gated "fire only if strictly shorter" (length kernel then trivial, as here). This is where the extra ≈1 800 B over the pure-swap floor lives.
+2. **Net-effect preservation (WellTyped/runtime).** `SDOp.apply` on the `Shape` layer: `.pop` = `Shape.pop 1` (drops head slot, `Typing.lean:26`), `.swap d` = the `(0,d+1)` slot transposition (`type?_swap_eq_applySwap`, §75). A window threads the shape by `runDrop` over slots; equal `netEffect` ⟹ equal `bodyType?` ⟹ WellTyped/`lower?` preserved (the drop-aware analogue of `ShuffleCanonType`/`ShuffleCanonPerm`, §75-76). The pop shrinks `slots` — the algebra is `applySwap` + head-drop, a partial map; the naturality/`gather` lemmas (§75) extend since drop is `List.tail`.
+3. **Chain splice.** Generalise `chainCanonProgram`'s alphabet from pure-swap windows to `SDOp` windows; splice at the SAME live `seamCancelProgramEff`/`chainCanon` seam (`StackArtifact.compile?` + OIC) — no new certificate contract, reuse the §89-94 `_of_source` chain-combined family + the §93 dual-hypothesis fuel bound. Measure live bytes + double-compile determinism once it fires.
+
+### GATES (session 95)
+`scripts/opt_harness.sh check` = **OK** (see final note). `#print axioms Solidus.compile_correct` / `compile_correct_creation` = `[propext, Classical.choice, Quot.sound]` — UNCHANGED (new leaf imported by nobody). No frozen file touched. No splice ⟹ codegen byte-identical to §94 (corpus −7.47 % shipped state intact) ⟹ no determinism double-compile, no bench re-run.
+
+### Files touched (session 95)
+NEW `EvmCompiler/TypedCfg/ShuffleDropCanon.lean` (green, imported by nobody); `EvmCompiler/TypedCfg/PEEPHOLE_PROGRESS.md` (this note). Uncommitted scratch probes under the session scratchpad (`probe_hist.py`, `probe_perm.py`, `probe_ngram.py`, `probe_drop.py`, `dump_hex.py`, `*.rt.hex`). No frozen file touched. `compile_correct`/`compile_correct_creation` axioms UNCHANGED = `[propext, Classical.choice, Quot.sound]`.
