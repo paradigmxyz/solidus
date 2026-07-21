@@ -247,3 +247,91 @@ theorem pendingPerm_birth {aswaps rest canon : List Nat} {s_o0 s_c0 s_o1 s_c1 : 
   · rw [hshO, hshC, SameRuntimeData.shared_eq hSRD]
   · rw [hstkO, hstkC, ← SameRuntimeData.stack_eq hSRD]
     exact ShuffleCanon.applySwaps_congr_of_netStack _ _ s_o0.stack hnet
+
+/-! ## Part E — chain block bodies: `Block.runBody` realises `runSwaps`
+
+A chain block's body carries only `.swap` and the runtime-transparent
+bookkeeping instrs `.bindLocals`/`.bindScratch`/`.relabel` (each `Instr.runState
+= .ok state`, i.e. an EVMState identity — `Semantics.lean:78-83`).  So the closed
+evaluator `Block.runBody` threads the state by exactly the swap positions,
+skipping the identities — the concrete link from a fired chain block to the
+`runSwaps` algebra of Part D. -/
+
+/-- A chain-body instruction: a `.swap`, or one of the runtime-identity
+bookkeeping instructions.  These are precisely the non-`.prim` body instrs a
+fired chain block may carry. -/
+def ChainInstr : Instr → Prop
+  | .swap _ => True
+  | .bindLocals _ _ => True
+  | .bindScratch _ _ _ => True
+  | .relabel _ => True
+  | _ => False
+
+/-- The runtime swap *positions* (`depth + 1`) a chain body applies, skipping the
+runtime-identity instructions. -/
+def bodyRunPositions : List Instr → List Nat
+  | [] => []
+  | .swap d :: rest => (d + 1) :: bodyRunPositions rest
+  | _ :: rest => bodyRunPositions rest
+
+/-- **The chain-body ↔ `runSwaps` bridge.**  A successful `Block.runBody` of a
+chain body (only `.swap`/identity instrs, every swap depth `< 16`) threads the
+state exactly as `runSwaps` of the body's swap positions — the identities are
+transparent. -/
+theorem runBody_chain_state :
+    ∀ (body : List Instr) {input out : Shape} {s s' : EVMState},
+      (∀ i ∈ body, ChainInstr i) →
+      (∀ d, Instr.swap d ∈ body → d < 16) →
+      Block.runBody body input s = .ok (s', out) →
+      runSwaps (bodyRunPositions body) s = .ok s'
+  | [], input, out, s, s', _, _, hrun => by
+      simp only [Block.runBody, Except.ok.injEq, Prod.mk.injEq] at hrun
+      simp only [bodyRunPositions, runSwaps, hrun.1]
+  | instr :: rest, input, out, s, s', hChain, hsw16, hrun => by
+      simp only [Block.runBody, Instr.runAt, bind, Except.bind] at hrun
+      -- Split off the head instruction's `runAt`.
+      cases htype : (instr.type? input) with
+      | none => rw [htype] at hrun; simp [Option.elim] at hrun
+      | some mid =>
+          simp only [htype, Option.elim] at hrun
+          cases hrs : instr.runState input s with
+          | error e => rw [hrs] at hrun; simp at hrun
+          | ok s1 =>
+              simp only [hrs] at hrun
+              have hChainTail : ∀ i ∈ rest, ChainInstr i :=
+                fun i hi => hChain i (List.mem_cons_of_mem _ hi)
+              have hsw16Tail : ∀ d, Instr.swap d ∈ rest → d < 16 :=
+                fun d hd => hsw16 d (List.mem_cons_of_mem _ hd)
+              have hHead : ChainInstr instr := hChain instr List.mem_cons_self
+              -- Case on the head chain instruction.
+              cases instr with
+              | swap d =>
+                  have hd16 : d < 16 := hsw16 d List.mem_cons_self
+                  have hEv : EvmYul.swap (d + 1) s = .ok s1 := by
+                    rw [← runState_swap_eq hd16 input s]; exact hrs
+                  simp only [bodyRunPositions, runSwaps, hEv]
+                  exact runBody_chain_state rest hChainTail hsw16Tail hrun
+              | bindLocals off names =>
+                  have hs1 : s1 = s := by
+                    simp only [Instr.runState] at hrs; injection hrs with h; exact h.symm
+                  subst hs1
+                  simp only [bodyRunPositions]
+                  exact runBody_chain_state rest hChainTail hsw16Tail hrun
+              | bindScratch bd nm sl =>
+                  have hs1 : s1 = s := by
+                    simp only [Instr.runState] at hrs; injection hrs with h; exact h.symm
+                  subst hs1
+                  simp only [bodyRunPositions]
+                  exact runBody_chain_state rest hChainTail hsw16Tail hrun
+              | relabel tgt =>
+                  have hs1 : s1 = s := by
+                    simp only [Instr.runState] at hrs; injection hrs with h; exact h.symm
+                  subst hs1
+                  simp only [bodyRunPositions]
+                  exact runBody_chain_state rest hChainTail hsw16Tail hrun
+              | push v => exact absurd hHead (by simp [ChainInstr])
+              | returnToken v => exact absurd hHead (by simp [ChainInstr])
+              | prim op => exact absurd hHead (by simp [ChainInstr])
+              | pop => exact absurd hHead (by simp [ChainInstr])
+              | dup d => exact absurd hHead (by simp [ChainInstr])
+              | unwind t => exact absurd hHead (by simp [ChainInstr])
