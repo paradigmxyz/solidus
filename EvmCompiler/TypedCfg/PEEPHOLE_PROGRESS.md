@@ -7551,3 +7551,40 @@ Empirically confirming `(chainCanonProgram Q).lower?.isSome` on all 56 corpus co
 
 ### Files touched (session 92)
 `EvmCompiler/TypedCfg/ShuffleCanonChainFuel.lean` (NEW orphan leaf: four green fuel-budget reductions; imported by nobody in the cone); `EvmCompiler/TypedCfg/PEEPHOLE_PROGRESS.md` (this note). No frozen file touched. `compile_correct`/`compile_correct_creation` axioms UNCHANGED = `[propext, Classical.choice, Quot.sound]`. Commit: `24ef12d2` (fuel-budget reductions).
+
+## Session-93 update (2026-07-21): **THE DUAL-HYPOTHESIS FUEL BOUND IS CLOSED — `fuelBudget_chainCanonProgram_le` IS GREEN + AXIOM-CLEAN.** §92 banked the permutation reductions and worked out the subtraction-free accounting; §93 executes and closes the whole bound — frontier items 1 (segment induction), 2 (per-chain closure), and 3 (top-level dual bound) — entirely inside the orphan leaf `EvmCompiler/TypedCfg/ShuffleCanonChainFuel.lean`. `scripts/opt_harness.sh check` = **OK** (RC=0; 43 public theorems; axioms ⊆ `[propext, Classical.choice, Quot.sound]`). `#print axioms EvmCompiler.Solidus.compile_correct` / `compile_correct_creation` = `[propext, Classical.choice, Quot.sound]` UNCHANGED. No frozen file touched. `chainCanon` still **NOT live** (the splice, item 4, is NOT done this session — see frontier below) ⟹ codegen byte-identical to §72, corpus −0.43% shipped state intact ⟹ no bytes/gas measured, no double-compile.
+
+### WHAT LANDED (green, axiom-clean; all in `ShuffleCanonChainFuel.lean`)
+Commits (on `arena-opt`, local only): `8772839d` (length lemmas), `f78da91a` (per-block value + canonBody length), `9ebb48e2` (chain-structure helpers), `a0ba2eb4` (per-chain closure), `3d723d4d` (segment induction + top bound).
+
+**Supporting length/value lemmas.**
+* `lowerAt?_swap_length` (`:35`), `lowerAt?_bindLocals_length` (`:54`), `lowerAt?_relabel_length` (`:131`) — a lowering `.swap`/`.bindLocals`/`.relabel` has code length `1`/`0`/`0`.
+* `lowerBodyFrom?_chainBody_length` (`:73`) — a chain body (swaps/bindLocals) lowers to length = its swap count `|chainBodyDepths?|`.
+* `chainBodyDepths?_map_swap` (`:123`) + `lowerBodyFrom?_canonBody_length` (`:150`) — the canonical head body `(canonSwaps merged).map .swap ++ [.relabel finalOut]` lowers to length `|canonSwaps merged|`.
+* `fuelBudget_of_lower` (`:183`) — a block whose `lower?` succeeds has `fuelBudget = 1 + |body code| + |term code|`.
+
+**Chain-structure helpers.**
+* `chainStep_bodyOk` (`:204`), `term_jump_or_getLastD` (`:212`), `chainBodyOk_of_mem_chain` (`:232`), `term_lowerAt?_finalOut_eq` (`:253`) — the terminator-invariance fact (every member's terminator lowers identically at `finalOut` and at its own output) + all-members-`chainBodyOk`.
+
+**Frontier item 2 — the per-chain closure.**
+* `chainEdits_fuelBudget_le` (`:315`) — under both lowering hypotheses, canonicalising a fired chain never increases total compiled fuel. Subtraction-free: `ΣF = k + |canonSwaps merged| + ΣT`, `ΣG = k + |merged| + ΣT`; the `k` and the terminator sum `ΣT` cancel per member (consumed bodies collapse to `[]`, head absorbs `canonSwaps merged`), and `|canonSwaps merged| ≤ |merged|` via `canonSwaps_length_le`. Support: `sum_map_add`/`sum_map_const_one`/`length_flatMap_eq` (`:288`–`:300`).
+
+**Frontier item 1 — the segment induction.**
+* `lookup_append_left`/`_right` (`:264`/`:275`) — `List.lookup` routing on appended tables.
+* `fuelBudget_segment_le` (`:472`) — the `scanEdits`-mirrored induction over the lowering order: peel a fired chain (a contiguous run `cur = chain ++ tailAfter`, `growChain_prefix` + `drop`), route each member's `editTable`-lookup to `chainEdits chain` via `lookup_append_left/right` + nodup label disjointness, close it with `chainEdits_fuelBudget_le` (or `F = G` when the front chain does not fire), recurse on the remainder; a non-growing front block is unedited.
+
+**Frontier item 3 — the top-level dual bound.**
+* `lower?_isSome_of_mem_blocks` (`:633`) — whole-program lowering ⟹ every block lowers (via `lowerBlocks?_fragment_of_mem`); threads both lowering premises per-block.
+* `fuelBudget_chainCanonProgram_le` (`:648`) — **THE BOUND.** `program.LabelsUnique → (chainCanonProgram program).lower?.isSome → program.lower?.isSome → fuelBudget (chainCanonProgram program) ≤ fuelBudget program`. Composes the §92 permutation reductions (`fuelBudget_eq_sum_ordered`, `fuelBudget_chainCanonProgram_eq_sum_ordered`) with `fuelBudget_segment_le`. `#print axioms` = `[propext, Classical.choice, Quot.sound]`.
+
+### REMAINING FRONTIER — the splice (item 4) and measurement (item 5), NOT done this session
+The fuel bound is a **standalone green orphan lemma**; `chainCanon` is still NOT live because the SPLICE was not attempted (deliberately — it is a large, multi-file, high-risk change and the fuel bound was the session's stated main deliverable). To make `chainCanon` live (design (ii) fallback, per §91 item 2):
+1. **`StackArtifact.compile?` (`:37`, `:64` — NOT frozen):** compose `chainCanonProgram` after `seamCancelProgramEff (peepholeProgram (normalizeProgram cfg))` and emit codegen from `((chainCanonProgram Q).compileCertified?).getD (Q's certified)` — optimise when the chain program lowers (fail-open on savings; the shipped `Q` bytes otherwise). Retain BOTH certificates so both lowering premises of `fuelBudget_chainCanonProgram_le` are dischargeable.
+2. **The 8 OIC sites** (`OpenInteractionComposition.lean` 855/1377/1536/1668/1871/1974/2073/2174 — NOT frozen) + `StackArtifact.lean:64`: swap the seam congruences for the §89 chain-combined family, which **already exists green** in `ShuffleCanonChainCombined.lean` (`openStep_chainCombinedEff_congr_of_source` `:632`, `openRunN_chainCombinedEff_congr_of_source` `:688`, `openRunNPrefix_chainCombinedEff_congr_of_source` `:730`, `chainCombinedStepRelEff_entry_of_generated` `:74`), plus `chainCanonProgram_WellTyped`/`_programCounterIndependent` (banked §77/§90). The fuel leg is now `le_trans fuelBudget_chainCanonProgram_le (fuelBudget_seamCombinedEff_le …)`.
+3. **Gate + measure:** full `scripts/opt_harness.sh full`; determinism double-compile; 4-contract bytes vs baselines (8551/8585; 2685/2719; 1965/2204; 897/931); FULL bench vs shipped −0.43%. State the new delta prominently once live.
+
+### GATES (session 93)
+`scripts/opt_harness.sh check` = **OK** (RC=0; 43 public theorems; axioms ⊆ `[propext, Classical.choice, Quot.sound]`; Build completed 1369 jobs) — verified at session end on `3d723d4d`. `lake build EvmCompiler.TypedCfg.ShuffleCanonChainFuel` = RC=0. `#print axioms fuelBudget_chainCanonProgram_le` / `chainEdits_fuelBudget_le` / `fuelBudget_segment_le` = `[propext, Classical.choice, Quot.sound]`. `#print axioms EvmCompiler.Solidus.compile_correct` / `compile_correct_creation` = `[propext, Classical.choice, Quot.sound]` — UNCHANGED (the file remains orphan — imported by nobody in the cone). No frozen file touched. No splice ⟹ codegen byte-identical to §72 (corpus −0.43% intact) ⟹ no determinism double-compile, no bench re-run, no bytes/gas measured.
+
+### Files touched (session 93)
+`EvmCompiler/TypedCfg/ShuffleCanonChainFuel.lean` (grew from the four §92 reductions to the full closed fuel bound; still imported by nobody in the cone); `EvmCompiler/TypedCfg/PEEPHOLE_PROGRESS.md` (this note). No frozen file touched. `compile_correct`/`compile_correct_creation` axioms UNCHANGED = `[propext, Classical.choice, Quot.sound]`. Commits: `8772839d`, `f78da91a`, `9ebb48e2`, `a0ba2eb4`, `3d723d4d`.
