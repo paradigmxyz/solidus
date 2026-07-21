@@ -7831,3 +7831,40 @@ The §57/§95 "transform + structural kernels FIRST" pattern:
 
 ### Files touched (session 99)
 NEW `EvmCompiler/TypedCfg/BlockReorderCanon.lean` (green, imported by nobody); `EvmCompiler/TypedCfg/PEEPHOLE_PROGRESS.md` (this note). Uncommitted scratch under the session scratchpad (`probe.lean` real-pipeline reorder-bytes probe, `sj/*.json` solc Standard-JSON inputs, `ax*.lean` axiom probes, logs). No frozen file touched. `compile_correct`/`compile_correct_creation` axioms UNCHANGED = `[propext, Classical.choice, Quot.sound]`.
+
+## Session-100 update (2026-07-21): **THE CFG-ALTITUDE SEMANTIC CONTENT IS CLOSED — the §99 frontier items 1 & 2 are DONE and SHARPER than forecast: the block-reorder congruence is LITERAL cfg-semantics EQUALITY (not a simulation), and every static gate (`WellTyped`/PCI/`fuelBudget`) is preserved. All green + axiom-clean; still an orphan leaf. NO SPLICE (no live byte delta yet).**
+
+### THE DECISIVE SIMPLIFICATION (why reorder is proof-cheaper than `chainCanon`, confirmed at the proof level)
+`Control.Program.step` (`Control.lean:57`) reads `program` **only** through `program.findBlock? label` — the block SELECTOR is the sole program dependency; `runNWithStopAs` recurses purely through `step`. So once `findBlock?` is proved extensionally invariant, the entire whole-program CFG operational semantics is **literally equal** under the reorder — `openStep`/`openRunN`/`openRunNPrefix`/`openRunNResultWithStop` are `rfl`-after-congruence, **no** `ChainCombinedStepRelEff`/`PendingPerm` step-relation (which `chainCanon` needs only because it rewrites block BODIES; reorder leaves every body verbatim). The §99 forecast ("the congruence should be simpler … a `simp`/congruence one-liner") is CONFIRMED — it is an *equality*, which is even stronger than the `Rel` the `_of_source` chain uses.
+
+### WHAT LANDED (green, axiom-clean ⊆ `[propext, Classical.choice, Quot.sound]`) — extending the orphan `BlockReorderCanon.lean`
+**Commit `7db87afa` — the equality core (§99 frontier item 1).**
+* `growLayout_spec` — every chain emits `Nodup`, `placed`-disjoint labels; the outgoing `placed` set = incoming ∪ emitted (single fuel induction).
+* `foldLabels_spec` (`Nodup` + `placed` tracks emitted), `foldl_placed_mono`, `growLayout_start_mem`, `foldl_seed_mem` — the layout-fold invariants.
+* `layoutBlocks_coverage` (`:362`) — every original block IS laid out (needs `LabelsUnique`).
+* `layoutBlocks_labels_nodup` / `reorderProgram_labelsUnique` (`:403`), `layoutBlocks_mem_iff`.
+* `reorderProgram_blocks_perm` (`:414`) — `(reorderProgram p).blocks ~ p.blocks` (genuine permutation).
+* **`findBlock?_reorderProgram` (`:427`)** — `∀ l, (reorderProgram p).findBlock? l = p.findBlock? l`. **THE KEY LEMMA.**
+
+**Commit `08ef9dd5` — literal semantics equality + static-gate preservation (§99 frontier item 2).**
+* `step_findBlock_congr` (`:467`) / `runNWithStopAs_findBlock_congr` (`:479`) — `Control` kernel equality from `findBlock?` equality.
+* `openStep_reorderProgram` (`:543`), `openRunN_reorderProgram`, **`openRunNPrefix_reorderProgram` (`:522`)** (the reorder analog of `openRunNPrefix_chainCombinedEff_congr_of_source`, but an EQUALITY), `openRunNResultWithStop_reorderProgram`.
+* `labelShape?_reorderProgram`, `block_wellTyped_reorderProgram`, `allBlocksTyped_reorderProgram`, `emittedLabels_reorderProgram_perm`, `emittedLabelsUnique_reorderProgram`, `findBlock?_entry_reorderProgram`, **`wellTyped_reorderProgram` (`:595`)**.
+* **`programCounterIndependent_reorderProgram` (`:605`)** (per-block, program-free ⟹ only membership matters).
+* **`fuelBudget_reorderProgram_eq` (`:615`)** — EXACT equality of the fuel budget (`.sum` over the permuted blocks — sharper than `chainCanon`'s `≤`).
+
+### GATES (session 100)
+`lake build EvmCompiler.TypedCfg.BlockReorderCanon` = RC=0 (1117 jobs). `#print axioms` of every new theorem ⊆ `[propext, Classical.choice, Quot.sound]` (several ⊆ `[propext]`). `scripts/opt_harness.sh check` = **OK** (RC=0; `check: OK (43 public theorems, axioms contained in [propext, Classical.choice, Quot.sound])`; 1379 jobs; whole-project rebuild green; new leaf imported by nobody). `Solidus.compile_correct` / `compile_correct_creation` = `[propext, Classical.choice, Quot.sound]` — **UNCHANGED**. No frozen file touched. **No splice** ⟹ codegen byte-identical to §94 (corpus −7.47 % shipped state intact) ⟹ no determinism double-compile, no bench re-run.
+
+### THE REMAINING FRONTIER (the OIC splice — the whole cfg-semantic obstacle is now REMOVED)
+The forward-refinement `_of_source` machinery is the last mile. The reorder version mirrors `yulToNormalizedStackAssemblyPrefixForward_chain` (`OpenInteractionComposition.lean:1094-1320`, ~226 lines) but is *one equality-rewrite short of it*:
+1. **`CertifiedChoice` restructure** (`StackArtifact.lean:44`, NOT frozen): add a 3rd `getD` layer — `((reorderProgram (chainCanonProgram Q)).compileCertified?).getD chainChoice`, fail-open on savings, after the existing chain-vs-`qc` choice. Mirror in `compile?` (`:56`).
+2. **A new `_reorder` refinement lemma**: obtain the existing `_chain` chain congruence (source ≈ `chainCanon Q`), then rewrite through **`openRunNPrefix_reorderProgram`** (banked, TRIVIAL) to lift to `reorderProgram (chainCanon Q)`, then apply the per-program assembly bridge `InteractionPrefixPreservation.…compileCertified?_entry_openRunNPrefix_assembly_follows` to reorder's OWN target. Fuel bound via `fuelBudget_reorderProgram_eq` (banked, exact); PCI/`WellTyped` via `programCounterIndependent_reorderProgram`/`wellTyped_reorderProgram` (banked).
+3. **Dispatcher** (`yulToNormalizedStackAssemblyPrefixForward`, `:1381-1426`): add the 3rd `cases hReorder : (reorderProgram (chainCanon Q)).compileCertified?` branch (none → fall to the existing `_chain`/`_seam` dispatch; some → the new `_reorder` lemma).
+4. **Thread the 8 `CertifiedChoice` sites** (`OpenInteractionComposition.lean` :1381 + the OIC crown consumers) — the multi-session mechanical cost, same template as the §94 chain splice and §95-98 shuffle-drop.
+5. **MEASURE** live: 4-contract bytes vs §94 baselines (ASP 1121 / ECB 2273 / MiniToken 1701 / LoopBox 831); determinism double-compile; full bench vs −7.47 % (§99 forecast: 891 B / ≈ −1.5 %…−1.8 % corpus, moving the record toward ≈ −9 %).
+
+The one previously-feared risk — a `chainCanon`-style body-rewrite simulation for the reorder — is GONE: reorder's cfg semantics is a literal equality. What remains is the OIC boilerplate + the 8-site rewire + the CLI measurement, deferred to the successor to keep this session's tree green (per "NEVER commit red code / sorries / probes").
+
+### Files touched (session 100)
+`EvmCompiler/TypedCfg/BlockReorderCanon.lean` (extended: +2 imports `InteractionSemantics`/`Certificate`, the equality core + literal-semantics-equality + static-gate preservation; still imported by nobody); `EvmCompiler/TypedCfg/PEEPHOLE_PROGRESS.md` (this note). Uncommitted scratch under the session scratchpad (`core*.lean`, `sem.lean`, `probe*.lean`, `ax*.lean`, logs). No frozen file touched. `compile_correct`/`compile_correct_creation` axioms UNCHANGED = `[propext, Classical.choice, Quot.sound]`.
