@@ -226,16 +226,17 @@ theorem term_jump_or_getLastD (prog : Program) :
         · exact Or.inl h
         · exact Or.inr (by rw [h]; simp only [List.getLastD_cons])
 
-/-- Every member of a `chainStep`-chain is chain-eligible (`chainBodyOk`), given the
-chain has at least two blocks (so the last block has a predecessor). -/
+/-- Every member of a `chainStep`-chain of length ≥ 2 is chain-eligible
+(`chainBodyOk`): a non-last member is the `a` of its outgoing step, the last member
+is the `nxt` of its incoming step. -/
 theorem chainBodyOk_of_mem_chain {prog : Program} :
     ∀ (chain : List Block),
+      2 ≤ chain.length →
       List.Chain' (fun x y => chainStep prog x y = true) chain →
-      ∀ b ∈ chain, b ≠ chain.getLastD b → chainBodyOk b = true
-  | [], _, b, hb, _ => by simp at hb
-  | [_], _, b, hb, hne => by
-      rw [List.mem_singleton] at hb; exact absurd (by rw [hb]; rfl) hne
-  | x :: y :: rest, hc, b, hb, _ => by
+      ∀ b ∈ chain, chainBodyOk b = true
+  | [], hlen, _, b, _ => by simp at hlen
+  | [_], hlen, _, b, _ => by simp at hlen
+  | x :: y :: rest, _, hc, b, hb => by
       obtain ⟨hxy, hrest⟩ := List.isChain_cons_cons.mp hc
       rw [List.mem_cons] at hb
       rcases hb with hb | hb
@@ -257,6 +258,138 @@ theorem term_lowerAt?_finalOut_eq {prog : Program} {chain : List Block} {hd : Bl
   rcases term_jump_or_getLastD prog chain hd hc b hb with ⟨L, hjump⟩ | hlast
   · rw [hjump]; rfl
   · rw [hlast]
+
+/-! ## Small list-sum helpers -/
+
+private theorem sum_map_add {α : Type _} (l : List α) (f g : α → Nat) :
+    (l.map (fun a => f a + g a)).sum = (l.map f).sum + (l.map g).sum := by
+  induction l with
+  | nil => rfl
+  | cons a t ih => simp only [List.map_cons, List.sum_cons, ih]; omega
+
+private theorem sum_map_const_one {α : Type _} (l : List α) :
+    (l.map (fun _ => 1)).sum = l.length := by
+  induction l with
+  | nil => rfl
+  | cons a t ih => simp only [List.map_cons, List.sum_cons, ih, List.length_cons]; omega
+
+private theorem length_flatMap_eq {α β : Type _} (l : List α) (f : α → List β) :
+    (l.flatMap f).length = (l.map (fun a => (f a).length)).sum := by
+  induction l with
+  | nil => rfl
+  | cons a t ih =>
+      simp only [List.flatMap_cons, List.length_append, List.map_cons, List.sum_cons, ih]
+
+/-! ## The per-chain fuel closure -/
+
+/-- **Per-chain fuel closure.**  Under the two lowering hypotheses, canonicalising a
+fired chain never increases its total compiled fuel budget.  The terminator code
+length is preserved identically per member (`term_lowerAt?_finalOut_eq`), the
+consumed bodies collapse to `[]`, and the head absorbs `canonSwaps merged`, whose
+length is `≤ merged` (`canonSwaps_length_le`); the `1`s and the terminator sum
+cancel between the two sides with no `Nat` subtraction. -/
+theorem chainEdits_fuelBudget_le {prog : Program} {chain : List Block}
+    (hlen : 2 ≤ chain.length)
+    (hc : List.Chain' (fun x y => chainStep prog x y = true) chain)
+    (hne : chainEdits chain ≠ [])
+    (hNodup : (chain.map Block.label).Nodup)
+    (hG : ∀ b ∈ chain, b.lower?.isSome)
+    (hF : ∀ b ∈ chain, (applyEdit (chainEdits chain) b).lower?.isSome) :
+    (chain.map (fun b => CompiledBlock.fuelBudget (applyEdit (chainEdits chain) b))).sum
+      ≤ (chain.map CompiledBlock.fuelBudget).sum := by
+  obtain ⟨hd, tl, hchaineq, htbl⟩ := chainEdits_entries hne
+  subst hchaineq
+  -- abbreviations matching the fired-chain edit shape
+  set fo := ((hd :: tl).getLastD hd).output with hfo
+  set merged := (hd :: tl).flatMap (fun b => (chainBodyDepths? b.body).getD []) with hmerged
+  set cb := (canonSwaps merged).map Instr.swap ++ [Instr.relabel fo] with hcb
+  -- per-member terminator length
+  set TC : Block → Nat := fun b => ((b.term.lowerAt? b.output).getD []).length with hTC
+  -- keys of the edit table are exactly the chain labels (nodup)
+  have hmapfst : (chainEdits (hd :: tl)).map Prod.fst = (hd :: tl).map Block.label := by
+    rw [htbl]; simp [List.map_map, Function.comp_def]
+  have hkeys : ((chainEdits (hd :: tl)).map Prod.fst).Nodup := by rw [hmapfst]; exact hNodup
+  -- terminator invariance across the chain
+  have htail : (hd :: tl) = hd :: (hd :: tl).tail := rfl
+  have hterm := term_lowerAt?_finalOut_eq htail hc
+  -- applyEdit on the head and on consumed members
+  have happly_hd : applyEdit (chainEdits (hd :: tl)) hd
+      = { hd with body := cb, output := fo } := by
+    have hlk : (chainEdits (hd :: tl)).lookup hd.label = some (Edit.head cb fo) :=
+      lookup_eq_of_mem_nodup hkeys (by rw [htbl]; exact List.mem_cons_self ..)
+    unfold applyEdit; rw [hlk]
+  have happly_m : ∀ m ∈ tl, applyEdit (chainEdits (hd :: tl)) m
+      = { m with input := fo, output := fo, body := [] } := by
+    intro m hm
+    have hlk : (chainEdits (hd :: tl)).lookup m.label = some (Edit.consumed fo) :=
+      lookup_eq_of_mem_nodup hkeys
+        (by rw [htbl]; exact List.mem_cons_of_mem _ (List.mem_map.mpr ⟨m, hm, rfl⟩))
+    unfold applyEdit; rw [hlk]
+  -- G-side per-block value: fuelBudget b = 1 + |depths b| + TC b
+  have hG_val : ∀ b ∈ (hd :: tl),
+      CompiledBlock.fuelBudget b = 1 + ((chainBodyDepths? b.body).getD []).length + TC b := by
+    intro b hb
+    obtain ⟨bc, tc, hbody, hterm', hval⟩ := fuelBudget_of_lower (hG b hb)
+    have hok : chainBodyOk b = true := chainBodyOk_of_mem_chain (hd :: tl) hlen hc b hb
+    rw [chainBodyOk, Option.isSome_iff_exists] at hok
+    obtain ⟨ds, hds⟩ := hok
+    have hbc : bc.length = ((chainBodyDepths? b.body).getD []).length := by
+      rw [lowerBodyFrom?_chainBody_length b.body hds hbody, hds, Option.getD_some]
+    have htc : tc.length = TC b := by rw [hTC]; simp only [hterm', Option.getD_some]
+    rw [hval, hbc, htc]
+  -- F-side head value: 1 + |canonSwaps merged| + TC hd
+  have hF_hd : CompiledBlock.fuelBudget (applyEdit (chainEdits (hd :: tl)) hd)
+      = 1 + (canonSwaps merged).length + TC hd := by
+    rw [happly_hd]
+    have hlow := hF hd (List.mem_cons_self ..)
+    rw [happly_hd] at hlow
+    obtain ⟨bc, tc, hbody, hterm', hval⟩ := fuelBudget_of_lower hlow
+    have hbc : bc.length = (canonSwaps merged).length :=
+      lowerBodyFrom?_canonBody_length hbody
+    have hti : hd.term.lowerAt? fo = hd.term.lowerAt? hd.output :=
+      hterm hd (List.mem_cons_self ..)
+    have htc : tc.length = TC hd := by
+      rw [hTC]; simp only; rw [← hti, hterm']; simp only [Option.getD_some]
+    rw [hval, hbc, htc]
+  -- F-side consumed value: 1 + TC m
+  have hF_m : ∀ m ∈ tl, CompiledBlock.fuelBudget (applyEdit (chainEdits (hd :: tl)) m)
+      = 1 + TC m := by
+    intro m hm
+    rw [happly_m m hm]
+    have hlow := hF m (List.mem_cons_of_mem _ hm)
+    rw [happly_m m hm] at hlow
+    obtain ⟨bc, tc, hbody, hterm', hval⟩ := fuelBudget_of_lower hlow
+    have hbc : bc.length = 0 := by
+      simp only [Block.lowerBodyFrom?, Option.some.injEq, Prod.mk.injEq] at hbody
+      simp [← hbody.1]
+    have hti : m.term.lowerAt? fo = m.term.lowerAt? m.output :=
+      hterm m (List.mem_cons_of_mem _ hm)
+    have htc : tc.length = TC m := by
+      rw [hTC]; simp only; rw [← hti, hterm']; simp only [Option.getD_some]
+    rw [hval, hbc, htc]
+  -- assemble the two sums into shared atoms
+  have hle : (canonSwaps merged).length ≤ merged.length := canonSwaps_length_le merged
+  have hmergedlen : merged.length
+      = ((hd :: tl).map (fun b => ((chainBodyDepths? b.body).getD []).length)).sum := by
+    rw [hmerged]; exact length_flatMap_eq _ _
+  -- G-sum closed form
+  have hGsum : ((hd :: tl).map CompiledBlock.fuelBudget).sum
+      = 1 + tl.length + TC hd + (tl.map TC).sum + merged.length := by
+    rw [List.map_congr_left hG_val]
+    rw [sum_map_add (hd :: tl) (fun b => 1 + ((chainBodyDepths? b.body).getD []).length) TC]
+    rw [sum_map_add (hd :: tl) (fun _ => 1) (fun b => ((chainBodyDepths? b.body).getD []).length)]
+    rw [sum_map_const_one, ← hmergedlen]
+    simp only [List.map_cons, List.sum_cons, List.length_cons]
+    omega
+  -- F-sum closed form
+  have hFsum : ((hd :: tl).map
+        (fun b => CompiledBlock.fuelBudget (applyEdit (chainEdits (hd :: tl)) b))).sum
+      = 1 + tl.length + TC hd + (tl.map TC).sum + (canonSwaps merged).length := by
+    rw [List.map_cons, List.sum_cons, hF_hd, List.map_congr_left hF_m]
+    rw [sum_map_add tl (fun _ => 1) TC, sum_map_const_one]
+    omega
+  rw [hFsum, hGsum]
+  omega
 
 /-- `applyEdit` is the identity on any block whose label is absent from the
 edit table, so it leaves the compiled fuel budget unchanged.  This is the
