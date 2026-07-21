@@ -352,6 +352,46 @@ theorem seamCombinedStepRelEff_propagate_jump
         exact hnext
       · exact absurd rfl (hnj nxt s1')
 
+/-! ## Part (A) step (i): a chain member's `openStep` is a `.done` jump
+
+The single Interaction-monad evaluation the run-forward induction needs.  A chain-eligible
+member `m` — body only `ChainInstr` (`chainBodyDepths? m.body = some ds`), typing
+`m.input → m.output`, terminator a bare `jump nxt` — entered with a stack realizing
+`m.input`, steps in the OPEN interaction semantics (`Control.Program.step Instr.openRunState`)
+to `.done (.ok (.jump nxt s'))` with the stack length preserved.
+
+This is the ONE place the Interaction-monad `Control.Block.run`/`openRunBody` must be
+evaluated (distinct from the closed `Block.runBody` parts (B)/(C) use).  The bridge:
+`openRunBody_chain_done` (§80) collapses the interaction body to `.done (Block.runBody …)`;
+`runBody_chain_ok` (§81) evaluates that closed body to `.ok (s', m.output)` under typing +
+`StackRealizes`; the output-check passes (`m.output = m.output`); the `jump` terminator runs
+through `runTermChecked_jump` to `.ok (.jump nxt s')`; `runBody_chain_stack_length` (§87
+part B) supplies the length preservation. -/
+theorem member_openStep_done_jump {Q : Program} {m : Block} {ds : List Nat}
+    {nxt : Label} {s : EVMState}
+    (hFind : Q.findBlock? m.label = some m)
+    (helig : ShuffleCanon.chainBodyDepths? m.body = some ds)
+    (hbt : Block.bodyType? m.body m.input = some m.output)
+    (hReal : StackRealizes m.input s)
+    (hterm : m.term = Terminator.jump nxt) :
+    ∃ s', InteractionSemantics.Program.openStep Q m.label s
+        = Simulation.Interaction.done (Except.ok (TypedCfg.Outcome.jump nxt s'))
+      ∧ s'.stack.length = s.stack.length := by
+  have hChain : ∀ i ∈ m.body, ChainInstr i := chainInstr_of_chainBodyDepths helig
+  have hsw16 : ∀ d, Instr.swap d ∈ m.body → d < 16 := chain_swap_lt16 m.body hbt
+  obtain ⟨s', hrun⟩ := runBody_chain_ok m.body hChain hbt hReal
+  have hlen : s'.stack.length = s.stack.length :=
+    runBody_chain_stack_length m.body hChain hsw16 hrun
+  refine ⟨s', ?_, hlen⟩
+  unfold InteractionSemantics.Program.openStep Control.Program.step
+  rw [hFind]
+  show Simulation.Interaction.bind
+      (InteractionSemantics.Block.openRunBody m.body m.input s) _ = _
+  rw [openRunBody_chain_done hChain, hrun]
+  simp only [Simulation.Interaction.bind_done_ok, if_pos, hterm,
+    Block.runTermChecked_jump, Block.runTerm]
+  rfl
+
 end Peephole
 end TypedCfg
 end EvmCompiler
