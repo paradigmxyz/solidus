@@ -677,6 +677,18 @@ theorem applyEdit_output_eq (tbl : List (Label × Edit)) (block : Block) :
   | none => rfl
   | some e => cases e <;> rfl
 
+/-- The transform's new body per edit. -/
+theorem applyEdit_body_eq (tbl : List (Label × Edit)) (block : Block) :
+    (applyEdit tbl block).body =
+      (match tbl.lookup block.label with
+       | some (.head body _) => body
+       | some (.consumed _) => []
+       | none => block.body) := by
+  unfold applyEdit
+  cases tbl.lookup block.label with
+  | none => rfl
+  | some e => cases e <;> rfl
+
 /-! ## `Shape.compatible` reflexivity -/
 
 theorem slotsAgree_self : ∀ xs : List Slot, Shape.slotsAgree xs xs = true
@@ -841,6 +853,101 @@ theorem head_term_type? {program : Program} (hUnique : program.LabelsUnique)
     simp only [Option.map_some, hBlk]
   rw [hb0term]
   simp [Terminator.type?, Terminator.typeWith?, hls, compatible_self]
+
+/-- **Consumed-block terminator obligation.**  Either the block jumps to a consumed
+successor with the same `out` (compatible), or its targets are unconsumed and `out` is
+its own output (typed originally).  Consumed *jump* targets carry the same `out` (a NoDup
+argument); non-jump terminators cannot reference a consumed block at all (refCount 1). -/
+theorem consumed_term_type? {program : Program} (hUnique : program.LabelsUnique)
+    {b0 : Block} {out : Shape}
+    (hTyped : b0.WellTyped program) (hb0mem : b0 ∈ program.blocks)
+    (hlk : (editTable program).lookup b0.label = some (Edit.consumed out)) :
+    b0.term.type? (chainCanonProgram program) out = some () := by
+  by_cases hjc : ∃ L : Label, b0.term = Terminator.jump L ∧
+      ∃ o' : Shape, (editTable program).lookup L = some (Edit.consumed o')
+  · obtain ⟨L, hb0term, o', hLc⟩ := hjc
+    obtain ⟨P, hPmem, hPterm, href, eP, hePmem, hePout⟩ := consumed_predecessor (lookup_mem hLc)
+    have hLtarget : L ∈ b0.term.targets := by rw [hb0term]; simp [Terminator.targets]
+    have hLP : L ∈ P.term.targets := by rw [hPterm]; simp [Terminator.targets]
+    have hb0P : b0 = P := by
+      by_contra hne
+      have h2 := Peephole.two_le_refCount hPmem hLP hb0mem hLtarget (fun h => hne h.symm)
+      rw [href] at h2; omega
+    subst hb0P
+    have heParg : (editTable program).lookup b0.label = some eP :=
+      lookup_editTable_eq_of_mem hUnique hePmem
+    have hePeq : eP = Edit.consumed out :=
+      Option.some.inj (heParg.symm.trans hlk)
+    have houto' : out = o' := by rw [hePeq] at hePout; exact hePout
+    -- L is a real block (original typing of `jump L`)
+    have hlsome : program.labelShape? L ≠ none := by
+      have ht := hTyped.2
+      rw [hb0term] at ht
+      intro hnone
+      simp [Terminator.type?, Terminator.typeWith?, hnone] at ht
+    obtain ⟨bL, hbLfind⟩ : ∃ bL, program.findBlock? L = some bL := by
+      unfold Program.labelShape? at hlsome
+      cases hfb : program.findBlock? L with
+      | none => rw [hfb] at hlsome; simp at hlsome
+      | some bL => exact ⟨bL, rfl⟩
+    have hbLlabel : bL.label = L := by
+      unfold Program.findBlock? at hbLfind
+      have := List.find?_some hbLfind; simpa using this
+    have hls : (chainCanonProgram program).labelShape? L = some out := by
+      rw [labelShape?_chainCanonProgram, hbLfind]
+      simp only [Option.map_some, hbLlabel, hLc, houto']
+    rw [hb0term]
+    simp [Terminator.type?, Terminator.typeWith?, hls, compatible_self]
+  · -- no consumed jump target ⟹ out = b0.output and no consumed targets at all
+    have hout : out = b0.output := by
+      rcases consumed_edit_spec hUnique hb0mem hlk with ⟨D, hD, hDc⟩ | h
+      · exact absurd ⟨D.label, hD, out, hDc⟩ hjc
+      · exact h
+    have hnc : ∀ L ∈ b0.term.targets, ∀ o' : Shape,
+        (editTable program).lookup L ≠ some (Edit.consumed o') := by
+      intro L hL o' hLc
+      obtain ⟨P, hPmem, hPterm, href, _⟩ := consumed_predecessor (lookup_mem hLc)
+      have hLP : L ∈ P.term.targets := by rw [hPterm]; simp [Terminator.targets]
+      by_cases hb0P : b0 = P
+      · exact hjc ⟨L, hb0P ▸ hPterm, o', hLc⟩
+      · have h2 := Peephole.two_le_refCount hPmem hLP hb0mem hL (fun h => hb0P h.symm)
+        rw [href] at h2; omega
+    rw [hout, term_type?_eq_of_no_consumed hnc]
+    rw [← hout]
+    exact hout ▸ hTyped.2
+
+/-! ## The WellTyped gate -/
+
+/-- **The WellTyped gate.**  The cross-block chain canonicalisation preserves whole-program
+`WellTyped`. -/
+theorem chainCanonProgram_WellTyped {program : Program} (h : program.WellTyped) :
+    (chainCanonProgram program).WellTyped := by
+  obtain ⟨hUnique, hAll, hEntry, hEmit⟩ := h
+  refine ⟨labelsUnique_chainCanonProgram hUnique, ?_,
+    entry_findBlock?_chainCanonProgram hEntry, emittedLabelsUnique_chainCanonProgram hEmit⟩
+  unfold Program.AllBlocksTyped
+  rw [chainCanonProgram_blocks, List.forall_iff_forall_mem]
+  intro b hb
+  rw [List.mem_map] at hb
+  obtain ⟨b0, hb0mem, rfl⟩ := hb
+  have hTyped : b0.WellTyped program := List.forall_iff_forall_mem.mp hAll b0 hb0mem
+  refine ⟨?_, ?_⟩
+  · -- body obligation
+    rw [applyEdit_body_eq, applyEdit_input_eq, applyEdit_output_eq]
+    cases hlk : (editTable program).lookup b0.label with
+    | none => simpa using hTyped.1
+    | some e =>
+        cases e with
+        | head body out => exact (head_edit_spec hUnique hb0mem hlk).1
+        | consumed out => rfl
+  · -- terminator obligation
+    rw [applyEdit_term, applyEdit_output_eq]
+    cases hlk : (editTable program).lookup b0.label with
+    | none => exact untouched_term_type? hTyped hb0mem hlk
+    | some e =>
+        cases e with
+        | head body out => exact head_term_type? hUnique hb0mem hlk
+        | consumed out => exact consumed_term_type? hUnique hTyped hb0mem hlk
 
 end ShuffleCanon
 end TypedCfg
