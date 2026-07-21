@@ -119,6 +119,85 @@ theorem lowerBodyFrom?_chainBody_length (body : List Instr) {ds : List Nat}
               omega
       all_goals (exact absurd hds (by simp [chainBodyDepths?]))
 
+/-- `chainBodyDepths?` of a pure `.swap` list is exactly its depths. -/
+theorem chainBodyDepths?_map_swap (ns : List Nat) :
+    chainBodyDepths? (ns.map Instr.swap) = some ns := by
+  induction ns with
+  | nil => rfl
+  | cons d ds ih =>
+      simp only [List.map_cons, chainBodyDepths?, ih, Option.map_some]
+
+/-- A `.relabel` whose `lowerAt?` succeeds lowers to zero instructions. -/
+theorem lowerAt?_relabel_length {t : Shape} {input : Shape}
+    {code : Assembly.Program} {out : Shape}
+    (h : Instr.lowerAt? (.relabel t) input = some (code, out)) : code.length = 0 := by
+  have hT : (Instr.type? (.relabel t) input).isSome := by
+    unfold Instr.lowerAt? at h
+    rcases hh : Instr.type? (.relabel t) input with _ | o
+    · rw [hh] at h; simp at h
+    · rfl
+  rw [Option.isSome_iff_exists] at hT
+  obtain ⟨o, ho⟩ := hT
+  unfold Instr.lowerAt? at h
+  rw [ho] at h
+  simp only [Instr.lower?, Option.bind_some, Option.some.injEq, Prod.mk.injEq] at h
+  obtain ⟨rfl, -⟩ := h
+  rfl
+
+/-- The canonical head body `(canonSwaps merged).map .swap ++ [.relabel finalOut]`,
+if it lowers, lowers to exactly `(canonSwaps merged).length` instructions
+(the `.relabel` lowers to `[]`). -/
+theorem lowerBodyFrom?_canonBody_length {ns : List Nat} {t : Shape}
+    {input : Shape} {code : Assembly.Program} {out : Shape}
+    (hlow : Block.lowerBodyFrom? ((ns.map Instr.swap) ++ [Instr.relabel t]) input
+      = some (code, out)) :
+    code.length = ns.length := by
+  rw [Peephole.lowerBodyFrom?_append] at hlow
+  rcases h1 : Block.lowerBodyFrom? (ns.map Instr.swap) input with _ | ⟨c1, m1⟩
+  · rw [h1] at hlow; simp at hlow
+  · rw [h1, Option.bind_some] at hlow
+    rcases h2 : Block.lowerBodyFrom? [Instr.relabel t] m1 with _ | ⟨c2, m2⟩
+    · rw [h2] at hlow; simp at hlow
+    · rw [h2, Option.bind_some] at hlow
+      simp only [Option.some.injEq, Prod.mk.injEq] at hlow
+      obtain ⟨hcode, _⟩ := hlow
+      subst hcode
+      have hc1 : c1.length = ns.length :=
+        lowerBodyFrom?_chainBody_length _ (chainBodyDepths?_map_swap ns) h1
+      have hc2 : c2.length = 0 := by
+        rw [Peephole.lowerBodyFrom?_cons] at h2
+        rcases hp : Instr.lowerAt? (.relabel t) m1 with _ | ⟨pc, po⟩
+        · rw [hp] at h2; simp at h2
+        · rw [hp, Option.bind_some] at h2
+          simp only [Block.lowerBodyFrom?, Option.bind_some, Option.some.injEq,
+            Prod.mk.injEq] at h2
+          obtain ⟨hc2eq, _⟩ := h2
+          subst hc2eq
+          simpa using lowerAt?_relabel_length hp
+      rw [List.length_append, hc1, hc2]
+      omega
+
+/-- When a block's `lower?` succeeds, its fuel budget is `1 + |body code| + |term
+code|`, with the body lowering from `b.input` to `b.output` and the terminator
+lowering at `b.output`. -/
+theorem fuelBudget_of_lower {b : Block} (h : b.lower?.isSome) :
+    ∃ bc tc, Block.lowerBodyFrom? b.body b.input = some (bc, b.output) ∧
+      b.term.lowerAt? b.output = some tc ∧
+      CompiledBlock.fuelBudget b = 1 + bc.length + tc.length := by
+  unfold Block.lower? at h
+  rcases hbody : Block.lowerBodyFrom? b.body b.input with _ | ⟨bc, out⟩
+  · rw [hbody] at h; simp at h
+  · rw [hbody] at h
+    by_cases hout : out = b.output
+    · subst hout
+      rcases hterm : b.term.lowerAt? b.output with _ | tc
+      · simp [hterm] at h
+      · refine ⟨bc, tc, rfl, rfl, ?_⟩
+        unfold CompiledBlock.fuelBudget
+        rw [hbody]
+        simp only [↓reduceIte, hterm]
+    · simp [hout] at h
+
 /-- `applyEdit` is the identity on any block whose label is absent from the
 edit table, so it leaves the compiled fuel budget unchanged.  This is the
 zero-difference contribution of every non-chain block in the global sum. -/
