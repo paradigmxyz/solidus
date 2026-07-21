@@ -198,6 +198,36 @@ theorem runBody_chain_stack_length (body : List Instr) {input out : Shape} {s s'
   runSwaps_stack_length _ (bodyRunPositions_pos body)
     (runBody_chain_state body hChain hsw16 hrun)
 
+/-- **Part (B), member form.**  A chain-eligible block (`chainBodyOk = true`, i.e.
+its body has `chainBodyDepths? = some`) whose swap depths are all `< 16` runs through
+`Block.runBody` preserving stack length.  Discharges the `ChainInstr` hypothesis of
+`runBody_chain_stack_length` from `chainBodyOk` via `chainInstr_of_chainBodyDepths`, so
+the length-constancy step applies directly to real `growChain` members. -/
+theorem runBody_chainBodyOk_stack_length {b : Block} {s s' : EVMState} {out : Shape}
+    (hOk : ShuffleCanon.chainBodyOk b = true)
+    (hsw16 : ∀ d, Instr.swap d ∈ b.body → d < 16)
+    (hrun : Block.runBody b.body b.input s = .ok (s', out)) :
+    s'.stack.length = s.stack.length := by
+  unfold ShuffleCanon.chainBodyOk at hOk
+  rw [Option.isSome_iff_exists] at hOk
+  obtain ⟨ds, hds⟩ := hOk
+  exact runBody_chain_stack_length b.body (chainInstr_of_chainBodyDepths hds) hsw16 hrun
+
+/-! ## Part (A) static scaffolding: chain adjacency supplies the run's jump targets
+
+Part (A) — "the run visits each `growChain` member in order" — rests on the static
+fact that consecutive members are `chainStep`-linked, so each non-last member's
+terminator is exactly a `jump` to the next member's label.  This is the jump-target
+spine the eventual run-forward induction walks; it follows from `growChain_chain'`
+(consecutive members are `chainStep`-linked) and `chainStep_spec` (a `chainStep` forces
+the predecessor's `jump`). -/
+theorem growChain_member_term_jump (prog : Program) (b : Block) (bs : List Block)
+    (i : Nat) (hi : i + 1 < (ShuffleCanon.growChain prog b bs).length) :
+    ((ShuffleCanon.growChain prog b bs)[i]'(by omega)).term
+      = Terminator.jump ((ShuffleCanon.growChain prog b bs)[i + 1]'hi).label :=
+  (ShuffleCanon.chainStep_spec
+    (List.IsChain.getElem (ShuffleCanon.growChain_chain' prog b bs) i hi)).1
+
 /-! ## The core one-step composition (explicit intermediate state) -/
 
 /-- **Core one-step chain-combined composition.**  `Rel.trans` of the source-threaded
