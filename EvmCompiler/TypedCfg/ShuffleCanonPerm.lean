@@ -466,6 +466,135 @@ theorem netStack_perm_range (ps : List Nat) (m : Nat) :
   rw [netStack_length, netStack_eq_applySwaps]
   exact applySwaps_perm ps (List.range m)
 
+/-! ## Support (i): `starDecompose` element bounds (positions in `[1, length)`) -/
+
+theorem sortToId_elem_bounds (t : List Nat)
+    (hperm : List.Perm t (List.range t.length)) :
+    ∀ e ∈ sortToId t, 1 ≤ e ∧ e < t.length := by
+  rcases eq_or_ne t.length 0 with hn0 | hn0
+  · have ht : t = [] := List.eq_nil_of_length_eq_zero hn0
+    subst ht; intro e he; exact absurd he (by simp [sortToId])
+  · set n := t.length with hn
+    have hL : ((List.range n).drop 1) = List.range' 1 (n - 1) := by
+      rw [List.range_eq_range', List.drop_range']
+    have hfold : sortToId t =
+        (List.foldr (fun i st => sortStep st i) (t, []) (List.range' 1 (n - 1))).2 := by
+      unfold sortToId; rw [← hn, List.foldl_reverse, hL]
+    obtain ⟨_, _, _, _, hbnd⟩ :=
+      sortFoldr_inv t n rfl hperm (n - 1) 1 (le_refl 1) (by omega)
+    rw [hfold]; exact hbnd
+
+/-- Support (i): every position in `starDecompose t` lies in `[1, t.length)`
+(for a permutation `t`). -/
+theorem starDecompose_elem_bounds (t : List Nat)
+    (hperm : List.Perm t (List.range t.length)) :
+    ∀ e ∈ starDecompose t, 1 ≤ e ∧ e < t.length := by
+  intro e he
+  unfold starDecompose at he
+  rw [List.mem_reverse] at he
+  exact sortToId_elem_bounds t hperm e he
+
+/-! ## Support: `maxDepth` upper-bounds every element -/
+
+theorem le_foldl_max_acc (l : List Nat) (acc : Nat) : acc ≤ l.foldl Nat.max acc := by
+  induction l generalizing acc with
+  | nil => exact Nat.le_refl _
+  | cons a l ih =>
+      rw [List.foldl_cons]
+      exact le_trans (Nat.le_max_left acc a) (ih _)
+
+theorem mem_le_foldl_max (l : List Nat) (acc q : Nat) (hq : q ∈ l) :
+    q ≤ l.foldl Nat.max acc := by
+  induction l generalizing acc with
+  | nil => simp at hq
+  | cons a l ih =>
+      rw [List.foldl_cons]
+      rcases List.mem_cons.1 hq with h | h
+      · subst h
+        exact le_trans (Nat.le_max_right acc q) (le_foldl_max_acc l _)
+      · exact ih (Nat.max acc a) h
+
+theorem mem_le_maxDepth (swaps : List Nat) (q : Nat) (hq : q ∈ swaps) :
+    q ≤ maxDepth swaps := mem_le_foldl_max swaps 0 q hq
+
+/-! ## Support (window-extension): `netStack` over a wider window -/
+
+theorem applySwap_append_left {α : Type _} (q : Nat) (xs ys : List α)
+    (hq : q < xs.length) : applySwap q (xs ++ ys) = applySwap q xs ++ ys := by
+  have h0lt : 0 < xs.length := by omega
+  obtain ⟨a, ha⟩ : ∃ a, xs[0]? = some a := ⟨xs[0], List.getElem?_eq_getElem h0lt⟩
+  obtain ⟨b, hb⟩ : ∃ b, xs[q]? = some b := ⟨xs[q], List.getElem?_eq_getElem hq⟩
+  unfold applySwap
+  rw [List.getElem?_append_left h0lt, List.getElem?_append_left hq, ha, hb]
+  show ((xs ++ ys).set 0 b).set q a = (xs.set 0 b).set q a ++ ys
+  rw [List.set_append_left 0 b h0lt,
+      List.set_append_left q a (by rw [List.length_set]; exact hq)]
+
+theorem applySwaps_append_left {α : Type _} (ps : List Nat) (xs ys : List α)
+    (hall : ∀ q ∈ ps, q < xs.length) :
+    applySwaps ps (xs ++ ys) = applySwaps ps xs ++ ys := by
+  induction ps generalizing xs with
+  | nil => rfl
+  | cons q ps ih =>
+      rw [applySwaps_cons, applySwaps_cons]
+      have hq : q < xs.length := hall q (by simp)
+      rw [applySwap_append_left q xs ys hq,
+          ih (applySwap q xs) (by
+            intro r hr; rw [length_applySwap]; exact hall r (by simp [hr]))]
+
+theorem range_split (W L : Nat) (h : W ≤ L) :
+    List.range L = List.range W ++ List.range' W (L - W) := by
+  apply List.ext_getElem?
+  intro i
+  by_cases hi : i < W
+  · rw [List.getElem?_append_left (by rw [List.length_range]; exact hi),
+        List.getElem?_range (by omega), List.getElem?_range hi]
+  · by_cases hiL : i < L
+    · rw [List.getElem?_append_right (by rw [List.length_range]; omega),
+          List.getElem?_range hiL, List.length_range,
+          List.getElem?_range' (by omega)]
+      congr 1; omega
+    · rw [List.getElem?_eq_none_iff.2 (by rw [List.length_range]; omega),
+          List.getElem?_eq_none_iff.2 (by
+            rw [List.length_append, List.length_range, List.length_range']; omega)]
+
+theorem netStack_window_extend (ps : List Nat) (W L : Nat)
+    (hpos : ∀ q ∈ ps, q < W) (hWL : W ≤ L) :
+    netStack ps L = netStack ps W ++ List.range' W (L - W) := by
+  rw [netStack_eq_applySwaps, netStack_eq_applySwaps, range_split W L hWL,
+      applySwaps_append_left ps (List.range W) (List.range' W (L - W))
+        (by intro q hq; rw [List.length_range]; exact hpos q hq)]
+
+/-- Window-extension corollary: two position lists below `W` with equal
+`netStack` over `W` agree over any wider window. -/
+theorem netStack_congr_window (a b : List Nat) (W L : Nat)
+    (ha : ∀ q ∈ a, q < W) (hb : ∀ q ∈ b, q < W) (hWL : W ≤ L)
+    (heq : netStack a W = netStack b W) :
+    netStack a L = netStack b L := by
+  rw [netStack_window_extend a W L ha hWL, netStack_window_extend b W L hb hWL, heq]
+
+/-! ## Support (ii): the typed `.swap` run bounds every depth -/
+
+theorem bodyType?_map_swap_bound (r : List Nat) :
+    ∀ (input : Shape), (Block.bodyType? (r.map Instr.swap) input).isSome →
+    ∀ d ∈ r, d < 16 ∧ d + 1 < input.slots.length := by
+  induction r with
+  | nil => intro input _ d hd; simp at hd
+  | cons d ds ih =>
+      intro input hsome e he
+      simp only [List.map_cons, Block.bodyType?] at hsome
+      cases hMid : Instr.type? (.swap d) input with
+      | none => rw [hMid] at hsome; simp at hsome
+      | some mid =>
+          rw [hMid] at hsome
+          obtain ⟨hd16, hdlen, hmidEq⟩ := type?_swap_eq_applySwap hMid
+          rcases List.mem_cons.1 he with h | h
+          · subst h; exact ⟨hd16, hdlen⟩
+          · have hlen : mid.slots.length = input.slots.length := by
+              rw [hmidEq]; simp [length_applySwap]
+            have hb := ih mid hsome e h
+            rw [hlen] at hb; exact hb
+
 end ShuffleCanon
 end TypedCfg
 end EvmCompiler
