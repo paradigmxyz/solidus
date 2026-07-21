@@ -488,6 +488,355 @@ theorem bodyType?_sdWindow_eq (ops : List SDOp) (input out : Shape)
           · rw [hout, hslots]
           · rw [houttail, htail]
 
+/-- **Typing implies `fits` (with the depth-`< 16` lowering gate).**  If a
+`{SWAP, POP}` window types from `input`, then it `fits input.slots.length` (each
+swap depth is in range, each pop has a head) — so the canonical-width correctness
+applies whenever `input.slots.length` reaches the canonical width — and moreover
+every swap depth is `< 16`, i.e. the window already lowers to real `SWAP1..16`
+opcodes.  This is the bridge the single-block WellTyped gate rests on. -/
+theorem fits_of_bodyType? (ops : List SDOp) (input out : Shape)
+    (hType : Block.bodyType? (ops.map sdToInstr) input = some out) :
+    fits ops input.slots.length ∧ (∀ d, SDOp.swap d ∈ ops → d < 16) := by
+  induction ops generalizing input with
+  | nil => exact ⟨trivial, by intro d hd; simp at hd⟩
+  | cons o ops ih =>
+      simp only [List.map_cons, Block.bodyType?] at hType
+      cases hMid : Instr.type? (sdToInstr o) input with
+      | none => rw [hMid] at hType; simp at hType
+      | some mid =>
+          rw [hMid] at hType
+          obtain ⟨ihFits, ihLt⟩ := ih mid hType
+          cases o with
+          | swap d =>
+              obtain ⟨hLt16, hIdx, _⟩ := ShuffleCanon.type?_swap_eq_applySwap hMid
+              obtain ⟨_, htail⟩ := type?_sdOp_slots (SDOp.swap d) hMid
+              refine ⟨⟨hIdx, ?_⟩, ?_⟩
+              · have hslots : mid.slots = ShuffleCanon.applySwap (d + 1) input.slots :=
+                  (type?_sdOp_slots (SDOp.swap d) hMid).1
+                have : mid.slots.length = input.slots.length := by
+                  rw [hslots, ShuffleCanon.length_applySwap]
+                rwa [this] at ihFits
+              · intro e he
+                rcases List.mem_cons.1 he with h | h
+                · cases h; exact hLt16
+                · exact ihLt e h
+          | pop =>
+              obtain ⟨hne, hEq⟩ := type?_pop_eq_tail hMid
+              have hlen : mid.slots.length = input.slots.length - 1 := by
+                rw [hEq]; simp [List.length_tail]
+              refine ⟨⟨?_, ?_⟩, ?_⟩
+              · exact List.length_pos_of_ne_nil hne
+              · rw [hlen] at ihFits; exact ihFits
+              · intro e he
+                rcases List.mem_cons.1 he with h | h
+                · exact absurd h (by simp)
+                · exact ihLt e h
+
+/-! ## Fold accounting for `popCount` / `sdDepth`
+
+`popCount` and `sdDepth` are left folds with an accumulator; the following
+cons-recursion lemmas (via the standard additive/`max`-distributing accumulator
+lemmas) are what the length and `fits` accounting below need. -/
+
+private theorem popCount_acc (ops : List SDOp) (a : Nat) :
+    ops.foldl (fun n o => match o with | .pop => n + 1 | .swap _ => n) a
+      = a + popCount ops := by
+  induction ops generalizing a with
+  | nil => simp [popCount]
+  | cons o ops ih =>
+      rw [List.foldl_cons, ih]
+      conv_rhs => rw [popCount, List.foldl_cons, ih]
+      cases o <;> simp <;> omega
+
+theorem popCount_cons_swap (d : Nat) (ops : List SDOp) :
+    popCount (SDOp.swap d :: ops) = popCount ops := rfl
+
+theorem popCount_cons_pop (ops : List SDOp) :
+    popCount (SDOp.pop :: ops) = popCount ops + 1 := by
+  show List.foldl (fun n o => match o with | .pop => n + 1 | .swap _ => n) 1 ops
+      = popCount ops + 1
+  rw [popCount_acc]; omega
+
+private theorem sdDepth_acc (ops : List SDOp) (a : Nat) :
+    ops.foldl (fun m o => match o with | .swap d => Nat.max m (d + 1) | .pop => m) a
+      = Nat.max a (sdDepth ops) := by
+  induction ops generalizing a with
+  | nil => simp [sdDepth]
+  | cons o ops ih =>
+      rw [List.foldl_cons, ih]
+      conv_rhs => rw [sdDepth, List.foldl_cons, ih]
+      cases o <;> simp <;> omega
+
+theorem sdDepth_cons_swap (d : Nat) (ops : List SDOp) :
+    sdDepth (SDOp.swap d :: ops) = Nat.max (d + 1) (sdDepth ops) := by
+  show List.foldl (fun m o => match o with | .swap d => Nat.max m (d + 1) | .pop => m)
+      (Nat.max 0 (d + 1)) ops = Nat.max (d + 1) (sdDepth ops)
+  rw [sdDepth_acc]; simp
+
+theorem sdDepth_cons_pop (ops : List SDOp) :
+    sdDepth (SDOp.pop :: ops) = sdDepth ops := by
+  show List.foldl (fun m o => match o with | .swap d => Nat.max m (d + 1) | .pop => m)
+      0 ops = sdDepth ops
+  rw [sdDepth_acc]; simp
+
+/-! ## `fits` monotonicity and the canonical-width witness -/
+
+/-- `fits` is monotone in the observed width. -/
+theorem fits_mono {ops : List SDOp} {n m : Nat} (hnm : n ≤ m) (h : fits ops n) :
+    fits ops m := by
+  induction ops generalizing n m with
+  | nil => trivial
+  | cons o rest ih =>
+      cases o with
+      | swap d =>
+          obtain ⟨hd, hrest⟩ := h
+          exact ⟨by omega, ih hnm hrest⟩
+      | pop =>
+          obtain ⟨h0, hrest⟩ := h
+          exact ⟨by omega, ih (by omega) hrest⟩
+
+/-- **Accounting (c).** The canonical window width `N = sdDepth + popCount + 1`
+always fits: every swap depth is in range and every pop has a head to drop. -/
+theorem fits_canonical (ops : List SDOp) :
+    fits ops (sdDepth ops + popCount ops + 1) := by
+  induction ops with
+  | nil => trivial
+  | cons o rest ih =>
+      cases o with
+      | swap d =>
+          rw [popCount_cons_swap]
+          have h1 : d + 1 ≤ sdDepth (SDOp.swap d :: rest) := by
+            rw [sdDepth_cons_swap]; exact Nat.le_max_left _ _
+          have h2 : sdDepth rest ≤ sdDepth (SDOp.swap d :: rest) := by
+            rw [sdDepth_cons_swap]; exact Nat.le_max_right _ _
+          exact ⟨by omega, fits_mono (by omega) ih⟩
+      | pop =>
+          rw [sdDepth_cons_pop, popCount_cons_pop]
+          exact ⟨by omega, by simpa using ih⟩
+
+/-! ## Length accounting under `fits` -/
+
+/-- **Accounting (a).** Under `fits`, each `.pop` drops exactly one slot and each
+`.swap` preserves length, so a window shortens the stack by its `popCount`. -/
+theorem runDrop_length {α : Type _} (ops : List SDOp) (xs : List α)
+    (h : fits ops xs.length) :
+    (runDrop ops xs).length = xs.length - popCount ops := by
+  induction ops generalizing xs with
+  | nil => simp [popCount]
+  | cons o rest ih =>
+      cases o with
+      | swap d =>
+          obtain ⟨hd, hrest⟩ := h
+          rw [runDrop_cons, SDOp.apply, popCount_cons_swap]
+          rw [ih (ShuffleCanon.applySwap (d + 1) xs)
+              (by rw [ShuffleCanon.length_applySwap]; exact hrest)]
+          rw [ShuffleCanon.length_applySwap]
+      | pop =>
+          obtain ⟨h0, hrest⟩ := h
+          rw [runDrop_cons, SDOp.apply, popCount_cons_pop]
+          have hlen : xs.tail.length = xs.length - 1 := by
+            cases xs with
+            | nil => simp at h0
+            | cons a xs => simp
+          rw [ih xs.tail (by rw [hlen]; exact hrest), hlen]
+          omega
+
+/-! ## Survivor / dead-slot accounting for the minimiser
+
+`netEffect ops` (the survivors) has length `sdDepth + 1`, `deadSlots ops` (the
+dropped slots) has length `popCount`, and `deadSlots ++ netEffect` is a
+permutation of `range N` (`N = sdDepth + popCount + 1`).  These feed P1
+(`netStack_starDecompose_of_perm`) at the canonical width. -/
+
+/-- **Accounting (a′).** The survivor count is `sdDepth + 1` (the window drops
+exactly its `popCount` slots from the canonical width `N`). -/
+theorem netEffect_length (ops : List SDOp) :
+    (netEffect ops).length = sdDepth ops + 1 := by
+  unfold netEffect
+  rw [runDrop_length ops _ (by rw [List.length_range]; exact fits_canonical ops),
+    List.length_range]
+  omega
+
+theorem netEffect_nodup (ops : List SDOp) : (netEffect ops).Nodup :=
+  runDrop_nodup ops (List.nodup_range)
+
+theorem netEffect_subset (ops : List SDOp) :
+    netEffect ops ⊆ List.range (sdDepth ops + popCount ops + 1) := by
+  intro x hx; exact runDrop_mem ops _ hx
+
+theorem deadSlots_nodup (ops : List SDOp) : (deadSlots ops).Nodup :=
+  (List.nodup_range).filter _
+
+theorem deadSlots_subset (ops : List SDOp) :
+    deadSlots ops ⊆ List.range (sdDepth ops + popCount ops + 1) :=
+  List.filter_subset' _
+
+/-- Membership in `deadSlots`: a canonical slot that did **not** survive. -/
+theorem mem_deadSlots {ops : List SDOp} {x : Nat} :
+    x ∈ deadSlots ops ↔
+      x ∈ List.range (sdDepth ops + popCount ops + 1) ∧ x ∉ netEffect ops := by
+  unfold deadSlots
+  rw [List.mem_filter]
+  constructor
+  · rintro ⟨hx, hd⟩; exact ⟨hx, by simpa using hd⟩
+  · rintro ⟨hx, hd⟩; exact ⟨hx, by simpa using hd⟩
+
+/-- **Accounting (b).** `deadSlots ++ netEffect` is a permutation of the canonical
+window `range N` — both are nodup with the same membership. -/
+theorem deadSlots_append_netEffect_perm (ops : List SDOp) :
+    (deadSlots ops ++ netEffect ops).Perm
+      (List.range (sdDepth ops + popCount ops + 1)) := by
+  have hdisj : ∀ a ∈ deadSlots ops, ∀ b ∈ netEffect ops, a ≠ b := by
+    intro a ha b hb hab
+    subst hab
+    exact absurd hb (mem_deadSlots.1 ha).2
+  have hnodup : (deadSlots ops ++ netEffect ops).Nodup :=
+    List.nodup_append.2 ⟨deadSlots_nodup ops, netEffect_nodup ops, hdisj⟩
+  have hsub : (deadSlots ops ++ netEffect ops) ⊆
+      List.range (sdDepth ops + popCount ops + 1) := by
+    intro x hx
+    rcases List.mem_append.1 hx with h | h
+    · exact deadSlots_subset ops h
+    · exact netEffect_subset ops h
+  have hsup : List.range (sdDepth ops + popCount ops + 1) ⊆
+      (deadSlots ops ++ netEffect ops) := by
+    intro x hx
+    by_cases hxn : x ∈ netEffect ops
+    · exact List.mem_append_right _ hxn
+    · exact List.mem_append_left _ (mem_deadSlots.2 ⟨hx, hxn⟩)
+  exact (List.subperm_of_subset hnodup hsub).antisymm
+    (List.subperm_of_subset (List.nodup_range) hsup)
+
+theorem deadSlots_append_netEffect_length (ops : List SDOp) :
+    (deadSlots ops ++ netEffect ops).length = sdDepth ops + popCount ops + 1 := by
+  rw [(deadSlots_append_netEffect_perm ops).length_eq, List.length_range]
+
+theorem deadSlots_length (ops : List SDOp) :
+    (deadSlots ops).length = popCount ops := by
+  have h := deadSlots_append_netEffect_length ops
+  rw [List.length_append, netEffect_length] at h
+  omega
+
+/-! ## The minimiser runtime correctness (canonical width, then any wider stack)
+
+`realize ops` reproduces the window's net effect: on the canonical width it
+equals `netEffect ops`; on any stack at least that wide it agrees with `ops`
+pointwise (via the gather factoring / `runDrop_append_left`). -/
+
+/-- **Core.**  On the canonical observation window `range N`, the realisation
+reproduces the survivors — the P1 assembly (`netStack_starDecompose_of_perm`). -/
+theorem runDrop_realize_range (ops : List SDOp) :
+    runDrop (realize ops) (List.range (sdDepth ops + popCount ops + 1))
+      = netEffect ops := by
+  have hperm : (deadSlots ops ++ netEffect ops).Perm
+      (List.range (deadSlots ops ++ netEffect ops).length) := by
+    rw [deadSlots_append_netEffect_length]; exact deadSlots_append_netEffect_perm ops
+  have hbounds : ∀ p ∈ ShuffleCanon.starDecompose (deadSlots ops ++ netEffect ops),
+      1 ≤ p :=
+    fun p hp => (ShuffleCanon.starDecompose_elem_bounds _ hperm p hp).1
+  unfold realize
+  rw [runDrop_append, runDrop_swapmap _ _ hbounds,
+    ← ShuffleCanon.netStack_eq_applySwaps]
+  rw [show sdDepth ops + popCount ops + 1
+        = (deadSlots ops ++ netEffect ops).length from
+      (deadSlots_append_netEffect_length ops).symm]
+  rw [ShuffleCanon.netStack_starDecompose_of_perm _ hperm, runDrop_replicate_pop]
+  rw [show popCount ops = (deadSlots ops).length from (deadSlots_length ops).symm,
+    List.drop_left]
+
+/-! ### `fits` for the realisation (feeds the width-extension) -/
+
+theorem popCount_map_swap (ps : List Nat) :
+    popCount (ps.map (fun p => SDOp.swap (p - 1))) = 0 := by
+  induction ps with
+  | nil => rfl
+  | cons p ps ih => rw [List.map_cons, popCount_cons_swap]; exact ih
+
+theorem fits_append (a b : List SDOp) (n : Nat)
+    (ha : fits a n) (hb : fits b (n - popCount a)) : fits (a ++ b) n := by
+  induction a generalizing n with
+  | nil => simpa using hb
+  | cons o rest ih =>
+      cases o with
+      | swap d =>
+          obtain ⟨hd, hrest⟩ := ha
+          rw [popCount_cons_swap] at hb
+          exact ⟨hd, ih n hrest hb⟩
+      | pop =>
+          obtain ⟨h0, hrest⟩ := ha
+          rw [popCount_cons_pop] at hb
+          refine ⟨h0, ih (n - 1) hrest ?_⟩
+          have hEq : n - 1 - popCount rest = n - (popCount rest + 1) := by omega
+          rw [hEq]; exact hb
+
+theorem fits_map_swap (ps : List Nat) (n : Nat)
+    (h : ∀ p ∈ ps, 1 ≤ p ∧ p < n) :
+    fits (ps.map (fun p => SDOp.swap (p - 1))) n := by
+  induction ps with
+  | nil => trivial
+  | cons p ps ih =>
+      obtain ⟨hp1, hpn⟩ := h p (by simp)
+      refine ⟨by omega, ih (fun q hq => h q (by simp [hq]))⟩
+
+theorem fits_replicate_pop (k n : Nat) (h : k ≤ n) :
+    fits (List.replicate k SDOp.pop) n := by
+  induction k generalizing n with
+  | zero => trivial
+  | succ k ih =>
+      rw [List.replicate_succ]
+      exact ⟨by omega, ih (n - 1) (by omega)⟩
+
+/-- **Accounting (c′).**  The realisation also fits the canonical width: its swap
+positions are `< N` (P1 element bounds) and it pops at most `popCount ≤ N`. -/
+theorem fits_realize_canonical (ops : List SDOp) :
+    fits (realize ops) (sdDepth ops + popCount ops + 1) := by
+  have hperm : (deadSlots ops ++ netEffect ops).Perm
+      (List.range (deadSlots ops ++ netEffect ops).length) := by
+    rw [deadSlots_append_netEffect_length]; exact deadSlots_append_netEffect_perm ops
+  unfold realize
+  apply fits_append
+  · apply fits_map_swap
+    intro p hp
+    obtain ⟨hp1, hpN⟩ := ShuffleCanon.starDecompose_elem_bounds _ hperm p hp
+    rw [deadSlots_append_netEffect_length] at hpN
+    exact ⟨hp1, hpN⟩
+  · rw [popCount_map_swap, Nat.sub_zero]
+    exact fits_replicate_pop _ _ (by omega)
+
+/-- **The minimiser reproduces the net effect on any stack at least as wide as the
+canonical window.**  Extends the core via the gather factoring: both `realize ops`
+and `ops` agree with their net trace on `range xs.length`. -/
+theorem runDrop_realize_eq (ops : List SDOp) (xs : List Nat)
+    (hlen : sdDepth ops + popCount ops + 1 ≤ xs.length) :
+    runDrop (realize ops) xs = runDrop ops xs := by
+  apply runDrop_congr_of_range
+  have hsplit : List.range xs.length
+      = List.range (sdDepth ops + popCount ops + 1)
+        ++ (List.range xs.length).drop (sdDepth ops + popCount ops + 1) := by
+    conv_lhs => rw [← List.take_append_drop (sdDepth ops + popCount ops + 1)
+      (List.range xs.length)]
+    congr 1
+    rw [List.take_range, Nat.min_eq_left hlen]
+  rw [hsplit]
+  rw [runDrop_append_left ops _ _
+      (by rw [List.length_range]; exact fits_canonical ops)]
+  rw [runDrop_append_left (realize ops) _ _
+      (by rw [List.length_range]; exact fits_realize_canonical ops)]
+  rw [runDrop_realize_range ops, netEffect]
+
+/-- **The minimiser is runtime-transparent on a wide-enough stack.** `minimizeWindow`
+either fires `realize` (net-effect equal by `runDrop_realize_eq`) or keeps `ops`
+verbatim — so it never changes the window's action on any stack at least as wide as
+the canonical observation window `N = sdDepth + popCount + 1`.  This is the exact
+fact a single-block body-rewrite congruence consumes. -/
+theorem runDrop_minimizeWindow_eq (ops : List SDOp) (xs : List Nat)
+    (hlen : sdDepth ops + popCount ops + 1 ≤ xs.length) :
+    runDrop (minimizeWindow ops) xs = runDrop ops xs := by
+  unfold minimizeWindow
+  split
+  · exact runDrop_realize_eq ops xs hlen
+  · rfl
+
 end ShuffleDropCanon
 end TypedCfg
 end EvmCompiler
