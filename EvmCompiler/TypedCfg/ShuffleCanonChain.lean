@@ -173,6 +173,74 @@ theorem growChain_chain' (prog : Program) (b : Block) (bs : List Block) :
         exact List.IsChain.cons_cons h ihn
       · rw [if_neg h]; exact List.isChain_singleton b
 
+/-- A grown chain is a prefix of its seed-plus-remaining list. -/
+theorem growChain_prefix (prog : Program) (b : Block) (bs : List Block) :
+    growChain prog b bs <+: b :: bs := by
+  induction bs generalizing b with
+  | nil => exact ⟨[], rfl⟩
+  | cons nxt rest ih =>
+      unfold growChain
+      by_cases h : chainStep prog b nxt = true
+      · rw [if_pos h]
+        obtain ⟨t, ht⟩ := ih nxt
+        exact ⟨t, by rw [List.cons_append, ht]⟩
+      · rw [if_neg h]; exact ⟨nxt :: rest, rfl⟩
+
+/-! ## Scan membership decomposition -/
+
+/-- Any entry produced by `scanEdits` comes from a fired chain grown at the front of
+some suffix of the scanned block list. -/
+theorem scanEdits_mem {prog : Program} {fuel : Nat} {ordered : List Block}
+    {p : Label × Edit} (h : p ∈ scanEdits prog fuel ordered) :
+    ∃ b rest, (b :: rest) <:+ ordered ∧
+      2 ≤ (growChain prog b rest).length ∧ p ∈ chainEdits (growChain prog b rest) := by
+  induction fuel generalizing ordered with
+  | zero => simp only [scanEdits, List.not_mem_nil] at h
+  | succ fuel ih =>
+      cases ordered with
+      | nil => simp only [scanEdits, List.not_mem_nil] at h
+      | cons b rest =>
+          rw [scanEdits] at h
+          by_cases hlen : 2 ≤ (growChain prog b rest).length
+          · rw [if_pos hlen, List.mem_append] at h
+            cases h with
+            | inl h => exact ⟨b, rest, List.suffix_refl _, hlen, h⟩
+            | inr h =>
+                obtain ⟨b', rest', hsuf, hlen', hmem'⟩ := ih h
+                exact ⟨b', rest', hsuf.trans ((List.drop_suffix _ _).trans (List.suffix_cons b rest)),
+                  hlen', hmem'⟩
+          · rw [if_neg hlen] at h
+            obtain ⟨b', rest', hsuf, hlen', hmem'⟩ := ih h
+            exact ⟨b', rest', hsuf.trans (List.suffix_cons b rest), hlen', hmem'⟩
+
+/-- The structure of a fired chain's edit list, unpacked from any of its members. -/
+theorem chainEdits_fired {chain : List Block} {p : Label × Edit}
+    (h : p ∈ chainEdits chain) :
+    ∃ hd tl, chain = hd :: tl ∧
+      Block.bodyType?
+          ((canonSwaps (chain.flatMap (fun b => (chainBodyDepths? b.body).getD []))).map Instr.swap
+            ++ [Instr.relabel (chain.getLastD hd).output]) hd.input
+        = some (chain.getLastD hd).output ∧
+      (p = (hd.label, Edit.head
+              ((canonSwaps (chain.flatMap (fun b => (chainBodyDepths? b.body).getD []))).map Instr.swap
+                ++ [Instr.relabel (chain.getLastD hd).output]) (chain.getLastD hd).output)
+        ∨ ∃ C ∈ tl, p = (C.label, Edit.consumed (chain.getLastD hd).output)) := by
+  cases chain with
+  | nil => simp only [chainEdits, List.not_mem_nil] at h
+  | cons hd tl =>
+      rw [chainEdits] at h
+      split at h
+      · rename_i hc
+        refine ⟨hd, tl, rfl, eq_of_beq hc, ?_⟩
+        rw [List.mem_cons] at h
+        cases h with
+        | inl h => exact Or.inl h
+        | inr h =>
+            rw [List.mem_map] at h
+            obtain ⟨C, hC, hCeq⟩ := h
+            exact Or.inr ⟨C, hC, hCeq.symm⟩
+      · simp only [List.not_mem_nil] at h
+
 /-! ## Fail-closed head typing (the reusable WellTyped crux)
 
 `chainEdits` emits a `.head` edit **only** when its (relabel-terminated) canonical body
