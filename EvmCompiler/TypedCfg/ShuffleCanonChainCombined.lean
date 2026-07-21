@@ -432,6 +432,84 @@ theorem member_openStep_done_jump {Q : Program} {m : Block} {ds : List Nat}
     Block.runTermChecked_jump, Block.runTerm]
   rfl
 
+/-! ## Part (A) assembled: the chain-runtime-feasibility walk
+
+Stitches the parts together.  Entering a grown chain's head with a source-threaded
+`SeamCombinedStepRelEff` relating the real `cfg` run `s1` to the `Q := preChainProgram cfg`
+run `s_mid`, the `Q`-run deterministically jumps head → member₂ → member₃ → … (each member
+is a bare-jump-terminated chain body, `member_openStep_done_jump`).  Each hop preserves the
+stack length (part B, inside the bridge) and re-seeds the seam-combined invariant
+(`seamCombinedStepRelEff_propagate_jump_of_Q`), whose per-member witness
+(`stackRealizes_preChain_of_seamCombined`) bounds that member's input length by the
+(constant) stack length.  Hence every member `m` of the grown chain satisfies
+`m.input.length ≤ s_mid.stack.length` — the chain-runtime-feasibility invariant §84–§87
+pinned as the transform's soundness core. -/
+theorem chain_feasibility_walk
+    {source : Structured.Program}
+    {entryShapes : Structured.TypedCfgCompiler.ProcEntryShapes}
+    {cfg : TypedCfg.Program}
+    (context :
+      Structured.TypedCfgPreservation.Program.GeneratedContext source entryShapes cfg)
+    (hSourceWF : source.WF)
+    (hTyped : cfg.WellTyped) (hIndependent : cfg.ProgramCounterIndependent) :
+    ∀ (bs : List Block) (b : Block) {s1 s_mid : EVMState},
+      (∀ m ∈ ShuffleCanon.growChain (preChainProgram cfg) b bs,
+        (preChainProgram cfg).findBlock? m.label = some m) →
+      SeamCombinedStepRelEff (source := source) (cfg := cfg) context.calls b.label s1 s_mid →
+      ∀ m ∈ ShuffleCanon.growChain (preChainProgram cfg) b bs,
+        m.input.length ≤ s_mid.stack.length := by
+  have hTypedQ : (preChainProgram cfg).WellTyped :=
+    seamCancelProgramEff_wellTyped
+      (peepholeProgram_wellTyped (normalizeProgram_wellTyped hTyped))
+  set Q := preChainProgram cfg with hQdef
+  intro bs
+  induction bs with
+  | nil =>
+      intro b s1 s_mid hfind hStep m hm
+      have hgc : ShuffleCanon.growChain Q b [] = [b] := rfl
+      rw [hgc, List.mem_singleton] at hm
+      subst hm
+      have hbmem : m ∈ ShuffleCanon.growChain Q m [] := by rw [hgc]; exact List.mem_singleton.2 rfl
+      exact stackRealizes_preChain_of_seamCombined context hSourceWF hStep m (hfind m hbmem)
+  | cons nxt rest ih =>
+      intro b s1 s_mid hfind hStep m hm
+      have hbmem : b ∈ ShuffleCanon.growChain Q b (nxt :: rest) := by
+        obtain ⟨t, ht⟩ := ShuffleCanon.growChain_head Q b (nxt :: rest)
+        rw [ht]; exact List.mem_cons_self
+      have hReal_b : StackRealizes b.input s_mid :=
+        stackRealizes_preChain_of_seamCombined context hSourceWF hStep b (hfind b hbmem)
+      by_cases hstep : ShuffleCanon.chainStep Q b nxt = true
+      · unfold ShuffleCanon.growChain at hm
+        rw [if_pos hstep] at hm
+        rcases List.mem_cons.1 hm with rfl | hmtail
+        · exact hReal_b
+        · -- Step forward across `b → nxt`.
+          have hterm : b.term = Terminator.jump nxt.label := (ShuffleCanon.chainStep_spec hstep).1
+          obtain ⟨ds, helig⟩ := Option.isSome_iff_exists.1 (chainStep_chainBodyOk_a hstep)
+          have hbBlocks : b ∈ Q.blocks := by
+            have hfb := hfind b hbmem
+            unfold TypedCfg.Program.findBlock? at hfb
+            exact List.mem_of_find?_eq_some hfb
+          have hbtyped : b.WellTyped Q := (List.forall_iff_forall_mem.mp hTypedQ.2.1) b hbBlocks
+          obtain ⟨s_mid', hopen, hlen⟩ :=
+            member_openStep_done_jump (hFind := hfind b hbmem) (helig := helig)
+              (hbt := hbtyped.1) (hReal := hReal_b) (hterm := hterm)
+          obtain ⟨s1', hStepNxt⟩ :=
+            seamCombinedStepRelEff_propagate_jump_of_Q context hSourceWF hTyped hIndependent
+              hStep hopen
+          have hfindTail : ∀ m' ∈ ShuffleCanon.growChain Q nxt rest,
+              Q.findBlock? m'.label = some m' := by
+            intro m' hm'
+            refine hfind m' ?_
+            unfold ShuffleCanon.growChain; rw [if_pos hstep]; exact List.mem_cons_of_mem b hm'
+          have hIHtail := ih nxt hfindTail hStepNxt m hmtail
+          rw [hlen] at hIHtail
+          exact hIHtail
+      · unfold ShuffleCanon.growChain at hm
+        rw [if_neg hstep, List.mem_singleton] at hm
+        subst hm
+        exact hReal_b
+
 end Peephole
 end TypedCfg
 end EvmCompiler
