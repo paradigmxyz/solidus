@@ -337,6 +337,40 @@ theorem consumed_predecessor {program : Program} {L : Label} {out : Shape}
     refine ⟨P, hPblocks, hterm, href, e, ?_⟩
     unfold editTable; rw [hord]; exact hsub _ heP
 
+/-! ## `List.lookup` ↔ membership helpers (`Label` is `LawfulBEq`) -/
+
+theorem lookup_mem {α β : Type _} [BEq α] [LawfulBEq α] {l : α} {e : β}
+    {xs : List (α × β)} (h : xs.lookup l = some e) : (l, e) ∈ xs := by
+  induction xs with
+  | nil => simp only [List.lookup_nil, reduceCtorEq] at h
+  | cons p ps ih =>
+      obtain ⟨k, v⟩ := p
+      rw [List.lookup_cons] at h
+      by_cases hk : (l == k) = true
+      · rw [hk] at h
+        obtain rfl := (Option.some.injEq _ _).mp h
+        obtain rfl := eq_of_beq hk
+        exact List.mem_cons.mpr (Or.inl rfl)
+      · rw [Bool.not_eq_true] at hk; rw [hk] at h
+        exact List.mem_cons_of_mem _ (ih h)
+
+theorem lookup_ne_none_of_mem {α β : Type _} [BEq α] [LawfulBEq α] {l : α} {e : β}
+    {xs : List (α × β)} (h : (l, e) ∈ xs) : xs.lookup l ≠ none := by
+  induction xs with
+  | nil => simp only [List.not_mem_nil] at h
+  | cons p ps ih =>
+      obtain ⟨k, v⟩ := p
+      rw [List.lookup_cons]
+      by_cases hk : (l == k) = true
+      · rw [hk]; simp
+      · rw [Bool.not_eq_true] at hk; rw [hk]
+        rw [List.mem_cons] at h
+        cases h with
+        | inl h =>
+            obtain ⟨rfl, _⟩ := Prod.mk.injEq .. ▸ h
+            simp [beq_self_eq_true] at hk
+        | inr h => exact ih h
+
 /-! ## Fail-closed head typing (the reusable WellTyped crux)
 
 `chainEdits` emits a `.head` edit **only** when its (relabel-terminated) canonical body
@@ -487,6 +521,59 @@ theorem labelShape?_chainCanonProgram (program : Program) (L : Label) :
   cases hFind : program.findBlock? L with
   | none => rfl
   | some b => simp only [Option.map_some]; rw [applyEdit_input_eq]
+
+/-! ## Terminator obligation for blocks whose targets are unconsumed -/
+
+/-- If none of a terminator's targets are *consumed* by the transform, its type-check is
+unchanged (only consumed labels move their shape).  Mirror of §72's `typeWith?_congr`
+non-source case. -/
+theorem term_type?_eq_of_no_consumed {program : Program} {t : Terminator} {shape : Shape}
+    (hnc : ∀ L ∈ t.targets, ∀ out, (editTable program).lookup L ≠ some (Edit.consumed out)) :
+    t.type? (chainCanonProgram program) shape = t.type? program shape := by
+  unfold Terminator.type?
+  apply Peephole.typeWith?_congr
+  intro L hL
+  rw [labelShape?_chainCanonProgram]
+  cases hF : program.findBlock? L with
+  | none => simp only [Program.labelShape?, hF, Option.map_none]
+  | some bL =>
+      have hbLlabel : bL.label = L := by
+        unfold Program.findBlock? at hF
+        have := List.find?_some hF; simpa using this
+      simp only [Program.labelShape?, hF, Option.map_some]
+      rw [hbLlabel]
+      cases hlk : (editTable program).lookup L with
+      | none => rfl
+      | some e =>
+          cases e with
+          | head _ _ => rfl
+          | consumed out => exact absurd hlk (hnc L hL out)
+
+/-- An untouched block never targets a consumed label: a consumed label has `refCount = 1`
+with a unique *edited* predecessor, so any second referrer (or the untouched block itself,
+which would then be edited) is a contradiction.  The §72 `two_le_refCount` argument. -/
+theorem untouched_target_not_consumed {program : Program} {b0 : Block} {L : Label}
+    (hb0mem : b0 ∈ program.blocks) (hnone : (editTable program).lookup b0.label = none)
+    (hLmem : L ∈ b0.term.targets) (out : Shape) :
+    (editTable program).lookup L ≠ some (Edit.consumed out) := by
+  intro hlk
+  obtain ⟨P, hPmem, hPterm, href, eP, hePmem⟩ := consumed_predecessor (lookup_mem hlk)
+  have hLP : L ∈ P.term.targets := by rw [hPterm]; simp [Terminator.targets]
+  by_cases hPb0 : P = b0
+  · subst hPb0
+    exact lookup_ne_none_of_mem hePmem hnone
+  · have h2 := Peephole.two_le_refCount hPmem hLP hb0mem hLmem hPb0
+    rw [href] at h2; omega
+
+/-- **Untouched-block terminator obligation.**  A block the transform leaves alone stays
+`WellTyped` in the transformed program. -/
+theorem untouched_term_type? {program : Program} {b0 : Block}
+    (hTyped : b0.WellTyped program) (hb0mem : b0 ∈ program.blocks)
+    (hnone : (editTable program).lookup b0.label = none) :
+    b0.term.type? (chainCanonProgram program) b0.output = some () := by
+  rw [term_type?_eq_of_no_consumed
+    (fun L hL out => untouched_target_not_consumed hb0mem hnone hL out)]
+  exact hTyped.2
 
 end ShuffleCanon
 end TypedCfg
