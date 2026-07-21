@@ -186,6 +186,14 @@ theorem growChain_prefix (prog : Program) (b : Block) (bs : List Block) :
         exact ⟨t, by rw [List.cons_append, ht]⟩
       · rw [if_neg h]; exact ⟨nxt :: rest, rfl⟩
 
+/-- A grown chain's members are program blocks. -/
+theorem growChain_mem_blocks {program : Program} {b : Block} {rest ordered : List Block}
+    {P : Block} (hord : program.blocksInLoweringOrder? = some ordered)
+    (hsuf : (b :: rest) <:+ ordered) (hP : P ∈ growChain program b rest) :
+    P ∈ program.blocks :=
+  (Program.blocksInLoweringOrder?_perm hord).mem_iff.mpr
+    (hsuf.subset ((growChain_prefix program b rest).subset hP))
+
 /-! ## Scan membership decomposition -/
 
 /-- Any entry produced by `scanEdits` comes from a fired chain grown at the front of
@@ -458,6 +466,78 @@ theorem lookup_editTable_eq_of_mem {program : Program} (hUnique : program.Labels
     (editTable program).lookup l = some e :=
   lookup_eq_of_mem_nodup (editTable_keys_nodup hUnique) h
 
+/-! ## Head-block edit specification (body typing + the consumed successor) -/
+
+/-- A head block's edit: its canonical body types `input → out`, and it jumps to a
+consumed successor carrying the same `out` (the chain link). -/
+theorem head_edit_spec {program : Program} (hUnique : program.LabelsUnique)
+    {b0 : Block} {body : List Instr} {out : Shape}
+    (hb0mem : b0 ∈ program.blocks)
+    (hlk : (editTable program).lookup b0.label = some (Edit.head body out)) :
+    Block.bodyType? body b0.input = some out ∧
+      ∃ B : Block, B ∈ program.blocks ∧ b0.term = Terminator.jump B.label ∧
+        (editTable program).lookup B.label = some (Edit.consumed out) := by
+  have hmemtbl := lookup_mem hlk
+  unfold editTable at hmemtbl
+  split at hmemtbl
+  · simp only [List.not_mem_nil] at hmemtbl
+  · rename_i ordered hord
+    obtain ⟨b, rest, hsuf, hlen, hmem, hsub⟩ := scanEdits_mem hmemtbl
+    obtain ⟨hd, tl, hchain, hbody, hcases⟩ := chainEdits_fired hmem
+    -- our entry must be the head entry
+    have hheadeq : (b0.label, Edit.head body out) =
+        (hd.label, Edit.head
+          ((canonSwaps ((growChain program b rest).flatMap
+            (fun b => (chainBodyDepths? b.body).getD []))).map Instr.swap
+            ++ [Instr.relabel ((growChain program b rest).getLastD hd).output])
+          ((growChain program b rest).getLastD hd).output) := by
+      rcases hcases with heq | ⟨C, _hC, hCeq⟩
+      · exact heq
+      · rw [Prod.mk.injEq] at hCeq; exact absurd hCeq.2 (by simp)
+    rw [Prod.mk.injEq, Edit.head.injEq] at hheadeq
+    obtain ⟨hb0label, hbodyeq, houteq⟩ := hheadeq
+    -- b0 = hd
+    have hhdmem : hd ∈ program.blocks :=
+      growChain_mem_blocks hord hsuf (hchain ▸ List.mem_cons_self ..)
+    have hb0hd : b0 = hd := by
+      have h1 : program.findBlock? b0.label = some b0 :=
+        Program.findBlock?_eq_some_of_mem hUnique hb0mem
+      rw [hb0label, Program.findBlock?_eq_some_of_mem hUnique hhdmem] at h1
+      exact ((Option.some.injEq _ _).mp h1).symm
+    -- body typing
+    have hbodyT : Block.bodyType? body b0.input = some out := by
+      rw [hbodyeq, houteq, hb0hd]; exact hbody
+    refine ⟨hbodyT, ?_⟩
+    -- successor
+    have htl : ∃ B tl', tl = B :: tl' := by
+      cases tl with
+      | nil => rw [hchain] at hlen; simp at hlen
+      | cons B tl' => exact ⟨B, tl', rfl⟩
+    obtain ⟨B, tl', htleq⟩ := htl
+    subst htleq
+    have hgc := growChain_chain' program b rest
+    rw [hchain] at hgc
+    obtain ⟨hstep, _⟩ := List.isChain_cons_cons.mp hgc
+    obtain ⟨hterm, _, _⟩ := chainStep_spec hstep
+    -- b0.term = jump B.label
+    have hb0term : b0.term = Terminator.jump B.label := by rw [hb0hd]; exact hterm
+    have hBmem : B ∈ program.blocks :=
+      growChain_mem_blocks hord hsuf (hchain ▸ List.mem_cons_of_mem hd (List.mem_cons_self ..))
+    refine ⟨B, hBmem, hb0term, ?_⟩
+    -- (B.label, consumed out) ∈ editTable
+    have hne : chainEdits (growChain program b rest) ≠ [] := by
+      intro he; rw [he] at hmem; exact absurd hmem (by simp)
+    obtain ⟨hd', tl'', hchain', heq'⟩ := chainEdits_entries hne
+    rw [hchain] at hchain'
+    injection hchain' with hh ht
+    subst hh; subst ht
+    have hBmem : (B.label, Edit.consumed out) ∈ chainEdits (growChain program b rest) := by
+      rw [heq', houteq]
+      exact List.mem_cons.mpr (Or.inr (List.mem_map.mpr ⟨B, List.mem_cons_self .., rfl⟩))
+    have hBentry : (B.label, Edit.consumed out) ∈ editTable program := by
+      unfold editTable; rw [hord]; exact hsub _ hBmem
+    exact lookup_editTable_eq_of_mem hUnique hBentry
+
 /-! ## Fail-closed head typing (the reusable WellTyped crux)
 
 `chainEdits` emits a `.head` edit **only** when its (relabel-terminated) canonical body
@@ -661,6 +741,21 @@ theorem untouched_term_type? {program : Program} {b0 : Block}
   rw [term_type?_eq_of_no_consumed
     (fun L hL out => untouched_target_not_consumed hb0mem hnone hL out)]
   exact hTyped.2
+
+/-- **Head-block terminator obligation.**  A head block jumps to its consumed successor,
+whose new input is exactly the head's new output `out`; `out` is compatible with itself. -/
+theorem head_term_type? {program : Program} (hUnique : program.LabelsUnique)
+    {b0 : Block} {body : List Instr} {out : Shape}
+    (hb0mem : b0 ∈ program.blocks)
+    (hlk : (editTable program).lookup b0.label = some (Edit.head body out)) :
+    b0.term.type? (chainCanonProgram program) out = some () := by
+  obtain ⟨_, B, hBmem, hb0term, hBlk⟩ := head_edit_spec hUnique hb0mem hlk
+  have hls : (chainCanonProgram program).labelShape? B.label = some out := by
+    rw [labelShape?_chainCanonProgram,
+      Program.findBlock?_eq_some_of_mem hUnique hBmem]
+    simp only [Option.map_some, hBlk]
+  rw [hb0term]
+  simp [Terminator.type?, Terminator.typeWith?, hls, compatible_self]
 
 end ShuffleCanon
 end TypedCfg
