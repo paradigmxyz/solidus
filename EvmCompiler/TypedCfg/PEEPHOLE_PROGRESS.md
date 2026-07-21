@@ -7774,3 +7774,60 @@ Sanity check (`sanity.lean`) confirms `minimizeWindow`/`realize` DO fire on genu
 
 ### Files touched (session 98)
 `EvmCompiler/TypedCfg/PEEPHOLE_PROGRESS.md` (this note) — **the only tracked change**. `ShuffleDropCanon.lean` unchanged (green orphan, imported by nobody). Uncommitted scratch under the session scratchpad (`probe.lean` cfg-window reachability probe, `sanity.lean` realize firing check, `solc/*.solc.json` regenerated solc IR outputs, logs). No frozen file touched. `compile_correct`/`compile_correct_creation` axioms UNCHANGED = `[propext, Classical.choice, Quot.sound]`.
+
+## Session-99 update (2026-07-21): **PROBE-FIRST on the §95 fallback (block-merge / jump-threading): a REAL, SOUND, MEASURED vein — 891 B (2.05 %) over 15 corpus contracts (60 % of corpus bytes), ≈ −1.5 %…−1.8 % corpus-wide extrapolated, ≈110× the shuffle-drop live delta and proof-CHEAPER than `chainCanon`.** Unlike §98's shuffle-drop mirage, the reachable delta here was measured with the SOUND transform through the REAL pipeline BEFORE any proof tower. The transform + structural floor are banked green + axiom-clean in a NEW orphan leaf `EvmCompiler/TypedCfg/BlockReorderCanon.lean` (imported by nobody ⟹ cannot touch the `compile_correct` cone). `scripts/opt_harness.sh check` gate below. `#print axioms Solidus.compile_correct` / `compile_correct_creation` = `[propext, Classical.choice, Quot.sound]` — UNCHANGED. No frozen file touched. **No splice** (no live byte delta yet — the OIC wiring is the frontier).
+
+### THE DECISIVE STRUCTURAL FINDING (why block-merge = block-ordering, one lever)
+The frozen serializer `Assembly.Compact.prepare` ALREADY performs the WHOLE block-merge: `elideFallthroughJumps` removes `jump L; label L` (drops `PUSHn+JUMP`) and `pruneUnreferencedLabels` removes the now-dead `JUMPDEST` — **but only for blocks physically adjacent in `blocksInLoweringOrder?`.** And `blocksInLoweringOrder?` (`Syntax.lean:208`) does **no** fallthrough ordering: it pins entry first and otherwise keeps `program.blocks` list order verbatim. `chainCanonProgram` (§94 LIVE) rewrites bodies of already-adjacent chains but **NEVER reorders** (`{ program with blocks := program.blocks.map (applyEdit …) }`). ⟹ the entire block-merge vein reduces to ONE cfg lever: **reorder `program.blocks` so unconditional-`jump` unique-successor edges become physically adjacent**, letting the frozen `prepare` consume them. Semantically a pure permutation (blocks are label-addressed), every block's `body/term/input/output` VERBATIM — far cheaper to justify than the §94/§95 body rewrites.
+
+### THE PROBE (§70/§98 discipline; measured through the REAL pipeline, uncommitted scratch)
+`probe.lean` (run via `lake env lean --run`): for each contract, solc Standard-JSON `irOptimizedAst` → `decodeAndElaborateSolcIr?` (runtime object, `evmVersion? := some .cancun`) → `functionsForStackDiagnostics?` → the SHIPPED cfg `P = chainCanonProgram (seamCancelProgramEff (peepholeProgram (normalizeProgram cfg)))`, then compare **`|Assembly.Compact.compile? (P.lower?) []|.bytes.size`** (baseline) vs the same on `reorderGreedy P` (greedy fallthrough layout: follow each block's unconditional-`jump` target contiguously when unplaced). Both go through the REAL frozen `prepare`+`branchWidthFor?`+layout+encode.
+
+| contract | blocks | base B | reorder B | **Δ (measured)** | nonAdj jump edges | rc1NonAdj | ftTerms | isPerm |
+|---|---|---|---|---|---|---|---|---|
+| DynamicStorageSurfaceBox | 5046 | 9729 | 9511 | **218** | 132 | 18 | 0 | ✓ |
+| SemanticSurfaceBox | 2420 | 4535 | 4406 | **129** | 58 | 27 | 0 | ✓ |
+| AdvancedTypeSurfaceBox | 1592 | 3703 | 3640 | **63** | 24 | 7 | 0 | ✓ |
+| ExternalCallBox | 1030 | 2219 | 2148 | **71** | 38 | 11 | 0 | ✓ |
+| StorageStructBox | 1153 | 2340 | 2286 | **54** | 28 | 6 | 0 | ✓ |
+| AbiControlSurfaceBox | 1207 | 2417 | 2365 | **52** | 25 | 4 | 0 | ✓ |
+| EffectOrderingSurfaceBox | 627 | 1264 | 1216 | **48** | 17 | 9 | 0 | ✓ |
+| ReentrantTryCatchSurfaceBox | 1304 | 2438 | 2393 | **45** | 24 | 5 | 0 | ✓ |
+| AbiBox | 817 | 1899 | 1854 | **45** | 17 | 5 | 0 | ✓ |
+| StorageArrayBox | 894 | 2085 | 2041 | **44** | 20 | 4 | 0 | ✓ |
+| PackedStorageBox | 1130 | 2797 | 2756 | **41** | 13 | 4 | 0 | ✓ |
+| PostCancunPrecompileBoundary | 1987 | 3901 | 3865 | **36** | 51 | 4 | 0 | ✓ |
+| MiniToken | 676 | 1647 | 1620 | **27** | 10 | 3 | 0 | ✓ |
+| TryCatchBox | 674 | 1455 | 1437 | **18** | 19 | 3 | 0 | ✓ |
+| AdversarialStackPressure | 1190 | 1067 | 1067 | **0** | 0 | 0 | 0 | ✓ |
+| **TOTAL (15)** | | **43 496** | **42 605** | **891 B (2.05 %)** | 476 | 110 | **0** | **all ✓** |
+
+(3 creation-object contracts — CreateLifecycle/Factory/ProxyLifecycle — return `FUNCTIONS_FAILED` under `functionsForStackDiagnostics?`, same as §98; excluded.)
+
+**Soundness verified before trusting the number (the §98 lesson applied):** (i) `isPerm = true` on every contract — `reorderGreedy` is a genuine block permutation (same block SET, each block verbatim), so the byte drop is NOT a dropped-block mirage; (ii) `ftTerms = 0` — the shipped cfg has NO `.fallthrough` terminators, so reordering cannot break a fallthrough-adjacency invariant ⟹ the reordered bytecode is semantically equivalent (only PCs move; jumps re-resolve at assembly). The delta is a SOUND recovery.
+
+### RANKED TABLE (measured bytes ÷ proof difficulty)
+| # | vein | recoverable (MEASURED) | proof difficulty | verdict |
+|---|---|---|---|---|
+| **a** | **block-reorder / jump-threading** (permute `program.blocks` for frozen-fallthrough elision) | **891 B / 15 contracts (2.05 %); ≈ −1.5 %…−1.8 % corpus-wide** | **MEDIUM** — pure block-list permutation, bodies/terms VERBATIM; needs a cfg-semantics `findBlock?` permutation-congruence + WellTyped/PCI/fuel invariance (all permutation-trivial: `fuelBudget`/certificate are block folds) + a NEW OIC `_of_source` congruence + the 8-site `CertifiedChoice` rewire. Cheaper than `chainCanon` (no body rewrite). | **CHOSEN — bank prefix, do NOT close campaign** |
+| b | DUP/POP peephole (§95 histogram: DUP 9.3 %, POP 6.9 %) | ≈ **0 B** at cfg/peephole altitude | — | exhausted: `DUPn;POP`=1×, `PUSHn;POP`=0× (solc Yul opt already removes them, §95 ledger). Genuine DUP/POP reduction = the **stack-scheduling rewrite** = a major NEW campaign, out of this campaign's scope. |
+| c | shuffle-drop `{SWAP,POP}` | 8 B (§98) | HIGH | EXHAUSTED (§98) |
+| d | `PUSH1 0x00 → PUSH0` / serializer | 962 B | BLOCKED | frozen `Assembly/*` + `ne_push0` decode cone (§95) |
+
+**DECISION: campaign (a), block-reorder / jump-threading — the byte campaign is NOT closed.** The §95 "≈2 300 B ceiling" (927 `PUSHn;JUMP;JUMPDEST` triples) is itself a ≈4× mirage under the §98 discipline (measured sound-reachable on the worst-7 is 547 B, not 2 300 B — a block can fall through to only ONE successor, and most surviving triples target multi-predecessor `refCount ≥ 2` blocks whose `JUMPDEST` cannot be pruned). But even the deflated MEASURED number (891 B / ≈ −1.5 % corpus) clears the "~500 B reachable" bar by a wide margin, is SOUND, and is proof-cheaper than the completed `chainCanon` campaign. It would move the record from −7.47 % toward ≈ −9 %.
+
+### WHAT LANDED (green, axiom-clean) — NEW `EvmCompiler/TypedCfg/BlockReorderCanon.lean` (orphan, imported by nobody)
+The §57/§95 "transform + structural kernels FIRST" pattern:
+1. **The transform (total, fuel-based).** `succLabel?`, `lookup?` (List-`find?` by label), `growLayout` (grow one fallthrough chain from a seed, following the unconditional-`jump` successor while unplaced), `layoutBlocks` (seed chains at entry then every label), **`reorderProgram`** (permute `blocks`, everything else fixed).
+2. **Structural floor (PROVED, axioms ⊆ `[propext]`).** `reorderProgram_entry`/`reorderProgram_blocks` (rfl), **`growLayout_mem`** (every emitted block is an original block, verbatim — fuel induction + `List.mem_of_find?_eq_some`), **`layoutBlocks_mem`** / **`reorderProgram_blocks_mem`** (the whole reordered program's blocks are all original blocks: the transform changes ONLY the order, never a block's contents).
+
+### SHARPENED FRONTIER (the successor's route to the ≈ −1.5 % corpus vein — SINGLE new congruence, no body algebra)
+1. **Block-multiset `Perm` + entry preservation.** Prove `(reorderProgram p).blocks ~ p.blocks` (each original block placed exactly once — the "placed"-set bookkeeping the greedy already respects) and `entry` fixed. This is the whole semantic content: everything downstream is a permutation-congruence.
+2. **cfg-semantics permutation-congruence.** `findBlock?` = `List.find?` by label; with unique labels it is invariant under a block-list permutation ⟹ the cfg small-step `InteractionSemantics` is invariant under `reorderProgram` ⟹ same observations. `WellTyped`/`ProgramCounterIndependent` are per-block ∧ over the block set (permutation-invariant); `fuelBudget` and `certificate?` are block folds over commutative/associative accumulators (permutation-invariant — NB check `certificate?.effects`/`maxAdditionalStack` fold order, likely `max`/`append` which commute up to the observations used). NO net-effect/`runDrop`/type-threading algebra (unlike §94/§95).
+3. **OIC splice (same shape as chainCanon/shuffle-drop — the multi-session cost).** Add `reorderProgram` as a THIRD `getD` fallback in `StackArtifact.compile?`/`CertifiedChoice` (after `chainCanonProgram`, fail-open on savings), a new `..._reorder` forward-refinement congruence, and thread the 8 `OpenInteractionComposition` `CertifiedChoice` sites (:1381/2093/2454/2801/2938/3040/3138/3238). Because the block-level semantics is IDENTICAL (verbatim blocks, only order differs — no cross-block `PendingPerm` state), the congruence should be simpler than the `ShuffleCanonChain*` family. Realistically multi-session; the measured ≈ −1.5 % corpus makes it worth it (vs shuffle-drop's 8 B, which was not).
+
+### GATES (session 99)
+`scripts/opt_harness.sh check` = **OK** (see final RC). `lake build EvmCompiler.TypedCfg.BlockReorderCanon` = RC=0. `#print axioms` of the new theorems ⊆ `[propext]`. `Solidus.compile_correct` / `compile_correct_creation` = `[propext, Classical.choice, Quot.sound]` — **UNCHANGED** (new leaf imported by nobody). No frozen file touched. No splice ⟹ codegen byte-identical to §94 (corpus −7.47 % shipped state intact) ⟹ no determinism double-compile, no bench re-run.
+
+### Files touched (session 99)
+NEW `EvmCompiler/TypedCfg/BlockReorderCanon.lean` (green, imported by nobody); `EvmCompiler/TypedCfg/PEEPHOLE_PROGRESS.md` (this note). Uncommitted scratch under the session scratchpad (`probe.lean` real-pipeline reorder-bytes probe, `sj/*.json` solc Standard-JSON inputs, `ax*.lean` axiom probes, logs). No frozen file touched. `compile_correct`/`compile_correct_creation` axioms UNCHANGED = `[propext, Classical.choice, Quot.sound]`.
