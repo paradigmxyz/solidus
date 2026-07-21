@@ -595,6 +595,105 @@ theorem bodyType?_map_swap_bound (r : List Nat) :
             have hb := ih mid hsome e h
             rw [hlen] at hb; exact hb
 
+/-- `foldl Nat.max` stays below any bound of the accumulator and elements. -/
+theorem foldl_max_le (l : List Nat) (M : Nat) :
+    ∀ (acc : Nat), acc ≤ M → (∀ q ∈ l, q ≤ M) → l.foldl Nat.max acc ≤ M := by
+  induction l with
+  | nil => intro acc hacc _; exact hacc
+  | cons a l ih =>
+      intro acc hacc h
+      rw [List.foldl_cons]
+      exact ih (Nat.max acc a) (Nat.max_le.2 ⟨hacc, h a (by simp)⟩)
+        (fun q hq => h q (by simp [hq]))
+
+/-- `maxDepth` upper bound: if every element is `≤ M`, so is `maxDepth`. -/
+theorem maxDepth_le (ps : List Nat) (M : Nat) (h : ∀ q ∈ ps, q ≤ M) :
+    maxDepth ps ≤ M :=
+  foldl_max_le ps M 0 (Nat.zero_le M) h
+
+/-! ## Unconditional single-run type-preservation (P1 + supports discharge §75 frontier) -/
+
+/-- **Unconditional per-run preservation.**  With (P1) and the supports both
+`hNet` and `hBound` of `canonSwaps_bodyType?_preserve` are discharged: a typed
+swap run is preserved by `canonSwaps` — no side hypotheses. -/
+theorem canonSwaps_bodyType?_preserve_uncond (r : List Nat) (input out : Shape)
+    (hType : Block.bodyType? (r.map Instr.swap) input = some out) :
+    Block.bodyType? ((canonSwaps r).map Instr.swap) input = some out := by
+  have hIsome : (Block.bodyType? (r.map Instr.swap) input).isSome := by rw [hType]; rfl
+  have hrb := bodyType?_map_swap_bound r input hIsome
+  have hcanon : canonSwaps r =
+      if (starDecompose (netStack (r.map (· + 1)) (maxDepth (r.map (· + 1)) + 1))).length
+          < r.length
+      then (starDecompose (netStack (r.map (· + 1)) (maxDepth (r.map (· + 1)) + 1))).map (· - 1)
+      else r := rfl
+  set ps := r.map (· + 1) with hps
+  set W := maxDepth ps + 1 with hW
+  set c := starDecompose (netStack ps W) with hc
+  -- window facts (valid regardless of firing)
+  have hpsW : ∀ q ∈ ps, q < W := by
+    intro q hq; rw [hW]; exact Nat.lt_succ_of_le (mem_le_maxDepth ps q hq)
+  have htlen : (netStack ps W).length = W := netStack_length ps W
+  have hcW : ∀ e ∈ c, 1 ≤ e ∧ e < W := by
+    intro e he; rw [hc] at he
+    have h := starDecompose_elem_bounds (netStack ps W) (netStack_perm_range ps W) e he
+    rw [htlen] at h; exact h
+  have hcnet : netStack c W = netStack ps W := by
+    have h := netStack_starDecompose_of_perm (netStack ps W) (netStack_perm_range ps W)
+    rw [htlen] at h; rw [hc]; exact h
+  have hmap : (c.map (· - 1)).map (· + 1) = c := by
+    rw [List.map_map]
+    have hcong : c.map ((· + 1) ∘ (· - 1)) = c.map id := by
+      apply List.map_congr_left
+      intro e he
+      have h1 := (hcW e he).1
+      simp only [Function.comp_apply, id]; omega
+    rw [hcong, List.map_id]
+  refine canonSwaps_bodyType?_preserve r input out hType ?_ ?_
+  · -- hBound
+    intro e he
+    rw [hcanon] at he
+    by_cases hfire : c.length < r.length
+    · rw [if_pos hfire, List.mem_map] at he
+      obtain ⟨e', he'c, rfl⟩ := he
+      obtain ⟨he'1, he'W⟩ := hcW e' he'c
+      have hW17 : W ≤ 17 := by
+        rw [hW]
+        have hmd : maxDepth ps ≤ 16 := maxDepth_le ps 16 (by
+          intro q hq; rw [hps, List.mem_map] at hq
+          obtain ⟨d, hd, rfl⟩ := hq
+          have := (hrb d hd).1; omega)
+        omega
+      have hrne : r ≠ [] := by
+        intro h; rw [h] at hfire; simp at hfire
+      have hWL : W ≤ input.slots.length := by
+        rw [hW]
+        have hmd : maxDepth ps ≤ input.slots.length - 1 := maxDepth_le ps _ (by
+          intro q hq; rw [hps, List.mem_map] at hq
+          obtain ⟨d, hd, rfl⟩ := hq
+          have := (hrb d hd).2; omega)
+        obtain ⟨d, hd⟩ := List.exists_mem_of_ne_nil r hrne
+        have := (hrb d hd).2; omega
+      exact ⟨by omega, by omega⟩
+    · rw [if_neg hfire] at he
+      exact hrb e he
+  · -- hNet
+    rw [hcanon]
+    by_cases hfire : c.length < r.length
+    · rw [if_pos hfire, hmap]
+      have hrne : r ≠ [] := by
+        intro h; rw [h] at hfire; simp at hfire
+      have hWL : W ≤ input.slots.length := by
+        rw [hW]
+        have hmd : maxDepth ps ≤ input.slots.length - 1 := maxDepth_le ps _ (by
+          intro q hq; rw [hps, List.mem_map] at hq
+          obtain ⟨d, hd, rfl⟩ := hq
+          have := (hrb d hd).2; omega)
+        obtain ⟨d, hd⟩ := List.exists_mem_of_ne_nil r hrne
+        have := (hrb d hd).2; omega
+      exact netStack_congr_window c ps W input.slots.length
+        (fun q hq => (hcW q hq).2) hpsW hWL hcnet
+    · rw [if_neg hfire]
+
 end ShuffleCanon
 end TypedCfg
 end EvmCompiler
