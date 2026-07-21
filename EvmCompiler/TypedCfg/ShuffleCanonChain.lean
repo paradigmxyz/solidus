@@ -558,6 +558,71 @@ theorem head_edit_spec {program : Program} (hUnique : program.LabelsUnique)
       unfold editTable; rw [hord]; exact hsub _ hBmem
     exact lookup_editTable_eq_of_mem hUnique hBentry
 
+/-! ## Consumed-block edit dichotomy (interior successor vs. last member) -/
+
+/-- A consumed block either jumps to a consumed successor carrying the same `out`
+(an interior chain member), or its `out` is its own original output (the last member).
+Both cases are read off the chain structure — no cross-chain reasoning. -/
+theorem consumed_edit_spec {program : Program} (hUnique : program.LabelsUnique)
+    {b0 : Block} {out : Shape}
+    (hb0mem : b0 ∈ program.blocks)
+    (hlk : (editTable program).lookup b0.label = some (Edit.consumed out)) :
+    (∃ D : Block, b0.term = Terminator.jump D.label ∧
+        (editTable program).lookup D.label = some (Edit.consumed out))
+      ∨ out = b0.output := by
+  have hmemtbl := lookup_mem hlk
+  unfold editTable at hmemtbl
+  split at hmemtbl
+  · simp only [List.not_mem_nil] at hmemtbl
+  · rename_i ordered hord
+    obtain ⟨b, rest, hsuf, _hlen, hmem, hsub⟩ := scanEdits_mem hmemtbl
+    obtain ⟨hd, tl, hchain, _hbody, hcases⟩ := chainEdits_fired hmem
+    have hCcase : ∃ C ∈ tl, (b0.label, Edit.consumed out) =
+        (C.label, Edit.consumed ((growChain program b rest).getLastD hd).output) := by
+      rcases hcases with heq | hc
+      · rw [Prod.mk.injEq] at heq; exact absurd heq.2 (by simp)
+      · exact hc
+    obtain ⟨C, hCtl, hCeq⟩ := hCcase
+    have hout : out = ((growChain program b rest).getLastD hd).output := by
+      rw [Prod.mk.injEq, Edit.consumed.injEq] at hCeq; exact hCeq.2
+    have hb0label : b0.label = C.label := by rw [Prod.mk.injEq] at hCeq; exact hCeq.1
+    have hCblocks : C ∈ program.blocks :=
+      growChain_mem_blocks hord hsuf (hchain ▸ List.mem_cons_of_mem hd hCtl)
+    have hb0C : b0 = C := by
+      have h1 : program.findBlock? b0.label = some b0 :=
+        Program.findBlock?_eq_some_of_mem hUnique hb0mem
+      rw [hb0label, Program.findBlock?_eq_some_of_mem hUnique hCblocks] at h1
+      exact ((Option.some.injEq _ _).mp h1).symm
+    obtain ⟨s, t, htl⟩ := List.append_of_mem hCtl
+    cases t with
+    | nil =>
+        right
+        rw [hout, hb0C]
+        rw [hchain, htl]
+        rw [List.getLastD_cons, List.getLastD_concat]
+    | cons D t' =>
+        left
+        have hDtl : D ∈ tl := by
+          rw [htl]
+          exact List.mem_append_right _ (List.mem_cons_of_mem _ (List.mem_cons_self ..))
+        have hgc := growChain_chain' program b rest
+        rw [hchain, htl] at hgc
+        obtain ⟨_, hCD, _⟩ := List.isChain_cons_append_cons_cons.mp hgc
+        obtain ⟨hCDterm, _, _⟩ := chainStep_spec hCD
+        have hne : chainEdits (growChain program b rest) ≠ [] := by
+          intro he; rw [he] at hmem; exact absurd hmem (by simp)
+        obtain ⟨hd', tl', hchain', heq'⟩ := chainEdits_entries hne
+        rw [hchain] at hchain'
+        injection hchain' with hh ht'
+        subst hh; subst ht'
+        have hDentry : (D.label, Edit.consumed out) ∈ editTable program := by
+          have hDmem : (D.label, Edit.consumed out) ∈ chainEdits (growChain program b rest) := by
+            rw [heq', hout]
+            exact List.mem_cons.mpr (Or.inr (List.mem_map.mpr ⟨D, hDtl, rfl⟩))
+          unfold editTable; rw [hord]; exact hsub _ hDmem
+        refine ⟨D, ?_, lookup_editTable_eq_of_mem hUnique hDentry⟩
+        rw [hb0C]; exact hCDterm
+
 /-! ## Fail-closed head typing (the reusable WellTyped crux)
 
 `chainEdits` emits a `.head` edit **only** when its (relabel-terminated) canonical body
