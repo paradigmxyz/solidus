@@ -11,6 +11,7 @@ import EvmCompiler.TypedCfg.PeepholeSpine
 import EvmCompiler.TypedCfg.PeepholeNoopSwapProgram
 import EvmCompiler.TypedCfg.PeepholeSeamCancel
 import EvmCompiler.TypedCfg.PeepholeSeamCancelEff
+import EvmCompiler.TypedCfg.ShuffleCanonChain
 import EvmCompiler.Assembly.Bytecode
 
 namespace EvmCompiler
@@ -33,6 +34,24 @@ structure Artifact where
   cfg : TypedCfg.Program
   certified : TypedCfg.Program.CertifiedArtifact
   target : Assembly.TargetProgram
+
+/-- The certified artifact chosen for a generated CFG under the chain-canon
+splice (design (ii), fail-open on savings): the seam-cancelled corrected
+program `Q` always lowers (its certificate `qc` is retained), and the
+chain-canonicalised `chainCanonProgram Q` is taken whenever it *also* lowers,
+falling back to `qc` otherwise.  So the chosen certificate can never regress
+below the shipped seam path. -/
+def CertifiedChoice (cfg : TypedCfg.Program)
+    (certified : TypedCfg.Program.CertifiedArtifact) : Prop :=
+  ∃ qc,
+    (TypedCfg.Peephole.seamCancelProgramEff
+        (TypedCfg.Peephole.peepholeProgram
+          (TypedCfg.Peephole.normalizeProgram cfg))).compileCertified? = some qc ∧
+      certified =
+        ((TypedCfg.ShuffleCanon.chainCanonProgram
+          (TypedCfg.Peephole.seamCancelProgramEff
+            (TypedCfg.Peephole.peepholeProgram
+              (TypedCfg.Peephole.normalizeProgram cfg)))).compileCertified?).getD qc
 
 def compile? (source : Functions.Program) : Option Artifact := do
   if Functions.SourceAcceptedCheck.Program.sourceAccepted? source then
@@ -60,10 +79,15 @@ def compile? (source : Functions.Program) : Option Artifact := do
     pure ()
   else
     none
-  let certified ←
+  let qcertified ←
     (TypedCfg.Peephole.seamCancelProgramEff
       (TypedCfg.Peephole.peepholeProgram
         (TypedCfg.Peephole.normalizeProgram cfg))).compileCertified?
+  let certified :=
+    ((TypedCfg.ShuffleCanon.chainCanonProgram
+      (TypedCfg.Peephole.seamCancelProgramEff
+        (TypedCfg.Peephole.peepholeProgram
+          (TypedCfg.Peephole.normalizeProgram cfg)))).compileCertified?).getD qcertified
   let target ← Assembly.compileExecutable? certified.target
   if Assembly.Bytecode.targetFitsDecodeWindow? target then
     if Functions.OpenSupportCheck.Program.openSupported? source then
@@ -95,10 +119,7 @@ theorem compile?_parts
         some artifact.cfg ∧
       artifact.cfg.WellTyped ∧
       artifact.cfg.ProgramCounterIndependent ∧
-      (TypedCfg.Peephole.seamCancelProgramEff
-          (TypedCfg.Peephole.peepholeProgram
-            (TypedCfg.Peephole.normalizeProgram artifact.cfg))).compileCertified? =
-        some artifact.certified ∧
+      CertifiedChoice artifact.cfg artifact.certified ∧
       Assembly.compileExecutable? artifact.certified.target =
         some artifact.target ∧
       Assembly.Bytecode.TargetFitsDecodeWindow artifact.target ∧
@@ -151,14 +172,20 @@ theorem compile?_parts
                 by_cases hIndependent :
                     generated.cfg.programCounterIndependent? = true
                 · simp [hIndependent] at hCompile
-                  cases hCertified :
+                  cases hQCert :
                       (TypedCfg.Peephole.seamCancelProgramEff
                         (TypedCfg.Peephole.peepholeProgram
                           (TypedCfg.Peephole.normalizeProgram
                             generated.cfg))).compileCertified? with
-                  | none => simp [hCertified] at hCompile
-                  | some certified =>
-                      simp [hCertified] at hCompile
+                  | none => simp [hQCert] at hCompile
+                  | some qc =>
+                      simp [hQCert] at hCompile
+                      set certified :=
+                        ((TypedCfg.ShuffleCanon.chainCanonProgram
+                          (TypedCfg.Peephole.seamCancelProgramEff
+                            (TypedCfg.Peephole.peepholeProgram
+                              (TypedCfg.Peephole.normalizeProgram
+                                generated.cfg)))).compileCertified?).getD qc with hCertifiedDef
                       cases hTarget :
                           Assembly.compileExecutable? certified.target with
                       | none => simp [hTarget] at hCompile
@@ -187,7 +214,8 @@ theorem compile?_parts
                                     by simpa using hExpressions,
                                     Structured.SourceAcceptedCheck.Program.wf_of_check
                                       hWF,
-                                    rfl, ?_, ?_, ?_, hCertified, hTarget, ?_⟩
+                                    rfl, ?_, ?_, ?_, ⟨qc, hQCert, hCertifiedDef⟩,
+                                    hTarget, ?_⟩
                                 · exact
                                     Structured.TypedCfgCompiler.artifactWithProcEntryShapes?_generate
                                       hGenerated
