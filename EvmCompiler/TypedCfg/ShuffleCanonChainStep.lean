@@ -309,6 +309,82 @@ def ChainOutcomeRel (program : Program) (residual : Label → List Nat) :
     ∨ (InteractionCongruence.Block.RuntimeOutcomeRel a b ∧
         ∀ (next : Label) (s : EVMState), a ≠ .ok (.jump next s))
 
+/-! ## Discharged block-body Rel kernels (§80 kernels with side conditions closed) -/
+
+/-- **Consumed body kernel, side conditions discharged.**  `consumedBlock_rel`
+with its `hrun`/`ChainInstr`/`hsw16` hypotheses closed from `WellTyped` +
+chain-eligibility + `StackRealizes`. -/
+theorem consumedBlock_rel_discharged {program : Program}
+    {b0 : Block} {out : Shape} {ds σ : List Nat} {s_o s_c : EVMState}
+    (hb0typed : b0.WellTyped program)
+    (helig : ShuffleCanon.chainBodyDepths? b0.body = some ds)
+    (hP : PendingPerm (bodyRunPositions b0.body ++ σ) s_c s_o)
+    (hReal_o : StackRealizes b0.input s_o) :
+    Simulation.Interaction.Rel
+      (Simulation.Interaction.ExceptRel (fun a b : EVMException => a = b)
+        (fun lp rp : EVMState × Shape =>
+          PendingPerm σ rp.1 lp.1 ∧ lp.2 = b0.output ∧ rp.2 = out))
+      (InteractionSemantics.Block.openRunBody b0.body b0.input s_o)
+      (InteractionSemantics.Block.openRunBody [] out s_c) := by
+  have hbt : Block.bodyType? b0.body b0.input = some b0.output := hb0typed.1
+  have hChain : ∀ i ∈ b0.body, ChainInstr i := chainInstr_of_chainBodyDepths helig
+  have hsw16 : ∀ d, Instr.swap d ∈ b0.body → d < 16 := chain_swap_lt16 b0.body hbt
+  obtain ⟨s_o', hrun⟩ := runBody_chain_ok b0.body hChain hbt hReal_o
+  exact consumedBlock_rel hChain hsw16 hP hrun
+
+/-- **Head body kernel (birth), side conditions discharged.**  `headBlock_rel`
+with all its `ChainInstr`/`hsw16`/`hpos`/`hlen`/`hnet`/`hrun` hypotheses closed
+from typing, chain-eligibility, `StackRealizes`, the merged-position bound, and
+the chain-consistency identity `bodyRunPositions b0.body ++ rest = merged.map
+(·+1)` (frontiers 1 & 2). -/
+theorem headBlock_rel_discharged {program : Program}
+    {b0 : Block} {body : List Instr} {out : Shape} {merged ds rest : List Nat}
+    {s_o s_c : EVMState}
+    (hb0typed : b0.WellTyped program)
+    (helig : ShuffleCanon.chainBodyDepths? b0.body = some ds)
+    (hbody : body = (ShuffleCanon.canonSwaps merged).map Instr.swap ++ [Instr.relabel out])
+    (htypeBody : Block.bodyType? body b0.input = some out)
+    (hident : bodyRunPositions b0.body ++ rest = merged.map (· + 1))
+    (hmergedBound : ∀ p ∈ merged.map (· + 1), p + 1 ≤ b0.input.length)
+    (hSRD : SameRuntimeData s_o s_c)
+    (hReal_o : StackRealizes b0.input s_o)
+    (hReal_c : StackRealizes b0.input s_c) :
+    Simulation.Interaction.Rel
+      (Simulation.Interaction.ExceptRel (fun a b : EVMException => a = b)
+        (fun lp rp : EVMState × Shape =>
+          PendingPerm rest rp.1 lp.1 ∧ lp.2 = b0.output ∧ rp.2 = out))
+      (InteractionSemantics.Block.openRunBody b0.body b0.input s_o)
+      (InteractionSemantics.Block.openRunBody body b0.input s_c) := by
+  have hbt : Block.bodyType? b0.body b0.input = some b0.output := hb0typed.1
+  have hChainH : ∀ i ∈ b0.body, ChainInstr i := chainInstr_of_chainBodyDepths helig
+  have hsw16H : ∀ d, Instr.swap d ∈ b0.body → d < 16 := chain_swap_lt16 b0.body hbt
+  have hChainC : ∀ i ∈ body, ChainInstr i := by
+    rw [hbody]; exact chainInstr_canonBody (ShuffleCanon.canonSwaps merged) out
+  have hsw16C : ∀ d, Instr.swap d ∈ body → d < 16 := chain_swap_lt16 body htypeBody
+  obtain ⟨s_o', hrunO⟩ := runBody_chain_ok b0.body hChainH hbt hReal_o
+  obtain ⟨s_c', hrunC⟩ := runBody_chain_ok body hChainC htypeBody hReal_c
+  -- position facts, via the merged identity
+  have hposConcat : ∀ p ∈ bodyRunPositions b0.body ++ rest, 1 ≤ p := by
+    intro p hp; rw [hident, List.mem_map] at hp; obtain ⟨d, _, rfl⟩ := hp; omega
+  have hlenConcat : ∀ p ∈ bodyRunPositions b0.body ++ rest, p + 1 ≤ s_o.stack.length := by
+    intro p hp; rw [hident] at hp
+    exact le_trans (hmergedBound p hp) hReal_o.le
+  have hposC : ∀ p ∈ bodyRunPositions body, 1 ≤ p := fun p hp =>
+    (bodyRunPositions_bound body hChainC htypeBody p hp).1
+  have hlenC : ∀ p ∈ bodyRunPositions body, p + 1 ≤ s_c.stack.length := fun p hp =>
+    le_trans (bodyRunPositions_bound body hChainC htypeBody p hp).2 hReal_c.le
+  -- netStack lift
+  have hnet : ShuffleCanon.netStack (bodyRunPositions b0.body ++ rest) s_o.stack.length
+      = ShuffleCanon.netStack (bodyRunPositions body) s_o.stack.length := by
+    rw [hident, hbody, bodyRunPositions_append, bodyRunPositions_map_swap,
+      bodyRunPositions_relabel_singleton, List.append_nil]
+    exact netStack_canonSwaps_bound merged s_o.stack.length (fun p hp =>
+      le_trans (hmergedBound p hp) hReal_o)
+  have hR := headBlock_rel (headBody := b0.body) (canonBody := body) (rest := rest)
+    (hin := b0.input) (hout := b0.output) (cin := b0.input) (cout := out)
+    hChainH hsw16H hChainC hsw16C hSRD hposConcat hposC hlenConcat hlenC hnet hrunO hrunC
+  exact hR
+
 /-! ## Entry seed: the entry block is never a consumed chain member -/
 
 /-- The program entry is never a *consumed* chain member: consumed members are the
