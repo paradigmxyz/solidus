@@ -289,6 +289,54 @@ theorem chainStep_spec {prog : Program} {a nxt : Block} (h : chainStep prog a nx
   obtain ⟨⟨⟨⟨hterm, _hba⟩, _hbn⟩, href⟩, hentry⟩ := h
   exact ⟨hterm, href, hentry⟩
 
+/-- Any non-head member of a `chainStep`-chain has a `chainStep`-predecessor in the chain. -/
+theorem chainStep_pred_of_mem_tail {prog : Program} {hd : Block} {tl : List Block} {C : Block}
+    (hc : List.IsChain (fun x y => chainStep prog x y = true) (hd :: tl)) (hC : C ∈ tl) :
+    ∃ P, P ∈ hd :: tl ∧ chainStep prog P C = true := by
+  obtain ⟨k, hk, hCeq⟩ := List.getElem_of_mem hC
+  have hbound : k + 1 < (hd :: tl).length := by simp only [List.length_cons]; omega
+  have hrel := hc.getElem k hbound
+  rw [List.getElem_cons_succ, hCeq] at hrel
+  have hmem : (hd :: tl)[k] ∈ hd :: tl :=
+    List.getElem_mem (by simp only [List.length_cons]; omega)
+  exact ⟨_, hmem, hrel⟩
+
+/-- **PRED.** A consumed block's label is referenced by a genuine (edited) chain
+predecessor, and has `refCount = 1`.  The refCount-1 uniqueness is what forbids any
+*other* block from targeting a consumed label (the §72 `two_le_refCount` argument). -/
+theorem consumed_predecessor {program : Program} {L : Label} {out : Shape}
+    (h : (L, Edit.consumed out) ∈ editTable program) :
+    ∃ P, P ∈ program.blocks ∧ P.term = Terminator.jump L ∧ refCount program L = 1 ∧
+      ∃ eP, (P.label, eP) ∈ editTable program := by
+  unfold editTable at h
+  split at h
+  · simp only [List.not_mem_nil] at h
+  · rename_i ordered hord
+    obtain ⟨b, rest, hsuf, _hlen, hmem, hsub⟩ := scanEdits_mem h
+    obtain ⟨hd, tl, hchain, _hbody, hcases⟩ := chainEdits_fired hmem
+    have hCcase : ∃ C ∈ tl,
+        (L, Edit.consumed out) = (C.label, Edit.consumed ((growChain program b rest).getLastD hd).output) := by
+      rcases hcases with heq | hc
+      · rw [Prod.mk.injEq] at heq; exact absurd heq.2 (by simp)
+      · exact hc
+    obtain ⟨C, hCtl, hCeq⟩ := hCcase
+    have hLC : C.label = L := by rw [Prod.mk.injEq] at hCeq; exact hCeq.1.symm
+    have hgc := growChain_chain' program b rest
+    rw [hchain] at hgc
+    obtain ⟨P, hPmem, hPC⟩ := chainStep_pred_of_mem_tail hgc hCtl
+    rw [← hchain] at hPmem
+    obtain ⟨hterm, href, _⟩ := chainStep_spec hPC
+    rw [hLC] at hterm href
+    have hPo : P ∈ ordered :=
+      hsuf.subset ((growChain_prefix program b rest).subset hPmem)
+    have hPblocks : P ∈ program.blocks :=
+      (Program.blocksInLoweringOrder?_perm hord).mem_iff.mpr hPo
+    have hne : chainEdits (growChain program b rest) ≠ [] := by
+      intro he; rw [he] at hmem; exact absurd hmem (by simp)
+    obtain ⟨e, heP⟩ := mem_chainEdits_of_mem_chain hne hPmem
+    refine ⟨P, hPblocks, hterm, href, e, ?_⟩
+    unfold editTable; rw [hord]; exact hsub _ heP
+
 /-! ## Fail-closed head typing (the reusable WellTyped crux)
 
 `chainEdits` emits a `.head` edit **only** when its (relabel-terminated) canonical body
