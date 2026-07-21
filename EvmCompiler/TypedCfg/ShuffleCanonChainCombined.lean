@@ -145,6 +145,59 @@ theorem stackRealizes_preChain_of_seamCombined
                 pendingSwap_stack_length hStepP
               omega
 
+/-! ## Part (B): length-constancy — chain-member bodies preserve stack length
+
+The chain-runtime-feasibility invariant needs, at every reached chain member `m`,
+that the runtime stack length at `m`'s entry equals the head-entry length.  This
+section supplies the per-step half: a chain body (`.swap`/`.bindLocals`-only, the
+`ChainInstr` shape) runs through `Block.runBody` preserving the stack length exactly,
+because `Block.runBody` of such a body is `runSwaps` of its swap positions (§79
+`runBody_chain_state`) and each `EvmYul.swap` preserves length. -/
+
+/-- Every runtime swap position produced by a chain body is `≥ 1` (each is `d + 1`). -/
+theorem bodyRunPositions_pos (body : List Instr) :
+    ∀ p ∈ bodyRunPositions body, 1 ≤ p := by
+  induction body with
+  | nil => intro p hp; simp [bodyRunPositions] at hp
+  | cons i rest ih =>
+      intro p hp
+      cases i <;>
+        first
+          | (simp only [bodyRunPositions, List.mem_cons] at hp
+             rcases hp with h | h
+             · omega
+             · exact ih p h)
+          | exact ih p (by simpa only [bodyRunPositions] using hp)
+
+/-- **A depth-positive `runSwaps` run preserves stack length.**  Each `EvmYul.swap p`
+with `p ≥ 1` that succeeds keeps the stack length fixed (`swap_ok_stack_length`), so a
+whole successful run does too. -/
+theorem runSwaps_stack_length : ∀ (ps : List Nat) {s s' : EVMState},
+    (∀ p ∈ ps, 1 ≤ p) → runSwaps ps s = .ok s' → s'.stack.length = s.stack.length
+  | [], s, s', _, hrun => by
+      simp only [runSwaps_nil, Except.ok.injEq] at hrun; rw [hrun]
+  | p :: rest, s, s', hpos, hrun => by
+      have hp1 : 1 ≤ p := hpos p List.mem_cons_self
+      simp only [runSwaps] at hrun
+      cases hsw : EvmYul.swap p s with
+      | error e => rw [hsw] at hrun; simp at hrun
+      | ok s1 =>
+          rw [hsw] at hrun
+          have hlen1 : s1.stack.length = s.stack.length := swap_ok_stack_length hp1 hsw
+          have hposR : ∀ q ∈ rest, 1 ≤ q := fun q hq => hpos q (List.mem_cons_of_mem _ hq)
+          rw [runSwaps_stack_length rest hposR hrun, hlen1]
+
+/-- **Part (B): a chain-eligible block body preserves stack length exactly.**  A body
+made of `ChainInstr`s (`.swap`/`.bindLocals`/`.bindScratch`/`.relabel`) with every swap
+depth `< 16` runs through `Block.runBody` leaving the stack length unchanged.  This is
+the per-member length-constancy step the feasibility invariant threads across the run. -/
+theorem runBody_chain_stack_length (body : List Instr) {input out : Shape} {s s' : EVMState}
+    (hChain : ∀ i ∈ body, ChainInstr i) (hsw16 : ∀ d, Instr.swap d ∈ body → d < 16)
+    (hrun : Block.runBody body input s = .ok (s', out)) :
+    s'.stack.length = s.stack.length :=
+  runSwaps_stack_length _ (bodyRunPositions_pos body)
+    (runBody_chain_state body hChain hsw16 hrun)
+
 /-! ## The core one-step composition (explicit intermediate state) -/
 
 /-- **Core one-step chain-combined composition.**  `Rel.trans` of the source-threaded
