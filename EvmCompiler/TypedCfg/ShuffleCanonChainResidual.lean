@@ -22,7 +22,8 @@ namespace TypedCfg
 namespace Peephole
 
 open Assembly (EVMState)
-open ShuffleCanon (editTable Edit chainCanonProgram chainBodyDepths?)
+open ShuffleCanon (editTable Edit chainCanonProgram chainBodyDepths? canonSwaps growChain
+  chainEdits)
 
 /-! ## The residual definition (fuel-bounded terminator-follow through consumed members) -/
 
@@ -302,9 +303,9 @@ theorem last_member_no_consumed_target {program : Program}
     {ordered : List Block} (hord : program.blocksInLoweringOrder? = some ordered)
     {b0 : Block} {rest0 : List Block} (hsuf0 : (b0 :: rest0) <:+ ordered)
     {Z : Block} (hZlast : (ShuffleCanon.growChain program b0 rest0).getLast? = some Z) :
-    ∀ (W : Label) (o : Shape), Z.term = Terminator.jump W →
+    ∀ (W : Label) (o : Shape), W ∈ Z.term.targets →
       (editTable program).lookup W ≠ some (Edit.consumed o) := by
-  intro W o hZterm hlk
+  intro W o hWZ hlk
   -- `ordered` is Nodup.
   have hnd_ord : ordered.Nodup := by
     have hperm := Program.blocksInLoweringOrder?_perm hord
@@ -338,7 +339,6 @@ theorem last_member_no_consumed_target {program : Program}
     rw [← hchainW] at hPmem_chain
     exact ShuffleCanon.growChain_mem_blocks hord hsufW hPmem_chain
   have hWP : W ∈ P.term.targets := by rw [hPterm]; simp [Terminator.targets]
-  have hWZ : W ∈ Z.term.targets := by rw [hZterm]; simp [Terminator.targets]
   have hPZ : Z = P := by
     by_contra hne
     have h2 := Peephole.two_le_refCount hPblocks hWP hZblocks hWZ (fun h => hne h.symm)
@@ -454,7 +454,9 @@ theorem isResidualRun_tail_suffix {program : Program} (hUnique : program.LabelsU
             exact ((Option.some.injEq _ _).mp this.symm)
           refine ⟨hCfind, ?_⟩
           rw [hClast]
-          exact last_member_no_consumed_target hUnique hord hsuf hZlast
+          intro W o hterm
+          exact last_member_no_consumed_target hUnique hord hsuf hZlast W o
+            (by rw [hterm]; simp [Terminator.targets])
       | cons D rest' =>
           have hCDchain : (C :: D :: rest') <:+ ShuffleCanon.growChain program b rest := by
             refine hsufcs.trans ?_
@@ -480,6 +482,208 @@ theorem residual_flatMap_of_run {program : Program} {C : Block} {cs : List Block
       = (C :: cs).flatMap (fun b => bodyRunPositions b.body) := by
   unfold residual
   exact residualAux_of_run cs C program.blocks.length hrun hlen
+
+
+
+
+/-- Extract the fired-chain context surrounding any edit-table entry. -/
+theorem firedChainCtx {program : Program} {key : Label} {e : Edit}
+    (h : (key, e) ∈ editTable program) :
+    ∃ ordered b rest, program.blocksInLoweringOrder? = some ordered ∧
+      (b :: rest) <:+ ordered ∧
+      2 ≤ (growChain program b rest).length ∧
+      (key, e) ∈ chainEdits (growChain program b rest) ∧
+      (∀ q ∈ chainEdits (growChain program b rest), q ∈ editTable program) := by
+  unfold editTable at h
+  split at h
+  · simp at h
+  · rename_i ordered hord
+    obtain ⟨b, rest, hsuf, hlen, hmem, hsub⟩ := ShuffleCanon.scanEdits_mem h
+    refine ⟨ordered, b, rest, hord, hsuf, hlen, hmem, ?_⟩
+    intro q hq; unfold editTable; rw [hord]; exact hsub q hq
+
+/-- A fired chain's length is bounded by the block count (its members are distinct
+program blocks). -/
+theorem chain_length_le_blocks {program : Program}
+    {ordered : List Block} (hord : program.blocksInLoweringOrder? = some ordered)
+    {b : Block} {rest : List Block} (hsuf : (b :: rest) <:+ ordered) :
+    (growChain program b rest).length ≤ program.blocks.length := by
+  have h1 : (growChain program b rest).length ≤ (b :: rest).length :=
+    (ShuffleCanon.growChain_prefix program b rest).length_le
+  have h2 : (b :: rest).length ≤ ordered.length := hsuf.length_le
+  have h3 : ordered.length = program.blocks.length :=
+    ((Program.blocksInLoweringOrder?_perm hord).length_eq).symm
+  omega
+
+/-- **`ChainResidualSpec` modulo the merged-position bound.**  Given the length
+feasibility of the merged runtime positions on each head's input, the concrete
+`residual` satisfies the residual specification consumed by the step congruence. -/
+theorem chainResidualSpec_of_bound {program : Program} (hUnique : program.LabelsUnique)
+    (hbound : ∀ {b0 : Block} {body : List Instr} {out : Shape} {B : Block},
+      b0 ∈ program.blocks →
+      (editTable program).lookup b0.label = some (Edit.head body out) →
+      b0.term = Terminator.jump B.label →
+      ∀ p ∈ bodyRunPositions b0.body ++ residual program B.label,
+        p + 1 ≤ b0.input.length) :
+    ChainResidualSpec program (residual program) := by
+  constructor
+  · -- head
+    intro b0 body out hb0mem hlk
+    obtain ⟨ordered, b, rest, hord, hsuf, hlen, hmem, hsub⟩ := firedChainCtx (ShuffleCanon.lookup_mem hlk)
+    obtain ⟨hd, tl, hchain, hbodyT, hcases⟩ := ShuffleCanon.chainEdits_fired hmem
+    -- the entry is the head entry
+    have hheadeq : (b0.label, Edit.head body out) =
+        (hd.label, Edit.head
+          ((canonSwaps ((growChain program b rest).flatMap
+            (fun b => (chainBodyDepths? b.body).getD []))).map Instr.swap
+            ++ [Instr.relabel ((growChain program b rest).getLastD hd).output])
+          ((growChain program b rest).getLastD hd).output) := by
+      rcases hcases with heq | ⟨C, _hC, hCeq⟩
+      · exact heq
+      · rw [Prod.mk.injEq] at hCeq; exact absurd hCeq.2 (by simp)
+    rw [Prod.mk.injEq, Edit.head.injEq] at hheadeq
+    obtain ⟨hb0label, hbodyeq, houteq⟩ := hheadeq
+    have hhdmem : hd ∈ program.blocks :=
+      ShuffleCanon.growChain_mem_blocks hord hsuf (hchain ▸ List.mem_cons_self)
+    have hb0hd : b0 = hd := by
+      have h1 : program.findBlock? b0.label = some b0 :=
+        Program.findBlock?_eq_some_of_mem hUnique hb0mem
+      rw [hb0label, Program.findBlock?_eq_some_of_mem hUnique hhdmem] at h1
+      exact ((Option.some.injEq _ _).mp h1).symm
+    have hfired : chainEdits (growChain program b rest) ≠ [] := by
+      intro he; rw [he] at hmem; exact absurd hmem (by simp)
+    -- tl = B :: tl'
+    obtain ⟨B, tl', htleq⟩ : ∃ B tl', tl = B :: tl' := by
+      cases tl with
+      | nil => rw [hchain] at hlen; simp at hlen
+      | cons B tl' => exact ⟨B, tl', rfl⟩
+    subst htleq
+    -- b0 = hd eligible
+    have helig : (chainBodyDepths? b0.body).isSome := by
+      rw [hb0hd]
+      exact chain_all_eligible hlen hd (hchain ▸ List.mem_cons_self)
+    obtain ⟨ds, hds⟩ : ∃ ds, chainBodyDepths? b0.body = some ds := by
+      cases h : chainBodyDepths? b0.body with
+      | none => rw [h] at helig; simp at helig
+      | some ds => exact ⟨ds, rfl⟩
+    -- b0.term = jump B.label
+    have hgc := ShuffleCanon.growChain_chain' program b rest
+    rw [hchain] at hgc
+    obtain ⟨hstepB, _⟩ := List.isChain_cons_cons.mp hgc
+    obtain ⟨htermB, _, _⟩ := ShuffleCanon.chainStep_spec hstepB
+    have hb0term : b0.term = Terminator.jump B.label := by rw [hb0hd]; exact htermB
+    -- lookup B.label = consumed out
+    have hBconsumed : (editTable program).lookup B.label
+        = some (Edit.consumed ((growChain program b rest).getLastD hd).output) :=
+      chain_tail_consumed hUnique hchain hfired hsub List.mem_cons_self
+    rw [← houteq] at hBconsumed
+    -- residual identity
+    set merged := (growChain program b rest).flatMap
+      (fun b => (chainBodyDepths? b.body).getD []) with hmergeddef
+    have heligAll : ∀ x ∈ growChain program b rest, (chainBodyDepths? x.body).isSome :=
+      chain_all_eligible hlen
+    have hZlast : ∃ Z, (growChain program b rest).getLast? = some Z := by
+      cases hgl : (growChain program b rest).getLast? with
+      | none => rw [List.getLast?_eq_none_iff] at hgl; rw [hgl] at hchain; simp at hchain
+      | some Z => exact ⟨Z, rfl⟩
+    obtain ⟨Z, hZlast⟩ := hZlast
+    have hRunTl : IsResidualRun program (B :: tl') :=
+      isResidualRun_tail_suffix hUnique hord hsuf hchain hfired hsub hZlast
+        (B :: tl') (List.suffix_refl _) (by simp)
+    have hlenB : (B :: tl').length ≤ program.blocks.length := by
+      have := chain_length_le_blocks hord hsuf
+      rw [hchain] at this; simp only [List.length_cons] at this ⊢; omega
+    have hresB : residual program B.label = (B :: tl').flatMap (fun b => bodyRunPositions b.body) :=
+      residual_flatMap_of_run hlenB hRunTl
+    have hident : bodyRunPositions b0.body ++ residual program B.label
+        = merged.map (· + 1) := by
+      rw [hmergeddef, merged_map_succ_eq_flatMap _ heligAll, hchain,
+        List.flatMap_cons, ← hb0hd, hresB]
+    refine ⟨B, merged, ds, hds, hb0term, hBconsumed, ?_, hident, ?_⟩
+    · rw [hbodyeq, houteq]
+    · rw [← hident]; exact hbound hb0mem hlk hb0term
+  · -- consumed
+    intro b0 out hb0mem hlk
+    refine ⟨consumed_chainBodyOk hUnique hb0mem hlk, ?_⟩
+    obtain ⟨ordered, b, rest, hord, hsuf, hlen, hmem, hsub⟩ := firedChainCtx (ShuffleCanon.lookup_mem hlk)
+    obtain ⟨hd, tl, hchain, _hbodyT, hcases⟩ := ShuffleCanon.chainEdits_fired hmem
+    have hfired : chainEdits (growChain program b rest) ≠ [] := by
+      intro he; rw [he] at hmem; exact absurd hmem (by simp)
+    have hCcase : ∃ C ∈ tl, (b0.label, Edit.consumed out) =
+        (C.label, Edit.consumed ((growChain program b rest).getLastD hd).output) := by
+      rcases hcases with heq | hc
+      · rw [Prod.mk.injEq] at heq; exact absurd heq.2 (by simp)
+      · exact hc
+    obtain ⟨C, hCtl, hCeq⟩ := hCcase
+    have hout : out = ((growChain program b rest).getLastD hd).output := by
+      rw [Prod.mk.injEq, Edit.consumed.injEq] at hCeq; exact hCeq.2
+    have hb0label : b0.label = C.label := by rw [Prod.mk.injEq] at hCeq; exact hCeq.1
+    have hCblocks : C ∈ program.blocks :=
+      ShuffleCanon.growChain_mem_blocks hord hsuf (hchain ▸ List.mem_cons_of_mem hd hCtl)
+    have hb0C : b0 = C := by
+      have h1 : program.findBlock? b0.label = some b0 :=
+        Program.findBlock?_eq_some_of_mem hUnique hb0mem
+      rw [hb0label, Program.findBlock?_eq_some_of_mem hUnique hCblocks] at h1
+      exact ((Option.some.injEq _ _).mp h1).symm
+    have hZlast : ∃ Z, (growChain program b rest).getLast? = some Z := by
+      cases hgl : (growChain program b rest).getLast? with
+      | none => rw [List.getLast?_eq_none_iff] at hgl; rw [hgl] at hchain; simp at hchain
+      | some Z => exact ⟨Z, rfl⟩
+    obtain ⟨Z, hZlast⟩ := hZlast
+    -- the suffix of tl headed by b0 = C
+    obtain ⟨cs, hcssuf⟩ := mem_gives_suffix hCtl
+    have hRun : IsResidualRun program (C :: cs) :=
+      isResidualRun_tail_suffix hUnique hord hsuf hchain hfired hsub hZlast
+        (C :: cs) hcssuf (by simp)
+    have hlenC : (C :: cs).length ≤ program.blocks.length := by
+      have hb := chain_length_le_blocks hord hsuf
+      have := hcssuf.length_le
+      have htl : tl.length < (growChain program b rest).length := by
+        rw [hchain]; simp [List.length_cons]
+      omega
+    have hresC : residual program b0.label = (C :: cs).flatMap (fun b => bodyRunPositions b.body) := by
+      rw [hb0C]; exact residual_flatMap_of_run hlenC hRun
+    cases cs with
+    | nil =>
+        -- last member: out = b0.output, no consumed targets
+        right
+        have hCZ : C = Z := by
+          obtain ⟨p, hp⟩ := hcssuf
+          have hg : (growChain program b rest).getLast? = some C := by
+            rw [hchain, ← hp, ← List.cons_append, List.getLast?_concat]
+          have := hZlast.symm.trans hg
+          exact ((Option.some.injEq _ _).mp this.symm)
+        have houtput : out = b0.output := by
+          rw [hout, hb0C]
+          simp only [List.getLastD_eq_getLast?, hZlast, hCZ, Option.getD_some]
+        refine ⟨houtput, ?_, ?_⟩
+        · rw [hresC, hb0C]; simp [List.flatMap_cons]
+        · intro L hL o hLc
+          rw [hb0C, hCZ] at hL
+          exact last_member_no_consumed_target hUnique hord hsuf hZlast L o hL hLc
+    | cons D cs' =>
+        -- interior member: jump to D consumed, residual splits
+        left
+        have hCDchain : (C :: D :: cs') <:+ growChain program b rest := by
+          refine hcssuf.trans ?_
+          rw [hchain]; exact List.tail_suffix (hd :: tl)
+        have hgc := ShuffleCanon.growChain_chain' program b rest
+        have hCD : ShuffleCanon.chainStep program C D = true :=
+          (List.isChain_cons_cons.mp (List.IsChain.suffix hgc hCDchain)).1
+        obtain ⟨hCDterm, _, _⟩ := ShuffleCanon.chainStep_spec hCD
+        have hDtl : D ∈ tl := hcssuf.subset (List.mem_cons_of_mem C List.mem_cons_self)
+        have hDconsumed := chain_tail_consumed hUnique hchain hfired hsub hDtl
+        rw [← hout] at hDconsumed
+        have hRunD : IsResidualRun program (D :: cs') :=
+          isResidualRun_tail_suffix hUnique hord hsuf hchain hfired hsub hZlast
+            (D :: cs') ((List.tail_suffix (C :: D :: cs')).trans hcssuf) (by simp)
+        have hlenD : (D :: cs').length ≤ program.blocks.length := by
+          simp only [List.length_cons] at hlenC ⊢; omega
+        have hresD : residual program D.label = (D :: cs').flatMap (fun b => bodyRunPositions b.body) :=
+          residual_flatMap_of_run hlenD hRunD
+        refine ⟨D, ?_, hDconsumed, ?_⟩
+        · rw [hb0C]; exact hCDterm
+        · rw [hresC, hresD, hb0C]; simp [List.flatMap_cons]
 
 
 
