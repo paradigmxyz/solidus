@@ -682,6 +682,161 @@ theorem openStep_chainCombinedEff_congr_of_source
   exact openStep_chainCombinedEff_core context hSourceWF hTyped hIndependent
     hSeamComb hChainStep hReal_o hReal_c hFeasO
 
+/-! ## Source-threaded fuel + prefix combined congruences (mirror the seam layer) -/
+
+/-- **Source-threaded fuel-bounded chain-combined congruence.** -/
+theorem openRunN_chainCombinedEff_congr_of_source
+    {source : Structured.Program}
+    {entryShapes : Structured.TypedCfgCompiler.ProcEntryShapes}
+    {cfg : TypedCfg.Program}
+    (context :
+      Structured.TypedCfgPreservation.Program.GeneratedContext source entryShapes cfg)
+    (hSourceWF : source.WF)
+    (hTyped : cfg.WellTyped) (hIndependent : cfg.ProgramCounterIndependent) :
+    ∀ (fuel : Nat) (label : Label) (s1 s_final : EVMState),
+      ChainCombinedStepRelEff (source := source) (cfg := cfg) context.calls label s1 s_final →
+      Simulation.Interaction.Rel
+        (ChainCombinedOutcomeRelEff (source := source) (cfg := cfg) context.calls)
+        (InteractionSemantics.Program.openRunN cfg fuel label s1)
+        (InteractionSemantics.Program.openRunN
+          (chainCanonProgram (preChainProgram cfg)) fuel label s_final)
+  | 0, label, s1, s_final, hStep => by
+      simp only [InteractionSemantics.Program.openRunN_zero]
+      exact .done (Or.inl ⟨label, s1, s_final, rfl, rfl, hStep⟩)
+  | fuel + 1, label, s1, s_final, hStep => by
+      rw [InteractionSemantics.Program.openRunN_succ,
+        InteractionSemantics.Program.openRunN_succ]
+      have hStepOne :=
+        openStep_chainCombinedEff_congr_of_source context hSourceWF hTyped hIndependent hStep
+      apply Simulation.Interaction.Rel.bind_custom hStepOne
+      intro leftDone rightDone hOut
+      rcases hOut with hjump | hterm
+      · obtain ⟨next, s1', sf', h1, h2, hstep'⟩ := hjump
+        subst h1; subst h2
+        exact openRunN_chainCombinedEff_congr_of_source context hSourceWF hTyped hIndependent
+          fuel next s1' sf' hstep'
+      · obtain ⟨hrr, hnj⟩ := hterm
+        cases hrr with
+        | error he => exact .done (Or.inr ⟨.error he, by simp⟩)
+        | ok hrrr =>
+            cases hrrr with
+            | jump lbl hSt => exact absurd rfl (hnj _ _)
+            | fallthrough hSt => exact .done (Or.inr ⟨.ok (.fallthrough hSt), by simp⟩)
+            | returnDispatch hSt => exact .done (Or.inr ⟨.ok (.returnDispatch hSt), by simp⟩)
+            | halt kind hSt => exact .done (Or.inr ⟨.ok (.halt kind hSt), by simp⟩)
+            | invalid hSt => exact .done (Or.inr ⟨.ok (.invalid hSt), by simp⟩)
+
+/-- **Source-threaded prefix chain-combined congruence.** -/
+theorem openRunNPrefix_chainCombinedEff_congr_of_source
+    {source : Structured.Program}
+    {entryShapes : Structured.TypedCfgCompiler.ProcEntryShapes}
+    {cfg : TypedCfg.Program}
+    (context :
+      Structured.TypedCfgPreservation.Program.GeneratedContext source entryShapes cfg)
+    (hSourceWF : source.WF)
+    (hTyped : cfg.WellTyped) (hIndependent : cfg.ProgramCounterIndependent)
+    (fuel : Nat) (label : Label) (s1 s_final : EVMState)
+    (hStep : ChainCombinedStepRelEff (source := source) (cfg := cfg)
+      context.calls label s1 s_final) :
+    Simulation.Interaction.Rel InteractionCongruence.Block.RuntimeOutcomeRel
+      (InteractionSemantics.Program.openRunNPrefix cfg fuel label s1)
+      (InteractionSemantics.Program.openRunNPrefix
+        (chainCanonProgram (preChainProgram cfg)) fuel label s_final) := by
+  unfold InteractionSemantics.Program.openRunNPrefix
+  have hRun :=
+    openRunN_chainCombinedEff_congr_of_source context hSourceWF hTyped hIndependent
+      fuel label s1 s_final hStep
+  apply Simulation.Interaction.Rel.bind_custom hRun
+  intro leftDone rightDone hOut
+  rcases hOut with hjump | hterm
+  · obtain ⟨next, s1', sf', h1, h2, _⟩ := hjump
+    subst h1; subst h2
+    exact .done (.error rfl)
+  · obtain ⟨hrr, hnj⟩ := hterm
+    cases hrr with
+    | error he => exact .done (.error he)
+    | ok hrrr =>
+        cases hrrr with
+        | jump lbl hSt => exact absurd rfl (hnj _ _)
+        | fallthrough hSt => exact .done (.error rfl)
+        | returnDispatch hSt => exact .done (.error rfl)
+        | halt kind hSt => exact .done (.ok (Outcome.RuntimeRel.halt kind hSt))
+        | invalid hSt => exact .done (.error rfl)
+
+/-! ## Halted-path bridges for the openRunN splice sites -/
+
+/-- On a non-jump left outcome, `ChainCombinedOutcomeRelEff` collapses to the plain
+`RuntimeOutcomeRel` disjunct. -/
+theorem runtimeOutcomeRel_of_chainCombinedOutcomeRelEff_of_not_jump
+    {source : Structured.Program} {cfg : TypedCfg.Program}
+    {calls : List Structured.TypedCfgCompiler.DispatchSite}
+    {a b : Except EVMException TypedCfg.Outcome}
+    (h : ChainCombinedOutcomeRelEff (source := source) (cfg := cfg) calls a b)
+    (hnj : ∀ (next : Label) (s : EVMState), a ≠ .ok (.jump next s)) :
+    InteractionCongruence.Block.RuntimeOutcomeRel a b := by
+  rcases h with hjump | hterm
+  · obtain ⟨next, s1, sf, ha, _, _⟩ := hjump
+    exact absurd ha (hnj next s1)
+  · exact hterm.1
+
+/-- **Halted-path bridge (a).** -/
+theorem assemblySafeHalted_of_chainCombinedOutcomeRelEff
+    {source : Structured.Program} {cfg : TypedCfg.Program}
+    {calls : List Structured.TypedCfgCompiler.DispatchSite}
+    {a b : Except EVMException TypedCfg.Outcome}
+    (h : ChainCombinedOutcomeRelEff (source := source) (cfg := cfg) calls a b)
+    (hSafe : InteractionSemantics.Program.AssemblySafeHalted a) :
+    InteractionSemantics.Program.AssemblySafeHalted b :=
+  assemblySafeHalted_of_runtimeRel
+    (runtimeOutcomeRel_of_chainCombinedOutcomeRelEff_of_not_jump h
+      (assemblySafeHalted_not_jump hSafe))
+    hSafe
+
+/-- **Halted-path bridge (b).** -/
+theorem runSimulates_of_chainCombinedOutcomeRelEff_halted
+    {source : Structured.Program} {cfg : TypedCfg.Program}
+    {calls : List Structured.TypedCfgCompiler.DispatchSite}
+    {target : Assembly.Program}
+    {a m : Except EVMException TypedCfg.Outcome}
+    {r : Assembly.Source.ExecutionOutcome}
+    (h : ChainCombinedOutcomeRelEff (source := source) (cfg := cfg) calls a m)
+    (hSim : TypedCfg.InteractionPreservation.OpenBlock.RunSimulates target m r)
+    (hSafe : InteractionSemantics.Program.AssemblySafeHalted a) :
+    TypedCfg.InteractionPreservation.OpenBlock.RunSimulates target a r :=
+  TypedCfg.InteractionPreservation.OpenBlock.runtime_left
+    (runtimeOutcomeRel_of_chainCombinedOutcomeRelEff_of_not_jump h
+      (assemblySafeHalted_not_jump hSafe))
+    hSim
+
+/-- **Halted-path bridge (a), finished variant.** -/
+theorem assemblySafeFinished_of_chainCombinedOutcomeRelEff
+    {source : Structured.Program} {cfg : TypedCfg.Program}
+    {calls : List Structured.TypedCfgCompiler.DispatchSite}
+    {a b : Except EVMException TypedCfg.Outcome}
+    (h : ChainCombinedOutcomeRelEff (source := source) (cfg := cfg) calls a b)
+    (hSafe : InteractionSemantics.Program.AssemblySafeFinished a) :
+    InteractionSemantics.Program.AssemblySafeFinished b :=
+  assemblySafeFinished_of_runtimeRel
+    (runtimeOutcomeRel_of_chainCombinedOutcomeRelEff_of_not_jump h
+      (assemblySafeFinished_not_jump hSafe))
+    hSafe
+
+/-- **Halted-path bridge (b), finished variant.** -/
+theorem runSimulates_of_chainCombinedOutcomeRelEff_finished
+    {source : Structured.Program} {cfg : TypedCfg.Program}
+    {calls : List Structured.TypedCfgCompiler.DispatchSite}
+    {target : Assembly.Program}
+    {a m : Except EVMException TypedCfg.Outcome}
+    {r : Assembly.Source.ExecutionOutcome}
+    (h : ChainCombinedOutcomeRelEff (source := source) (cfg := cfg) calls a m)
+    (hSim : TypedCfg.InteractionPreservation.OpenBlock.RunSimulates target m r)
+    (hSafe : InteractionSemantics.Program.AssemblySafeFinished a) :
+    TypedCfg.InteractionPreservation.OpenBlock.RunSimulates target a r :=
+  TypedCfg.InteractionPreservation.OpenBlock.runtime_left
+    (runtimeOutcomeRel_of_chainCombinedOutcomeRelEff_of_not_jump h
+      (assemblySafeFinished_not_jump hSafe))
+    hSim
+
 end Peephole
 end TypedCfg
 end EvmCompiler
