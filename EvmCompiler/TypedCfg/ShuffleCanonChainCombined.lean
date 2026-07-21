@@ -312,6 +312,46 @@ theorem openStep_chainCombinedEff_core
           cases hrrYZ with
           | ok hrrz => exact .ok (Outcome.RuntimeRel.trans hrr hrrz)
 
+/-! ## Part (A) inductive step: jump-propagation of the seam-combined invariant
+
+The run-forward induction of part (A) walks the fired chain one member at a time,
+re-establishing `SeamCombinedStepRelEff` at each successor's entry.  This is that
+single step, extracted from the source-threaded seam congruence: whenever the two
+bisimilar runs both take a synchronised `jump` to the same successor `nxt` (which the
+actual `openRunN` run supplies at each `growChain` member via the
+`growChain_member_term_jump` adjacency), the invariant re-seeds at `nxt`.  The proof
+inverts `Simulation.Interaction.Rel` on the two `.done` jump outcomes and reads off the
+`jump` disjunct of `SeamCombinedOutcomeRelEff` (the runtime non-jump disjunct is refuted
+by the `cfg`-side jump). -/
+theorem seamCombinedStepRelEff_propagate_jump
+    {source : Structured.Program}
+    {entryShapes : Structured.TypedCfgCompiler.ProcEntryShapes}
+    {cfg : TypedCfg.Program}
+    (context :
+      Structured.TypedCfgPreservation.Program.GeneratedContext source entryShapes cfg)
+    (hSourceWF : source.WF)
+    (hTyped : cfg.WellTyped) (hIndependent : cfg.ProgramCounterIndependent)
+    {label nxt : Label} {s1 s_mid s1' s_nxt : EVMState}
+    (hStep : SeamCombinedStepRelEff (source := source) (cfg := cfg)
+      context.calls label s1 s_mid)
+    (hcfg : InteractionSemantics.Program.openStep cfg label s1
+      = Simulation.Interaction.done (Except.ok (TypedCfg.Outcome.jump nxt s1')))
+    (hQ : InteractionSemantics.Program.openStep (preChainProgram cfg) label s_mid
+      = Simulation.Interaction.done (Except.ok (TypedCfg.Outcome.jump nxt s_nxt))) :
+    SeamCombinedStepRelEff (source := source) (cfg := cfg) context.calls nxt s1' s_nxt := by
+  have hRel :=
+    openStep_seamCombinedEff_congr_of_source context hSourceWF hTyped hIndependent hStep
+  rw [preChainProgram] at hQ
+  rw [hcfg, hQ] at hRel
+  cases hRel with
+  | done hdone =>
+      rcases hdone with ⟨n, sa, sc, ha, hc, hnext⟩ | ⟨_, hnj⟩
+      · rw [Except.ok.injEq, Outcome.jump.injEq] at ha hc
+        obtain ⟨rfl, rfl⟩ := ha
+        obtain ⟨_, rfl⟩ := hc
+        exact hnext
+      · exact absurd rfl (hnj nxt s1')
+
 end Peephole
 end TypedCfg
 end EvmCompiler
