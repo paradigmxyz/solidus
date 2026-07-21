@@ -193,7 +193,8 @@ some suffix of the scanned block list. -/
 theorem scanEdits_mem {prog : Program} {fuel : Nat} {ordered : List Block}
     {p : Label × Edit} (h : p ∈ scanEdits prog fuel ordered) :
     ∃ b rest, (b :: rest) <:+ ordered ∧
-      2 ≤ (growChain prog b rest).length ∧ p ∈ chainEdits (growChain prog b rest) := by
+      2 ≤ (growChain prog b rest).length ∧ p ∈ chainEdits (growChain prog b rest) ∧
+      (∀ q ∈ chainEdits (growChain prog b rest), q ∈ scanEdits prog fuel ordered) := by
   induction fuel generalizing ordered with
   | zero => simp only [scanEdits, List.not_mem_nil] at h
   | succ fuel ih =>
@@ -204,14 +205,21 @@ theorem scanEdits_mem {prog : Program} {fuel : Nat} {ordered : List Block}
           by_cases hlen : 2 ≤ (growChain prog b rest).length
           · rw [if_pos hlen, List.mem_append] at h
             cases h with
-            | inl h => exact ⟨b, rest, List.suffix_refl _, hlen, h⟩
+            | inl h =>
+                refine ⟨b, rest, List.suffix_refl _, hlen, h, ?_⟩
+                intro q hq
+                rw [scanEdits, if_pos hlen]; exact List.mem_append_left _ hq
             | inr h =>
-                obtain ⟨b', rest', hsuf, hlen', hmem'⟩ := ih h
-                exact ⟨b', rest', hsuf.trans ((List.drop_suffix _ _).trans (List.suffix_cons b rest)),
-                  hlen', hmem'⟩
+                obtain ⟨b', rest', hsuf, hlen', hmem', hsub'⟩ := ih h
+                refine ⟨b', rest', hsuf.trans ((List.drop_suffix _ _).trans (List.suffix_cons b rest)),
+                  hlen', hmem', ?_⟩
+                intro q hq
+                rw [scanEdits, if_pos hlen]; exact List.mem_append_right _ (hsub' q hq)
           · rw [if_neg hlen] at h
-            obtain ⟨b', rest', hsuf, hlen', hmem'⟩ := ih h
-            exact ⟨b', rest', hsuf.trans (List.suffix_cons b rest), hlen', hmem'⟩
+            obtain ⟨b', rest', hsuf, hlen', hmem', hsub'⟩ := ih h
+            refine ⟨b', rest', hsuf.trans (List.suffix_cons b rest), hlen', hmem', ?_⟩
+            intro q hq
+            rw [scanEdits, if_neg hlen]; exact hsub' q hq
 
 /-- The structure of a fired chain's edit list, unpacked from any of its members. -/
 theorem chainEdits_fired {chain : List Block} {p : Label × Edit}
@@ -240,6 +248,46 @@ theorem chainEdits_fired {chain : List Block} {p : Label × Edit}
             obtain ⟨C, hC, hCeq⟩ := h
             exact Or.inr ⟨C, hC, hCeq.symm⟩
       · simp only [List.not_mem_nil] at h
+
+/-- The full edit list of a fired chain (nonempty result). -/
+theorem chainEdits_entries {chain : List Block} (hne : chainEdits chain ≠ []) :
+    ∃ hd tl, chain = hd :: tl ∧
+      chainEdits chain =
+        (hd.label, Edit.head
+            ((canonSwaps (chain.flatMap (fun b => (chainBodyDepths? b.body).getD []))).map Instr.swap
+              ++ [Instr.relabel (chain.getLastD hd).output]) (chain.getLastD hd).output)
+          :: tl.map (fun b => (b.label, Edit.consumed (chain.getLastD hd).output)) := by
+  cases chain with
+  | nil => simp only [chainEdits, ne_eq, not_true_eq_false] at hne
+  | cons hd tl =>
+      refine ⟨hd, tl, rfl, ?_⟩
+      rw [chainEdits] at hne ⊢
+      split at hne
+      · rename_i hc; rw [if_pos hc]
+      · exact absurd rfl hne
+
+/-- Every member of a fired chain owns an edit entry. -/
+theorem mem_chainEdits_of_mem_chain {chain : List Block} {P : Block}
+    (hne : chainEdits chain ≠ []) (hP : P ∈ chain) :
+    ∃ e, (P.label, e) ∈ chainEdits chain := by
+  obtain ⟨hd, tl, hchain, heq⟩ := chainEdits_entries hne
+  subst hchain
+  rw [heq]
+  rw [List.mem_cons] at hP
+  cases hP with
+  | inl hP => subst hP; exact ⟨_, List.mem_cons.mpr (Or.inl rfl)⟩
+  | inr hP =>
+      exact ⟨_, List.mem_cons.mpr (Or.inr (List.mem_map.mpr ⟨P, hP, rfl⟩))⟩
+
+/-! ## `chainStep` unpacking -/
+
+theorem chainStep_spec {prog : Program} {a nxt : Block} (h : chainStep prog a nxt = true) :
+    a.term = Terminator.jump nxt.label ∧
+      refCount prog nxt.label = 1 ∧ nxt.label ≠ prog.entry := by
+  unfold chainStep at h
+  simp only [Bool.and_eq_true, beq_iff_eq, bne_iff_ne] at h
+  obtain ⟨⟨⟨⟨hterm, _hba⟩, _hbn⟩, href⟩, hentry⟩ := h
+  exact ⟨hterm, href, hentry⟩
 
 /-! ## Fail-closed head typing (the reusable WellTyped crux)
 
