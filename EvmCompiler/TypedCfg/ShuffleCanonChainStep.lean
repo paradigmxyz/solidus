@@ -422,6 +422,104 @@ theorem chainStepRel_entry (program : Program) (residual : Label → List Nat)
       | head _ _ => exact SameRuntimeData.refl s
       | consumed out => exact absurd hlk editTable_entry_ne_consumed
 
+/-! ## The residual specification (chain structure the congruence consumes)
+
+`ChainResidualSpec program residual` bundles the per-block chain-consistency facts
+each congruence branch reads off — the head's merged/successor/position link and
+the consumed member's interior/last dichotomy — as a predicate a residual
+*construction* discharges.  This decouples the (banked, below) step congruence
+from the residual construction (the remaining frontier). -/
+structure ChainResidualSpec (program : Program) (residual : Label → List Nat) : Prop where
+  head : ∀ {b0 : Block} {body : List Instr} {out : Shape},
+      b0 ∈ program.blocks →
+      (editTable program).lookup b0.label = some (Edit.head body out) →
+      ∃ (B : Block) (merged ds : List Nat),
+        ShuffleCanon.chainBodyDepths? b0.body = some ds ∧
+        b0.term = Terminator.jump B.label ∧
+        (editTable program).lookup B.label = some (Edit.consumed out) ∧
+        body = (ShuffleCanon.canonSwaps merged).map Instr.swap ++ [Instr.relabel out] ∧
+        bodyRunPositions b0.body ++ residual B.label = merged.map (· + 1) ∧
+        (∀ p ∈ merged.map (· + 1), p + 1 ≤ b0.input.length)
+  consumed : ∀ {b0 : Block} {out : Shape},
+      b0 ∈ program.blocks →
+      (editTable program).lookup b0.label = some (Edit.consumed out) →
+      (∃ ds, ShuffleCanon.chainBodyDepths? b0.body = some ds) ∧
+      ((∃ D : Block, b0.term = Terminator.jump D.label ∧
+           (editTable program).lookup D.label = some (Edit.consumed out) ∧
+           residual b0.label = bodyRunPositions b0.body ++ residual D.label)
+        ∨ (out = b0.output ∧ residual b0.label = bodyRunPositions b0.body ∧
+           ∀ (L : Label), L ∈ b0.term.targets →
+             ∀ o, (editTable program).lookup L ≠ some (Edit.consumed o)))
+
+/-! ## Terminator-composition tail lemmas -/
+
+/-- **Jump-with-pending tail.**  After a chain block body runs (leaving the two
+states in `PendingPerm (residual next)`), the preserved `jump next` terminator on
+both sides lands in `ChainOutcomeRel`'s synchronised-jump branch at `next`
+(consumed ⟹ `ChainStepRel next = PendingPerm (residual next)`). -/
+theorem chainOutcome_jump_pending {program : Program} {residual : Label → List Nat}
+    {next : Label} {shapeL shapeR : Shape} {sL sR : EVMState} {out : Shape}
+    (hlkNext : (editTable program).lookup next = some (Edit.consumed out))
+    (hP : PendingPerm (residual next) sR sL) :
+    ChainOutcomeRel program residual
+      (TypedCfg.Block.runTermChecked shapeL (Terminator.jump next) sL)
+      (TypedCfg.Block.runTermChecked shapeR (Terminator.jump next) sR) := by
+  rw [TypedCfg.Block.runTermChecked_jump, TypedCfg.Block.runTermChecked_jump,
+    TypedCfg.Block.runTerm, TypedCfg.Block.runTerm]
+  refine Or.inl ⟨next, sL, sR, rfl, rfl, ?_⟩
+  unfold ChainStepRel
+  rw [hlkNext]
+  exact hP
+
+/-- **SRD-resync tail.**  From re-synchronised (`SameRuntimeData`) states, a
+block's (unchanged) terminator run on the SAME output shape lands in
+`ChainOutcomeRel` — a synchronised jump when the target is not consumed (SRD
+branch of `ChainStepRel`), else a plain runtime-related non-jump. -/
+theorem chainOutcome_srd_resync {program : Program} {residual : Label → List Nat}
+    {b0 : Block} {sL sR : EVMState}
+    (htargets : ∀ (L : Label), L ∈ b0.term.targets →
+      ∀ o, (editTable program).lookup L ≠ some (Edit.consumed o))
+    (hSRD : SameRuntimeData sL sR) :
+    Simulation.Interaction.Rel (ChainOutcomeRel program residual)
+      (Simulation.Interaction.done
+        (TypedCfg.Block.runTermChecked b0.output b0.term sL))
+      (Simulation.Interaction.done
+        (TypedCfg.Block.runTermChecked b0.output b0.term sR)) := by
+  have hChecked := InteractionCongruence.Block.runTermChecked_runtimeRel
+    (shape := b0.output) (term := b0.term) hSRD
+  cases hL : TypedCfg.Block.runTermChecked b0.output b0.term sL with
+  | error eL =>
+      cases hR : TypedCfg.Block.runTermChecked b0.output b0.term sR with
+      | error eR =>
+          rw [hL, hR] at hChecked
+          exact Simulation.Interaction.Rel.done (Or.inr ⟨hChecked, by simp⟩)
+      | ok oR => rw [hL, hR] at hChecked; cases hChecked
+  | ok oL =>
+      cases hR : TypedCfg.Block.runTermChecked b0.output b0.term sR with
+      | error eR => rw [hL, hR] at hChecked; cases hChecked
+      | ok oR =>
+          rw [hL, hR] at hChecked
+          refine Simulation.Interaction.Rel.done ?_
+          cases hChecked with
+          | ok hrr =>
+              cases hrr with
+              | jump lbl hSt =>
+                  have hmemT : lbl ∈ b0.term.targets :=
+                    runTerm_jump_mem_targets
+                      (TypedCfg.Block.runTerm_eq_of_runTermChecked_eq_ok hL)
+                  refine Or.inl ⟨lbl, _, _, rfl, rfl, ?_⟩
+                  unfold ChainStepRel
+                  cases hfindL : (editTable program).lookup lbl with
+                  | none => exact hSt
+                  | some e =>
+                      cases e with
+                      | head _ _ => exact hSt
+                      | consumed o => exact absurd hfindL (htargets lbl hmemT o)
+              | fallthrough hSt => exact Or.inr ⟨.ok (.fallthrough hSt), by simp⟩
+              | returnDispatch hSt => exact Or.inr ⟨.ok (.returnDispatch hSt), by simp⟩
+              | halt kind hSt => exact Or.inr ⟨.ok (.halt kind hSt), by simp⟩
+              | invalid hSt => exact Or.inr ⟨.ok (.invalid hSt), by simp⟩
+
 end Peephole
 end TypedCfg
 end EvmCompiler
