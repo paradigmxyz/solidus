@@ -172,6 +172,72 @@ theorem netStack_canonSwaps_positions (r : List Nat) (L : Nat)
     simp only [hc] at hfire ⊢
     rw [if_neg hfire]
 
+/-! ## The carried invariant + disjunctive outcome relation -/
+
+open ShuffleCanon (editTable Edit chainCanonProgram)
+
+/-- The inter-block state invariant carried across a fired fallthrough chain.
+`SameRuntimeData` unless the block is a *consumed* chain member, in which case the
+original side is `residual` swaps behind the (fixed) transformed end state —
+`PendingPerm (residual program label)`.  `residual` is threaded per-label by the
+step congruence; here it is left as a parameter (the value computed off the chain
+suffix). -/
+def ChainStepRel (program : Program) (residual : Label → List Nat)
+    (label : Label) (s_o s_c : EVMState) : Prop :=
+  match (editTable program).lookup label with
+  | some (.consumed _) => PendingPerm (residual label) s_c s_o
+  | _ => SameRuntimeData s_o s_c
+
+/-- The disjunctive one-step outcome relation for the chain canonicaliser: either
+a synchronised `jump` landing in `ChainStepRel` at the next label, or a plain
+runtime-related non-jump outcome. -/
+def ChainOutcomeRel (program : Program) (residual : Label → List Nat) :
+    Except EVMException TypedCfg.Outcome →
+      Except EVMException TypedCfg.Outcome → Prop :=
+  fun a b =>
+    (∃ (next : Label) (so sc : EVMState),
+      a = .ok (.jump next so) ∧ b = .ok (.jump next sc) ∧
+        ChainStepRel program residual next so sc)
+    ∨ (InteractionCongruence.Block.RuntimeOutcomeRel a b ∧
+        ∀ (next : Label) (s : EVMState), a ≠ .ok (.jump next s))
+
+/-! ## Entry seed: the entry block is never a consumed chain member -/
+
+/-- The program entry is never a *consumed* chain member: consumed members are the
+non-head chain blocks, each of which has a `chainStep`-predecessor whose step
+guard forces `nxt.label ≠ program.entry`. -/
+theorem editTable_entry_ne_consumed {program : Program} {out : Shape} :
+    (editTable program).lookup program.entry ≠ some (Edit.consumed out) := by
+  intro h
+  have hmem := ShuffleCanon.lookup_mem h
+  unfold editTable at hmem
+  split at hmem
+  · simp only [List.not_mem_nil] at hmem
+  · rename_i ordered hord
+    obtain ⟨b, rest, _hsuf, _hlen, hmem', _hsub⟩ := ShuffleCanon.scanEdits_mem hmem
+    obtain ⟨hd, tl, hchain, _hbody, hcases⟩ := ShuffleCanon.chainEdits_fired hmem'
+    rcases hcases with heq | ⟨C, hC, hCeq⟩
+    · rw [Prod.mk.injEq] at heq; exact absurd heq.2 (by simp)
+    · rw [Prod.mk.injEq] at hCeq
+      have hClabel : program.entry = C.label := hCeq.1
+      have hgc := ShuffleCanon.growChain_chain' program b rest
+      rw [hchain] at hgc
+      obtain ⟨P, _, hstep⟩ := ShuffleCanon.chainStep_pred_of_mem_tail hgc hC
+      obtain ⟨_, _, hne⟩ := ShuffleCanon.chainStep_spec hstep
+      exact hne hClabel.symm
+
+/-- **Entry seed (`ChainStepRel`).**  At the program entry, equal states satisfy
+`ChainStepRel` via its `SameRuntimeData` branch (the entry is never consumed). -/
+theorem chainStepRel_entry (program : Program) (residual : Label → List Nat)
+    (s : EVMState) : ChainStepRel program residual program.entry s s := by
+  unfold ChainStepRel
+  cases hlk : (editTable program).lookup program.entry with
+  | none => exact SameRuntimeData.refl s
+  | some e =>
+      cases e with
+      | head _ _ => exact SameRuntimeData.refl s
+      | consumed out => exact absurd hlk editTable_entry_ne_consumed
+
 end Peephole
 end TypedCfg
 end EvmCompiler
