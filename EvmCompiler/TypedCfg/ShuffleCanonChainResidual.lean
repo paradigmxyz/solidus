@@ -515,16 +515,15 @@ theorem chain_length_le_blocks {program : Program}
     ((Program.blocksInLoweringOrder?_perm hord).length_eq).symm
   omega
 
-/-- **`ChainResidualSpec` modulo the merged-position bound.**  Given the length
-feasibility of the merged runtime positions on each head's input, the concrete
-`residual` satisfies the residual specification consumed by the step congruence. -/
-theorem chainResidualSpec_of_bound {program : Program} (hUnique : program.LabelsUnique)
-    (hbound : ∀ {b0 : Block} {body : List Instr} {out : Shape} {B : Block},
-      b0 ∈ program.blocks →
-      (editTable program).lookup b0.label = some (Edit.head body out) →
-      b0.term = Terminator.jump B.label →
-      ∀ p ∈ bodyRunPositions b0.body ++ residual program B.label,
-        p + 1 ≤ b0.input.length) :
+/-- **`ChainResidualSpec` (unconditional).**  The concrete `residual` satisfies the
+residual specification consumed by the step congruence.  The former merged-position
+bound conjunct is gone: `ChainResidualSpec.head` now exposes the pure structural
+identity `residual b0.label = merged.map (·+1)` instead, and the runtime feasibility
+`p + 1 ≤ s_o.stack.length` is threaded into the congruence as `hFeasO` (discharged by
+whole-program / source run feasibility — the runtime stack carries the whole chain's
+caller frame, so `Shape.compatible` caller-tail growth stays within `s_o.stack.length`;
+the static `≤ b0.input.length` bound §82 assumed is false, see §83/§84). -/
+theorem chainResidualSpec {program : Program} (hUnique : program.LabelsUnique) :
     ChainResidualSpec program (residual program) := by
   constructor
   · -- head
@@ -601,7 +600,16 @@ theorem chainResidualSpec_of_bound {program : Program} (hUnique : program.Labels
         List.flatMap_cons, ← hb0hd, hresB]
     refine ⟨B, merged, ds, hds, hb0term, hBconsumed, ?_, hident, ?_⟩
     · rw [hbodyeq, houteq]
-    · rw [← hident]; exact hbound hb0mem hlk hb0term
+    · -- residual b0.label = merged.map (·+1): the whole chain b0 :: B :: tl' is a
+      -- residual run, so its walk realises the concatenated positions = merged.
+      have hRunFull : IsResidualRun program (b0 :: B :: tl') := by
+        refine ⟨Program.findBlock?_eq_some_of_mem hUnique hb0mem, hb0term,
+          ⟨_, hBconsumed⟩, hRunTl⟩
+      have hlenFull : (b0 :: B :: tl').length ≤ program.blocks.length := by
+        have h := chain_length_le_blocks hord hsuf
+        rw [hchain] at h; rw [hb0hd]; exact h
+      have hresFull := residual_flatMap_of_run hlenFull hRunFull
+      rw [hresFull, List.flatMap_cons, ← hresB]; exact hident
   · -- consumed
     intro b0 out hb0mem hlk
     refine ⟨consumed_chainBodyOk hUnique hb0mem hlk, ?_⟩

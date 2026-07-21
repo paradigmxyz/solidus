@@ -345,7 +345,7 @@ theorem headBlock_rel_discharged {program : Program}
     (hbody : body = (ShuffleCanon.canonSwaps merged).map Instr.swap ++ [Instr.relabel out])
     (htypeBody : Block.bodyType? body b0.input = some out)
     (hident : bodyRunPositions b0.body ++ rest = merged.map (· + 1))
-    (hmergedBound : ∀ p ∈ merged.map (· + 1), p + 1 ≤ b0.input.length)
+    (hmergedBound : ∀ p ∈ merged.map (· + 1), p + 1 ≤ s_o.stack.length)
     (hSRD : SameRuntimeData s_o s_c)
     (hReal_o : StackRealizes b0.input s_o)
     (hReal_c : StackRealizes b0.input s_c) :
@@ -368,7 +368,7 @@ theorem headBlock_rel_discharged {program : Program}
     intro p hp; rw [hident, List.mem_map] at hp; obtain ⟨d, _, rfl⟩ := hp; omega
   have hlenConcat : ∀ p ∈ bodyRunPositions b0.body ++ rest, p + 1 ≤ s_o.stack.length := by
     intro p hp; rw [hident] at hp
-    exact le_trans (hmergedBound p hp) hReal_o.le
+    exact hmergedBound p hp
   have hposC : ∀ p ∈ bodyRunPositions body, 1 ≤ p := fun p hp =>
     (bodyRunPositions_bound body hChainC htypeBody p hp).1
   have hlenC : ∀ p ∈ bodyRunPositions body, p + 1 ≤ s_c.stack.length := fun p hp =>
@@ -379,7 +379,7 @@ theorem headBlock_rel_discharged {program : Program}
     rw [hident, hbody, bodyRunPositions_append, bodyRunPositions_map_swap,
       bodyRunPositions_relabel_singleton, List.append_nil]
     exact netStack_canonSwaps_bound merged s_o.stack.length (fun p hp =>
-      le_trans (hmergedBound p hp) hReal_o)
+      hmergedBound p hp)
   have hR := headBlock_rel (headBody := b0.body) (canonBody := body) (rest := rest)
     (hin := b0.input) (hout := b0.output) (cin := b0.input) (cout := out)
     hChainH hsw16H hChainC hsw16C hSRD hposConcat hposC hlenConcat hlenC hnet hrunO hrunC
@@ -439,7 +439,7 @@ structure ChainResidualSpec (program : Program) (residual : Label → List Nat) 
         (editTable program).lookup B.label = some (Edit.consumed out) ∧
         body = (ShuffleCanon.canonSwaps merged).map Instr.swap ++ [Instr.relabel out] ∧
         bodyRunPositions b0.body ++ residual B.label = merged.map (· + 1) ∧
-        (∀ p ∈ merged.map (· + 1), p + 1 ≤ b0.input.length)
+        residual b0.label = merged.map (· + 1)
   consumed : ∀ {b0 : Block} {out : Shape},
       b0 ∈ program.blocks →
       (editTable program).lookup b0.label = some (Edit.consumed out) →
@@ -534,7 +534,8 @@ theorem openRun_chainCanon_congr {program : Program} {residual : Label → List 
     {s_o s_c : EVMState}
     (hStep : ChainStepRel program residual b0.label s_o s_c)
     (hReal_o : StackRealizes b0.input s_o)
-    (hReal_c : StackRealizes (ShuffleCanon.applyEdit (editTable program) b0).input s_c) :
+    (hReal_c : StackRealizes (ShuffleCanon.applyEdit (editTable program) b0).input s_c)
+    (hFeasO : ∀ p ∈ residual b0.label, p + 1 ≤ s_o.stack.length) :
     Simulation.Interaction.Rel (ChainOutcomeRel program residual)
       (InteractionSemantics.Block.openRun b0 s_o)
       (InteractionSemantics.Block.openRun (ShuffleCanon.applyEdit (editTable program) b0) s_c) := by
@@ -563,8 +564,10 @@ theorem openRun_chainCanon_congr {program : Program} {residual : Label → List 
       cases e with
       | head body out =>
           -- Head: births PendingPerm (residual B) then jumps to consumed B.
-          obtain ⟨B, merged, ds, helig, hb0term, hlkB, hbodyEq, hident, hmergedBd⟩ :=
+          obtain ⟨B, merged, ds, helig, hb0term, hlkB, hbodyEq, hident, hresEq⟩ :=
             hSpec.head hmem hlk
+          have hmergedBd : ∀ p ∈ merged.map (· + 1), p + 1 ≤ s_o.stack.length := by
+            intro p hp; apply hFeasO p; rw [hresEq]; exact hp
           have hEb : ShuffleCanon.applyEdit (editTable program) b0
               = { b0 with body := body, output := out } := by
             unfold ShuffleCanon.applyEdit; rw [hlk]
@@ -668,6 +671,7 @@ theorem openStep_chainCanon_congr {program : Program} {residual : Label → List
     (hReal_o : ∀ b0, program.findBlock? label = some b0 → StackRealizes b0.input s_o)
     (hReal_c : ∀ b0, program.findBlock? label = some b0 →
       StackRealizes (ShuffleCanon.applyEdit (editTable program) b0).input s_c)
+    (hFeasO : ∀ p ∈ residual label, p + 1 ≤ s_o.stack.length)
     (hStep : ChainStepRel program residual label s_o s_c) :
     Simulation.Interaction.Rel (ChainOutcomeRel program residual)
       (InteractionSemantics.Program.openStep program label s_o)
@@ -699,9 +703,9 @@ theorem openStep_chainCanon_congr {program : Program} {residual : Label → List
       have hlabel : b0.label = label := by
         unfold TypedCfg.Program.findBlock? at hFind
         have := List.find?_some hFind; simpa using this
-      rw [← hlabel] at hStep
+      rw [← hlabel] at hStep hFeasO
       exact openRun_chainCanon_congr hUnique hTyped hSpec hMem hb0Indep hStep
-        (hReal_o b0 hFind) (hReal_c b0 hFind)
+        (hReal_o b0 hFind) (hReal_c b0 hFind) hFeasO
 
 end Peephole
 end TypedCfg
