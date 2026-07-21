@@ -481,10 +481,10 @@ theorem chainOutcome_srd_resync {program : Program} {residual : Label → List N
       ∀ o, (editTable program).lookup L ≠ some (Edit.consumed o))
     (hSRD : SameRuntimeData sL sR) :
     Simulation.Interaction.Rel (ChainOutcomeRel program residual)
-      (Simulation.Interaction.done
-        (TypedCfg.Block.runTermChecked b0.output b0.term sL))
-      (Simulation.Interaction.done
-        (TypedCfg.Block.runTermChecked b0.output b0.term sR)) := by
+      (match TypedCfg.Block.runTermChecked b0.output b0.term sL with
+        | .ok outcome => pure outcome | .error err => throw err)
+      (match TypedCfg.Block.runTermChecked b0.output b0.term sR with
+        | .ok outcome => pure outcome | .error err => throw err) := by
   have hChecked := InteractionCongruence.Block.runTermChecked_runtimeRel
     (shape := b0.output) (term := b0.term) hSRD
   cases hL : TypedCfg.Block.runTermChecked b0.output b0.term sL with
@@ -519,6 +519,115 @@ theorem chainOutcome_srd_resync {program : Program} {residual : Label → List N
               | returnDispatch hSt => exact Or.inr ⟨.ok (.returnDispatch hSt), by simp⟩
               | halt kind hSt => exact Or.inr ⟨.ok (.halt kind hSt), by simp⟩
               | invalid hSt => exact Or.inr ⟨.ok (.invalid hSt), by simp⟩
+
+/-! ## The block-level chain-canonicalisation step congruence -/
+
+/-- **Block-level chain-canonicalisation congruence.**  Under the residual spec,
+running the original block from `s_o` is `ChainOutcomeRel`-related to running its
+transformed image from `s_c`, given the entry invariant `ChainStepRel` and runtime
+feasibility.  Head births the pending permutation, consumed members thread/resync
+it, untouched blocks stay `SameRuntimeData`. -/
+theorem openRun_chainCanon_congr {program : Program} {residual : Label → List Nat}
+    (hUnique : program.LabelsUnique) (hTyped : program.WellTyped)
+    (hSpec : ChainResidualSpec program residual)
+    {b0 : Block} (hmem : b0 ∈ program.blocks) (hIndep : b0.ProgramCounterIndependent)
+    {s_o s_c : EVMState}
+    (hStep : ChainStepRel program residual b0.label s_o s_c)
+    (hReal_o : StackRealizes b0.input s_o)
+    (hReal_c : StackRealizes (ShuffleCanon.applyEdit (editTable program) b0).input s_c) :
+    Simulation.Interaction.Rel (ChainOutcomeRel program residual)
+      (InteractionSemantics.Block.openRun b0 s_o)
+      (InteractionSemantics.Block.openRun (ShuffleCanon.applyEdit (editTable program) b0) s_c) := by
+  have hb0Typed : b0.WellTyped program := blockWellTyped_of_mem hTyped.2.1 hmem
+  cases hlk : (editTable program).lookup b0.label with
+  | none =>
+      -- Untouched block: transformed = original, SRD entry, plain runtime congruence.
+      have hEb : ShuffleCanon.applyEdit (editTable program) b0 = b0 := by
+        unfold ShuffleCanon.applyEdit; rw [hlk]
+      rw [hEb] at hReal_c ⊢
+      simp only [ChainStepRel, hlk] at hStep
+      have hbody := InteractionCongruence.Block.openRunBody_runtimeRel
+        hb0Typed.1 hIndep hStep
+      unfold InteractionSemantics.Block.openRun Control.Block.run
+      refine Simulation.Interaction.Rel.bind_custom hbody ?_
+      intro leftDone rightDone hDone
+      cases hDone with
+      | error he => exact Simulation.Interaction.Rel.done (Or.inr ⟨.error he, by simp⟩)
+      | ok hpair =>
+          rename_i lpair rpair
+          obtain ⟨hAfter, hlp2, hrp2⟩ := hpair
+          simp only [hlp2, hrp2, ↓reduceIte]
+          exact chainOutcome_srd_resync
+            (fun L hL o => ShuffleCanon.untouched_target_not_consumed hmem hlk hL o) hAfter
+  | some e =>
+      cases e with
+      | head body out =>
+          -- Head: births PendingPerm (residual B) then jumps to consumed B.
+          obtain ⟨B, merged, ds, helig, hb0term, hlkB, hbodyEq, hident, hmergedBd⟩ :=
+            hSpec.head hmem hlk
+          have hEb : ShuffleCanon.applyEdit (editTable program) b0
+              = { b0 with body := body, output := out } := by
+            unfold ShuffleCanon.applyEdit; rw [hlk]
+          rw [hEb] at hReal_c ⊢
+          simp only [ChainStepRel, hlk] at hStep
+          have htypeBody : Block.bodyType? body b0.input = some out :=
+            (ShuffleCanon.head_edit_spec hUnique hmem hlk).1
+          have hbody := headBlock_rel_discharged (program := program) (b0 := b0)
+            (body := body) (out := out) (merged := merged) (ds := ds) (rest := residual B.label)
+            hb0Typed helig hbodyEq htypeBody hident hmergedBd hStep hReal_o hReal_c
+          unfold InteractionSemantics.Block.openRun Control.Block.run
+          refine Simulation.Interaction.Rel.bind_custom hbody ?_
+          intro leftDone rightDone hDone
+          cases hDone with
+          | error he => exact Simulation.Interaction.Rel.done (Or.inr ⟨.error he, by simp⟩)
+          | ok hpair =>
+              rename_i lpair rpair
+              obtain ⟨hP, hlp2, hrp2⟩ := hpair
+              simp only [hlp2, hrp2, ↓reduceIte, hb0term]
+              exact Simulation.Interaction.Rel.done (chainOutcome_jump_pending hlkB hP)
+      | consumed out =>
+          -- Consumed: peel/resync per the interior/last dichotomy.
+          obtain ⟨⟨ds, helig⟩, hdich⟩ := hSpec.consumed hmem hlk
+          have hEb : ShuffleCanon.applyEdit (editTable program) b0
+              = { b0 with input := out, output := out, body := [] } := by
+            unfold ShuffleCanon.applyEdit; rw [hlk]
+          rw [hEb] at hReal_c ⊢
+          simp only [ChainStepRel, hlk] at hStep
+          rcases hdich with ⟨D, hb0term, hlkD, hres⟩ | ⟨houtEq, hres, htargets⟩
+          · -- interior: residual b0.label = bodyRunPositions b0.body ++ residual D.label
+            rw [hres] at hStep
+            have hbody := consumedBlock_rel_discharged (program := program) (b0 := b0)
+              (out := out) (ds := ds) (σ := residual D.label)
+              hb0Typed helig hStep hReal_o
+            unfold InteractionSemantics.Block.openRun Control.Block.run
+            refine Simulation.Interaction.Rel.bind_custom hbody ?_
+            intro leftDone rightDone hDone
+            cases hDone with
+            | error he => exact Simulation.Interaction.Rel.done (Or.inr ⟨.error he, by simp⟩)
+            | ok hpair =>
+                rename_i lpair rpair
+                obtain ⟨hP, hlp2, hrp2⟩ := hpair
+                simp only [hlp2, hrp2, ↓reduceIte, hb0term]
+                exact Simulation.Interaction.Rel.done (chainOutcome_jump_pending hlkD hP)
+          · -- last: residual b0.label = bodyRunPositions b0.body, resync to SRD
+            rw [hres] at hStep
+            have hStep' : PendingPerm (bodyRunPositions b0.body ++ []) s_c s_o := by
+              rwa [List.append_nil]
+            have hbody := consumedBlock_rel_discharged (program := program) (b0 := b0)
+              (out := out) (ds := ds) (σ := []) hb0Typed helig hStep' hReal_o
+            unfold InteractionSemantics.Block.openRun Control.Block.run
+            refine Simulation.Interaction.Rel.bind_custom hbody ?_
+            intro leftDone rightDone hDone
+            cases hDone with
+            | error he => exact Simulation.Interaction.Rel.done (Or.inr ⟨.error he, by simp⟩)
+            | ok hpair =>
+                rename_i lpair rpair
+                obtain ⟨hP, hlp2, hrp2⟩ := hpair
+                have hSRD : SameRuntimeData lpair.1 rpair.1 :=
+                  pendingPerm_nil_iff.mp hP
+                simp only [hlp2, hrp2, ↓reduceIte]
+                rw [houtEq]
+                exact chainOutcome_srd_resync htargets hSRD
 
 end Peephole
 end TypedCfg
