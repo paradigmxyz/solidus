@@ -165,3 +165,85 @@ theorem runSwaps_resync {ps qs : List Nat} {s : EVMState}
   · rw [hsh1, hsh2]
   · rw [hstk1, hstk2]
     exact ShuffleCanon.applySwaps_congr_of_netStack ps qs s.stack hnet
+
+/-- Run-fold concatenation: once `l1` has run to `s1`, running `l1 ++ l2` is
+running `l2` from `s1`. -/
+theorem runSwaps_append (l1 l2 : List Nat) :
+    ∀ (s s1 : EVMState), runSwaps l1 s = .ok s1 →
+      runSwaps (l1 ++ l2) s = runSwaps l2 s1 := by
+  induction l1 with
+  | nil =>
+      intro s s1 h
+      simp only [runSwaps] at h
+      injection h with he; subst he
+      simp only [List.nil_append]
+  | cons p rest ih =>
+      intro s s1 h
+      simp only [List.cons_append, runSwaps] at h ⊢
+      cases hsw : EvmYul.swap p s with
+      | error e => rw [hsw] at h; exact absurd h (by simp)
+      | ok s' =>
+          rw [hsw] at h
+          exact ih s' s1 h
+
+/-! ## Part D — the `PendingPerm σ` invariant + its birth / thread / resync algebra -/
+
+/-- The pending-*permutation* state relation across a fired fallthrough chain,
+generalising `PendingSwap d` from one residual `swap (d+1)` to a residual run
+`σ : List Nat` of positions.  The ORIGINAL program's state `s_o` is `σ` (a run of
+swaps) away from being `SameRuntimeData` to the transformed program's state
+`s_c` — the transformed side has already applied the whole chain's net
+permutation at the head, the original side is catching up block by block. -/
+def PendingPerm (σ : List Nat) (s_c s_o : EVMState) : Prop :=
+  ∃ next, runSwaps σ s_o = .ok next ∧ SameRuntimeData next s_c
+
+/-- **Resync (chain exit).**  When the residual run is empty, the two states are
+already `SameRuntimeData` — the chain has re-converged. -/
+theorem pendingPerm_nil_iff {s_c s_o : EVMState} :
+    PendingPerm [] s_c s_o ↔ SameRuntimeData s_o s_c := by
+  unfold PendingPerm
+  constructor
+  · rintro ⟨next, hrun, hsrd⟩; simp only [runSwaps, Except.ok.injEq] at hrun
+    subst hrun; exact hsrd
+  · intro h; exact ⟨s_o, rfl, h⟩
+
+/-- **Thread (interior block).**  As the original side runs the head swap `p` of
+its residual, the pending run peels its front: the residual shrinks to `σ`. -/
+theorem pendingPerm_peel {p : Nat} {σ : List Nat} {s_c s_o s_o' : EVMState}
+    (hP : PendingPerm (p :: σ) s_c s_o)
+    (hsw : EvmYul.swap p s_o = .ok s_o') :
+    PendingPerm σ s_c s_o' := by
+  obtain ⟨next, hrun, hsrd⟩ := hP
+  simp only [runSwaps, hsw] at hrun
+  exact ⟨next, hrun, hsrd⟩
+
+/-- **Birth (fired chain head).**  Entering the chain from `SameRuntimeData`
+states, the ORIGINAL side runs the head block's swaps `aswaps` (to `s_o1`) while
+the TRANSFORMED side runs the whole chain's canonicalised run `canon` (to `s_c1`).
+Because `canon` and the full concatenation `aswaps ++ rest` have the same
+`netStack`, the two states differ by exactly the residual `rest` — i.e.
+`PendingPerm rest s_c1 s_o1` is born. -/
+theorem pendingPerm_birth {aswaps rest canon : List Nat} {s_o0 s_c0 s_o1 s_c1 : EVMState}
+    (hSRD : SameRuntimeData s_o0 s_c0)
+    (hposM : ∀ p ∈ aswaps ++ rest, 1 ≤ p)
+    (hposC : ∀ p ∈ canon, 1 ≤ p)
+    (hlenM : ∀ p ∈ aswaps ++ rest, p + 1 ≤ s_o0.stack.length)
+    (hlenC : ∀ p ∈ canon, p + 1 ≤ s_c0.stack.length)
+    (hnet : ShuffleCanon.netStack (aswaps ++ rest) s_o0.stack.length
+      = ShuffleCanon.netStack canon s_o0.stack.length)
+    (hrunO : runSwaps aswaps s_o0 = .ok s_o1)
+    (hrunC : runSwaps canon s_c0 = .ok s_c1) :
+    PendingPerm rest s_c1 s_o1 := by
+  -- Original: whole merged run realises applySwaps merged on s_o0.stack.
+  obtain ⟨nO, hrunNO, hstkO, hshO⟩ := runSwaps_ok (aswaps ++ rest) s_o0 hposM hlenM
+  have hrunRest : runSwaps rest s_o1 = .ok nO := by
+    rw [← runSwaps_append aswaps rest s_o0 s_o1 hrunO]; exact hrunNO
+  -- Transformed: canon run realises applySwaps canon on s_c0.stack (= s_o0.stack).
+  obtain ⟨nC, hrunNC, hstkC, hshC⟩ := runSwaps_ok canon s_c0 hposC hlenC
+  have hnC : nC = s_c1 := by rw [hrunNC] at hrunC; injection hrunC
+  subst hnC
+  refine ⟨nO, hrunRest, ?_⟩
+  apply sameRuntimeData_of
+  · rw [hshO, hshC, SameRuntimeData.shared_eq hSRD]
+  · rw [hstkO, hstkC, ← SameRuntimeData.stack_eq hSRD]
+    exact ShuffleCanon.applySwaps_congr_of_netStack _ _ s_o0.stack hnet
