@@ -371,6 +371,93 @@ theorem lookup_ne_none_of_mem {α β : Type _} [BEq α] [LawfulBEq α] {l : α} 
             simp [beq_self_eq_true] at hk
         | inr h => exact ih h
 
+/-! ## Edit-table key uniqueness -/
+
+/-- A chain's edit keys are exactly its member labels. -/
+theorem chainEdits_keys_sublist (chain : List Block) :
+    List.Sublist ((chainEdits chain).map Prod.fst) (chain.map Block.label) := by
+  by_cases hne : chainEdits chain = []
+  · rw [hne]; exact List.nil_sublist _
+  · obtain ⟨hd, tl, hchain, heq⟩ := chainEdits_entries hne
+    subst hchain
+    have hkeys : (chainEdits (hd :: tl)).map Prod.fst = (hd :: tl).map Block.label := by
+      rw [heq]; simp [List.map_map, Function.comp_def]
+    rw [hkeys]
+
+/-- The scan's edit keys are a sublist of the scanned block labels. -/
+theorem scanEdits_keys_sublist (prog : Program) (fuel : Nat) (ordered : List Block) :
+    List.Sublist ((scanEdits prog fuel ordered).map Prod.fst) (ordered.map Block.label) := by
+  induction fuel generalizing ordered with
+  | zero => simp only [scanEdits, List.map_nil]; exact List.nil_sublist _
+  | succ fuel ih =>
+      cases ordered with
+      | nil => simp only [scanEdits, List.map_nil]; exact List.nil_sublist _
+      | cons b rest =>
+          rw [scanEdits]
+          by_cases hlen : 2 ≤ (growChain prog b rest).length
+          · rw [if_pos hlen, List.map_append]
+            obtain ⟨t, ht⟩ := growChain_prefix prog b rest
+            have htake : (b :: rest).take (growChain prog b rest).length = growChain prog b rest := by
+              conv_lhs => rw [← ht]
+              exact List.take_left
+            have hlenpos : (growChain prog b rest).length =
+                (growChain prog b rest).length - 1 + 1 := by omega
+            have hdrop : (b :: rest).drop (growChain prog b rest).length =
+                rest.drop ((growChain prog b rest).length - 1) := by
+              conv_lhs => rw [hlenpos]
+              rw [List.drop_succ_cons]
+            have hsplit : (b :: rest).map Block.label =
+                (growChain prog b rest).map Block.label ++
+                  (rest.drop ((growChain prog b rest).length - 1)).map Block.label := by
+              conv_lhs => rw [← List.take_append_drop (growChain prog b rest).length (b :: rest)]
+              rw [List.map_append, htake, hdrop]
+            rw [hsplit]
+            exact List.Sublist.append (chainEdits_keys_sublist _) (ih _)
+          · rw [if_neg hlen]
+            refine (ih rest).trans ?_
+            simp only [List.map_cons]
+            exact List.sublist_cons_self _ _
+
+/-- The edit table has distinct keys (a `WellTyped` program's labels are unique). -/
+theorem editTable_keys_nodup {program : Program} (hUnique : program.LabelsUnique) :
+    ((editTable program).map Prod.fst).Nodup := by
+  unfold editTable
+  cases hord : program.blocksInLoweringOrder? with
+  | none => simp
+  | some ordered =>
+      have hnd : (ordered.map Block.label).Nodup := by
+        have hperm := Program.blocksInLoweringOrder?_perm hord
+        have hbnd : (program.blocks.map Block.label).Nodup :=
+          (Program.blockLabels_nodup_iff program).mpr hUnique
+        exact (hperm.map Block.label).nodup_iff.mp hbnd
+      exact (scanEdits_keys_sublist program program.blocks.length ordered).nodup hnd
+
+theorem lookup_eq_of_mem_nodup {α β : Type _} [BEq α] [LawfulBEq α] {l : α} {e : β}
+    {xs : List (α × β)} (hnd : (xs.map Prod.fst).Nodup) (h : (l, e) ∈ xs) :
+    xs.lookup l = some e := by
+  induction xs with
+  | nil => simp only [List.not_mem_nil] at h
+  | cons p ps ih =>
+      obtain ⟨k, v⟩ := p
+      rw [List.map_cons, List.nodup_cons] at hnd
+      obtain ⟨hnotin, hnd'⟩ := hnd
+      rw [List.mem_cons] at h
+      rw [List.lookup_cons]
+      cases h with
+      | inl h =>
+          injection h with h1 h2; subst h1; subst h2; simp
+      | inr h =>
+          have hin : l ∈ ps.map Prod.fst := List.mem_map.mpr ⟨(l, e), h, rfl⟩
+          have hlk : (l == k) = false := by
+            apply beq_false_of_ne; intro he; subst he; exact hnotin hin
+          rw [hlk]; exact ih hnd' h
+
+/-- With distinct keys, membership and `lookup` coincide (`editTable` specialisation). -/
+theorem lookup_editTable_eq_of_mem {program : Program} (hUnique : program.LabelsUnique)
+    {l : Label} {e : Edit} (h : (l, e) ∈ editTable program) :
+    (editTable program).lookup l = some e :=
+  lookup_eq_of_mem_nodup (editTable_keys_nodup hUnique) h
+
 /-! ## Fail-closed head typing (the reusable WellTyped crux)
 
 `chainEdits` emits a `.head` edit **only** when its (relabel-terminated) canonical body
