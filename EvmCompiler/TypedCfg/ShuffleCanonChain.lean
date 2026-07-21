@@ -173,6 +173,43 @@ theorem chainEdits_head_spec {chain : List Block} {l : Label}
         rw [← hbody]; exact eq_of_beq hc
       · simp only [reduceCtorEq] at h
 
+/-! ## Shape / body accessors of the transform -/
+
+/-- The transform moves a block's `input` only when it is *consumed* (`input := out`);
+head and untouched blocks keep their `input`. -/
+theorem applyEdit_input_eq (tbl : List (Label × Edit)) (block : Block) :
+    (applyEdit tbl block).input =
+      (match tbl.lookup block.label with
+       | some (.consumed out) => out
+       | _ => block.input) := by
+  unfold applyEdit
+  cases tbl.lookup block.label with
+  | none => rfl
+  | some e => cases e <;> rfl
+
+/-- The transform moves a block's `output` to `out` for head/consumed edits. -/
+theorem applyEdit_output_eq (tbl : List (Label × Edit)) (block : Block) :
+    (applyEdit tbl block).output =
+      (match tbl.lookup block.label with
+       | some (.head _ out) => out
+       | some (.consumed out) => out
+       | none => block.output) := by
+  unfold applyEdit
+  cases tbl.lookup block.label with
+  | none => rfl
+  | some e => cases e <;> rfl
+
+/-! ## `Shape.compatible` reflexivity -/
+
+theorem slotsAgree_self : ∀ xs : List Slot, Shape.slotsAgree xs xs = true
+  | [] => rfl
+  | x :: xs => by
+      cases x <;> simp only [Shape.slotsAgree, slotsAgree_self xs, Bool.and_true,
+        decide_true, Bool.or_true, Bool.true_or]
+
+@[simp] theorem compatible_self (s : Shape) : Shape.compatible s s = true := by
+  simp only [Shape.compatible, slotsAgree_self, Bool.true_and, if_true, ite_self]
+
 /-! ## Structural preservation (bodies/shapes only ⇒ labels/terms/entry fixed) -/
 
 @[simp] theorem applyEdit_label (tbl : List (Label × Edit)) (block : Block) :
@@ -243,6 +280,21 @@ theorem entry_findBlock?_chainCanonProgram {program : Program}
   cases hFind : program.findBlock? program.entry with
   | none => exact absurd hFind h
   | some block => simp
+
+/-- `labelShape?` of the chain-canonicalised program: only *consumed* blocks move
+their input (to `finalOut`); heads and untouched blocks keep it.  Analog of §72's
+`labelShape?_seamCancelProgramEff`. -/
+theorem labelShape?_chainCanonProgram (program : Program) (L : Label) :
+    (chainCanonProgram program).labelShape? L =
+      (program.findBlock? L).map (fun b =>
+        match (editTable program).lookup b.label with
+        | some (.consumed out) => out
+        | _ => b.input) := by
+  unfold Program.labelShape?
+  rw [findBlock?_chainCanonProgram]
+  cases hFind : program.findBlock? L with
+  | none => rfl
+  | some b => simp only [Option.map_some]; rw [applyEdit_input_eq]
 
 end ShuffleCanon
 end TypedCfg
