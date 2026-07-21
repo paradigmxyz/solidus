@@ -259,6 +259,30 @@ theorem term_lowerAt?_finalOut_eq {prog : Program} {chain : List Block} {hd : Bl
   · rw [hjump]; rfl
   · rw [hlast]
 
+/-! ## `List.lookup` on appended tables -/
+
+private theorem lookup_append_left {α β : Type _} [BEq α] {l1 l2 : List (α × β)}
+    {k : α} {v : β} (h : l1.lookup k = some v) : (l1 ++ l2).lookup k = some v := by
+  induction l1 with
+  | nil => simp only [List.lookup_nil, reduceCtorEq] at h
+  | cons p ps ih =>
+      obtain ⟨a, b⟩ := p
+      simp only [List.cons_append, List.lookup_cons] at h ⊢
+      cases hbeq : k == a with
+      | true => simp only [hbeq] at h ⊢; exact h
+      | false => simp only [hbeq] at h ⊢; exact ih h
+
+private theorem lookup_append_right {α β : Type _} [BEq α] {l1 l2 : List (α × β)}
+    {k : α} (h : l1.lookup k = none) : (l1 ++ l2).lookup k = l2.lookup k := by
+  induction l1 with
+  | nil => rfl
+  | cons p ps ih =>
+      obtain ⟨a, b⟩ := p
+      simp only [List.cons_append, List.lookup_cons] at h ⊢
+      cases hbeq : k == a with
+      | true => simp only [hbeq] at h; simp at h
+      | false => simp only [hbeq] at h ⊢; exact ih h
+
 /-! ## Small list-sum helpers -/
 
 private theorem sum_map_add {α : Type _} (l : List α) (f g : α → Nat) :
@@ -436,6 +460,225 @@ theorem fuelBudget_chainCanonProgram_eq_sum_ordered
   rw [fuelBudget_chainCanonProgram_eq]
   exact (Program.blocksInLoweringOrder?_perm h).map
     (fun b => CompiledBlock.fuelBudget (applyEdit (editTable program) b)) |>.sum_eq
+
+/-! ## The `scanEdits`-mirrored segment induction and the top-level dual bound -/
+
+/-- **Segment induction.**  Over any suffix `cur` of the lowering order, the
+chain-canonicalised fuel sum is bounded by the original, provided the applied table
+`tbl` routes each block's lookup exactly as `scanEdits` does on `cur`.  The proof
+mirrors `scanEdits`: peel a fired chain (a contiguous run) and close it with
+`chainEdits_fuelBudget_le`; a non-firing front block is unedited (`F = G`); recurse
+on the remainder. -/
+theorem fuelBudget_segment_le {prog : Program} {ordered : List Block}
+    (hnd : (ordered.map Block.label).Nodup)
+    (hGall : ∀ b ∈ ordered, b.lower?.isSome)
+    {tbl : List (Label × Edit)}
+    (hFall : ∀ b ∈ ordered, (applyEdit tbl b).lower?.isSome) :
+    ∀ (fuel : Nat) (cur : List Block), cur.length ≤ fuel → cur <:+ ordered →
+      (∀ b ∈ cur, tbl.lookup b.label = (scanEdits prog fuel cur).lookup b.label) →
+      (cur.map (fun b => CompiledBlock.fuelBudget (applyEdit tbl b))).sum
+        ≤ (cur.map CompiledBlock.fuelBudget).sum := by
+  intro fuel
+  induction fuel with
+  | zero =>
+      intro cur hlen _ _
+      have : cur = [] := List.length_eq_zero_iff.mp (Nat.le_zero.mp hlen)
+      subst this; simp
+  | succ n ih =>
+      intro cur hlen hsuf hlook
+      cases cur with
+      | nil => simp
+      | cons b rest =>
+          -- labels of `cur` are nodup (suffix of the nodup lowering order)
+          have hcurnd : ((b :: rest).map Block.label).Nodup :=
+            (hsuf.sublist.map Block.label).nodup hnd
+          set chain := growChain prog b rest with hchdef
+          have hlenpos : 1 ≤ chain.length := by
+            rw [hchdef]; obtain ⟨tt, hcc⟩ := growChain_head prog b rest; rw [hcc]; simp
+          by_cases hlenc : 2 ≤ chain.length
+          · -- fired-length segment: `cur = chain ++ tailAfter`
+            set tailAfter := rest.drop (chain.length - 1) with htadef
+            have hscan : scanEdits prog (n + 1) (b :: rest)
+                = chainEdits chain ++ scanEdits prog n tailAfter := by
+              conv_lhs => rw [scanEdits]
+              simp only [← hchdef, ← htadef, if_pos hlenc]
+            have hcursplit : b :: rest = chain ++ tailAfter := by
+              obtain ⟨t, ht⟩ := growChain_prefix prog b rest
+              have htdrop : t = (b :: rest).drop chain.length := by
+                have hc := congrArg (List.drop chain.length) ht
+                rwa [List.drop_left] at hc
+              have hdc : (b :: rest).drop chain.length = rest.drop (chain.length - 1) := by
+                obtain ⟨m, hm⟩ : ∃ m, chain.length = m + 1 := ⟨chain.length - 1, by omega⟩
+                rw [hm]; simp
+              have htt : t = tailAfter := by rw [htdrop, hdc]
+              rw [← htt]; exact ht.symm
+            -- chain and tailAfter labels are disjoint (nodup of the split)
+            have hdisj : (chain.map Block.label).Disjoint (tailAfter.map Block.label) := by
+              have hh : ((chain ++ tailAfter).map Block.label).Nodup := by
+                rw [← hcursplit]; exact hcurnd
+              rw [List.map_append, List.nodup_append] at hh
+              intro a ha hb
+              exact hh.2.2 a ha a hb rfl
+            have hchainnd : (chain.map Block.label).Nodup := by
+              have : ((chain ++ tailAfter).map Block.label).Nodup := by rw [← hcursplit]; exact hcurnd
+              rw [List.map_append, List.nodup_append] at this; exact this.1
+            -- membership helpers
+            have hcmemcur : ∀ c ∈ chain, c ∈ b :: rest := fun c hc => by
+              rw [hcursplit]; exact List.mem_append_left _ hc
+            have htmemcur : ∀ t' ∈ tailAfter, t' ∈ b :: rest := fun t' ht' => by
+              rw [hcursplit]; exact List.mem_append_right _ ht'
+            -- `T_tail` lookup vanishes on chain labels (disjointness)
+            have hTtail_none : ∀ c ∈ chain,
+                (scanEdits prog n tailAfter).lookup c.label = none := by
+              intro c hc
+              rcases hh : (scanEdits prog n tailAfter).lookup c.label with _ | e'
+              · rfl
+              · exfalso
+                have hmem := lookup_mem hh
+                have hkt : c.label ∈ tailAfter.map Block.label :=
+                  (scanEdits_keys_sublist prog n tailAfter).subset
+                    (List.mem_map.mpr ⟨_, hmem, rfl⟩)
+                exact hdisj (List.mem_map.mpr ⟨c, hc, rfl⟩) hkt
+            -- routing: `tbl` agrees with `chainEdits chain` on chain labels
+            have hrw : ∀ c ∈ chain, applyEdit tbl c = applyEdit (chainEdits chain) c := by
+              intro c hc
+              have h1 : tbl.lookup c.label = (scanEdits prog (n + 1) (b :: rest)).lookup c.label :=
+                hlook c (hcmemcur c hc)
+              rw [hscan] at h1
+              have hlookeq : tbl.lookup c.label = (chainEdits chain).lookup c.label := by
+                rw [h1]
+                by_cases hkey : (chainEdits chain).lookup c.label = none
+                · rw [lookup_append_right hkey, hkey]; exact hTtail_none c hc
+                · obtain ⟨e, he⟩ := Option.ne_none_iff_exists'.mp hkey
+                  rw [lookup_append_left he, he]
+              unfold applyEdit; rw [hlookeq]
+            -- chain segment bound
+            have hchainseg :
+                (chain.map (fun c => CompiledBlock.fuelBudget (applyEdit tbl c))).sum
+                  ≤ (chain.map CompiledBlock.fuelBudget).sum := by
+              rw [List.map_congr_left (fun c hc => by rw [hrw c hc])]
+              by_cases hfired : chainEdits chain = []
+              · rw [hfired]; apply le_of_eq; simp only [applyEdit, List.lookup_nil]
+              · refine chainEdits_fuelBudget_le hlenc (hchdef ▸ growChain_chain' prog b rest)
+                  hfired hchainnd (fun c hc => hGall c (hsuf.subset (hcmemcur c hc))) ?_
+                intro c hc
+                have := hFall c (hsuf.subset (hcmemcur c hc))
+                rwa [hrw c hc] at this
+            -- tail recursion
+            have hlook_tail : ∀ t' ∈ tailAfter,
+                tbl.lookup t'.label = (scanEdits prog n tailAfter).lookup t'.label := by
+              intro t' ht'
+              have h1 := hlook t' (htmemcur t' ht')
+              rw [hscan] at h1
+              have hkey : (chainEdits chain).lookup t'.label = none := by
+                rcases hh : (chainEdits chain).lookup t'.label with _ | e'
+                · rfl
+                · exfalso
+                  have hmem := lookup_mem hh
+                  have hkc : t'.label ∈ chain.map Block.label :=
+                    (chainEdits_keys_sublist chain).subset (List.mem_map.mpr ⟨_, hmem, rfl⟩)
+                  exact hdisj hkc (List.mem_map.mpr ⟨t', ht', rfl⟩)
+              rwa [lookup_append_right hkey] at h1
+            have htailrec :
+                (tailAfter.map (fun b => CompiledBlock.fuelBudget (applyEdit tbl b))).sum
+                  ≤ (tailAfter.map CompiledBlock.fuelBudget).sum := by
+              refine ih tailAfter ?_ ?_ hlook_tail
+              · have hh : (b :: rest).length = chain.length + tailAfter.length := by
+                  rw [hcursplit, List.length_append]
+                simp only [List.length_cons] at hlen hh ⊢
+                omega
+              · have hs : tailAfter <:+ b :: rest := by
+                  rw [hcursplit]; exact List.suffix_append chain tailAfter
+                exact hs.trans hsuf
+            calc (( b :: rest).map (fun b => CompiledBlock.fuelBudget (applyEdit tbl b))).sum
+                = (chain.map (fun b => CompiledBlock.fuelBudget (applyEdit tbl b))).sum
+                    + (tailAfter.map (fun b => CompiledBlock.fuelBudget (applyEdit tbl b))).sum := by
+                  rw [hcursplit, List.map_append, List.sum_append]
+              _ ≤ (chain.map CompiledBlock.fuelBudget).sum
+                    + (tailAfter.map CompiledBlock.fuelBudget).sum :=
+                  Nat.add_le_add hchainseg htailrec
+              _ = ((b :: rest).map CompiledBlock.fuelBudget).sum := by
+                  rw [hcursplit, List.map_append, List.sum_append]
+          · -- non-firing front block `b`: unedited, then recurse on `rest`
+            have hscan : scanEdits prog (n + 1) (b :: rest) = scanEdits prog n rest := by
+              conv_lhs => rw [scanEdits]
+              simp only [← hchdef, if_neg hlenc]
+            have hbnd : b.label ∉ rest.map Block.label := by
+              simp only [List.map_cons, List.nodup_cons] at hcurnd; exact hcurnd.1
+            have hbnone : (scanEdits prog n rest).lookup b.label = none := by
+              rcases hh : (scanEdits prog n rest).lookup b.label with _ | e'
+              · rfl
+              · exfalso
+                have hmem := lookup_mem hh
+                exact hbnd ((scanEdits_keys_sublist prog n rest).subset
+                  (List.mem_map.mpr ⟨_, hmem, rfl⟩))
+            have hbid : applyEdit tbl b = b := by
+              have h1 := hlook b (List.mem_cons_self ..)
+              rw [hscan, hbnone] at h1
+              unfold applyEdit; rw [h1]
+            have hlook_rest : ∀ t' ∈ rest,
+                tbl.lookup t'.label = (scanEdits prog n rest).lookup t'.label := by
+              intro t' ht'
+              have h1 := hlook t' (List.mem_cons_of_mem _ ht')
+              rwa [hscan] at h1
+            have hrestrec :
+                (rest.map (fun b => CompiledBlock.fuelBudget (applyEdit tbl b))).sum
+                  ≤ (rest.map CompiledBlock.fuelBudget).sum := by
+              refine ih rest ?_ ((List.suffix_cons b rest).trans hsuf) hlook_rest
+              simp only [List.length_cons] at hlen; omega
+            simp only [List.map_cons, List.sum_cons, hbid]
+            exact Nat.add_le_add (le_refl _) hrestrec
+
+/-- If a whole program lowers, every one of its blocks lowers. -/
+theorem lower?_isSome_of_mem_blocks {p : Program} (h : p.lower?.isSome) {b : Block}
+    (hb : b ∈ p.blocks) : b.lower?.isSome := by
+  obtain ⟨code, hcode⟩ := Option.isSome_iff_exists.mp h
+  unfold Program.lower? at hcode
+  cases hord : p.blocksInLoweringOrder? with
+  | none => simp [hord] at hcode
+  | some ordered =>
+      simp [hord] at hcode
+      have hbo : b ∈ ordered := (Program.blocksInLoweringOrder?_perm hord).mem_iff.mp hb
+      obtain ⟨frag⟩ := Program.lowerBlocks?_fragment_of_mem hcode hbo
+      exact Option.isSome_iff_exists.mpr ⟨frag.code, frag.lower⟩
+
+/-- **The dual-hypothesis fuel bound (frontier item 3).**  If both the
+chain-canonicalised program and the source program lower, chain canonicalisation
+never increases the total compiled fuel budget. -/
+theorem fuelBudget_chainCanonProgram_le {program : Program}
+    (hUnique : program.LabelsUnique)
+    (hF : (chainCanonProgram program).lower?.isSome)
+    (hG : program.lower?.isSome) :
+    CompiledProgram.fuelBudget (chainCanonProgram program)
+      ≤ CompiledProgram.fuelBudget program := by
+  obtain ⟨gcode, hglow⟩ := Option.isSome_iff_exists.mp hG
+  unfold Program.lower? at hglow
+  cases hord : program.blocksInLoweringOrder? with
+  | none => simp [hord] at hglow
+  | some ordered =>
+      rw [fuelBudget_eq_sum_ordered hord, fuelBudget_chainCanonProgram_eq_sum_ordered hord]
+      have hperm := Program.blocksInLoweringOrder?_perm hord
+      have hnd : (ordered.map Block.label).Nodup := by
+        have hbnd : (program.blocks.map Block.label).Nodup :=
+          (Program.blockLabels_nodup_iff program).mpr hUnique
+        exact (hperm.map Block.label).nodup_iff.mp hbnd
+      have hGall : ∀ b ∈ ordered, b.lower?.isSome :=
+        fun b hb => lower?_isSome_of_mem_blocks hG (hperm.mem_iff.mpr hb)
+      have hFall : ∀ b ∈ ordered,
+          (applyEdit (editTable program) b).lower?.isSome := by
+        intro b hb
+        refine lower?_isSome_of_mem_blocks hF ?_
+        rw [chainCanonProgram_blocks]
+        exact List.mem_map.mpr ⟨b, hperm.mem_iff.mpr hb, rfl⟩
+      have hediteq : editTable program = scanEdits program program.blocks.length ordered := by
+        unfold editTable; rw [hord]
+      have hlook : ∀ b ∈ ordered, (editTable program).lookup b.label
+          = (scanEdits program program.blocks.length ordered).lookup b.label :=
+        fun b _ => by rw [hediteq]
+      have hlen : ordered.length ≤ program.blocks.length := by
+        rw [hperm.length_eq]
+      exact fuelBudget_segment_le hnd hGall hFall program.blocks.length ordered
+        hlen (List.suffix_refl _) hlook
 
 end ShuffleCanon
 end TypedCfg
