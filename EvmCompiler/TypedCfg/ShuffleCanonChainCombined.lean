@@ -510,6 +510,105 @@ theorem chain_feasibility_walk
         subst hm
         exact hReal_b
 
+/-! ## The residual-arithmetic bridge (head case): `hFeasO` from the feasibility walk
+
+The head-case discharge of `hFeasO` from the chain-runtime-feasibility invariant
+(`chain_feasibility_walk`).  A fired chain head `b0`'s residual is the whole chain's
+concatenated `bodyRunPositions` (`residual_flatMap_of_run`, since the fired chain is a
+residual run through its consumed successors).  Every residual position `p` therefore
+lies in some member `m`'s `bodyRunPositions`; by `bodyRunPositions_bound` (member
+typing) `p + 1 ≤ m.input.length`, and by `chain_feasibility_walk`
+`m.input.length ≤ s_mid.stack.length` — so `p + 1 ≤ s_mid.stack.length`. -/
+theorem residual_head_feasO
+    {source : Structured.Program}
+    {entryShapes : Structured.TypedCfgCompiler.ProcEntryShapes}
+    {cfg : TypedCfg.Program}
+    (context :
+      Structured.TypedCfgPreservation.Program.GeneratedContext source entryShapes cfg)
+    (hSourceWF : source.WF)
+    (hTyped : cfg.WellTyped) (hIndependent : cfg.ProgramCounterIndependent)
+    {b0 : Block} {hbody : List Instr} {hout : Shape} {s1 s_mid : EVMState}
+    (hb0mem : b0 ∈ (preChainProgram cfg).blocks)
+    (hlk : (editTable (preChainProgram cfg)).lookup b0.label = some (Edit.head hbody hout))
+    (hStep : SeamCombinedStepRelEff (source := source) (cfg := cfg)
+      context.calls b0.label s1 s_mid) :
+    ∀ p ∈ residual (preChainProgram cfg) b0.label, p + 1 ≤ s_mid.stack.length := by
+  set Q := preChainProgram cfg with hQdef
+  have hTypedQ : Q.WellTyped :=
+    seamCancelProgramEff_wellTyped
+      (peepholeProgram_wellTyped (normalizeProgram_wellTyped hTyped))
+  have hUnique : Q.LabelsUnique := hTypedQ.1
+  -- Fired-chain context for the head edit.
+  obtain ⟨ordered, b, rest, hord, hsuf, hlen, hmem, hsub⟩ :=
+    firedChainCtx (ShuffleCanon.lookup_mem hlk)
+  obtain ⟨hd, tl, hchain, _hbodyT, hcases⟩ := ShuffleCanon.chainEdits_fired hmem
+  -- The entry edit is the head edit ⟹ `b0 = hd` (the chain head).
+  have hb0label : b0.label = hd.label := by
+    rcases hcases with heq | ⟨C, _hC, hCeq⟩
+    · rw [Prod.mk.injEq] at heq; exact heq.1
+    · rw [Prod.mk.injEq] at hCeq; exact absurd hCeq.2 (by simp)
+  have hhdmem : hd ∈ Q.blocks :=
+    ShuffleCanon.growChain_mem_blocks hord hsuf (hchain ▸ List.mem_cons_self)
+  have hb0hd : b0 = hd := by
+    have h1 : Q.findBlock? b0.label = some b0 :=
+      Program.findBlock?_eq_some_of_mem hUnique hb0mem
+    rw [hb0label, Program.findBlock?_eq_some_of_mem hUnique hhdmem] at h1
+    exact ((Option.some.injEq _ _).mp h1).symm
+  have hgrowhead : ShuffleCanon.growChain Q b rest = b0 :: tl := by rw [hb0hd]; exact hchain
+  have hfired : ShuffleCanon.chainEdits (ShuffleCanon.growChain Q b rest) ≠ [] := by
+    intro he; rw [he] at hmem; exact absurd hmem (by simp)
+  -- `b0 = b` (both are the growChain head).
+  have hb0b : b0 = b := by
+    obtain ⟨tl0, hgh⟩ := ShuffleCanon.growChain_head Q b rest
+    rw [hgrowhead] at hgh; exact (List.cons.injEq .. ▸ hgh).1
+  -- `tl = B :: tl'`.
+  obtain ⟨B, tl', htleq⟩ : ∃ B tl', tl = B :: tl' := by
+    cases tl with
+    | nil => rw [hchain] at hlen; simp at hlen
+    | cons B tl' => exact ⟨B, tl', rfl⟩
+  subst htleq
+  -- `b0.term = jump B.label`, `B` consumed, last-block existence.
+  have hgc := ShuffleCanon.growChain_chain' Q b rest
+  rw [hgrowhead] at hgc
+  obtain ⟨hstepB, _⟩ := List.isChain_cons_cons.mp hgc
+  obtain ⟨htermB, _, _⟩ := ShuffleCanon.chainStep_spec hstepB
+  have hZlast : ∃ Z, (ShuffleCanon.growChain Q b rest).getLast? = some Z := by
+    cases hgl : (ShuffleCanon.growChain Q b rest).getLast? with
+    | none => rw [List.getLast?_eq_none_iff] at hgl; rw [hgl] at hgrowhead; simp at hgrowhead
+    | some Z => exact ⟨Z, rfl⟩
+  obtain ⟨Z, hZlast⟩ := hZlast
+  have hBconsumed : (editTable Q).lookup B.label
+      = some (Edit.consumed ((ShuffleCanon.growChain Q b rest).getLastD b0).output) :=
+    chain_tail_consumed hUnique hgrowhead hfired hsub List.mem_cons_self
+  have hRunTl : IsResidualRun Q (B :: tl') :=
+    isResidualRun_tail_suffix hUnique hord hsuf hgrowhead hfired hsub hZlast
+      (B :: tl') (List.suffix_refl _) (by simp)
+  have hRunFull : IsResidualRun Q (b0 :: B :: tl') :=
+    ⟨Program.findBlock?_eq_some_of_mem hUnique hb0mem, htermB, ⟨_, hBconsumed⟩, hRunTl⟩
+  have hlenFull : (b0 :: B :: tl').length ≤ Q.blocks.length := by
+    have h := chain_length_le_blocks hord hsuf
+    rw [hgrowhead] at h; exact h
+  have hresFull : residual Q b0.label = (b0 :: B :: tl').flatMap (fun b => bodyRunPositions b.body) :=
+    residual_flatMap_of_run hlenFull hRunFull
+  -- The chain-runtime-feasibility invariant over the whole chain.
+  have hfindcov : ∀ m ∈ ShuffleCanon.growChain Q b rest, Q.findBlock? m.label = some m :=
+    fun m hm => Program.findBlock?_eq_some_of_mem hUnique (ShuffleCanon.growChain_mem_blocks hord hsuf hm)
+  have hStepB : SeamCombinedStepRelEff (source := source) (cfg := cfg)
+      context.calls b.label s1 s_mid := by rw [← hb0b]; exact hStep
+  have hwalk := chain_feasibility_walk context hSourceWF hTyped hIndependent rest b hfindcov hStepB
+  -- Combine, position by position.
+  intro p hp
+  rw [hresFull, ← hgrowhead] at hp
+  obtain ⟨m, hmg, hpm⟩ := List.mem_flatMap.1 hp
+  have hmmem : m ∈ Q.blocks := ShuffleCanon.growChain_mem_blocks hord hsuf hmg
+  obtain ⟨ds, hds⟩ := Option.isSome_iff_exists.1 (chain_all_eligible hlen m hmg)
+  have hChain : ∀ i ∈ m.body, ChainInstr i := chainInstr_of_chainBodyDepths hds
+  have hmType : Block.bodyType? m.body m.input = some m.output :=
+    (blockWellTyped_of_mem hTypedQ.2.1 hmmem).1
+  have hbound := (bodyRunPositions_bound m.body hChain hmType p hpm).2
+  have hwbound := hwalk m hmg
+  omega
+
 end Peephole
 end TypedCfg
 end EvmCompiler
