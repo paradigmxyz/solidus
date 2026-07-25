@@ -2,9 +2,11 @@ import EvmCompiler.TypedCfg.Syntax
 import EvmCompiler.TypedCfg.Typing
 import EvmCompiler.TypedCfg.InteractionSemantics
 import EvmCompiler.TypedCfg.Certificate
+import EvmCompiler.Assembly.Compact
 
 /-!
-# Block-reorder canonicalisation (session-99, "the jump-threading vein")
+# Block-reorder canonicalisation (session-99/100, "the jump-threading vein";
+  session-101, the **policy-parameterised** successor relation)
 
 ## Empirical motivation (PEEPHOLE_PROGRESS §Session-99)
 
@@ -25,37 +27,54 @@ entry block first and otherwise keeps `program.blocks` list order verbatim
 already-adjacent chains but **never reorders**.
 
 So the entire block-merge vein reduces to one cfg-altitude lever: **reorder
-`program.blocks` so that unconditional-`jump` unique-successor edges become
-physically adjacent**, letting the frozen `prepare` consume them.  Semantically
-this is a *pure permutation* of the block list (blocks are label-addressed via
-`findBlock?`/`JUMPDEST`), with every block's `body`/`term`/`input`/`output`
-**verbatim** — far cheaper to justify than the `chainCanon`/shuffle-drop body
-rewrites.
+`program.blocks` so that cfg edges become physically adjacent**, letting the
+frozen `prepare` consume them.  Semantically this is a *pure permutation* of the
+block list (blocks are label-addressed via `findBlock?`/`JUMPDEST`), with every
+block's `body`/`term`/`input`/`output` **verbatim** — far cheaper to justify than
+the `chainCanon`/shuffle-drop body rewrites.
 
-## Measured reachability (§Session-99, the SOUND transform, not a deduced ceiling)
+## §Session-101: the successor policy was leaving 8 % of the bytes on the table
 
-Greedy fallthrough layout (`layoutBlocks` below), measured on 15 corpus contracts
-(60 % of corpus runtime bytes) through the real pipeline:
+The §99/§100 layout followed only `.jump` edges (`succLabel?` below).  But
+`Terminator.lowerAt?` lowers `.jumpi t n` to `[.jumpi t, .jump n]` — a *full*
+4-byte `PUSH2 n; JUMP` for the **fallthrough** arm — and the natural emission
+order of `Structured.TypedCfgCompiler` always puts the **taken** arm next
+(`.if_`: `head :: bodyResult.blocks`; `.for_`: `init ++ [loop] ++ body ++ post`;
+switch case: `test :: bodyEntry :: body ++ tail`), so the fallthrough block is
+*never* adjacent by accident.  A probe over the 36-contract runtime corpus
+measured **960 `.jumpi` terminators, of which exactly 0 had their fallthrough
+block physically next**, and 868 of those fallthroughs have `refCount = 1`
+(a guaranteed 4 B jump + 1 B `JUMPDEST` win each).  Likewise a
+`.returnDispatch` block ends its lowering with `.jump (sites.getLast?).target`,
+another free adjacency.
 
-* **891 B measured** total delta (2.05 % of the 43 496 B measured base);
-  extrapolates to ≈1 100–1 300 B / ≈ −1.5 %…−1.8 % corpus-wide.
-* Every measured reorder was a genuine permutation (`isPerm = true`) with
-  **zero** `.fallthrough` terminators (`ftTerms = 0`) ⟹ the reordered bytecode is
-  semantically equivalent (only PCs move; jumps re-resolve).
-* The §95 block-merge "≈2 300 B ceiling" (927 `PUSHn;JUMP;JUMPDEST` triples) is
-  itself a ≈4× mirage under the §98 discipline: the sound-reachable delta on the
-  worst-7 is 547 B, not 2 300 B — a block can fall through to only ONE successor,
-  and most surviving triples target multi-predecessor (`refCount ≥ 2`) blocks.
+Measured on the corpus (36 runtime objects, 54 786 B under the §100 layout):
 
-This is ≈110× the shuffle-drop live delta (8 B), sound, and proof-cheaper than
-`chainCanon`.  This module banks the **total transform + structural floor**
-(the §57/§95 "transform + structural kernels FIRST" pattern).  The deep
-preservation tower (block-multiset `Perm`, `findBlock?` permutation-congruence of
-the cfg operational semantics, `WellTyped`/PCI/fuel invariance, the OIC
-`_of_source` forward-refinement + the 8-site `CertifiedChoice` rewire) is the
-successor's frontier — see §Session-99.
+| policy                                    | Δ bytes | Δ %    |
+|-------------------------------------------|--------:|-------:|
+| §100 `.jump` only                         |       0 |  0.00 %|
+| + `refCount = 1` jumpi fallthrough        |  −4 321 | −7.89 %|
+| + any jumpi fallthrough                   |  −4 335 | −7.91 %|
+| + returnDispatch last-target chaining     |  −4 782 | −8.73 %|
+| + root-first seeding                      |  −4 924 | −8.99 %|
+| per-contract argmin over all of the above |  −4 924 | −8.99 %|
 
-This module is imported by nobody ⟹ it cannot touch the `compile_correct` cone.
+## Why the whole tower is policy-agnostic
+
+`Control.Program.step` reads the program **only** through `findBlock?`, so a
+transform that leaves every block verbatim and only permutes the list gets
+literal semantic equality for free.  *Nothing* in the preservation tower ever
+inspects the successor function: every proof discharges it by `split`/`cases`.
+So the successor relation and the chain seed order are taken as **arbitrary
+parameters** (`succ`, `extra`) throughout, and the shipped `reorderProgram`
+picks, per program, the candidate policy whose `Assembly.Compact` layout is
+smallest — deterministically, with the §100 policy at index 0 so the result can
+never be larger than what §100 shipped.  The single bridge lemma
+`reorderProgram_exists_policy` is `rfl`, and every §100-era conclusion is
+re-exported under its original name and signature.
+
+The size oracle `compactSize` has **no correctness role whatsoever**: it only
+selects which permutation is emitted, and *every* permutation is proved sound.
 -/
 
 namespace EvmCompiler.TypedCfg.BlockReorder
@@ -64,7 +83,8 @@ open EvmCompiler.TypedCfg
 open List
 
 /-- The unconditional-jump fallthrough candidate of a block: the target label of
-its terminator when that terminator is an unconditional `jump`. -/
+its terminator when that terminator is an unconditional `jump`.  This is the
+§100 successor policy, retained as candidate index 0. -/
 def succLabel? (b : Block) : Option Label :=
   match b.term with
   | .jump t => some t
@@ -76,8 +96,9 @@ def lookup? (blocks : List Block) (l : Label) : Option Block :=
   blocks.find? (fun b => b.label == l)
 
 /-- Grow one fallthrough chain from `start`: emit `start`, then follow its
-unconditional-`jump` successor while unplaced.  Fuel-bounded (total). -/
-def growLayout (blocks : List Block) :
+`succ`-successor while unplaced.  Fuel-bounded (total).  `succ` is an arbitrary
+successor policy — nothing below ever inspects it. -/
+def growLayoutWith (succ : Block → Option Label) (blocks : List Block) :
     Nat → Label → List Label → (List Block × List Label)
   | 0, _, placed => ([], placed)
   | fuel + 1, start, placed =>
@@ -87,47 +108,56 @@ def growLayout (blocks : List Block) :
         | none => ([], placed)
         | some b =>
             let placed := start :: placed
-            match succLabel? b with
+            match succ b with
             | some t =>
-                let (rest, placed) := growLayout blocks fuel t placed
+                let (rest, placed) := growLayoutWith succ blocks fuel t placed
                 (b :: rest, placed)
             | none => ([b], placed)
 
-/-- Greedy fallthrough-maximising block order: seed chains at the entry then at
-every block label in order, laying each block right after its unconditional-jump
-predecessor whenever possible. -/
-def layoutBlocks (p : Program) : List Block :=
-  let seeds := p.entry :: p.blocks.map (·.label)
-  (seeds.foldl
+/-- The canonical seed list: the entry, then every block label in list order.
+Every layout appends this suffix, which is what makes coverage unconditional. -/
+def baseSeeds (p : Program) : List Label :=
+  p.entry :: p.blocks.map Block.label
+
+/-- Greedy fallthrough-maximising block order under successor policy `succ`,
+seeded first at `extra` (an arbitrary priority prefix) and then at
+`baseSeeds p`. -/
+def layoutBlocksWith (succ : Block → Option Label) (extra : List Label)
+    (p : Program) : List Block :=
+  ((extra ++ baseSeeds p).foldl
     (fun (st : List Block × List Label) s =>
-      let g := growLayout p.blocks p.blocks.length s st.2
+      let g := growLayoutWith succ p.blocks p.blocks.length s st.2
       (st.1 ++ g.1, g.2))
     ([], [])).1
 
-/-- The whole-program block-reorder transform: permute `blocks`, everything else
-(entry, and each block verbatim) fixed. -/
-def reorderProgram (p : Program) : Program :=
-  { p with blocks := layoutBlocks p }
+/-- The whole-program block-reorder transform under an arbitrary policy:
+permute `blocks`, everything else (entry, and each block verbatim) fixed. -/
+def reorderProgramWith (succ : Block → Option Label) (extra : List Label)
+    (p : Program) : Program :=
+  { p with blocks := layoutBlocksWith succ extra p }
 
-@[simp] theorem reorderProgram_entry (p : Program) :
-    (reorderProgram p).entry = p.entry := rfl
+@[simp] theorem reorderProgramWith_entry (succ : Block → Option Label)
+    (extra : List Label) (p : Program) :
+    (reorderProgramWith succ extra p).entry = p.entry := rfl
 
-@[simp] theorem reorderProgram_blocks (p : Program) :
-    (reorderProgram p).blocks = layoutBlocks p := rfl
+@[simp] theorem reorderProgramWith_blocks (succ : Block → Option Label)
+    (extra : List Label) (p : Program) :
+    (reorderProgramWith succ extra p).blocks = layoutBlocksWith succ extra p :=
+  rfl
 
 /-- Structural floor (a): every block a chain emits is an original block,
 **verbatim** (bodies/terms/shapes untouched). -/
-theorem growLayout_mem (blocks : List Block) :
+theorem growLayoutWith_mem (succ : Block → Option Label) (blocks : List Block) :
     ∀ (fuel : Nat) (start : Label) (placed : List Label) (b : Block),
-      b ∈ (growLayout blocks fuel start placed).1 → b ∈ blocks := by
+      b ∈ (growLayoutWith succ blocks fuel start placed).1 → b ∈ blocks := by
   intro fuel
   induction fuel with
   | zero =>
       intro start placed b hb
-      simp [growLayout] at hb
+      simp [growLayoutWith] at hb
   | succ fuel ih =>
       intro start placed b hb
-      simp only [growLayout] at hb
+      simp only [growLayoutWith] at hb
       split at hb
       · simp at hb
       · split at hb
@@ -145,17 +175,18 @@ theorem growLayout_mem (blocks : List Block) :
             subst hb; exact hcMem
 
 /-- Structural floor (b): every laid-out block is an original block, verbatim. -/
-theorem layoutBlocks_mem (p : Program) {b : Block}
-    (hb : b ∈ layoutBlocks p) : b ∈ p.blocks := by
-  unfold layoutBlocks at hb
-  -- The fold accumulates `st.1 ++ rest`; each `rest ⊆ p.blocks` by `growLayout_mem`.
-  set seeds := p.entry :: p.blocks.map (·.label) with hseeds
+theorem layoutBlocksWith_mem (succ : Block → Option Label) (extra : List Label)
+    (p : Program) {b : Block}
+    (hb : b ∈ layoutBlocksWith succ extra p) : b ∈ p.blocks := by
+  unfold layoutBlocksWith at hb
+  -- The fold accumulates `st.1 ++ rest`; each `rest ⊆ p.blocks` by `growLayoutWith_mem`.
+  set seeds := extra ++ baseSeeds p with hseeds
   clear hseeds
   suffices H : ∀ (ss : List Label) (acc : List Block × List Label),
       (∀ x ∈ acc.1, x ∈ p.blocks) →
       ∀ y ∈ (ss.foldl
           (fun (st : List Block × List Label) s =>
-            let (rest, placed) := growLayout p.blocks p.blocks.length s st.2
+            let (rest, placed) := growLayoutWith succ p.blocks p.blocks.length s st.2
             (st.1 ++ rest, placed)) acc).1,
         y ∈ p.blocks by
     exact H seeds ([], []) (by intro x hx; simp at hx) b hb
@@ -167,16 +198,17 @@ theorem layoutBlocks_mem (p : Program) {b : Block}
       rw [List.foldl_cons] at hy
       refine ih _ ?_ y hy
       intro x hx
-      have hxa : x ∈ acc.1 ++ (growLayout p.blocks p.blocks.length s acc.2).1 := hx
+      have hxa : x ∈ acc.1 ++ (growLayoutWith succ p.blocks p.blocks.length s acc.2).1 := hx
       cases List.mem_append.mp hxa with
       | inl h => exact hacc x h
-      | inr h => exact growLayout_mem p.blocks p.blocks.length s acc.2 x h
+      | inr h => exact growLayoutWith_mem succ p.blocks p.blocks.length s acc.2 x h
 
 /-- Structural floor (c): the reordered program's blocks are all original,
 verbatim — the transform changes only the ORDER, never a block's contents. -/
-theorem reorderProgram_blocks_mem (p : Program) {b : Block}
-    (hb : b ∈ (reorderProgram p).blocks) : b ∈ p.blocks :=
-  layoutBlocks_mem p (by simpa using hb)
+theorem reorderProgramWith_blocks_mem (succ : Block → Option Label)
+    (extra : List Label) (p : Program) {b : Block}
+    (hb : b ∈ (reorderProgramWith succ extra p).blocks) : b ∈ p.blocks :=
+  layoutBlocksWith_mem succ extra p (by simpa using hb)
 
 /-! ## The equality core (session-100)
 
@@ -186,14 +218,14 @@ The reorder is a *pure permutation* of the block list, so the label-addressed
 `source.findBlock?`, this extensional equality is the whole semantic content of
 the reorder at the cfg altitude.  The chain is:
 
-* `growLayout_spec` — every chain emits `Nodup`, `placed`-disjoint labels and the
-  outgoing `placed` set is exactly the incoming set plus the emitted labels;
+* `growLayoutWith_spec` — every chain emits `Nodup`, `placed`-disjoint labels and
+  the outgoing `placed` set is exactly the incoming set plus the emitted labels;
 * `foldLabels_spec` / `foldl_seed_mem` — the layout fold is `Nodup` and covers
   every original block label;
-* `layoutBlocks_coverage` + the banked `layoutBlocks_mem` — block membership is
-  preserved *both ways* (a genuine permutation);
-* `reorderProgram_blocks_perm`, `reorderProgram_labelsUnique`, and
-  `findBlock?_reorderProgram` — the observable conclusions.
+* `layoutBlocksWith_coverage` + the banked `layoutBlocksWith_mem` — block
+  membership is preserved *both ways* (a genuine permutation);
+* `reorderProgramWith_blocks_perm`, `reorderProgramWith_labelsUnique`, and
+  `findBlock?_reorderProgramWith` — the observable conclusions.
 -/
 
 /-- `lookup?` returns a block whose label is the queried one. -/
@@ -204,24 +236,24 @@ theorem lookup?_label {blocks : List Block} {l : Label} {b : Block}
   simp only [beq_iff_eq] at hp
   exact hp
 
-/-- Master `growLayout` invariant: the emitted blocks' labels are `Nodup`, each
-emitted label is disjoint from the incoming `placed` set, and the outgoing
+/-- Master `growLayoutWith` invariant: the emitted blocks' labels are `Nodup`,
+each emitted label is disjoint from the incoming `placed` set, and the outgoing
 `placed` set is exactly the incoming set plus the emitted labels. -/
-theorem growLayout_spec (blocks : List Block) :
+theorem growLayoutWith_spec (succ : Block → Option Label) (blocks : List Block) :
     ∀ (fuel : Nat) (start : Label) (placed : List Label),
-      ((growLayout blocks fuel start placed).1.map Block.label).Nodup ∧
-      (∀ b' ∈ (growLayout blocks fuel start placed).1, b'.label ∉ placed) ∧
-      (∀ l, l ∈ (growLayout blocks fuel start placed).2 ↔
-          l ∈ (growLayout blocks fuel start placed).1.map Block.label ∨
+      ((growLayoutWith succ blocks fuel start placed).1.map Block.label).Nodup ∧
+      (∀ b' ∈ (growLayoutWith succ blocks fuel start placed).1, b'.label ∉ placed) ∧
+      (∀ l, l ∈ (growLayoutWith succ blocks fuel start placed).2 ↔
+          l ∈ (growLayoutWith succ blocks fuel start placed).1.map Block.label ∨
             l ∈ placed) := by
   intro fuel
   induction fuel with
   | zero =>
       intro start placed
-      simp [growLayout]
+      simp [growLayoutWith]
   | succ fuel ih =>
       intro start placed
-      rw [growLayout]
+      rw [growLayoutWith]
       split
       · simp
       · rename_i hcns
@@ -234,7 +266,7 @@ theorem growLayout_spec (blocks : List Block) :
           split
           · rename_i t _hs
             obtain ⟨ihNodup, ihDisj, ihPlaced⟩ := ih t (start :: placed)
-            cases hg : growLayout blocks fuel t (start :: placed) with
+            cases hg : growLayoutWith succ blocks fuel t (start :: placed) with
             | mk rest placed' =>
                 rw [hg] at ihNodup ihDisj ihPlaced
                 simp only [hg]
@@ -268,18 +300,19 @@ theorem growLayout_spec (blocks : List Block) :
 
 /-- Fold invariant: the outgoing `placed` set tracks exactly the emitted-block
 labels, and those labels are `Nodup`. -/
-theorem foldLabels_spec (blocks : List Block) (n : Nat) :
+theorem foldLabels_spec (succ : Block → Option Label) (blocks : List Block)
+    (n : Nat) :
     ∀ (ss : List Label) (acc : List Block × List Label),
       (∀ l, l ∈ acc.2 ↔ l ∈ acc.1.map Block.label) →
       (acc.1.map Block.label).Nodup →
       (∀ l, l ∈ (ss.foldl (fun st s =>
-                  let g := growLayout blocks n s st.2
+                  let g := growLayoutWith succ blocks n s st.2
                   (st.1 ++ g.1, g.2)) acc).2 ↔
             l ∈ (ss.foldl (fun st s =>
-                  let g := growLayout blocks n s st.2
+                  let g := growLayoutWith succ blocks n s st.2
                   (st.1 ++ g.1, g.2)) acc).1.map Block.label) ∧
       ((ss.foldl (fun st s =>
-                  let g := growLayout blocks n s st.2
+                  let g := growLayoutWith succ blocks n s st.2
                   (st.1 ++ g.1, g.2)) acc).1.map Block.label).Nodup := by
   intro ss
   induction ss with
@@ -289,11 +322,11 @@ theorem foldLabels_spec (blocks : List Block) (n : Nat) :
       rw [List.foldl_cons]
       apply ih
       · intro l
-        obtain ⟨_gN, gD, gP⟩ := growLayout_spec blocks n s acc.2
+        obtain ⟨_gN, gD, gP⟩ := growLayoutWith_spec succ blocks n s acc.2
         dsimp only
         rw [gP l, h1 l, List.map_append, List.mem_append]
         tauto
-      · obtain ⟨gN, gD, _gP⟩ := growLayout_spec blocks n s acc.2
+      · obtain ⟨gN, gD, _gP⟩ := growLayoutWith_spec succ blocks n s acc.2
         dsimp only
         rw [List.map_append]
         apply List.Nodup.append h2 gN
@@ -304,28 +337,30 @@ theorem foldLabels_spec (blocks : List Block) (n : Nat) :
         rw [← hb'eq] at haAcc2
         exact gD b' hb'g haAcc2
 
-/-- One `growLayout` chain seeded at `start` places `start` whenever the block
-exists and there is fuel. -/
-theorem growLayout_start_mem (blocks : List Block) {n : Nat} (hn : 0 < n)
+/-- One `growLayoutWith` chain seeded at `start` places `start` whenever the
+block exists and there is fuel. -/
+theorem growLayoutWith_start_mem (succ : Block → Option Label)
+    (blocks : List Block) {n : Nat} (hn : 0 < n)
     (start : Label) (placed : List Label) {b : Block}
     (hlk : lookup? blocks start = some b) :
-    start ∈ (growLayout blocks n start placed).2 := by
+    start ∈ (growLayoutWith succ blocks n start placed).2 := by
   obtain ⟨fuel, rfl⟩ := Nat.exists_eq_succ_of_ne_zero (Nat.pos_iff_ne_zero.mp hn)
-  obtain ⟨_, _, gP⟩ := growLayout_spec blocks (fuel + 1) start placed
+  obtain ⟨_, _, gP⟩ := growLayoutWith_spec succ blocks (fuel + 1) start placed
   rw [gP start]
   by_cases hc : placed.contains start
   · exact Or.inr (List.contains_iff_mem.mp hc)
   · left
     have hblabel : b.label = start := lookup?_label hlk
-    simp only [growLayout, if_neg hc, hlk]
-    cases succLabel? b <;> simp [hblabel]
+    simp only [growLayoutWith, if_neg hc, hlk]
+    cases succ b <;> simp [hblabel]
 
 /-- The fold's `placed` set is monotone. -/
-theorem foldl_placed_mono (blocks : List Block) (n : Nat) :
+theorem foldl_placed_mono (succ : Block → Option Label) (blocks : List Block)
+    (n : Nat) :
     ∀ (ss : List Label) (acc : List Block × List Label) (l : Label),
       l ∈ acc.2 →
       l ∈ (ss.foldl (fun st s =>
-              let g := growLayout blocks n s st.2
+              let g := growLayoutWith succ blocks n s st.2
               (st.1 ++ g.1, g.2)) acc).2 := by
   intro ss
   induction ss with
@@ -334,16 +369,17 @@ theorem foldl_placed_mono (blocks : List Block) (n : Nat) :
       intro acc l hl
       rw [List.foldl_cons]
       apply ih
-      obtain ⟨_, _, gP⟩ := growLayout_spec blocks n s acc.2
+      obtain ⟨_, _, gP⟩ := growLayoutWith_spec succ blocks n s acc.2
       dsimp only
       exact (gP l).mpr (Or.inr hl)
 
 /-- Every seed with an existing block ends up placed after the whole fold. -/
-theorem foldl_seed_mem (blocks : List Block) {n : Nat} (hn : 0 < n) :
+theorem foldl_seed_mem (succ : Block → Option Label) (blocks : List Block)
+    {n : Nat} (hn : 0 < n) :
     ∀ (ss : List Label) (acc : List Block × List Label) (s : Label) {b : Block},
       s ∈ ss → lookup? blocks s = some b →
       s ∈ (ss.foldl (fun st x =>
-              let g := growLayout blocks n x st.2
+              let g := growLayoutWith succ blocks n x st.2
               (st.1 ++ g.1, g.2)) acc).2 := by
   intro ss
   induction ss with
@@ -353,16 +389,19 @@ theorem foldl_seed_mem (blocks : List Block) {n : Nat} (hn : 0 < n) :
       rw [List.foldl_cons]
       rcases List.mem_cons.mp hmem with h | h
       · subst h
-        apply foldl_placed_mono blocks n rest
+        apply foldl_placed_mono succ blocks n rest
         dsimp only
-        exact growLayout_start_mem blocks hn s acc.2 hlk
+        exact growLayoutWith_start_mem succ blocks hn s acc.2 hlk
       · exact ih _ s h hlk
 
-/-- Coverage: every original block is laid out. -/
-theorem layoutBlocks_coverage (p : Program) (h : p.LabelsUnique)
-    {b0 : Block} (hb0 : b0 ∈ p.blocks) : b0 ∈ layoutBlocks p := by
-  have hseed : b0.label ∈ (p.entry :: p.blocks.map Block.label) :=
-    List.mem_cons_of_mem _ (List.mem_map.mpr ⟨b0, hb0, rfl⟩)
+/-- Coverage: every original block is laid out — for **any** successor policy and
+**any** seed prefix, because `baseSeeds p` is always a suffix of the seed list. -/
+theorem layoutBlocksWith_coverage (succ : Block → Option Label)
+    (extra : List Label) (p : Program) (h : p.LabelsUnique)
+    {b0 : Block} (hb0 : b0 ∈ p.blocks) : b0 ∈ layoutBlocksWith succ extra p := by
+  have hseed : b0.label ∈ extra ++ baseSeeds p :=
+    List.mem_append_right _
+      (List.mem_cons_of_mem _ (List.mem_map.mpr ⟨b0, hb0, rfl⟩))
   have hlk : lookup? p.blocks b0.label = some b0 := by
     unfold lookup?
     have := Program.findBlock?_eq_some_of_mem h hb0
@@ -370,19 +409,19 @@ theorem layoutBlocks_coverage (p : Program) (h : p.LabelsUnique)
     exact this
   have hpos : 0 < p.blocks.length := List.length_pos_of_mem hb0
   have hin : b0.label ∈
-      ((p.entry :: p.blocks.map Block.label).foldl (fun st x =>
-          let g := growLayout p.blocks p.blocks.length x st.2
+      ((extra ++ baseSeeds p).foldl (fun st x =>
+          let g := growLayoutWith succ p.blocks p.blocks.length x st.2
           (st.1 ++ g.1, g.2)) ([], [])).2 :=
-    foldl_seed_mem p.blocks hpos _ ([], []) b0.label hseed hlk
+    foldl_seed_mem succ p.blocks hpos _ ([], []) b0.label hseed hlk
   obtain ⟨hH1, _hND⟩ :=
-    foldLabels_spec p.blocks p.blocks.length (p.entry :: p.blocks.map Block.label)
+    foldLabels_spec succ p.blocks p.blocks.length (extra ++ baseSeeds p)
       ([], []) (by intro l; simp) (by simp)
-  have hlab : b0.label ∈ (layoutBlocks p).map Block.label := by
+  have hlab : b0.label ∈ (layoutBlocksWith succ extra p).map Block.label := by
     have := (hH1 b0.label).mp hin
-    simpa [layoutBlocks] using this
+    simpa [layoutBlocksWith] using this
   rw [List.mem_map] at hlab
   obtain ⟨b', hb'mem, hb'eq⟩ := hlab
-  have hb'p : b' ∈ p.blocks := layoutBlocks_mem p hb'mem
+  have hb'p : b' ∈ p.blocks := layoutBlocksWith_mem succ extra p hb'mem
   have hbb : b' = b0 := by
     have h1 := Program.findBlock?_eq_some_of_mem h hb'p
     have h2 := Program.findBlock?_eq_some_of_mem h hb0
@@ -392,52 +431,58 @@ theorem layoutBlocks_coverage (p : Program) (h : p.LabelsUnique)
   rw [← hbb]; exact hb'mem
 
 /-- The reordered program's block labels are `Nodup` (uniquely labelled). -/
-theorem layoutBlocks_labels_nodup (p : Program) :
-    ((layoutBlocks p).map Block.label).Nodup := by
-  have := (foldLabels_spec p.blocks p.blocks.length
-    (p.entry :: p.blocks.map Block.label) ([], [])
+theorem layoutBlocksWith_labels_nodup (succ : Block → Option Label)
+    (extra : List Label) (p : Program) :
+    ((layoutBlocksWith succ extra p).map Block.label).Nodup := by
+  have := (foldLabels_spec succ p.blocks p.blocks.length
+    (extra ++ baseSeeds p) ([], [])
     (by intro l; simp) (by simp)).2
-  simpa [layoutBlocks] using this
+  simpa [layoutBlocksWith] using this
 
 /-- The reorder preserves whole-program `LabelsUnique`. -/
-theorem reorderProgram_labelsUnique (p : Program) :
-    (reorderProgram p).LabelsUnique := by
+theorem reorderProgramWith_labelsUnique (succ : Block → Option Label)
+    (extra : List Label) (p : Program) :
+    (reorderProgramWith succ extra p).LabelsUnique := by
   rw [← Program.blockLabels_nodup_iff]
-  simpa [reorderProgram] using layoutBlocks_labels_nodup p
+  simpa [reorderProgramWith] using layoutBlocksWith_labels_nodup succ extra p
 
 /-- Block-membership is preserved exactly (both directions ⟹ a permutation). -/
-theorem layoutBlocks_mem_iff (p : Program) (h : p.LabelsUnique) {b : Block} :
-    b ∈ layoutBlocks p ↔ b ∈ p.blocks :=
-  ⟨fun hb => layoutBlocks_mem p hb, fun hb => layoutBlocks_coverage p h hb⟩
+theorem layoutBlocksWith_mem_iff (succ : Block → Option Label)
+    (extra : List Label) (p : Program) (h : p.LabelsUnique) {b : Block} :
+    b ∈ layoutBlocksWith succ extra p ↔ b ∈ p.blocks :=
+  ⟨fun hb => layoutBlocksWith_mem succ extra p hb,
+   fun hb => layoutBlocksWith_coverage succ extra p h hb⟩
 
 /-- The block list is a genuine permutation. -/
-theorem reorderProgram_blocks_perm (p : Program) (h : p.LabelsUnique) :
-    (reorderProgram p).blocks.Perm p.blocks := by
-  rw [reorderProgram_blocks]
-  have hnd1 : (layoutBlocks p).Nodup :=
-    (layoutBlocks_labels_nodup p).of_map _
+theorem reorderProgramWith_blocks_perm (succ : Block → Option Label)
+    (extra : List Label) (p : Program) (h : p.LabelsUnique) :
+    (reorderProgramWith succ extra p).blocks.Perm p.blocks := by
+  rw [reorderProgramWith_blocks]
+  have hnd1 : (layoutBlocksWith succ extra p).Nodup :=
+    (layoutBlocksWith_labels_nodup succ extra p).of_map _
   have hnd2 : p.blocks.Nodup :=
     (Program.blockLabels_nodup_iff p |>.mpr h).of_map _
   exact (List.perm_ext_iff_of_nodup hnd1 hnd2).mpr
-    (fun b => layoutBlocks_mem_iff p h)
+    (fun b => layoutBlocksWith_mem_iff succ extra p h)
 
 /-- **THE EQUALITY CORE.**  `findBlock?` is extensionally unchanged by the
 reorder — hence every cfg observation that reads `source` only through
 `findBlock?` is literally invariant. -/
-theorem findBlock?_reorderProgram (p : Program) (h : p.LabelsUnique) :
-    ∀ l, (reorderProgram p).findBlock? l = p.findBlock? l := by
+theorem findBlock?_reorderProgramWith (succ : Block → Option Label)
+    (extra : List Label) (p : Program) (h : p.LabelsUnique) :
+    ∀ l, (reorderProgramWith succ extra p).findBlock? l = p.findBlock? l := by
   intro l
   cases hp : p.findBlock? l with
   | none =>
-      cases hr : (reorderProgram p).findBlock? l with
+      cases hr : (reorderProgramWith succ extra p).findBlock? l with
       | none => rfl
       | some b' =>
           exfalso
-          have hb'mem : b' ∈ (reorderProgram p).blocks :=
+          have hb'mem : b' ∈ (reorderProgramWith succ extra p).blocks :=
             List.mem_of_find?_eq_some hr
           have hb'lab : b'.label = l := by
             have := List.find?_some hr; simpa using this
-          have hb'p : b' ∈ p.blocks := reorderProgram_blocks_mem p hb'mem
+          have hb'p : b' ∈ p.blocks := reorderProgramWith_blocks_mem succ extra p hb'mem
           have hcontra := Program.findBlock?_eq_some_of_mem h hb'p
           rw [hb'lab, hp] at hcontra
           exact absurd hcontra (by simp)
@@ -445,10 +490,11 @@ theorem findBlock?_reorderProgram (p : Program) (h : p.LabelsUnique) :
       have hbmem : b ∈ p.blocks := List.mem_of_find?_eq_some hp
       have hblab : b.label = l := by
         have := List.find?_some hp; simpa using this
-      have hbr : b ∈ (reorderProgram p).blocks := by
-        rw [reorderProgram_blocks]; exact layoutBlocks_coverage p h hbmem
+      have hbr : b ∈ (reorderProgramWith succ extra p).blocks := by
+        rw [reorderProgramWith_blocks]; exact layoutBlocksWith_coverage succ extra p h hbmem
       have hres :=
-        Program.findBlock?_eq_some_of_mem (reorderProgram_labelsUnique p) hbr
+        Program.findBlock?_eq_some_of_mem
+          (reorderProgramWith_labelsUnique succ extra p) hbr
       rw [hblab] at hres
       exact hres
 
@@ -456,7 +502,7 @@ theorem findBlock?_reorderProgram (p : Program) (h : p.LabelsUnique) :
 
 Because `Control.Program.step` reads `program` **only** through
 `program.findBlock?`, and `findBlock?` is extensionally preserved
-(`findBlock?_reorderProgram`), the whole-program CFG operational semantics is
+(`findBlock?_reorderProgramWith`), the whole-program CFG operational semantics is
 **literally equal** under the reorder — no simulation/step-relation is needed
 (contrast the `chainCanon` `ChainCombinedStepRelEff` machinery, which exists only
 because chain-canon rewrites block bodies).  This realizes the §99 frontier
@@ -506,27 +552,321 @@ theorem runNWithStopAs_findBlock_congr {M : Type → Type} {Result : Type}
       | invalid state' => rfl
 
 /-- The whole-program CFG run is literally unchanged by the reorder. -/
-theorem openRunN_reorderProgram (Q : Program) (h : Q.LabelsUnique)
+theorem openRunN_reorderProgramWith (succ : Block → Option Label)
+    (extra : List Label) (Q : Program) (h : Q.LabelsUnique)
     (fuel : Nat) (label : Label) (state : EVMState) :
-    InteractionSemantics.Program.openRunN (reorderProgram Q) fuel label state =
+    InteractionSemantics.Program.openRunN (reorderProgramWith succ extra Q)
+        fuel label state =
       InteractionSemantics.Program.openRunN Q fuel label state := by
   unfold InteractionSemantics.Program.openRunN
     InteractionSemantics.Program.openRunNWithStop
     Control.Program.runNWithStop
   exact runNWithStopAs_findBlock_congr _ _ _ _
-    (findBlock?_reorderProgram Q h) fuel label state
+    (findBlock?_reorderProgramWith succ extra Q h) fuel label state
 
 /-- The canonical finite-prefix CFG semantics is literally unchanged — the
 reorder analog of `openRunNPrefix_chainCombinedEff_congr_of_source`, but an
 **equality** rather than a relation. -/
+theorem openRunNPrefix_reorderProgramWith (succ : Block → Option Label)
+    (extra : List Label) (Q : Program) (h : Q.LabelsUnique)
+    (fuel : Nat) (label : Label) (state : EVMState) :
+    InteractionSemantics.Program.openRunNPrefix (reorderProgramWith succ extra Q)
+        fuel label state =
+      InteractionSemantics.Program.openRunNPrefix Q fuel label state := by
+  unfold InteractionSemantics.Program.openRunNPrefix
+  rw [openRunN_reorderProgramWith succ extra Q h]
+
+/-- The result-carrying stopped run is literally unchanged. -/
+theorem openRunNResultWithStop_reorderProgramWith (succ : Block → Option Label)
+    (extra : List Label) (Q : Program) (h : Q.LabelsUnique)
+    (stopJump : Label → EVMState → Bool)
+    (fuel : Nat) (label : Label) (state : EVMState) :
+    InteractionSemantics.Program.openRunNResultWithStop stopJump
+        (reorderProgramWith succ extra Q) fuel label state =
+      InteractionSemantics.Program.openRunNResultWithStop stopJump
+        Q fuel label state := by
+  unfold InteractionSemantics.Program.openRunNResultWithStop
+    Control.Program.runNResultWithStop
+  exact runNWithStopAs_findBlock_congr _ _ _ _
+    (findBlock?_reorderProgramWith succ extra Q h) fuel label state
+
+/-- One open CFG step is literally unchanged by the reorder. -/
+theorem openStep_reorderProgramWith (succ : Block → Option Label)
+    (extra : List Label) (Q : Program) (h : Q.LabelsUnique)
+    (label : Label) (state : EVMState) :
+    InteractionSemantics.Program.openStep (reorderProgramWith succ extra Q)
+        label state =
+      InteractionSemantics.Program.openStep Q label state := by
+  unfold InteractionSemantics.Program.openStep
+  exact step_findBlock_congr _ (findBlock?_reorderProgramWith succ extra Q h) label state
+
+/-! ## Static-gate preservation (permutation-invariant folds) -/
+
+/-- `labelShape?` is preserved (it reads the program only through `findBlock?`). -/
+theorem labelShape?_reorderProgramWith (succ : Block → Option Label)
+    (extra : List Label) (Q : Program) (h : Q.LabelsUnique) :
+    ∀ l, (reorderProgramWith succ extra Q).labelShape? l = Q.labelShape? l := by
+  intro l
+  unfold Program.labelShape?
+  rw [findBlock?_reorderProgramWith succ extra Q h]
+
+/-- Block typing is preserved (it reads the program only through `labelShape?`). -/
+theorem block_wellTyped_reorderProgramWith (succ : Block → Option Label)
+    (extra : List Label) (Q : Program) (h : Q.LabelsUnique) (b : Block) :
+    Block.WellTyped (reorderProgramWith succ extra Q) b ↔ Block.WellTyped Q b := by
+  unfold Block.WellTyped Terminator.type?
+  rw [show (reorderProgramWith succ extra Q).labelShape? = Q.labelShape? from
+        funext (labelShape?_reorderProgramWith succ extra Q h)]
+
+/-- `AllBlocksTyped` is preserved. -/
+theorem allBlocksTyped_reorderProgramWith (succ : Block → Option Label)
+    (extra : List Label) (Q : Program) (h : Q.LabelsUnique)
+    (hA : Q.AllBlocksTyped) : (reorderProgramWith succ extra Q).AllBlocksTyped := by
+  unfold Program.AllBlocksTyped at hA ⊢
+  rw [List.forall_iff_forall_mem] at hA ⊢
+  intro b hb
+  exact (block_wellTyped_reorderProgramWith succ extra Q h b).mpr
+    (hA b (reorderProgramWith_blocks_mem succ extra Q hb))
+
+/-- `EmittedLabels` is a permutation of the original. -/
+theorem emittedLabels_reorderProgramWith_perm (succ : Block → Option Label)
+    (extra : List Label) (Q : Program) (h : Q.LabelsUnique) :
+    (reorderProgramWith succ extra Q).EmittedLabels.Perm Q.EmittedLabels := by
+  unfold Program.EmittedLabels
+  exact (reorderProgramWith_blocks_perm succ extra Q h).flatMap_right _
+
+/-- `EmittedLabelsUnique` is preserved (`Nodup` is permutation-invariant). -/
+theorem emittedLabelsUnique_reorderProgramWith (succ : Block → Option Label)
+    (extra : List Label) (Q : Program) (h : Q.LabelsUnique)
+    (hE : Q.EmittedLabelsUnique) :
+    (reorderProgramWith succ extra Q).EmittedLabelsUnique := by
+  unfold Program.EmittedLabelsUnique at hE ⊢
+  exact (emittedLabels_reorderProgramWith_perm succ extra Q h).nodup_iff.mpr hE
+
+/-- The entry block still exists. -/
+theorem findBlock?_entry_reorderProgramWith (succ : Block → Option Label)
+    (extra : List Label) (Q : Program) (h : Q.LabelsUnique)
+    (hE : Q.findBlock? Q.entry ≠ none) :
+    (reorderProgramWith succ extra Q).findBlock?
+      (reorderProgramWith succ extra Q).entry ≠ none := by
+  rw [reorderProgramWith_entry, findBlock?_reorderProgramWith succ extra Q h]
+  exact hE
+
+/-- **`WellTyped` is preserved by the reorder.** -/
+theorem wellTyped_reorderProgramWith (succ : Block → Option Label)
+    (extra : List Label) (Q : Program) (hW : Q.WellTyped) :
+    (reorderProgramWith succ extra Q).WellTyped := by
+  obtain ⟨hU, hA, hEntry, hEmit⟩ := hW
+  exact ⟨reorderProgramWith_labelsUnique succ extra Q,
+    allBlocksTyped_reorderProgramWith succ extra Q hU hA,
+    findBlock?_entry_reorderProgramWith succ extra Q hU hEntry,
+    emittedLabelsUnique_reorderProgramWith succ extra Q hU hEmit⟩
+
+/-- **`ProgramCounterIndependent` is preserved** (a per-block, program-free
+predicate — only block membership matters). -/
+theorem programCounterIndependent_reorderProgramWith (succ : Block → Option Label)
+    (extra : List Label) (Q : Program) (hP : Q.ProgramCounterIndependent) :
+    (reorderProgramWith succ extra Q).ProgramCounterIndependent := by
+  unfold Program.ProgramCounterIndependent at hP ⊢
+  rw [List.forall_iff_forall_mem] at hP ⊢
+  intro b hb
+  exact hP b (reorderProgramWith_blocks_mem succ extra Q hb)
+
+/-- **The fuel budget is exactly preserved** (a `.sum` over the permuted
+blocks — even sharper than `chainCanon`'s `≤`). -/
+theorem fuelBudget_reorderProgramWith_eq (succ : Block → Option Label)
+    (extra : List Label) (Q : Program) (h : Q.LabelsUnique) :
+    InteractionSemantics.CompiledProgram.fuelBudget (reorderProgramWith succ extra Q) =
+      InteractionSemantics.CompiledProgram.fuelBudget Q := by
+  unfold InteractionSemantics.CompiledProgram.fuelBudget
+  exact ((reorderProgramWith_blocks_perm succ extra Q h).map
+    InteractionSemantics.CompiledBlock.fuelBudget).sum_nat
+
+/-! ## §Session-101: the candidate policies and the deterministic size argmin
+
+Everything below is **selection machinery only**.  It decides *which* sound
+permutation is emitted; it can never affect soundness, because every conclusion
+above is universally quantified over `succ` and `extra`. -/
+
+/-- Sentinel "infinitely large" program size, used when a candidate does not
+lower at all (such a candidate can then never win the argmin). -/
+def sizeUnavailable : Nat := 1 <<< 60
+
+/-- A byte-exact model of the frozen serializer's physical code length: the
+`Assembly.Compact` layout of `Compact.prepare (p.lower?)` at the branch width
+the serializer itself would choose.  Purely a **selection heuristic** — it has
+no correctness role and appears in no theorem statement. -/
+def compactSize (p : Program) : Nat :=
+  match p.lower? with
+  | none => sizeUnavailable
+  | some code =>
+      let physical := Assembly.Compact.prepare code
+      match Assembly.Compact.branchWidthFor? [] physical with
+      | none => sizeUnavailable
+      | some width =>
+          match Assembly.Compact.layout? [] physical width with
+          | none => sizeUnavailable
+          | some (_, codeLength) => codeLength
+
+/-- How many times each label is referenced as a terminator target, as a map
+(the `Peephole.refCount` fold, batched).  Closed over by the `refCount = 1`
+policies; incurs **zero** proof obligation because `succ` is arbitrary. -/
+def refCountMap (p : Program) : Std.HashMap Label Nat :=
+  p.blocks.foldl
+    (fun m b =>
+      b.term.targets.foldl (fun m t => m.insert t ((m.getD t 0) + 1)) m)
+    (Std.HashMap.emptyWithCapacity (2 * p.blocks.length))
+
+/-- Policy: `.jump` targets, plus the fallthrough arm of a `.jumpi` whose target
+has a single predecessor (the guaranteed 4 B + 1 B win). -/
+def succJumpOrRc1JumpiFall (rc : Std.HashMap Label Nat) (b : Block) :
+    Option Label :=
+  match b.term with
+  | .jump t => some t
+  | .jumpi _ n => if rc.getD n 0 == 1 then some n else none
+  | _ => none
+
+/-- Policy: `.jump` targets, plus the fallthrough arm of every `.jumpi`. -/
+def succJumpOrJumpiFall (b : Block) : Option Label :=
+  match b.term with
+  | .jump t => some t
+  | .jumpi _ n => some n
+  | _ => none
+
+/-- Policy: as `succJumpOrRc1JumpiFall`, plus the last dispatch site's target
+(a `.returnDispatch` block's lowering ends with `jump (sites.getLast?).target`). -/
+def succJumpOrRc1JumpiFallOrDispatch (rc : Std.HashMap Label Nat) (b : Block) :
+    Option Label :=
+  match b.term with
+  | .jump t => some t
+  | .jumpi _ n => if rc.getD n 0 == 1 then some n else none
+  | .returnDispatch _ sites => (sites.getLast?).map ReturnSite.target
+  | _ => none
+
+/-- Policy: as `succJumpOrJumpiFall`, plus the last dispatch site's target. -/
+def succJumpOrJumpiFallOrDispatch (b : Block) : Option Label :=
+  match b.term with
+  | .jump t => some t
+  | .jumpi _ n => some n
+  | .returnDispatch _ sites => (sites.getLast?).map ReturnSite.target
+  | _ => none
+
+/-- Seed prefix: the labels with in-degree 0 under `succ`, in block order.
+Seeding roots first maximises realised adjacency on a functional successor
+graph (a block placed before its own predecessor loses that edge). -/
+def rootSeeds (succ : Block → Option Label) (p : Program) : List Label :=
+  let preds : Std.HashSet Label :=
+    p.blocks.foldl
+      (fun s b =>
+        match succ b with
+        | some t => s.insert t
+        | none => s)
+      (Std.HashSet.emptyWithCapacity p.blocks.length)
+  (p.blocks.filter (fun b => !preds.contains b.label)).map Block.label
+
+/-- A layout policy: a successor relation plus a seed prefix. -/
+abbrev Policy := (Block → Option Label) × List Label
+
+/-- The candidate policies for `p`, **index 0 being the §100 `.jump`-only
+policy** so that the argmin below can never be larger than what §100 emitted. -/
+def candidatePolicies (p : Program) : List Policy :=
+  let rc := refCountMap p
+  let sRc1 := succJumpOrRc1JumpiFall rc
+  let sRc1D := succJumpOrRc1JumpiFallOrDispatch rc
+  [ (succLabel?, [])
+  , (sRc1, [])
+  , (succJumpOrJumpiFall, [])
+  , (sRc1D, [])
+  , (succJumpOrJumpiFallOrDispatch, [])
+  , (sRc1, rootSeeds sRc1 p)
+  , (succJumpOrJumpiFall, rootSeeds succJumpOrJumpiFall p)
+  , (succJumpOrJumpiFallOrDispatch, rootSeeds succJumpOrJumpiFallOrDispatch p)
+  ]
+
+/-- Deterministic argmin over the candidate list: a later candidate replaces the
+incumbent only on a **strict** size decrease, so ties always keep the earliest
+index and the whole choice is a pure function of `p`. -/
+def bestPolicyFrom (p : Program) :
+    List Policy → Policy → Nat → Policy
+  | [], best, _ => best
+  | pol :: rest, best, bestSize =>
+      let size := compactSize (reorderProgramWith pol.1 pol.2 p)
+      if size < bestSize then
+        bestPolicyFrom p rest pol size
+      else
+        bestPolicyFrom p rest best bestSize
+
+/-- The policy actually chosen for `p`. -/
+def chosenPolicy (p : Program) : Policy :=
+  let fallback : Policy := (succLabel?, [])
+  bestPolicyFrom p (candidatePolicies p) fallback
+    (compactSize (reorderProgramWith fallback.1 fallback.2 p))
+
+/-- The whole-program block-reorder transform: permute `blocks` under the
+size-minimal candidate policy; everything else (entry, and each block verbatim)
+fixed. -/
+def reorderProgram (p : Program) : Program :=
+  reorderProgramWith (chosenPolicy p).1 (chosenPolicy p).2 p
+
+/-- **The single bridge lemma.**  Whatever the size oracle decides, the emitted
+program is `reorderProgramWith` at *some* policy — and every fact above holds at
+*every* policy.  It is `rfl`: `chosenPolicy` returns the policy itself. -/
+theorem reorderProgram_exists_policy (p : Program) :
+    ∃ (succ : Block → Option Label) (extra : List Label),
+      reorderProgram p = reorderProgramWith succ extra p :=
+  ⟨(chosenPolicy p).1, (chosenPolicy p).2, rfl⟩
+
+/-! ## §100-era conclusions, re-exported at their original names/signatures
+
+These are exactly the statements the OIC `_reorder` twins and the
+`CertifiedChoice` wiring consume; each is the corresponding `…With` fact
+instantiated at the chosen policy. -/
+
+@[simp] theorem reorderProgram_entry (p : Program) :
+    (reorderProgram p).entry = p.entry := rfl
+
+@[simp] theorem reorderProgram_blocks (p : Program) :
+    (reorderProgram p).blocks =
+      layoutBlocksWith (chosenPolicy p).1 (chosenPolicy p).2 p := rfl
+
+theorem reorderProgram_blocks_mem (p : Program) {b : Block}
+    (hb : b ∈ (reorderProgram p).blocks) : b ∈ p.blocks :=
+  reorderProgramWith_blocks_mem _ _ p hb
+
+theorem layoutBlocks_mem (p : Program) {b : Block}
+    (hb : b ∈ layoutBlocksWith (chosenPolicy p).1 (chosenPolicy p).2 p) :
+    b ∈ p.blocks :=
+  layoutBlocksWith_mem _ _ p hb
+
+theorem reorderProgram_labelsUnique (p : Program) :
+    (reorderProgram p).LabelsUnique := by
+  obtain ⟨s, e, hs⟩ := reorderProgram_exists_policy p
+  rw [hs]; exact reorderProgramWith_labelsUnique s e p
+
+theorem reorderProgram_blocks_perm (p : Program) (h : p.LabelsUnique) :
+    (reorderProgram p).blocks.Perm p.blocks := by
+  obtain ⟨s, e, hs⟩ := reorderProgram_exists_policy p
+  rw [hs]; exact reorderProgramWith_blocks_perm s e p h
+
+theorem findBlock?_reorderProgram (p : Program) (h : p.LabelsUnique) :
+    ∀ l, (reorderProgram p).findBlock? l = p.findBlock? l := by
+  obtain ⟨s, e, hs⟩ := reorderProgram_exists_policy p
+  rw [hs]; exact findBlock?_reorderProgramWith s e p h
+
+theorem openRunN_reorderProgram (Q : Program) (h : Q.LabelsUnique)
+    (fuel : Nat) (label : Label) (state : EVMState) :
+    InteractionSemantics.Program.openRunN (reorderProgram Q) fuel label state =
+      InteractionSemantics.Program.openRunN Q fuel label state := by
+  obtain ⟨s, e, hs⟩ := reorderProgram_exists_policy Q
+  rw [hs]; exact openRunN_reorderProgramWith s e Q h fuel label state
+
 theorem openRunNPrefix_reorderProgram (Q : Program) (h : Q.LabelsUnique)
     (fuel : Nat) (label : Label) (state : EVMState) :
     InteractionSemantics.Program.openRunNPrefix (reorderProgram Q) fuel label state =
       InteractionSemantics.Program.openRunNPrefix Q fuel label state := by
-  unfold InteractionSemantics.Program.openRunNPrefix
-  rw [openRunN_reorderProgram Q h]
+  obtain ⟨s, e, hs⟩ := reorderProgram_exists_policy Q
+  rw [hs]; exact openRunNPrefix_reorderProgramWith s e Q h fuel label state
 
-/-- The result-carrying stopped run is literally unchanged. -/
 theorem openRunNResultWithStop_reorderProgram (Q : Program) (h : Q.LabelsUnique)
     (stopJump : Label → EVMState → Bool)
     (fuel : Nat) (label : Label) (state : EVMState) :
@@ -534,89 +874,64 @@ theorem openRunNResultWithStop_reorderProgram (Q : Program) (h : Q.LabelsUnique)
         (reorderProgram Q) fuel label state =
       InteractionSemantics.Program.openRunNResultWithStop stopJump
         Q fuel label state := by
-  unfold InteractionSemantics.Program.openRunNResultWithStop
-    Control.Program.runNResultWithStop
-  exact runNWithStopAs_findBlock_congr _ _ _ _
-    (findBlock?_reorderProgram Q h) fuel label state
+  obtain ⟨s, e, hs⟩ := reorderProgram_exists_policy Q
+  rw [hs]
+  exact openRunNResultWithStop_reorderProgramWith s e Q h stopJump fuel label state
 
-/-- One open CFG step is literally unchanged by the reorder. -/
 theorem openStep_reorderProgram (Q : Program) (h : Q.LabelsUnique)
     (label : Label) (state : EVMState) :
     InteractionSemantics.Program.openStep (reorderProgram Q) label state =
       InteractionSemantics.Program.openStep Q label state := by
-  unfold InteractionSemantics.Program.openStep
-  exact step_findBlock_congr _ (findBlock?_reorderProgram Q h) label state
+  obtain ⟨s, e, hs⟩ := reorderProgram_exists_policy Q
+  rw [hs]; exact openStep_reorderProgramWith s e Q h label state
 
-/-! ## Static-gate preservation (permutation-invariant folds) -/
-
-/-- `labelShape?` is preserved (it reads the program only through `findBlock?`). -/
 theorem labelShape?_reorderProgram (Q : Program) (h : Q.LabelsUnique) :
     ∀ l, (reorderProgram Q).labelShape? l = Q.labelShape? l := by
-  intro l
-  unfold Program.labelShape?
-  rw [findBlock?_reorderProgram Q h]
+  obtain ⟨s, e, hs⟩ := reorderProgram_exists_policy Q
+  rw [hs]; exact labelShape?_reorderProgramWith s e Q h
 
-/-- Block typing is preserved (it reads the program only through `labelShape?`). -/
 theorem block_wellTyped_reorderProgram (Q : Program) (h : Q.LabelsUnique)
     (b : Block) :
     Block.WellTyped (reorderProgram Q) b ↔ Block.WellTyped Q b := by
-  unfold Block.WellTyped Terminator.type?
-  rw [show (reorderProgram Q).labelShape? = Q.labelShape? from
-        funext (labelShape?_reorderProgram Q h)]
+  obtain ⟨s, e, hs⟩ := reorderProgram_exists_policy Q
+  rw [hs]; exact block_wellTyped_reorderProgramWith s e Q h b
 
-/-- `AllBlocksTyped` is preserved. -/
 theorem allBlocksTyped_reorderProgram (Q : Program) (h : Q.LabelsUnique)
     (hA : Q.AllBlocksTyped) : (reorderProgram Q).AllBlocksTyped := by
-  unfold Program.AllBlocksTyped at hA ⊢
-  rw [List.forall_iff_forall_mem] at hA ⊢
-  intro b hb
-  exact (block_wellTyped_reorderProgram Q h b).mpr
-    (hA b (reorderProgram_blocks_mem Q hb))
+  obtain ⟨s, e, hs⟩ := reorderProgram_exists_policy Q
+  rw [hs]; exact allBlocksTyped_reorderProgramWith s e Q h hA
 
-/-- `EmittedLabels` is a permutation of the original. -/
 theorem emittedLabels_reorderProgram_perm (Q : Program) (h : Q.LabelsUnique) :
     (reorderProgram Q).EmittedLabels.Perm Q.EmittedLabels := by
-  unfold Program.EmittedLabels
-  exact (reorderProgram_blocks_perm Q h).flatMap_right _
+  obtain ⟨s, e, hs⟩ := reorderProgram_exists_policy Q
+  rw [hs]; exact emittedLabels_reorderProgramWith_perm s e Q h
 
-/-- `EmittedLabelsUnique` is preserved (`Nodup` is permutation-invariant). -/
 theorem emittedLabelsUnique_reorderProgram (Q : Program) (h : Q.LabelsUnique)
     (hE : Q.EmittedLabelsUnique) : (reorderProgram Q).EmittedLabelsUnique := by
-  unfold Program.EmittedLabelsUnique at hE ⊢
-  exact (emittedLabels_reorderProgram_perm Q h).nodup_iff.mpr hE
+  obtain ⟨s, e, hs⟩ := reorderProgram_exists_policy Q
+  rw [hs]; exact emittedLabelsUnique_reorderProgramWith s e Q h hE
 
-/-- The entry block still exists. -/
 theorem findBlock?_entry_reorderProgram (Q : Program) (h : Q.LabelsUnique)
     (hE : Q.findBlock? Q.entry ≠ none) :
     (reorderProgram Q).findBlock? (reorderProgram Q).entry ≠ none := by
-  rw [reorderProgram_entry, findBlock?_reorderProgram Q h]; exact hE
+  obtain ⟨s, e, hs⟩ := reorderProgram_exists_policy Q
+  rw [hs]; exact findBlock?_entry_reorderProgramWith s e Q h hE
 
-/-- **`WellTyped` is preserved by the reorder.** -/
 theorem wellTyped_reorderProgram (Q : Program) (hW : Q.WellTyped) :
     (reorderProgram Q).WellTyped := by
-  obtain ⟨hU, hA, hEntry, hEmit⟩ := hW
-  exact ⟨reorderProgram_labelsUnique Q,
-    allBlocksTyped_reorderProgram Q hU hA,
-    findBlock?_entry_reorderProgram Q hU hEntry,
-    emittedLabelsUnique_reorderProgram Q hU hEmit⟩
+  obtain ⟨s, e, hs⟩ := reorderProgram_exists_policy Q
+  rw [hs]; exact wellTyped_reorderProgramWith s e Q hW
 
-/-- **`ProgramCounterIndependent` is preserved** (a per-block, program-free
-predicate — only block membership matters). -/
 theorem programCounterIndependent_reorderProgram (Q : Program)
     (hP : Q.ProgramCounterIndependent) :
     (reorderProgram Q).ProgramCounterIndependent := by
-  unfold Program.ProgramCounterIndependent at hP ⊢
-  rw [List.forall_iff_forall_mem] at hP ⊢
-  intro b hb
-  exact hP b (reorderProgram_blocks_mem Q hb)
+  obtain ⟨s, e, hs⟩ := reorderProgram_exists_policy Q
+  rw [hs]; exact programCounterIndependent_reorderProgramWith s e Q hP
 
-/-- **The fuel budget is exactly preserved** (a `.sum` over the permuted
-blocks — even sharper than `chainCanon`'s `≤`). -/
 theorem fuelBudget_reorderProgram_eq (Q : Program) (h : Q.LabelsUnique) :
     InteractionSemantics.CompiledProgram.fuelBudget (reorderProgram Q) =
       InteractionSemantics.CompiledProgram.fuelBudget Q := by
-  unfold InteractionSemantics.CompiledProgram.fuelBudget
-  exact ((reorderProgram_blocks_perm Q h).map
-    InteractionSemantics.CompiledBlock.fuelBudget).sum_nat
+  obtain ⟨s, e, hs⟩ := reorderProgram_exists_policy Q
+  rw [hs]; exact fuelBudget_reorderProgramWith_eq s e Q h
 
 end EvmCompiler.TypedCfg.BlockReorder
