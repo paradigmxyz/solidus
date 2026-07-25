@@ -75,6 +75,17 @@ re-exported under its original name and signature.
 
 The size oracle `compactSize` has **no correctness role whatsoever**: it only
 selects which permutation is emitted, and *every* permutation is proved sound.
+
+## §Session-102: the argmin was nine evaluations wide and two wide is enough
+
+The oracle is expensive and the contest scores compile time as a *validity*
+condition, so the §101 search width was a submission risk.  `candidatePolicies`
+is now the two policies that provably reproduce the full nine-way argmin on the
+corpus (see the §102 note there) and `chosenPolicy` no longer re-evaluates index
+0 as its own seed.  Corpus output is byte-identical; corpus compile wall time
+drops 20 %, and the largest contract's 42 %.  This section is *selection* only —
+soundness is untouched, because every theorem above is universally quantified
+over `succ` and `extra`.
 -/
 
 namespace EvmCompiler.TypedCfg.BlockReorder
@@ -708,6 +719,14 @@ def compactSize (p : Program) : Nat :=
           | none => sizeUnavailable
           | some (_, codeLength) => codeLength
 
+/-! The four definitions that follow are the §101 policy alternatives that
+`candidatePolicies` no longer searches (see the §102 note there: none of them
+ever *strictly* beat a kept candidate on any object of the corpus — they only
+ever tied — while together they were seven of the nine oracle evaluations).
+They are retained, unused, as the documented re-widening points: adding any of
+them back to `candidatePolicies` is sound by construction and can only lower the
+emitted size, at the cost of one more `compactSize` per program. -/
+
 /-- How many times each label is referenced as a terminator target, as a map
 (the `Peephole.refCount` fold, batched).  Closed over by the `refCount = 1`
 policies; incurs **zero** proof obligation because `succ` is arbitrary. -/
@@ -768,19 +787,59 @@ def rootSeeds (succ : Block → Option Label) (p : Program) : List Label :=
 abbrev Policy := (Block → Option Label) × List Label
 
 /-- The candidate policies for `p`, **index 0 being the §100 `.jump`-only
-policy** so that the argmin below can never be larger than what §100 emitted. -/
+policy** so that the argmin below can never be larger than what §100 emitted.
+
+## §Session-102: why this list is two long and not nine
+
+`compactSize` is not cheap — one evaluation is a full `reorderProgramWith`
+(quadratic in the block count) plus `lower?`, `Compact.prepare` and the `Compact`
+layout passes — and it is paid once *per candidate*, on every object of every
+contract.  The §101 list had eight entries and `chosenPolicy` additionally
+re-evaluated index 0 as its own seed, so **nine** evaluations were paid per
+program.  Measured on the 40-contract corpus, that search is the single largest
+term in compile time on the big contracts and it grows superlinearly with
+program size (≈ 4.2 s per candidate on the 17 kB `DynamicStorageSurfaceBox`
+against ≈ 0.02 s on a 1 kB contract).  `CHALLENGE.md` makes the per-contract
+timeout and the total wall-clock budget *validity* conditions and the compiler
+is fail-closed, so search width is a submission risk, not a nuisance.
+
+The §101 probe over the 36 runtime objects settles what the width buys.  Per
+policy, total bytes relative to the `.jump`-only layout:
+
+| policy                                        | index | Δ bytes |
+|-----------------------------------------------|------:|--------:|
+| `.jump` only                                  |     0 |       0 |
+| + `refCount = 1` jumpi fallthrough            |     — |  −4 321 |
+| + any jumpi fallthrough                       |     — |  −4 335 |
+| + `refCount = 1` jumpi + returnDispatch       |     — |  −4 748 |
+| + any jumpi + returnDispatch                  |     — |  −4 782 |
+| + `refCount = 1` jumpi, root-first seeds      |     — |  −4 379 |
+| + any jumpi, root-first seeds                 |     — |  −4 389 |
+| **+ any jumpi + returnDispatch, root-first**  |     1 |  −4 924 |
+| per-contract argmin over all eight            |       |  −4 924 |
+
+The argmin bought **exactly zero** bytes over the single best policy.  And
+because a per-contract argmin is pointwise ≤ every fixed policy, equal totals
+force pointwise equality: index 1 attains the minimum on *every* object of the
+corpus, and `{index 0, index 1}` is the unique two-element subset containing
+index 0 that reproduces the full nine-way argmin.  Re-measured end to end on the
+corpus this list emits **byte-identical** output to the nine-way search
+(56 597 runtime + 59 516 creation bytes either way) while cutting corpus compile
+wall time by 20 % and the largest contract's by 42 %.
+
+A three-candidate variant that also kept `any jumpi + returnDispatch` at the
+default seeds was measured: it produced byte-identical *and* gas-identical
+output to this two-candidate list, i.e. the extra candidate never once changed
+the emitted program, and cost 10 % more compile time on the largest contract.
+It was dropped.  Re-widening is a one-line change and can never cost bytes (the
+argmin is over the whole list); it only costs time.
+
+Index 0 stays first for the §101 reason: the emitted layout can never be larger
+than what §100 shipped, and ties keep the earliest index. -/
 def candidatePolicies (p : Program) : List Policy :=
-  let rc := refCountMap p
-  let sRc1 := succJumpOrRc1JumpiFall rc
-  let sRc1D := succJumpOrRc1JumpiFallOrDispatch rc
+  let sAllD := succJumpOrJumpiFallOrDispatch
   [ (succLabel?, [])
-  , (sRc1, [])
-  , (succJumpOrJumpiFall, [])
-  , (sRc1D, [])
-  , (succJumpOrJumpiFallOrDispatch, [])
-  , (sRc1, rootSeeds sRc1 p)
-  , (succJumpOrJumpiFall, rootSeeds succJumpOrJumpiFall p)
-  , (succJumpOrJumpiFallOrDispatch, rootSeeds succJumpOrJumpiFallOrDispatch p)
+  , (sAllD, rootSeeds sAllD p)
   ]
 
 /-- Deterministic argmin over the candidate list: a later candidate replaces the
@@ -796,17 +855,26 @@ def bestPolicyFrom (p : Program) :
       else
         bestPolicyFrom p rest best bestSize
 
-/-- The policy actually chosen for `p`. -/
+/-- The policy actually chosen for `p`.
+
+The fold is seeded with the `sizeUnavailable` sentinel rather than with
+`compactSize` of the fallback policy.  The fallback *is* `candidatePolicies`
+index 0, so seeding with its size evaluated that policy's oracle twice — a free
+~1/(n+1) of the whole search.  The outcome is unchanged: index 0 is the first
+candidate, and it replaces the sentinel iff its size is `< sizeUnavailable`; if
+it is not (the candidate does not lower), the incumbent is *already* that same
+policy at that same size, so both the winner and the running minimum agree with
+the old code in every case. -/
 def chosenPolicy (p : Program) : Policy :=
-  let fallback : Policy := (succLabel?, [])
-  bestPolicyFrom p (candidatePolicies p) fallback
-    (compactSize (reorderProgramWith fallback.1 fallback.2 p))
+  bestPolicyFrom p (candidatePolicies p) (succLabel?, []) sizeUnavailable
 
 /-- The whole-program block-reorder transform: permute `blocks` under the
 size-minimal candidate policy; everything else (entry, and each block verbatim)
-fixed. -/
+fixed.  The `let` is load-bearing at run time only — it keeps the whole
+`chosenPolicy` search from being evaluated once per projection. -/
 def reorderProgram (p : Program) : Program :=
-  reorderProgramWith (chosenPolicy p).1 (chosenPolicy p).2 p
+  let policy := chosenPolicy p
+  reorderProgramWith policy.1 policy.2 p
 
 /-- **The single bridge lemma.**  Whatever the size oracle decides, the emitted
 program is `reorderProgramWith` at *some* policy — and every fact above holds at
