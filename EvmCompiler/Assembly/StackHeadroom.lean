@@ -133,7 +133,7 @@ def blockOk? (artifact : Compact.Artifact) (table : StackTable)
             (EvmYul.UInt256.ofNat (block.compactPc + 1)) astack)
   | .push value =>
       match Compact.sourceInstrSizeAt? artifact.pinnedPushPcs
-          artifact.branchWidth block.sourcePc block.sourceInstr with
+          artifact.branchWidths block.sourcePc block.sourceInstr with
       | some size =>
           (stacksAt table (EvmYul.UInt256.ofNat block.compactPc)).all
             (fun astack =>
@@ -154,11 +154,11 @@ def blockOk? (artifact : Compact.Artifact) (table : StackTable)
             (fun astack =>
               memStack table
                 (EvmYul.UInt256.ofNat
-                  (block.compactPc + artifact.branchWidth + 1))
+                  (block.compactPc + artifact.branchWidthAt block + 1))
                 (some (EvmYul.UInt256.ofNat dest) :: astack))) &&
             ((stacksAt table
                 (EvmYul.UInt256.ofNat
-                  (block.compactPc + artifact.branchWidth + 1))).all
+                  (block.compactPc + artifact.branchWidthAt block + 1))).all
               (fun mid =>
                 match mid with
                 | _ :: rest =>
@@ -169,7 +169,7 @@ def blockOk? (artifact : Compact.Artifact) (table : StackTable)
               (EvmYul.UInt256.ofNat block.compactPc)).isEmpty &&
             (stacksAt table
                 (EvmYul.UInt256.ofNat
-                  (block.compactPc + artifact.branchWidth + 1))).isEmpty
+                  (block.compactPc + artifact.branchWidthAt block + 1))).isEmpty
   | .jumpi target =>
       match Compact.lookupLabel? artifact.labels target with
       | some dest =>
@@ -177,11 +177,11 @@ def blockOk? (artifact : Compact.Artifact) (table : StackTable)
             (fun astack =>
               memStack table
                 (EvmYul.UInt256.ofNat
-                  (block.compactPc + artifact.branchWidth + 1))
+                  (block.compactPc + artifact.branchWidthAt block + 1))
                 (some (EvmYul.UInt256.ofNat dest) :: astack))) &&
             ((stacksAt table
                 (EvmYul.UInt256.ofNat
-                  (block.compactPc + artifact.branchWidth + 1))).all
+                  (block.compactPc + artifact.branchWidthAt block + 1))).all
               (fun mid =>
                 match mid with
                 | _ :: cond :: rest =>
@@ -190,7 +190,7 @@ def blockOk? (artifact : Compact.Artifact) (table : StackTable)
                           if c = EvmYul.UInt256.ofNat 0 then
                             memStack table
                               (EvmYul.UInt256.ofNat
-                                (block.compactPc + artifact.branchWidth + 2))
+                                (block.compactPc + artifact.branchWidthAt block + 2))
                               rest
                           else
                             memStack table (EvmYul.UInt256.ofNat dest) rest
@@ -198,7 +198,7 @@ def blockOk? (artifact : Compact.Artifact) (table : StackTable)
                           memStack table (EvmYul.UInt256.ofNat dest) rest &&
                             memStack table
                               (EvmYul.UInt256.ofNat
-                                (block.compactPc + artifact.branchWidth + 2))
+                                (block.compactPc + artifact.branchWidthAt block + 2))
                               rest)
                 | _ => false))
       | none =>
@@ -206,7 +206,7 @@ def blockOk? (artifact : Compact.Artifact) (table : StackTable)
               (EvmYul.UInt256.ofNat block.compactPc)).isEmpty &&
             (stacksAt table
                 (EvmYul.UInt256.ofNat
-                  (block.compactPc + artifact.branchWidth + 1))).isEmpty
+                  (block.compactPc + artifact.branchWidthAt block + 1))).isEmpty
   | .prim op =>
       if op = .invalid then
         true
@@ -371,7 +371,7 @@ def blockOkIdx? (artifact : Compact.Artifact)
             (EvmYul.UInt256.ofNat (block.compactPc + 1)) astack)
   | .push value =>
       match Compact.sourceInstrSizeAt? artifact.pinnedPushPcs
-          artifact.branchWidth block.sourcePc block.sourceInstr with
+          artifact.branchWidths block.sourcePc block.sourceInstr with
       | some size =>
           (stacksAtIdx idx (EvmYul.UInt256.ofNat block.compactPc)).all
             (fun astack =>
@@ -392,11 +392,11 @@ def blockOkIdx? (artifact : Compact.Artifact)
             (fun astack =>
               memStackIdx idx
                 (EvmYul.UInt256.ofNat
-                  (block.compactPc + artifact.branchWidth + 1))
+                  (block.compactPc + artifact.branchWidthAt block + 1))
                 (some (EvmYul.UInt256.ofNat dest) :: astack))) &&
             ((stacksAtIdx idx
                 (EvmYul.UInt256.ofNat
-                  (block.compactPc + artifact.branchWidth + 1))).all
+                  (block.compactPc + artifact.branchWidthAt block + 1))).all
               (fun mid =>
                 match mid with
                 | _ :: rest =>
@@ -407,7 +407,7 @@ def blockOkIdx? (artifact : Compact.Artifact)
               (EvmYul.UInt256.ofNat block.compactPc)).isEmpty &&
             (stacksAtIdx idx
                 (EvmYul.UInt256.ofNat
-                  (block.compactPc + artifact.branchWidth + 1))).isEmpty
+                  (block.compactPc + artifact.branchWidthAt block + 1))).isEmpty
   | .jumpi target =>
       match Compact.lookupLabel? artifact.labels target with
       | some dest =>
@@ -415,11 +415,11 @@ def blockOkIdx? (artifact : Compact.Artifact)
             (fun astack =>
               memStackIdx idx
                 (EvmYul.UInt256.ofNat
-                  (block.compactPc + artifact.branchWidth + 1))
+                  (block.compactPc + artifact.branchWidthAt block + 1))
                 (some (EvmYul.UInt256.ofNat dest) :: astack))) &&
             ((stacksAtIdx idx
                 (EvmYul.UInt256.ofNat
-                  (block.compactPc + artifact.branchWidth + 1))).all
+                  (block.compactPc + artifact.branchWidthAt block + 1))).all
               (fun mid =>
                 match mid with
                 | _ :: cond :: rest =>
@@ -428,7 +428,7 @@ def blockOkIdx? (artifact : Compact.Artifact)
                           if c = EvmYul.UInt256.ofNat 0 then
                             memStackIdx idx
                               (EvmYul.UInt256.ofNat
-                                (block.compactPc + artifact.branchWidth + 2))
+                                (block.compactPc + artifact.branchWidthAt block + 2))
                               rest
                           else
                             memStackIdx idx (EvmYul.UInt256.ofNat dest) rest
@@ -436,7 +436,7 @@ def blockOkIdx? (artifact : Compact.Artifact)
                           memStackIdx idx (EvmYul.UInt256.ofNat dest) rest &&
                             memStackIdx idx
                               (EvmYul.UInt256.ofNat
-                                (block.compactPc + artifact.branchWidth + 2))
+                                (block.compactPc + artifact.branchWidthAt block + 2))
                               rest)
                 | _ => false))
       | none =>
@@ -444,7 +444,7 @@ def blockOkIdx? (artifact : Compact.Artifact)
               (EvmYul.UInt256.ofNat block.compactPc)).isEmpty &&
             (stacksAtIdx idx
                 (EvmYul.UInt256.ofNat
-                  (block.compactPc + artifact.branchWidth + 1))).isEmpty
+                  (block.compactPc + artifact.branchWidthAt block + 1))).isEmpty
   | .prim op =>
       if op = .invalid then
         true
@@ -499,7 +499,7 @@ def builderSuccessors (artifact : Compact.Artifact)
   | .label _ => some [(block.compactPc + 1, astack)]
   | .push value =>
       match Compact.sourceInstrSizeAt? artifact.pinnedPushPcs
-          artifact.branchWidth block.sourcePc block.sourceInstr with
+          artifact.branchWidths block.sourcePc block.sourceInstr with
       | some size => some [(block.compactPc + size, some value :: astack)]
       | none => none
   | .pushLabel _ => none
@@ -508,7 +508,7 @@ def builderSuccessors (artifact : Compact.Artifact)
       match Compact.lookupLabel? artifact.labels target with
       | some dest =>
           some
-            [(block.compactPc + artifact.branchWidth + 1,
+            [(block.compactPc + artifact.branchWidthAt block + 1,
               some (EvmYul.UInt256.ofNat dest) :: astack),
               (dest, astack)]
       | none => none
@@ -518,19 +518,19 @@ def builderSuccessors (artifact : Compact.Artifact)
           match astack with
           | cond :: rest =>
               let mid :=
-                (block.compactPc + artifact.branchWidth + 1,
+                (block.compactPc + artifact.branchWidthAt block + 1,
                   some (EvmYul.UInt256.ofNat dest) :: cond :: rest)
               match cond with
               | some c =>
                   if c = EvmYul.UInt256.ofNat 0 then
                     some
                       [mid,
-                        (block.compactPc + artifact.branchWidth + 2, rest)]
+                        (block.compactPc + artifact.branchWidthAt block + 2, rest)]
                   else some [mid, (dest, rest)]
               | none =>
                   some
                     [mid, (dest, rest),
-                      (block.compactPc + artifact.branchWidth + 2, rest)]
+                      (block.compactPc + artifact.branchWidthAt block + 2, rest)]
           | [] => none
       | none => none
   | .prim op =>

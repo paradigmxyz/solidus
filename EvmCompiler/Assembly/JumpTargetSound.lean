@@ -178,7 +178,7 @@ theorem artifactFramePoint_not_badJump
             (List.forall_iff_forall_mem.mp
               (Compact.compile?_valid hCompile).wellFormed.1) located hMem
           rw [hLocatedInstr] at hLocatedValid
-          have hFits : Compact.FitsWidth artifact.branchWidth
+          have hFits : Compact.FitsWidth (artifact.branchWidthAt block)
               (EvmYul.UInt256.ofNat dest).toNat := by
             simpa [Compact.Instr.Valid] using hLocatedValid
           obtain ⟨op, hOp⟩ := Compact.exists_pushOp_of_width
@@ -195,7 +195,7 @@ theorem artifactFramePoint_not_badJump
           have hDecoded :
               EvmYul.EVM.decode state.executionEnv.code state.pc =
                 some (op, some (EvmYul.UInt256.ofNat dest,
-                  artifact.branchWidth)) := by
+                  artifact.branchWidthAt block)) := by
             simpa [hCode, hStatePc] using hBytesDecoded
           constructor
           · intro hBad
@@ -220,7 +220,7 @@ theorem artifactFramePoint_not_badJump
             (List.forall_iff_forall_mem.mp
               (Compact.compile?_valid hCompile).wellFormed.1) located hMem
           rw [hLocatedInstr] at hLocatedValid
-          have hFits : Compact.FitsWidth artifact.branchWidth
+          have hFits : Compact.FitsWidth (artifact.branchWidthAt block)
               (EvmYul.UInt256.ofNat dest).toNat := by
             simpa [Compact.Instr.Valid] using hLocatedValid
           obtain ⟨op, hOp⟩ := Compact.exists_pushOp_of_width
@@ -237,7 +237,7 @@ theorem artifactFramePoint_not_badJump
           have hDecoded :
               EvmYul.EVM.decode state.executionEnv.code state.pc =
                 some (op, some (EvmYul.UInt256.ofNat dest,
-                  artifact.branchWidth)) := by
+                  artifact.branchWidthAt block)) := by
             simpa [hCode, hStatePc] using hBytesDecoded
           constructor
           · intro hBad
@@ -453,7 +453,7 @@ theorem step_error_ne_badJumpDestination_at
             (List.forall_iff_forall_mem.mp
               (Compact.compile?_valid hCompile).wellFormed.1) located hMem
           rw [hLocatedInstr] at hLocatedValid
-          have hFits : Compact.FitsWidth artifact.branchWidth
+          have hFits : Compact.FitsWidth (artifact.branchWidthAt block)
               (EvmYul.UInt256.ofNat dest).toNat := by
             simpa [Compact.Instr.Valid] using hLocatedValid
           obtain ⟨op, hOp⟩ := Compact.exists_pushOp_of_width
@@ -468,7 +468,7 @@ theorem step_error_ne_badJumpDestination_at
           have hDecoded :
               EvmYul.EVM.decode state.executionEnv.code state.pc =
                 some (op, some (EvmYul.UInt256.ofNat dest,
-                  artifact.branchWidth)) := by
+                  artifact.branchWidthAt block)) := by
             simpa [hCode, hStatePc] using hBytesDecoded
           rw [hDecoded] at hStep
           simp only [Option.getD_some] at hStep
@@ -483,7 +483,7 @@ theorem step_error_ne_badJumpDestination_at
             (List.forall_iff_forall_mem.mp
               (Compact.compile?_valid hCompile).wellFormed.1) located hMem
           rw [hLocatedInstr] at hLocatedValid
-          have hFits : Compact.FitsWidth artifact.branchWidth
+          have hFits : Compact.FitsWidth (artifact.branchWidthAt block)
               (EvmYul.UInt256.ofNat dest).toNat := by
             simpa [Compact.Instr.Valid] using hLocatedValid
           obtain ⟨op, hOp⟩ := Compact.exists_pushOp_of_width
@@ -498,7 +498,7 @@ theorem step_error_ne_badJumpDestination_at
           have hDecoded :
               EvmYul.EVM.decode state.executionEnv.code state.pc =
                 some (op, some (EvmYul.UInt256.ofNat dest,
-                  artifact.branchWidth)) := by
+                  artifact.branchWidthAt block)) := by
             simpa [hCode, hStatePc] using hBytesDecoded
           rw [hDecoded] at hStep
           simp only [Option.getD_some] at hStep
