@@ -55,7 +55,36 @@ the cfg operational semantics, `WellTyped`/PCI/fuel invariance, the OIC
 `_of_source` forward-refinement + the 8-site `CertifiedChoice` rewire) is the
 successor's frontier — see §Session-99.
 
-This module is imported by nobody ⟹ it cannot touch the `compile_correct` cone.
+## Arena session-101: the branch else-edge is a fallthrough candidate too
+
+§99 read the "≈2 300 B / 927-triple ceiling" as a *block-merge* problem — make a
+`jump`'s target adjacent — and correctly found it mostly unreachable, because a
+`PUSHn t ; JUMP ; JUMPDEST t` triple whose `t` has `refCount ≥ 2` cannot have its
+`JUMPDEST` pruned.  But that diagnosis mis-attributes the cost.  The triples are
+overwhelmingly *not* unconditional-jump tails: they are the `.jump n` **tail of a
+conditional** `jumpi t n`, emitted by `Terminator.lowerAt?` as
+`[.jumpi t, .jump n]`, sitting in front of `t`'s block because
+`blocksInLoweringOrder?` keeps list order and `succLabel?` only ever nominated
+`.jump` terminators — so a *branch* could never win a fallthrough.
+
+Nominating the conditional's else-label `n` (and, for completeness, the
+`.fallthrough` label) in `succLabel?` lets `Compact.elideFallthroughJumps`
+consume that `.jump n` tail.  This needs **no** new predecessor-count side
+condition: eliding the tail is legal whatever `n`'s `refCount` is (only the
+subsequent `JUMPDEST` *prune* is refCount-gated, and that is pure upside).  The
+transform stays exactly what it was — a permutation of `blocks` with every block
+verbatim — so every structural/equality lemma below is reused unchanged; the
+`succLabel?` case split is abstract in all of them.
+
+Measured through the real pipeline over the whole 40-contract corpus:
+
+* runtime **65 126 B → 60 293 B** (−4 833 B, −7.42 %); creation
+  68 547 B → 63 393 B (−5 154 B); solc-parity 2.03× → 1.88×.
+* total gas **24 986 512 → 23 764 605 (−1 221 907, −4.89 %)**, every contract
+  improving and none regressing; exec gas also falls (−175 681) since the elided
+  `PUSHn ; JUMP` is off the taken path.
+* the `PUSHn t ; JUMPI ; PUSHm e ; JUMP ; JUMPDEST t` shape drops from 951
+  occurrences to 0 (1 466 of 1 471 `JUMPI` sites are now fallthrough-optimal).
 -/
 
 namespace EvmCompiler.TypedCfg.BlockReorder
@@ -63,11 +92,23 @@ namespace EvmCompiler.TypedCfg.BlockReorder
 open EvmCompiler.TypedCfg
 open List
 
-/-- The unconditional-jump fallthrough candidate of a block: the target label of
-its terminator when that terminator is an unconditional `jump`. -/
+/-- The fallthrough candidate of a block: the label its terminator's **last**
+lowered instruction transfers to, i.e. the edge `Compact.elideFallthroughJumps`
+can consume when that label is laid out physically next.
+
+`Terminator.lowerAt?` emits
+`.jump t => [.jump t]`, `.fallthrough n => [.jump n]` and
+`.jumpi t n => [.jumpi t, .jump n]`, so in every one of those cases the trailing
+instruction is an unconditional `.jump` to the label named here.  Including the
+conditional case is what lets a *branch*'s else-edge become a fallthrough: the
+`.jump n` tail is then elided and its `JUMPDEST` pruned when `n` has no other
+referent, which removes the `PUSHn n ; JUMP` pair the branch would otherwise
+pay for. -/
 def succLabel? (b : Block) : Option Label :=
   match b.term with
   | .jump t => some t
+  | .fallthrough n => some n
+  | .jumpi _ n => some n
   | _ => none
 
 /-- List-`find?` block lookup by label (returns an actual member of `blocks`,
