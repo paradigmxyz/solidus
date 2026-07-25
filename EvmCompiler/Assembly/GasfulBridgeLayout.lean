@@ -1008,25 +1008,15 @@ theorem artifactFramePoint_push_step
   rw [hLocatedInstr] at hLocatedValid
   have hFits : Compact.FitsWidth width value.toNat := by
     simpa [Compact.Instr.Valid] using hLocatedValid
-  obtain ⟨op, hOp⟩ := Compact.exists_pushOp_of_width
-    ⟨hFits.1, hFits.2.1⟩
-  obtain ⟨decoded, hInstrDecoded, hBytesDecoded⟩ :=
-    hDecode.decodes located hMem
-  rw [hLocatedInstr] at hInstrDecoded
-  simp [Compact.Instr.decoded?, hOp] at hInstrDecoded
-  subst decoded
+  have hAt : Compact.decodeAt bytes located.pc (.push width value) := by
+    rw [← hLocatedInstr]
+    exact hDecode.decodes located hMem
   have hStatePc : state.pc = EvmYul.UInt256.ofNat located.pc :=
     hPc.trans (congrArg EvmYul.UInt256.ofNat hLocatedPc.symm)
-  have hDecoded : EvmYul.EVM.decode state.executionEnv.code state.pc =
-      some (op, some (value, width)) := by
-    simpa [hCode, hStatePc] using hBytesDecoded
   cases stepFuel with
   | zero => simp [EvmYul.EVM.step] at hStep
   | succ fuel =>
-      have hExact := evm_step_push_eq_next fuel state value hFits hOp
-      rw [hDecoded] at hStep
-      simp only [Option.getD_some] at hStep
-      rw [hExact] at hStep
+      rw [evm_step_pushAt_eq_next fuel hFits hAt hCode hStatePc] at hStep
       have hNext : next = gasfulPushNext width value state := by
         simpa using hStep.symm
       subst next
@@ -1100,25 +1090,13 @@ theorem artifactFramePoint_branch_push_step
   have hFits : Compact.FitsWidth artifact.branchWidth
       (EvmYul.UInt256.ofNat dest).toNat := by
     simpa [Compact.Instr.Valid] using hLocatedValid
-  obtain ⟨op, hOp⟩ := Compact.exists_pushOp_of_width
-    ⟨hFits.1, hFits.2.1⟩
-  obtain ⟨decoded, hInstrDecoded, hBytesDecoded⟩ :=
-    hDecode.decodes located hMem
-  rw [hLocatedInstr] at hInstrDecoded
-  simp [Compact.Instr.decoded?, hOp] at hInstrDecoded
-  subst decoded
+  have hAt : Compact.decodeAt bytes located.pc
+      (.push artifact.branchWidth (EvmYul.UInt256.ofNat dest)) := by
+    rw [← hLocatedInstr]
+    exact hDecode.decodes located hMem
   have hStatePc : state.pc = EvmYul.UInt256.ofNat located.pc :=
     hPc.trans (congrArg EvmYul.UInt256.ofNat hLocatedPc.symm)
-  have hDecoded :
-      EvmYul.EVM.decode state.executionEnv.code state.pc =
-        some (op, some (EvmYul.UInt256.ofNat dest,
-          artifact.branchWidth)) := by
-    simpa [hCode, hStatePc] using hBytesDecoded
-  have hExact := evm_step_push_eq_next fuel state
-    (EvmYul.UInt256.ofNat dest) hFits hOp
-  rw [hDecoded] at hStep
-  simp only [Option.getD_some] at hStep
-  rw [hExact] at hStep
+  rw [evm_step_pushAt_eq_next fuel hFits hAt hCode hStatePc] at hStep
   have hNext : next = gasfulPushNext artifact.branchWidth
       (EvmYul.UInt256.ofNat dest) state := by
     simpa using hStep.symm

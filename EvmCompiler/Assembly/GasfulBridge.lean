@@ -1600,6 +1600,36 @@ def openPushNext (width : Nat) (value : Word)
   charged.replaceStackAndIncrPC (charged.stack.push value)
     (pcΔ := width + 1)
 
+-- Width 0 (PUSH0) is now representable. These lemmas keep their original
+-- signatures so no call site changes; each dispatches the width-0 case
+-- internally. At width 0 `hFits` forces `value = 0` (value < 256 ^ 0 = 1), and
+-- EvmYul's PUSH0 pushes 0, so the statements still hold there — but not by
+-- `rfl`, since PUSH0's semantics ignore the supplied immediate.
+/-- **The one place EVMYulLean's PUSH0 semantics is unfolded.**
+
+`EvmYul/Semantics.lean:504-506` gives
+`| .EVM, .Push .PUSH0 => λ evmState => .ok <| evmState.replaceStackAndIncrPC
+(evmState.stack.push ⟨0⟩)`: the immediate slot is ignored (`arg` is a captured
+parameter of `EvmYul.step`, not part of the match discriminant — `:308`), the
+literal zero word is pushed, and the `pcΔ` is the default `1 = 0 + 1`.
+`FitsWidth 0` pins `value` to that same word, so the shared
+`gasfulPushNext`-shaped conclusion holds verbatim. -/
+theorem evmyul_step_push0_eq
+    {op : EvmYul.Operation .EVM}
+    (state : EVMState) (arg : Option (Word × Nat)) (value : Word)
+    (hFits : Compact.FitsWidth 0 value.toNat)
+    (hOp : Compact.pushOp? 0 = some op) :
+    EvmYul.step (τ := .EVM) op arg state =
+      .ok
+        (state.replaceStackAndIncrPC (state.stack.push value)
+          (pcΔ := 0 + 1)) := by
+  have hOpEq : op = EvmYul.Operation.PUSH0 := by
+    simpa [Compact.pushOp?] using hOp.symm
+  subst hOpEq
+  have hValue : value = (⟨0⟩ : Word) := Compact.word_eq_zero_of_fits0 hFits
+  subst hValue
+  rfl
+
 theorem evmyul_step_push_eq
     {width : Nat} {op : EvmYul.Operation .EVM}
     (state : EVMState) (value : Word)
@@ -1609,18 +1639,19 @@ theorem evmyul_step_push_eq
       .ok
         (state.replaceStackAndIncrPC (state.stack.push value)
           (pcΔ := width + 1)) := by
-  have hPos := hFits.1
-  have hLe := hFits.2.1
-  interval_cases width <;>
-    simp [Compact.pushOp?] at hOp <;> cases hOp <;> rfl
+  have hLe := hFits.1
+  rcases Nat.eq_zero_or_pos width with hZero | hPos
+  · subst hZero
+    exact evmyul_step_push0_eq state (some (value, 0)) value hFits hOp
+  · interval_cases width <;>
+      simp [Compact.pushOp?] at hOp <;> cases hOp <;> rfl
 
 theorem pushOp_isCreate_false
     {width : Nat} {op : EvmYul.Operation .EVM} {value : Word}
     (hFits : Compact.FitsWidth width value.toNat)
     (hOp : Compact.pushOp? width = some op) :
     EvmYul.Operation.isCreate op = false := by
-  have hPos := hFits.1
-  have hLe := hFits.2.1
+  have hLe := hFits.1
   interval_cases width <;>
     simp [Compact.pushOp?] at hOp <;> cases hOp <;> rfl
 
@@ -1630,8 +1661,7 @@ theorem pushOp_haltOutputAt_none
     (hFits : Compact.FitsWidth width value.toNat)
     (hOp : Compact.pushOp? width = some op) :
     haltOutputAt state op = none := by
-  have hPos := hFits.1
-  have hLe := hFits.2.1
+  have hLe := hFits.1
   interval_cases width <;>
     simp [Compact.pushOp?, haltOutputAt] at hOp ⊢ <;> cases hOp <;> rfl
 
@@ -1644,8 +1674,9 @@ theorem evm_step_pushOp_eq_evmyul
         (some (op, some (value, width))) (afterMemoryChargeAt state) =
       EvmYul.step (τ := .EVM) op (some (value, width))
         (afterEVMInstructionChargeAt state) := by
-  have hPos := hFits.1
-  have hLe := hFits.2.1
+  -- Width 0 closes by the same `rfl`: EVM.step sends PUSH0 down the identical
+  -- `| instr =>` default arm (EvmYul EVM/Semantics.lean:460).
+  have hLe := hFits.1
   interval_cases width <;>
     simp [Compact.pushOp?] at hOp <;> cases hOp <;>
     rfl
@@ -1662,6 +1693,110 @@ theorem evm_step_push_eq_next
   simpa [gasfulPushNext] using
     evmyul_step_push_eq
       (afterEVMInstructionChargeAt state) value hFits hOp
+
+/-- The charged PUSH0 step. `arg` is whatever `EVM.decode` supplied — `none` in
+practice, since `argOnNBytesOfInstr PUSH0 = 0` sends `decode` down its
+`if argWidth == 0 then .none` branch — but the statement is `arg`-generic
+because PUSH0's rule ignores it. -/
+theorem evm_step_push0_eq_next
+    {op : EvmYul.Operation .EVM}
+    (fuel : Nat) (state : EVMState) (value : Word)
+    (arg : Option (Word × Nat))
+    (hFits : Compact.FitsWidth 0 value.toNat)
+    (hOp : Compact.pushOp? 0 = some op) :
+    EvmYul.EVM.step (fuel + 1) (dynamicGasCostAt state)
+        (some (op, arg)) (afterMemoryChargeAt state) =
+      .ok (gasfulPushNext 0 value state) := by
+  have hOpEq : op = EvmYul.Operation.PUSH0 := by
+    simpa [Compact.pushOp?] using hOp.symm
+  subst hOpEq
+  have hInner :
+      EvmYul.EVM.step (fuel + 1) (dynamicGasCostAt state)
+          (some (EvmYul.Operation.PUSH0, arg)) (afterMemoryChargeAt state) =
+        EvmYul.step (τ := .EVM) EvmYul.Operation.PUSH0 arg
+          (afterEVMInstructionChargeAt state) := rfl
+  rw [hInner]
+  exact evmyul_step_push0_eq (afterEVMInstructionChargeAt state) arg value
+    hFits hOp
+
+/-- **The width-agnostic charged push step.** The immediate slot is exactly the
+one `Compact.Instr.decoded?` produced — `none` for PUSH0, `some (value, width)`
+otherwise — so no caller branches on the width. -/
+theorem evm_step_pushArg_eq_next
+    {width : Nat} {op : EvmYul.Operation .EVM} {arg : Option (Word × Nat)}
+    (fuel : Nat) (state : EVMState) (value : Word)
+    (hFits : Compact.FitsWidth width value.toNat)
+    (hOp : Compact.pushOp? width = some op)
+    (hInstrDecoded :
+      (Compact.Instr.push width value).decoded? = some (op, arg)) :
+    EvmYul.EVM.step (fuel + 1) (dynamicGasCostAt state)
+        (some (op, arg)) (afterMemoryChargeAt state) =
+      .ok (gasfulPushNext width value state) := by
+  cases width with
+  | zero => exact evm_step_push0_eq_next fuel state value arg hFits hOp
+  | succ w =>
+      rw [Compact.Instr.decoded?_push_of_pos (Nat.succ_pos w) hOp]
+        at hInstrDecoded
+      have hArg : arg = some (value, w + 1) :=
+        (congrArg Prod.snd (Option.some.inj hInstrDecoded)).symm
+      subst hArg
+      exact evm_step_push_eq_next fuel state value hFits hOp
+
+/-- Decode-and-step in one shot, keyed on `Compact.decodeAt`. This is the form
+every reachability proof needs: it absorbs the `Option.getD`, the decoded-shape
+reduction, and the PUSH0/PUSHn width split. -/
+theorem evm_step_pushAt_eq_next
+    {bytes : ByteArray} {pc width : Nat} {value : Word} {state : EVMState}
+    (fuel : Nat)
+    (hFits : Compact.FitsWidth width value.toNat)
+    (hAt : Compact.decodeAt bytes pc (.push width value))
+    (hCode : state.executionEnv.code = bytes)
+    (hPc : state.pc = EvmYul.UInt256.ofNat pc) :
+    EvmYul.EVM.step (fuel + 1) (dynamicGasCostAt state)
+        (some
+          ((EvmYul.EVM.decode state.executionEnv.code state.pc).getD
+            (EvmYul.Operation.STOP, none)))
+        (afterMemoryChargeAt state) =
+      .ok (gasfulPushNext width value state) := by
+  obtain ⟨op, hOp⟩ := Compact.exists_pushOp_of_width hFits.1
+  obtain ⟨arg, hInstrDecoded⟩ :=
+    Compact.Instr.decoded?_push_op (value := value) hOp
+  obtain ⟨decoded, hDecoded, hBytesDecoded⟩ := hAt
+  have hPair : (op, arg) = decoded :=
+    Option.some.inj (hInstrDecoded.symm.trans hDecoded)
+  subst hPair
+  have hDecodedState :
+      EvmYul.EVM.decode state.executionEnv.code state.pc =
+        some (op, arg) := by
+    rw [hCode, hPc]
+    exact hBytesDecoded
+  rw [hDecodedState]
+  simp only [Option.getD_some]
+  exact evm_step_pushArg_eq_next fuel state value hFits hOp hInstrDecoded
+
+/-- Width-agnostic decoded operation at a compact push. `decodedOperationAt`
+projects only `.1`, so the PUSH0 (`none`) and PUSHn (`some (value, width)`)
+decoded shapes agree here. -/
+theorem decodedOperationAt_push
+    {bytes : ByteArray} {pc width : Nat} {value : Word}
+    {op : EvmYul.Operation .EVM} {state : EVMState}
+    (hOp : Compact.pushOp? width = some op)
+    (hAt : Compact.decodeAt bytes pc (.push width value))
+    (hCode : state.executionEnv.code = bytes)
+    (hPc : state.pc = EvmYul.UInt256.ofNat pc) :
+    decodedOperationAt state = op := by
+  obtain ⟨arg, hInstrDecoded⟩ :=
+    Compact.Instr.decoded?_push_op (value := value) hOp
+  obtain ⟨decoded, hDecoded, hBytesDecoded⟩ := hAt
+  have hPair : (op, arg) = decoded :=
+    Option.some.inj (hInstrDecoded.symm.trans hDecoded)
+  subst hPair
+  have hDecodedState :
+      EvmYul.EVM.decode state.executionEnv.code state.pc =
+        some (op, arg) := by
+    rw [hCode, hPc]
+    exact hBytesDecoded
+  simp [decodedOperationAt, hDecodedState]
 
 theorem raw_push_success_executes_after_charges
     {bytes : ByteArray} {pc width : Nat} {state : EVMState} {value : Word}
@@ -8729,13 +8864,16 @@ theorem runRefinesOpen_push_success_rel
     {fuel : Nat} {validJumps : Array Word}
     {bytes : ByteArray} {pc width : Nat} {gasful openState : EVMState}
     {value : Word} {op : EvmYul.Operation .EVM}
+    {arg : Option (Word × Nat)}
     {tailTranscript : Interaction.Transcript}
     (hPrefix : XSstoreStipendChecksPass validJumps gasful)
     (hFits : Compact.FitsWidth width value.toNat)
     (hOp : Compact.pushOp? width = some op)
+    (hInstrDecoded :
+      (Compact.Instr.push width value).decoded? = some (op, arg))
     (hDecodedPair :
       ((EvmYul.EVM.decode gasful.executionEnv.code gasful.pc).getD
-        (EvmYul.Operation.STOP, none)) = (op, some (value, width)))
+        (EvmYul.Operation.STOP, none)) = (op, arg))
     (hDecode : Compact.decodeAt bytes pc (.push width value))
     (hPc : openState.pc = EvmYul.UInt256.ofNat pc)
     (hCont :
@@ -8767,7 +8905,7 @@ theorem runRefinesOpen_push_success_rel
         (afterMemoryChargeAt gasful) =
           .ok (gasfulPushNext width value gasful) := by
     simpa [hDecodedPair] using
-      evm_step_push_eq_next fuel gasful value hFits hOp
+      evm_step_pushArg_eq_next fuel gasful value hFits hOp hInstrDecoded
   have hHalt :
       haltOutputAt (gasfulPushNext width value gasful) op = none :=
     pushOp_haltOutputAt_none _ hFits hOp

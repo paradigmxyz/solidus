@@ -104,17 +104,33 @@ theorem parse_of_decodeAt
           · -- byteSize alignment
             cases instr with
             | push width value =>
-                cases hOp : pushOp? width with
-                | none => simp [Instr.decoded?, hOp] at hDecoded
-                | some op' =>
-                    simp [Instr.decoded?, hOp] at hDecoded
-                    rw [← hDecoded] at hDec
-                    by_cases hZero : EvmYul.EVM.argOnNBytesOfInstr op = 0
-                    · simp [hZero] at hDec
-                    · simp [hZero] at hDec
-                      obtain ⟨hOpEq, -, hWidth⟩ := hDec
-                      simp [Instr.byteSize]
-                      omega
+                -- `decoded?` matches `.push 0` first, so split on the width:
+                -- PUSH0 carries no immediate (byteSize 1, argOnNBytes 0) and
+                -- behaves like the `jump` case below; a positive width keeps the
+                -- original immediate-bearing argument.
+                cases width with
+                | zero =>
+                    cases hOp : pushOp? 0 with
+                    | none => simp [Instr.decoded?, hOp] at hDecoded
+                    | some op' =>
+                        simp [Instr.decoded?, hOp] at hDecoded
+                        rw [← hDecoded] at hDec
+                        by_cases hZero : EvmYul.EVM.argOnNBytesOfInstr op = 0
+                        · simp [hZero] at hDec
+                          simp [Instr.byteSize, hZero]
+                        · simp [hZero] at hDec
+                | succ w =>
+                    cases hOp : pushOp? (w + 1) with
+                    | none => simp [Instr.decoded?, hOp] at hDecoded
+                    | some op' =>
+                        simp [Instr.decoded?, hOp] at hDecoded
+                        rw [← hDecoded] at hDec
+                        by_cases hZero : EvmYul.EVM.argOnNBytesOfInstr op = 0
+                        · simp [hZero] at hDec
+                        · simp [hZero] at hDec
+                          obtain ⟨hOpEq, -, hWidth⟩ := hDec
+                          simp [Instr.byteSize]
+                          omega
             | jump =>
                 simp [Instr.decoded?] at hDecoded
                 rw [← hDecoded] at hDec

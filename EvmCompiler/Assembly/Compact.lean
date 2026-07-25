@@ -18,14 +18,16 @@ width. Branches use one width chosen from the wide Assembly byte-length upper
 bound, so label layout is a single pass rather than a relocation fixed point.
 -/
 
-def candidateWidths : List Nat := List.range' 1 32
+-- Width 0 is admissible: it is PUSH0. Because `value < 256 ^ 0 = 1`, width 0 can
+-- only ever encode the value 0, so admitting it is self-limiting. It is listed
+-- first so `widthForNat?` picks it for zero.
+def candidateWidths : List Nat := List.range' 0 33
 
 def FitsWidth (width value : Nat) : Prop :=
-  0 < width ∧ width <= 32 ∧ value < 256 ^ width
+  width <= 32 ∧ value < 256 ^ width
 
 def fitsWidth? (width value : Nat) : Bool :=
-  decide (0 < width) && decide (width <= 32) &&
-    decide (value < 256 ^ width)
+  decide (width <= 32) && decide (value < 256 ^ width)
 
 def widthForNat? (value : Nat) : Option Nat :=
   candidateWidths.find? fun width => fitsWidth? width value
@@ -40,9 +42,38 @@ theorem widthForNat?_fits {value width : Nat}
   have hMem := List.mem_of_find?_eq_some hWidth
   have hCheck := List.find?_some hWidth
   simp [fitsWidth?] at hCheck
-  exact { left := hCheck.1.1, right := { left := hCheck.1.2, right := hCheck.2 } }
+  exact { left := hCheck.1, right := hCheck.2 }
+
+-- Width 0 (PUSH0) is a first-class compaction width; there is no positivity
+-- lemma here, because there is no positivity invariant. The width split happens
+-- in exactly two places: `Compact.Instr.decoded?_push_op` (the decoded shape)
+-- and `GasfulBridge.evmyul_step_push0_eq` (EVMYulLean's PUSH0 rule).
+
+/-- EVMYulLean's PUSH0 rule pushes the literal zero word `⟨0⟩`
+(`EvmYul/Semantics.lean:504-506`). -/
+theorem word_toNat_zero : ((⟨0⟩ : Word)).toNat = 0 := by
+  simp [EvmYul.UInt256.toNat]
+
+/-- At width 0 the immediate is pinned to the zero word, because
+`FitsWidth 0 value.toNat` says `value.toNat < 256 ^ 0 = 1`. This is the single
+mathematical fact that makes PUSH0 — which ignores the supplied immediate and
+pushes `⟨0⟩` — agree with `.push 0 value`. -/
+theorem word_eq_zero_of_fits0 {value : Word}
+    (hFits : FitsWidth 0 value.toNat) : value = (⟨0⟩ : Word) := by
+  have hZero : value.toNat = 0 := by
+    have hLt := hFits.2
+    simpa using hLt
+  have hRound : EvmYul.UInt256.ofNat value.toNat = value :=
+    Bytecode.uint256_ofNat_toNat value
+  have hRoundZero :
+      EvmYul.UInt256.ofNat ((⟨0⟩ : Word)).toNat = (⟨0⟩ : Word) :=
+    Bytecode.uint256_ofNat_toNat (⟨0⟩ : Word)
+  rw [hZero] at hRound
+  rw [word_toNat_zero] at hRoundZero
+  exact hRound.symm.trans hRoundZero
 
 def pushOp? : Nat -> Option EVMOp
+  | 0 => some EvmYul.Operation.PUSH0
   | 1 => some EvmYul.Operation.PUSH1
   | 2 => some EvmYul.Operation.PUSH2
   | 3 => some EvmYul.Operation.PUSH3
@@ -104,6 +135,12 @@ def Sequential : Instr -> Prop
   | _ => True
 
 def decoded? : Instr -> Option (Prod EVMOp (Option (Prod Word Nat)))
+  -- A zero-width push is PUSH0, which carries no immediate. EvmYul's decode
+  -- returns `none` for the argument whenever argOnNBytesOfInstr is 0
+  -- (EVM/Semantics.lean:94), so the decoded shape has to match here.
+  | .push 0 _ => do
+      let op <- pushOp? 0
+      some (op, none)
   | .push width value => do
       let op <- pushOp? width
       some (op, some (value, width))
@@ -123,7 +160,11 @@ def ofDecoded? (op : EVMOp) (arg : Option (Prod Word Nat)) : Option Instr :=
   match arg with
   | some (value, width) =>
       if pushOp? width = some op then some (.push width value) else none
-  | none => (TargetInstr.ofDecoded? op none).bind ofTarget?
+  | none =>
+      -- PUSH0 arrives with no immediate, so it has to be recognised here rather
+      -- than in the `some` branch. Width 0 pins the value to 0.
+      if pushOp? 0 = some op then some (.push 0 (EvmYul.UInt256.ofNat 0))
+      else (TargetInstr.ofDecoded? op none).bind ofTarget?
 
 theorem ofDecoded?_of_decoded?
     {instr : Instr} {decoded : Prod EVMOp (Option (Prod Word Nat))}
@@ -132,12 +173,26 @@ theorem ofDecoded?_of_decoded?
     ofDecoded? decoded.1 decoded.2 = some instr := by
   cases instr with
   | push width value =>
-      cases hOp : pushOp? width with
-      | none => simp [decoded?, hOp] at hDecoded
-      | some op =>
-          simp [decoded?, hOp] at hDecoded
+      cases width with
+      | zero =>
+          -- Width 0 forces the value to 0 (value < 256 ^ 0 = 1), which is what
+          -- makes the round trip through the immediate-less PUSH0 shape exact.
+          have hZero : value.toNat = 0 := by
+            have hLt := hValid.2
+            simpa using hLt
+          have hVal : value = EvmYul.UInt256.ofNat 0 := by
+            rw [← hZero]
+            exact (Bytecode.uint256_ofNat_toNat value).symm
+          simp [decoded?, pushOp?] at hDecoded
           subst decoded
-          simp [ofDecoded?, hOp]
+          simp [ofDecoded?, pushOp?, hVal]
+      | succ w =>
+          cases hOp : pushOp? (w + 1) with
+          | none => simp [decoded?, hOp] at hDecoded
+          | some op =>
+              simp [decoded?, hOp] at hDecoded
+              subst decoded
+              simp [ofDecoded?, hOp]
   | jump | jumpi | jumpdest =>
       simp [decoded?, ofDecoded?, ofTarget?] at hDecoded ⊢
       cases hDecoded
@@ -148,8 +203,49 @@ theorem ofDecoded?_of_decoded?
       unfold ofDecoded?
       have hTarget := TargetInstr.ofDecoded?_op_arg (.prim op)
       change TargetInstr.ofDecoded? op.toEVM none = some (.prim op) at hTarget
-      rw [hTarget]
+      -- ofDecoded? now tries PUSH0 first on the immediate-less branch; no prim
+      -- operation is PUSH0, so that test is always false here.
+      have hNotPush0 : ¬ (pushOp? 0 = some op.toEVM) := by
+        cases op <;> decide
+      rw [if_neg hNotPush0, hTarget]
       rfl
+
+/-- `decoded?` matches `.push 0` first, so it does not reduce for a variable
+width. This is the reduction lemma for the positive-width case: it peels the
+successor once so callers do not have to restructure their proofs. -/
+theorem decoded?_push_of_pos {width : Nat} {value : Word} {op : EVMOp}
+    (hPos : 0 < width) (hOp : pushOp? width = some op) :
+    (Instr.push width value).decoded? = some (op, some (value, width)) := by
+  obtain ⟨w, hw⟩ : ∃ w, width = w + 1 := ⟨width - 1, by omega⟩
+  subst hw
+  simp [decoded?, hOp]
+
+/-- The width-0 counterpart: PUSH0 decodes with no immediate. -/
+theorem decoded?_push0 {value : Word} {op : EVMOp}
+    (hOp : pushOp? 0 = some op) :
+    (Instr.push 0 value).decoded? = some (op, none) := by
+  simp [decoded?, hOp]
+
+/-- **The single width split.** `decoded?` matches `.push 0` first, so it never
+reduces for a variable width; this lemma is the one place the two decoded shapes
+(`none` for PUSH0, `some (value, width)` otherwise) are separated. Callers that
+need only the *operation*, or that pass the immediate slot through opaquely,
+never branch on the width at all. -/
+theorem decoded?_push_op {width : Nat} {value : Word} {op : EVMOp}
+    (hOp : pushOp? width = some op) :
+    ∃ arg, (Instr.push width value).decoded? = some (op, arg) := by
+  cases width with
+  | zero => exact ⟨none, decoded?_push0 hOp⟩
+  | succ w =>
+      exact ⟨some (value, w + 1), decoded?_push_of_pos (Nat.succ_pos w) hOp⟩
+
+/-- The canonical PUSH0 compact instruction is valid: `FitsWidth 0` admits only
+the zero word, and that is what it carries. -/
+theorem valid_push0 : (Instr.push 0 (⟨0⟩ : Word)).Valid := by
+  show FitsWidth 0 ((⟨0⟩ : Word)).toNat
+  refine ⟨by omega, ?_⟩
+  rw [word_toNat_zero]
+  simp
 
 theorem byteSize_pos (instr : Instr) : 0 < instr.byteSize := by
   cases instr <;> simp [byteSize]
@@ -165,9 +261,7 @@ def pcIndependent? : Instr -> Bool
 theorem valid_of_check {instr : Instr} (hCheck : instr.valid? = true) :
     instr.Valid := by
   cases instr <;> simp [valid?, Valid, fitsWidth?, FitsWidth] at hCheck ⊢
-  exact
-    { left := hCheck.1.1
-      right := { left := hCheck.1.2, right := hCheck.2 } }
+  exact { left := hCheck.1, right := hCheck.2 }
 
 theorem pcIndependent_of_check {instr : Instr}
     (hCheck : instr.pcIndependent? = true) : instr.PCIndependent := by
@@ -1040,21 +1134,32 @@ theorem encodePush_length (width : Nat) (value : Word) :
     (encodePush width value).length = width + 1 := by
   simp [encodePush, Bytecode.toBytesLE_length, Nat.add_comm]
 
+-- Width 0 is now in range (PUSH0 serializes to 0x5f + 0 and takes no immediate),
+-- so these no longer need positivity — only the upper bound.
 theorem pushOp?_properties {width : Nat} {op : EVMOp}
-    (hFits : 0 < width ∧ width <= 32)
+    (hWidth : width <= 32)
     (hOp : pushOp? width = some op) :
     EvmYul.EVM.serializeInstr op = UInt8.ofNat (0x5f + width) ∧
       EvmYul.EVM.argOnNBytesOfInstr op = width := by
-  have hPositive : 0 < width := hFits.1
-  have hWidth : width <= 32 := hFits.2
   interval_cases width <;> simp [pushOp?] at hOp <;> cases hOp <;> decide
 
 theorem exists_pushOp_of_width {width : Nat}
-    (hWidth : 0 < width ∧ width <= 32) :
+    (hWidth : width <= 32) :
     ∃ op, pushOp? width = some op := by
-  have hPositive : 0 < width := hWidth.1
-  have hLe : width <= 32 := hWidth.2
   interval_cases width <;> simp [pushOp?]
+
+/-- No compaction push opcode is `JUMP` or `JUMPI`. This replaces the
+`argOnNBytesOfInstr op = width` + `0 < width` + `omega` contradiction used in
+`JumpTargetSound`, which is unavailable at width 0 because
+`argOnNBytesOfInstr PUSH0 = argOnNBytesOfInstr JUMP = 0` (both via the default
+arm). `JUMP`/`JUMPI` are `.StackMemFlow` constructors, so this holds
+structurally for all 33 widths. -/
+theorem pushOp?_ne_jump {width : Nat} {op : EVMOp}
+    (hWidth : width <= 32)
+    (hOp : pushOp? width = some op) :
+    op ≠ EvmYul.Operation.JUMP ∧ op ≠ EvmYul.Operation.JUMPI := by
+  interval_cases width <;> simp [pushOp?] at hOp <;> cases hOp <;>
+    exact ⟨by decide, by decide⟩
 
 theorem extractPushPayloadAfterPrefix
     (pre suffix : List UInt8) (width : Nat) (value : Word)
@@ -1079,7 +1184,7 @@ theorem uint256OfExtractPushPayloadAfterPrefix
   rw [extractPushPayloadAfterPrefix pre suffix width value hStart hEnd]
   simp
   rw [Bytecode.fromBytes_toBytesLE]
-  rw [Nat.mod_eq_of_lt hFits.2.2]
+  rw [Nat.mod_eq_of_lt hFits.2]
   exact Bytecode.uint256_ofNat_toNat value
 
 theorem uint256OfCodeBytesWithRightPaddingPushPayloadAfterPrefix
@@ -1103,9 +1208,13 @@ theorem uint256OfCodeBytesWithRightPaddingPushPayloadAfterPrefix
       simpa [Bytecode.toBytesLE_length] using hLen
     simpa [Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using hSizeRaw
 
+-- Now that width 0 is representable, this lemma only holds for a positive
+-- width: EvmYul's decode yields `none` for a zero-width immediate. The width-0
+-- case is `decodePush0AtPrefix` below.
 set_option maxHeartbeats 1200000 in
 theorem decodePushAtPrefix
     (pre suffix : List UInt8) (width : Nat) (value : Word) (op : EVMOp)
+    (hPos : 0 < width)
     (hFits : FitsWidth width value.toNat)
     (hOp : pushOp? width = some op)
     (hPc : (EvmYul.UInt256.ofNat pre.length).toNat = pre.length)
@@ -1116,7 +1225,7 @@ theorem decodePushAtPrefix
         (EvmYul.UInt256.ofNat pre.length) =
       some (op, some (value, width)) := by
   obtain ⟨hSerialize, hArgWidth⟩ :=
-    pushOp?_properties ⟨hFits.1, hFits.2.1⟩ hOp
+    pushOp?_properties hFits.1 hOp
   unfold EvmYul.EVM.decode
   rw [hPc]
   unfold encodePush
@@ -1124,16 +1233,41 @@ theorem decodePushAtPrefix
   rw [← hSerialize]
   have hParse :
       EvmYul.EVM.parseInstr (EvmYul.EVM.serializeInstr op) = some op := by
-    have hWidth : width <= 32 := hFits.2.1
-    have hPositive : 0 < width := hFits.1
+    have hWidth : width <= 32 := hFits.1
+    have hPositive : 0 < width := hPos
     interval_cases width <;> simp [pushOp?] at hOp <;> cases hOp <;> rfl
   simp [hParse, hArgWidth]
   constructor
-  · exact Nat.ne_of_gt hFits.1
+  · exact Nat.ne_of_gt hPos
   · rw [hSerialize]
     simpa [encodePush, Nat.add_assoc, Nat.add_comm] using
       uint256OfCodeBytesWithRightPaddingPushPayloadAfterPrefix
         pre suffix width value hFits hStart hEnd
+
+/-- PUSH0: a zero-width push decodes to the operation with **no** immediate,
+because `argOnNBytesOfInstr PUSH0 = 0` sends EvmYul's decode down the
+`argWidth == 0 => none` branch (EVM/Semantics.lean:94). -/
+theorem decodePush0AtPrefix
+    (pre suffix : List UInt8) (value : Word) (op : EVMOp)
+    (hOp : pushOp? 0 = some op)
+    (hPc : (EvmYul.UInt256.ofNat pre.length).toNat = pre.length)
+    (hStart : pre.length + 1 < 18446744073709551616) :
+    EvmYul.EVM.decode
+        (Bytecode.ofList (pre ++ encodePush 0 value ++ suffix))
+        (EvmYul.UInt256.ofNat pre.length) =
+      some (op, none) := by
+  obtain ⟨hSerialize, hArgWidth⟩ := pushOp?_properties (by omega) hOp
+  unfold EvmYul.EVM.decode
+  rw [hPc]
+  unfold encodePush
+  rw [Bytecode.ofList_get?_append_cons_append]
+  rw [← hSerialize]
+  have hParse :
+      EvmYul.EVM.parseInstr (EvmYul.EVM.serializeInstr op) = some op := by
+    simp [pushOp?] at hOp
+    cases hOp
+    rfl
+  simp [hParse, hArgWidth]
 
 def encodeInstr : Instr -> List UInt8
   | .push width value => encodePush width value
@@ -1165,12 +1299,21 @@ theorem decodeInstrAtPrefix
       pre.length instr := by
   cases instr with
   | push width value =>
-      obtain ⟨op, hOp⟩ :=
-        exists_pushOp_of_width ⟨hValid.1, hValid.2.1⟩
-      refine ⟨(op, some (value, width)), ?_, ?_⟩
-      · simp [Instr.decoded?, hOp]
-      · apply decodePushAtPrefix pre suffix width value op hValid hOp hPc hStart
-        simpa [Instr.byteSize, Nat.add_assoc] using hEnd
+      -- Width 0 (PUSH0) decodes without an immediate, so the two cases produce
+      -- different `decoded` shapes and have to be discharged separately.
+      cases width with
+      | zero =>
+          obtain ⟨op, hOp⟩ := exists_pushOp_of_width hValid.1
+          refine ⟨(op, none), ?_, ?_⟩
+          · simp [Instr.decoded?, hOp]
+          · exact decodePush0AtPrefix pre suffix value op hOp hPc hStart
+      | succ w =>
+          obtain ⟨op, hOp⟩ := exists_pushOp_of_width hValid.1
+          refine ⟨(op, some (value, w + 1)), ?_, ?_⟩
+          · simp [Instr.decoded?, hOp]
+          · apply decodePushAtPrefix pre suffix (w + 1) value op
+              (Nat.succ_pos w) hValid hOp hPc hStart
+            simpa [Instr.byteSize, Nat.add_assoc] using hEnd
   | jump =>
       refine ⟨(EvmYul.Operation.JUMP, none), rfl, ?_⟩
       simpa [encodeInstr, Instr.byteSize] using

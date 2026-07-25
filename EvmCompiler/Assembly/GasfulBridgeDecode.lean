@@ -181,7 +181,7 @@ theorem compact_push_decodeAt_of_evm_decode
       Compact.decodeAt bytes pc (.push width value) := by
   have hArg := decode_arg_eq hDecode
   have hArgWidth : EvmYul.EVM.argOnNBytesOfInstr evmOp = width :=
-    (Compact.pushOp?_properties hBounds hOp).2
+    (Compact.pushOp?_properties hBounds.2 hOp).2
   rw [hArgWidth] at hArg
   have hWidthNe : (width == 0) = false := by
     simp [Nat.ne_of_gt hBounds.1]
@@ -196,11 +196,15 @@ theorem compact_push_decodeAt_of_evm_decode
         (EvmYul.UInt256.ofNat pc).toNat.succ width).size ≤ width := by
     rw [codeBytesWithRightPadding_size]
   have hFits : Compact.FitsWidth width value.toNat := by
-    refine ⟨hBounds.1, hBounds.2, ?_⟩
+    refine ⟨hBounds.2, ?_⟩
     rw [hValue]
     exact uInt256OfByteArray_toNat_lt_pow_256 _ width
       hPaddedSize hBounds.2
-  exact ⟨hFits, ⟨(evmOp, some (value, width)), by
+  -- `decoded?` now matches `.push 0` first, so it will not reduce for a
+  -- variable width; hBounds gives positivity, so peel off the successor.
+  obtain ⟨w, hw⟩ : ∃ w, width = w + 1 := ⟨width - 1, by omega⟩
+  subst hw
+  exact ⟨hFits, ⟨(evmOp, some (value, w + 1)), by
     simp [Compact.Instr.decoded?, hOp], hDecode⟩⟩
 
 theorem exists_compact_push_of_evm_decode
@@ -217,16 +221,36 @@ theorem exists_compact_push_of_evm_decode
     compact_push_decodeAt_of_evm_decode hBounds hOp hDecode
   exact ⟨.push width value, hFits, hAt⟩
 
-/-- Every successful EVMYul byte decode has a valid Compact instruction.
+/-- PUSH0's counterpart of `exists_compact_push_of_evm_decode`.
+
+`argOnNBytesOfInstr (.Push .PUSH0) = 0` (its default arm, EVMYulLean
+`EVM/Semantics.lean:41-75`), so `decode` takes the `if argWidth == 0 then .none`
+branch (`:94-96`) and returns no immediate.  The generic push witness cannot be
+used on that shape — it needs both `arg = some (value, width)` and
+`0 < width`.  The compact image is the zero-width push, whose value `FitsWidth 0`
+pins to `0`, which is exactly what `EvmYul.step (.Push .PUSH0)` pushes
+(`Semantics.lean:504-506`). -/
+theorem exists_compact_push0_of_evm_decode
+    {bytes : ByteArray} {pc : Nat}
+    (hDecode :
+      EvmYul.EVM.decode bytes (EvmYul.UInt256.ofNat pc) =
+        some (EvmYul.Operation.PUSH0, none)) :
+    ∃ instr : Compact.Instr,
+      instr.Valid ∧ Compact.decodeAt bytes pc instr :=
+  ⟨.push 0 (⟨0⟩ : Word), Compact.Instr.valid_push0,
+    ⟨(EvmYul.Operation.PUSH0, none),
+      Compact.Instr.decoded?_push0 rfl, hDecode⟩⟩
+
+/-- Every successful EVMYul byte decode has a valid Compact instruction, PUSH0
+included: width 0 is a representable compact push whose value is pinned to 0.
 The only semantic mismatch left for recursive execution is therefore a decode
-miss: `EVM.X` defaults `none` to `STOP`, while the open raw semantics rejects
-it as an invalid instruction. -/
+miss: `EVM.X` defaults `none` to `STOP`, while the open raw semantics rejects it
+as an invalid instruction. -/
 theorem exists_compact_instr_of_evm_decode
     {bytes : ByteArray} {pc : Nat}
     {op : EvmYul.Operation .EVM} {arg : Option (Word × Nat)}
     (hDecode :
-      EvmYul.EVM.decode bytes (EvmYul.UInt256.ofNat pc) = some (op, arg))
-    (hNotPush0 : op ≠ EvmYul.Operation.PUSH0) :
+      EvmYul.EVM.decode bytes (EvmYul.UInt256.ofNat pc) = some (op, arg)) :
     ∃ instr : Compact.Instr,
       instr.Valid ∧ Compact.decodeAt bytes pc instr := by
   have hArg := decode_arg_eq hDecode
@@ -281,7 +305,9 @@ theorem exists_compact_instr_of_evm_decode
       cases op <;>
         simp [EvmYul.EVM.argOnNBytesOfInstr] at hArg <;>
         subst arg
-      · exact False.elim (hNotPush0 rfl)
+      · -- PUSH0 carries no immediate, so the shared `some (value, width)`
+        -- witness does not apply; the zero-width push is the compact image.
+        exact exists_compact_push0_of_evm_decode hDecode
       all_goals
         first
         | exact exists_compact_push_of_evm_decode
@@ -378,23 +404,21 @@ theorem exists_compact_instr_of_evm_decode
           compact_prim_decodeAt_of_evm_decode (hOp := rfl) hDecode⟩
 
 /-- Exact local code condition required by the recursive frame bridge.
-Compiler-side reachability only has to rule out decode misses plus opcodes that
-EVMYul decodes but this compact assembly layer does not model natively. -/
+Compiler-side reachability only has to rule out decode misses: every opcode
+EVMYul decodes — PUSH0 now included — has a valid compact image. -/
 def SupportedDecodeAt (bytes : ByteArray) (pc : Word) : Prop :=
-  ∃ op arg,
-    EvmYul.EVM.decode bytes pc = some (op, arg) ∧
-      op ≠ EvmYul.Operation.PUSH0
+  ∃ op arg, EvmYul.EVM.decode bytes pc = some (op, arg)
 
 theorem compact_decodeAt_of_supported
     {bytes : ByteArray} {pc : Word}
     (hSupported : SupportedDecodeAt bytes pc) :
     ∃ instr : Compact.Instr,
       instr.Valid ∧ Compact.decodeAt bytes pc.toNat instr := by
-  rcases hSupported with ⟨op, arg, hDecode, hNotPush0⟩
+  rcases hSupported with ⟨op, arg, hDecode⟩
   have hDecodeNat :
       EvmYul.EVM.decode bytes (EvmYul.UInt256.ofNat pc.toNat) =
         some (op, arg) := by
     simpa using hDecode
-  exact exists_compact_instr_of_evm_decode hDecodeNat hNotPush0
+  exact exists_compact_instr_of_evm_decode hDecodeNat
 
 end EvmCompiler.Assembly.GasfulBridge

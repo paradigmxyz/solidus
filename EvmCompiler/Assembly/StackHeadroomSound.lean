@@ -512,25 +512,15 @@ theorem heightPoint_push_step
   rw [hLocatedInstr] at hLocatedValid
   have hFits : Compact.FitsWidth width value.toNat := by
     simpa [Compact.Instr.Valid] using hLocatedValid
-  obtain ⟨op, hOp⟩ := Compact.exists_pushOp_of_width
-    ⟨hFits.1, hFits.2.1⟩
-  obtain ⟨decoded, hInstrDecoded, hBytesDecoded⟩ :=
-    hDecode.decodes located hMem
-  rw [hLocatedInstr] at hInstrDecoded
-  simp [Compact.Instr.decoded?, hOp] at hInstrDecoded
-  subst decoded
+  have hAt : Compact.decodeAt bytes located.pc (.push width value) := by
+    rw [← hLocatedInstr]
+    exact hDecode.decodes located hMem
   have hStatePc : state.pc = EvmYul.UInt256.ofNat located.pc :=
     hPc.trans (congrArg EvmYul.UInt256.ofNat hLocatedPc.symm)
-  have hDecoded : EvmYul.EVM.decode state.executionEnv.code state.pc =
-      some (op, some (value, width)) := by
-    simpa [hCode, hStatePc] using hBytesDecoded
   cases stepFuel with
   | zero => simp [EvmYul.EVM.step] at hStep
   | succ fuel =>
-      have hExact := evm_step_push_eq_next fuel state value hFits hOp
-      rw [hDecoded] at hStep
-      simp only [Option.getD_some] at hStep
-      rw [hExact] at hStep
+      rw [evm_step_pushAt_eq_next fuel hFits hAt hCode hStatePc] at hStep
       have hNext : next = gasfulPushNext width value state := by
         simpa using hStep.symm
       subst next
@@ -596,28 +586,16 @@ theorem heightPoint_branch_push_step
   have hFits : Compact.FitsWidth artifact.branchWidth
       (EvmYul.UInt256.ofNat dest).toNat := by
     simpa [Compact.Instr.Valid] using hLocatedValid
-  obtain ⟨op, hOp⟩ := Compact.exists_pushOp_of_width
-    ⟨hFits.1, hFits.2.1⟩
-  obtain ⟨decoded, hInstrDecoded, hBytesDecoded⟩ :=
-    hDecode.decodes located hMem
-  rw [hLocatedInstr] at hInstrDecoded
-  simp [Compact.Instr.decoded?, hOp] at hInstrDecoded
-  subst decoded
+  have hAt : Compact.decodeAt bytes located.pc
+      (.push artifact.branchWidth (EvmYul.UInt256.ofNat dest)) := by
+    rw [← hLocatedInstr]
+    exact hDecode.decodes located hMem
   have hStatePc : state.pc = EvmYul.UInt256.ofNat located.pc :=
     hPc.trans (congrArg EvmYul.UInt256.ofNat hLocatedPc.symm)
-  have hDecoded :
-      EvmYul.EVM.decode state.executionEnv.code state.pc =
-        some (op, some (EvmYul.UInt256.ofNat dest,
-          artifact.branchWidth)) := by
-    simpa [hCode, hStatePc] using hBytesDecoded
   cases stepFuel with
   | zero => simp [EvmYul.EVM.step] at hStep
   | succ fuel =>
-      have hExact := evm_step_push_eq_next fuel state
-        (EvmYul.UInt256.ofNat dest) hFits hOp
-      rw [hDecoded] at hStep
-      simp only [Option.getD_some] at hStep
-      rw [hExact] at hStep
+      rw [evm_step_pushAt_eq_next fuel hFits hAt hCode hStatePc] at hStep
       have hNext : next = gasfulPushNext artifact.branchWidth
           (EvmYul.UInt256.ofNat dest) state := by
         simpa using hStep.symm
@@ -1606,8 +1584,7 @@ theorem pushOp_alpha_le_delta_succ
     (hOp : Compact.pushOp? width = some op) :
     (EvmYul.EVM.α op).getD 0 ≤ (EvmYul.EVM.δ op).getD 0 + 1 ∧
       (EvmYul.EVM.δ op).getD 0 ≤ 20 := by
-  have hPos := hFits.1
-  have hLe := hFits.2.1
+  have hLe := hFits.1
   interval_cases width <;>
     simp [Compact.pushOp?] at hOp <;> cases hOp <;>
     exact ⟨by decide, by decide⟩
@@ -1654,21 +1631,16 @@ theorem decoded_alpha_le_delta_succ
           rw [hLocatedInstr] at hLocatedValid
           have hFits : Compact.FitsWidth width value.toNat := by
             simpa [Compact.Instr.Valid] using hLocatedValid
-          obtain ⟨op, hOp⟩ := Compact.exists_pushOp_of_width
-            ⟨hFits.1, hFits.2.1⟩
-          obtain ⟨decoded, hInstrDecoded, hBytesDecoded⟩ :=
-            hDecode.decodes located hMem
-          rw [hLocatedInstr] at hInstrDecoded
-          simp [Compact.Instr.decoded?, hOp] at hInstrDecoded
-          subst decoded
+          obtain ⟨op, hOp⟩ := Compact.exists_pushOp_of_width hFits.1
+          have hAt : Compact.decodeAt bytes located.pc (.push width value) := by
+            rw [← hLocatedInstr]
+            exact hDecode.decodes located hMem
           have hStatePc : state.pc = EvmYul.UInt256.ofNat located.pc :=
             hPc.trans (congrArg EvmYul.UInt256.ofNat hLocatedPc.symm)
-          have hDecoded :
-              EvmYul.EVM.decode state.executionEnv.code state.pc =
-                some (op, some (value, width)) := by
-            simpa [hCode, hStatePc] using hBytesDecoded
-          have hGoal := pushOp_alpha_le_delta_succ hFits hOp
-          simpa [decodedOperationAt, hDecoded] using hGoal
+          have hOpAt : decodedOperationAt state = op :=
+            decodedOperationAt_push hOp hAt hCode hStatePc
+          rw [hOpAt]
+          exact pushOp_alpha_le_delta_succ hFits hOp
       | jump label =>
           obtain ⟨dest, located, hLookup, hMem, hLocatedPc, hLocatedInstr⟩ :=
             compact_branch_entry_mem hCompile hBlock
@@ -1680,22 +1652,17 @@ theorem decoded_alpha_le_delta_succ
           have hFits : Compact.FitsWidth artifact.branchWidth
               (EvmYul.UInt256.ofNat dest).toNat := by
             simpa [Compact.Instr.Valid] using hLocatedValid
-          obtain ⟨op, hOp⟩ := Compact.exists_pushOp_of_width
-            ⟨hFits.1, hFits.2.1⟩
-          obtain ⟨decoded, hInstrDecoded, hBytesDecoded⟩ :=
-            hDecode.decodes located hMem
-          rw [hLocatedInstr] at hInstrDecoded
-          simp [Compact.Instr.decoded?, hOp] at hInstrDecoded
-          subst decoded
+          obtain ⟨op, hOp⟩ := Compact.exists_pushOp_of_width hFits.1
+          have hAt : Compact.decodeAt bytes located.pc
+              (.push artifact.branchWidth (EvmYul.UInt256.ofNat dest)) := by
+            rw [← hLocatedInstr]
+            exact hDecode.decodes located hMem
           have hStatePc : state.pc = EvmYul.UInt256.ofNat located.pc :=
             hPc.trans (congrArg EvmYul.UInt256.ofNat hLocatedPc.symm)
-          have hDecoded :
-              EvmYul.EVM.decode state.executionEnv.code state.pc =
-                some (op, some (EvmYul.UInt256.ofNat dest,
-                  artifact.branchWidth)) := by
-            simpa [hCode, hStatePc] using hBytesDecoded
-          have hGoal := pushOp_alpha_le_delta_succ hFits hOp
-          simpa [decodedOperationAt, hDecoded] using hGoal
+          have hOpAt : decodedOperationAt state = op :=
+            decodedOperationAt_push hOp hAt hCode hStatePc
+          rw [hOpAt]
+          exact pushOp_alpha_le_delta_succ hFits hOp
       | jumpi label =>
           obtain ⟨dest, located, hLookup, hMem, hLocatedPc, hLocatedInstr⟩ :=
             compact_branch_entry_mem hCompile hBlock
@@ -1707,22 +1674,17 @@ theorem decoded_alpha_le_delta_succ
           have hFits : Compact.FitsWidth artifact.branchWidth
               (EvmYul.UInt256.ofNat dest).toNat := by
             simpa [Compact.Instr.Valid] using hLocatedValid
-          obtain ⟨op, hOp⟩ := Compact.exists_pushOp_of_width
-            ⟨hFits.1, hFits.2.1⟩
-          obtain ⟨decoded, hInstrDecoded, hBytesDecoded⟩ :=
-            hDecode.decodes located hMem
-          rw [hLocatedInstr] at hInstrDecoded
-          simp [Compact.Instr.decoded?, hOp] at hInstrDecoded
-          subst decoded
+          obtain ⟨op, hOp⟩ := Compact.exists_pushOp_of_width hFits.1
+          have hAt : Compact.decodeAt bytes located.pc
+              (.push artifact.branchWidth (EvmYul.UInt256.ofNat dest)) := by
+            rw [← hLocatedInstr]
+            exact hDecode.decodes located hMem
           have hStatePc : state.pc = EvmYul.UInt256.ofNat located.pc :=
             hPc.trans (congrArg EvmYul.UInt256.ofNat hLocatedPc.symm)
-          have hDecoded :
-              EvmYul.EVM.decode state.executionEnv.code state.pc =
-                some (op, some (EvmYul.UInt256.ofNat dest,
-                  artifact.branchWidth)) := by
-            simpa [hCode, hStatePc] using hBytesDecoded
-          have hGoal := pushOp_alpha_le_delta_succ hFits hOp
-          simpa [decodedOperationAt, hDecoded] using hGoal
+          have hOpAt : decodedOperationAt state = op :=
+            decodedOperationAt_push hOp hAt hCode hStatePc
+          rw [hOpAt]
+          exact pushOp_alpha_le_delta_succ hFits hOp
       | pushLabel target =>
           obtain ⟨_compactSize, _hSize, hEmit⟩ :=
             (Compact.compile?_blocksValid hCompile).block_emit_of_mem hBlock
@@ -1914,22 +1876,12 @@ theorem step_error_ne_stackOverflow_at
           rw [hLocatedInstr] at hLocatedValid
           have hFits : Compact.FitsWidth width value.toNat := by
             simpa [Compact.Instr.Valid] using hLocatedValid
-          obtain ⟨op, hOp⟩ := Compact.exists_pushOp_of_width
-            ⟨hFits.1, hFits.2.1⟩
-          obtain ⟨decoded, hInstrDecoded, hBytesDecoded⟩ :=
-            hDecode.decodes located hMem
-          rw [hLocatedInstr] at hInstrDecoded
-          simp [Compact.Instr.decoded?, hOp] at hInstrDecoded
-          subst decoded
+          have hAt : Compact.decodeAt bytes located.pc (.push width value) := by
+            rw [← hLocatedInstr]
+            exact hDecode.decodes located hMem
           have hStatePc : state.pc = EvmYul.UInt256.ofNat located.pc :=
             hPc.trans (congrArg EvmYul.UInt256.ofNat hLocatedPc.symm)
-          have hDecoded :
-              EvmYul.EVM.decode state.executionEnv.code state.pc =
-                some (op, some (value, width)) := by
-            simpa [hCode, hStatePc] using hBytesDecoded
-          rw [hDecoded] at hStep
-          simp only [Option.getD_some] at hStep
-          rw [evm_step_push_eq_next fuel state value hFits hOp] at hStep
+          rw [evm_step_pushAt_eq_next fuel hFits hAt hCode hStatePc] at hStep
           cases hStep
       | jump label =>
           obtain ⟨dest, located, hLookup, hMem, hLocatedPc, hLocatedInstr⟩ :=
@@ -1942,24 +1894,13 @@ theorem step_error_ne_stackOverflow_at
           have hFits : Compact.FitsWidth artifact.branchWidth
               (EvmYul.UInt256.ofNat dest).toNat := by
             simpa [Compact.Instr.Valid] using hLocatedValid
-          obtain ⟨op, hOp⟩ := Compact.exists_pushOp_of_width
-            ⟨hFits.1, hFits.2.1⟩
-          obtain ⟨decoded, hInstrDecoded, hBytesDecoded⟩ :=
-            hDecode.decodes located hMem
-          rw [hLocatedInstr] at hInstrDecoded
-          simp [Compact.Instr.decoded?, hOp] at hInstrDecoded
-          subst decoded
+          have hAt : Compact.decodeAt bytes located.pc
+              (.push artifact.branchWidth (EvmYul.UInt256.ofNat dest)) := by
+            rw [← hLocatedInstr]
+            exact hDecode.decodes located hMem
           have hStatePc : state.pc = EvmYul.UInt256.ofNat located.pc :=
             hPc.trans (congrArg EvmYul.UInt256.ofNat hLocatedPc.symm)
-          have hDecoded :
-              EvmYul.EVM.decode state.executionEnv.code state.pc =
-                some (op, some (EvmYul.UInt256.ofNat dest,
-                  artifact.branchWidth)) := by
-            simpa [hCode, hStatePc] using hBytesDecoded
-          rw [hDecoded] at hStep
-          simp only [Option.getD_some] at hStep
-          rw [evm_step_push_eq_next fuel state
-            (EvmYul.UInt256.ofNat dest) hFits hOp] at hStep
+          rw [evm_step_pushAt_eq_next fuel hFits hAt hCode hStatePc] at hStep
           cases hStep
       | jumpi label =>
           obtain ⟨dest, located, hLookup, hMem, hLocatedPc, hLocatedInstr⟩ :=
@@ -1972,24 +1913,13 @@ theorem step_error_ne_stackOverflow_at
           have hFits : Compact.FitsWidth artifact.branchWidth
               (EvmYul.UInt256.ofNat dest).toNat := by
             simpa [Compact.Instr.Valid] using hLocatedValid
-          obtain ⟨op, hOp⟩ := Compact.exists_pushOp_of_width
-            ⟨hFits.1, hFits.2.1⟩
-          obtain ⟨decoded, hInstrDecoded, hBytesDecoded⟩ :=
-            hDecode.decodes located hMem
-          rw [hLocatedInstr] at hInstrDecoded
-          simp [Compact.Instr.decoded?, hOp] at hInstrDecoded
-          subst decoded
+          have hAt : Compact.decodeAt bytes located.pc
+              (.push artifact.branchWidth (EvmYul.UInt256.ofNat dest)) := by
+            rw [← hLocatedInstr]
+            exact hDecode.decodes located hMem
           have hStatePc : state.pc = EvmYul.UInt256.ofNat located.pc :=
             hPc.trans (congrArg EvmYul.UInt256.ofNat hLocatedPc.symm)
-          have hDecoded :
-              EvmYul.EVM.decode state.executionEnv.code state.pc =
-                some (op, some (EvmYul.UInt256.ofNat dest,
-                  artifact.branchWidth)) := by
-            simpa [hCode, hStatePc] using hBytesDecoded
-          rw [hDecoded] at hStep
-          simp only [Option.getD_some] at hStep
-          rw [evm_step_push_eq_next fuel state
-            (EvmYul.UInt256.ofNat dest) hFits hOp] at hStep
+          rw [evm_step_pushAt_eq_next fuel hFits hAt hCode hStatePc] at hStep
           cases hStep
       | pushLabel target =>
           obtain ⟨_compactSize, _hSize, hEmit⟩ :=
