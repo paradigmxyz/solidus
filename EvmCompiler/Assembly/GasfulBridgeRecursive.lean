@@ -114,8 +114,7 @@ theorem compact_instr_eq_invalid_of_decoded
   cases instr with
   | push width value =>
       simp [Compact.Instr.Valid] at hValid
-      have hPositive := hValid.1
-      have hWidth := hValid.2.1
+      have hWidth := hValid.1
       interval_cases width <;>
         simp [Compact.Instr.decoded?, Compact.pushOp?] at hDecoded <;>
         subst decoded <;> simp at hInvalid
@@ -146,8 +145,7 @@ theorem compact_instr_eq_returndatacopy_of_decoded
   cases instr with
   | push width value =>
       simp [Compact.Instr.Valid] at hValid
-      have hPositive := hValid.1
-      have hWidth := hValid.2.1
+      have hWidth := hValid.1
       interval_cases width <;>
         simp [Compact.Instr.decoded?, Compact.pushOp?] at hDecoded <;>
         subst decoded <;> simp at hOp
@@ -178,8 +176,7 @@ theorem compact_instr_eq_prim_of_decoded
   cases instr with
   | push width value =>
       simp [Compact.Instr.Valid] at hValid
-      have hPositive := hValid.1
-      have hWidth := hValid.2.1
+      have hWidth := hValid.1
       interval_cases width <;>
         simp [Compact.Instr.decoded?, Compact.pushOp?] at hDecoded <;>
         subst decoded <;>
@@ -528,28 +525,6 @@ def FrameCodeInvariant
     (bytes : ByteArray) (validJumps : Array Word) (initial : EVMState) : Prop :=
   ∀ state, FrameReachable validJumps initial state → FrameCodeAt bytes state
 
-theorem compact_instr_decoded_ne_push0
-    {instr : Compact.Instr}
-    {decoded : EvmYul.Operation .EVM × Option (Word × Nat)}
-    (hValid : instr.Valid)
-    (hDecoded : instr.decoded? = some decoded) :
-    decoded.1 ≠ EvmYul.Operation.PUSH0 := by
-  cases instr with
-  | push width value =>
-      have hPositive : 0 < width := hValid.1
-      have hBound : width ≤ 32 := hValid.2.1
-      interval_cases width <;>
-        simp [Compact.Instr.decoded?, Compact.pushOp?] at hDecoded
-      all_goals (subst decoded; simp)
-  | jump | jumpi | jumpdest =>
-      simp [Compact.Instr.decoded?] at hDecoded
-      subst decoded
-      simp
-  | prim op =>
-      simp [Compact.Instr.decoded?] at hDecoded
-      subst decoded
-      cases op <;> simp [PrimOp.toEVM]
-
 /-- A concrete PC is either a compact instruction boundary or the verified
 end-of-code sentinel immediately before object payload bytes. -/
 def CompactLayoutPoint (program : Compact.Program) (pc : Word) : Prop :=
@@ -585,17 +560,12 @@ theorem frameCodeInvariant_of_layout
       rcases hMember with ⟨located, hMem, hPc⟩
       obtain ⟨decoded, hInstrDecoded, hBytesDecoded⟩ :=
         hDecode.decodes located hMem
-      have hInstrValid : located.instr.Valid :=
-        (List.forall_iff_forall_mem.mp hValid) located hMem
-      refine ⟨hCode, decoded.1, decoded.2, ?_, ?_⟩
-      · simpa [hPc] using hBytesDecoded
-      · exact compact_instr_decoded_ne_push0 hInstrValid hInstrDecoded
+      refine ⟨hCode, decoded.1, decoded.2, ?_⟩
+      simpa [hPc] using hBytesDecoded
   | inr hPc =>
       obtain ⟨decoded, hInstrDecoded, hBytesDecoded⟩ := hSentinel
-      refine ⟨hCode, decoded.1, decoded.2, ?_, ?_⟩
-      · simpa [hPc] using hBytesDecoded
-      · exact compact_instr_decoded_ne_push0
-          (instr := .prim .invalid) trivial hInstrDecoded
+      refine ⟨hCode, decoded.1, decoded.2, ?_⟩
+      simpa [hPc] using hBytesDecoded
 
 theorem executionException_beq_outOfFuel_iff
     (err : EvmYul.EVM.ExecutionException) :
@@ -1471,8 +1441,7 @@ theorem CurrentInstruction.open_stack_short_executes
         simpa [hInstr, Compact.Instr.Valid] using current.valid
       have hDecoded := current.instr_decoded
       rw [hInstr] at hDecoded
-      have hPositive := hValid.1
-      have hWidth := hValid.2.1
+      have hWidth := hValid.1
       interval_cases width <;>
         simp [Compact.Instr.decoded?, Compact.pushOp?] at hDecoded <;>
         rw [← hDecoded] at hOpenShort <;>
@@ -2552,16 +2521,16 @@ theorem positiveStepRefinement_of_positivePrim
   | push width value =>
       have hFits : Compact.FitsWidth width value.toNat := by
         simpa [hInstr, Compact.Instr.Valid] using current.valid
-      obtain ⟨op, hOp⟩ := Compact.exists_pushOp_of_width
-        ⟨hFits.1, hFits.2.1⟩
-      have hPair : current.decoded = (op, some (value, width)) := by
+      obtain ⟨op, hOp⟩ := Compact.exists_pushOp_of_width hFits.1
+      have hPair :
+          current.decoded = (op, Compact.pushArg? width value) := by
         have h := current.instr_decoded
         rw [hInstr] at h
         simpa [Compact.Instr.decoded?, hOp] using h.symm
       have hDecodedPair :
           ((EvmYul.EVM.decode gasful.executionEnv.code gasful.pc).getD
             (EvmYul.Operation.STOP, none)) =
-            (op, some (value, width)) :=
+            (op, Compact.pushArg? width value) :=
         current.decodedPair.trans hPair
       have hDecodedOp : decodedOperationAt gasful = op := by
         simp [decodedOperationAt, hDecodedPair]

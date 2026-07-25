@@ -1605,22 +1605,29 @@ theorem evmyul_step_push_eq
     (state : EVMState) (value : Word)
     (hFits : Compact.FitsWidth width value.toNat)
     (hOp : Compact.pushOp? width = some op) :
-    EvmYul.step (τ := .EVM) op (some (value, width)) state =
+    EvmYul.step (τ := .EVM) op (Compact.pushArg? width value) state =
       .ok
         (state.replaceStackAndIncrPC (state.stack.push value)
           (pcΔ := width + 1)) := by
-  have hPos := hFits.1
-  have hLe := hFits.2.1
-  interval_cases width <;>
-    simp [Compact.pushOp?] at hOp <;> cases hOp <;> rfl
+  have hLe := hFits.1
+  rcases Nat.eq_zero_or_pos width with hZero | hPos
+  · subst hZero
+    have hValue : value = EvmYul.UInt256.ofNat 0 :=
+      Compact.word_eq_zero_of_fitsWidth_zero hFits
+    subst hValue
+    simp [Compact.pushOp?] at hOp
+    cases hOp
+    rfl
+  · rw [Compact.pushArg?_of_pos hPos]
+    interval_cases width <;>
+      simp [Compact.pushOp?] at hOp <;> cases hOp <;> rfl
 
 theorem pushOp_isCreate_false
     {width : Nat} {op : EvmYul.Operation .EVM} {value : Word}
     (hFits : Compact.FitsWidth width value.toNat)
     (hOp : Compact.pushOp? width = some op) :
     EvmYul.Operation.isCreate op = false := by
-  have hPos := hFits.1
-  have hLe := hFits.2.1
+  have hLe := hFits.1
   interval_cases width <;>
     simp [Compact.pushOp?] at hOp <;> cases hOp <;> rfl
 
@@ -1630,8 +1637,7 @@ theorem pushOp_haltOutputAt_none
     (hFits : Compact.FitsWidth width value.toNat)
     (hOp : Compact.pushOp? width = some op) :
     haltOutputAt state op = none := by
-  have hPos := hFits.1
-  have hLe := hFits.2.1
+  have hLe := hFits.1
   interval_cases width <;>
     simp [Compact.pushOp?, haltOutputAt] at hOp ⊢ <;> cases hOp <;> rfl
 
@@ -1641,11 +1647,10 @@ theorem evm_step_pushOp_eq_evmyul
     (hFits : Compact.FitsWidth width value.toNat)
     (hOp : Compact.pushOp? width = some op) :
     EvmYul.EVM.step (fuel + 1) (dynamicGasCostAt state)
-        (some (op, some (value, width))) (afterMemoryChargeAt state) =
-      EvmYul.step (τ := .EVM) op (some (value, width))
+        (some (op, Compact.pushArg? width value)) (afterMemoryChargeAt state) =
+      EvmYul.step (τ := .EVM) op (Compact.pushArg? width value)
         (afterEVMInstructionChargeAt state) := by
-  have hPos := hFits.1
-  have hLe := hFits.2.1
+  have hLe := hFits.1
   interval_cases width <;>
     simp [Compact.pushOp?] at hOp <;> cases hOp <;>
     rfl
@@ -1656,7 +1661,7 @@ theorem evm_step_push_eq_next
     (hFits : Compact.FitsWidth width value.toNat)
     (hOp : Compact.pushOp? width = some op) :
     EvmYul.EVM.step (fuel + 1) (dynamicGasCostAt state)
-        (some (op, some (value, width))) (afterMemoryChargeAt state) =
+        (some (op, Compact.pushArg? width value)) (afterMemoryChargeAt state) =
       .ok (gasfulPushNext width value state) := by
   rw [evm_step_pushOp_eq_evmyul fuel state value hFits hOp]
   simpa [gasfulPushNext] using
@@ -8735,7 +8740,7 @@ theorem runRefinesOpen_push_success_rel
     (hOp : Compact.pushOp? width = some op)
     (hDecodedPair :
       ((EvmYul.EVM.decode gasful.executionEnv.code gasful.pc).getD
-        (EvmYul.Operation.STOP, none)) = (op, some (value, width)))
+        (EvmYul.Operation.STOP, none)) = (op, Compact.pushArg? width value))
     (hDecode : Compact.decodeAt bytes pc (.push width value))
     (hPc : openState.pc = EvmYul.UInt256.ofNat pc)
     (hCont :
@@ -9249,7 +9254,7 @@ theorem runRefinesOpen_push_success
     (hOp : Compact.pushOp? width = some op)
     (hDecodedPair :
       ((EvmYul.EVM.decode state.executionEnv.code state.pc).getD
-        (EvmYul.Operation.STOP, none)) = (op, some (value, width)))
+        (EvmYul.Operation.STOP, none)) = (op, Compact.pushArg? width value))
     (hDecode : Compact.decodeAt bytes pc (.push width value))
     (hPc : (afterDynamicChargeAt state).pc = EvmYul.UInt256.ofNat pc)
     (hCont :

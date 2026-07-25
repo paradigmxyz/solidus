@@ -107,14 +107,22 @@ theorem parse_of_decodeAt
                 cases hOp : pushOp? width with
                 | none => simp [Instr.decoded?, hOp] at hDecoded
                 | some op' =>
-                    simp [Instr.decoded?, hOp] at hDecoded
-                    rw [← hDecoded] at hDec
-                    by_cases hZero : EvmYul.EVM.argOnNBytesOfInstr op = 0
-                    · simp [hZero] at hDec
-                    · simp [hZero] at hDec
-                      obtain ⟨hOpEq, -, hWidth⟩ := hDec
-                      simp [Instr.byteSize]
-                      omega
+                    rcases Nat.eq_zero_or_pos width with hWidth | hWidth
+                    · subst hWidth
+                      simp [Instr.decoded?, hOp] at hDecoded
+                      rw [← hDecoded] at hDec
+                      by_cases hZero : EvmYul.EVM.argOnNBytesOfInstr op = 0
+                      · simp [Instr.byteSize, hZero]
+                      · simp [hZero] at hDec
+                    · simp [Instr.decoded?, hOp,
+                        pushArg?_of_pos hWidth] at hDecoded
+                      rw [← hDecoded] at hDec
+                      by_cases hZero : EvmYul.EVM.argOnNBytesOfInstr op = 0
+                      · simp [hZero] at hDec
+                      · simp [hZero] at hDec
+                        obtain ⟨hOpEq, -, hWidthEq⟩ := hDec
+                        simp [Instr.byteSize]
+                        omega
             | jump =>
                 simp [Instr.decoded?] at hDecoded
                 rw [← hDecoded] at hDec
