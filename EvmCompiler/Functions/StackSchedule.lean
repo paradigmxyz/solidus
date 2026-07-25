@@ -120,8 +120,13 @@ def orderPriority (pinned : LiveSet) (layout : Locals.Layout) (stmt : Stmt)
     (facts : AllocationLivenessFacts.Point) : List Name :=
   let allDying :=
     layout.filter fun name => decide (name ∉ required pinned facts.liveAfter)
+  -- EXPERIMENT E2: keep dying values in layout order rather than reversed.
+  -- `.reverse` placed the DEEPEST dead value nearest the top of the target,
+  -- which forces a large permutation to realise. Order among dead values is
+  -- irrelevant (they are all about to be dropped), so layout order is free and
+  -- keeps the target near the current stack.
   let reachableDying :=
-    (allDying.filter (accessible layout)).reverse
+    allDying.filter (accessible layout)
   let preferredImmediate :=
     if (StackAccess.Stmt.check? layout stmt).isSome then
       match stmt with
@@ -129,8 +134,20 @@ def orderPriority (pinned : LiveSet) (layout : Locals.Layout) (stmt : Stmt)
       | _ => []
     else
       StackAccess.Stmt.accessPriority stmt ++ reachableDying
+  -- EXPERIMENT E1: order the surviving accessible values by their CURRENT depth
+  -- instead of by next use.
+  --
+  -- This filter only ever admits values that are already `accessible`, so
+  -- next-use ordering buys no reachability — it only re-sorts the tail of the
+  -- stack at every statement, and the shuffle needed to realise that sort is
+  -- pure churn. Emitted code shows the cost: 19,501 shuffle bytes against
+  -- solc's 4,787, with `SWAP1` immediately preceding 2,039 of our 3,947 POPs.
+  --
+  -- Taking the same SET in layout order makes the target close to the current
+  -- stack, so the permutation is near-identity. Nothing gets deeper than it
+  -- already was, so accessibility is not degraded relative to the input layout.
   let boundedFuture :=
-    (facts.nextUse.filter fun name =>
+    (layout.filter fun name =>
       accessible layout name && decide (name ∈ facts.liveAfter)).take 16
   let preferred :=
     ((AllocationLivenessFacts.stableUnique
