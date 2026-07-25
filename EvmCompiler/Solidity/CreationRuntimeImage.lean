@@ -286,8 +286,18 @@ theorem payloadItems?_object_mem
     have hMemEffective : ObjectItemRef.object i ∈ object.effectiveItems :=
       ObjectItemRef.mem_of_contains hContains
     unfold ObjectItemRef.List.moveMetadataLast
+    -- `isUnnamedData?` and `isMetadata?` are both `false` on every `.object`
+    -- item by definition, so an object index survives the unnamed-data filter
+    -- and lands in the non-metadata half.
+    have hMemDropped :
+        ObjectItemRef.object i ∈
+          ObjectItemRef.List.dropUnnamedData object.data
+            object.effectiveItems := by
+      unfold ObjectItemRef.List.dropUnnamedData
+      exact List.mem_filter.mpr
+        ⟨hMemEffective, by simp [ObjectItemRef.isUnnamedData?]⟩
     exact List.mem_append_left _
-      (List.mem_filter.mpr ⟨hMemEffective, by simp [ObjectItemRef.isMetadata?]⟩)
+      (List.mem_filter.mpr ⟨hMemDropped, by simp [ObjectItemRef.isMetadata?]⟩)
   · simp [hValid] at hItems
 
 /-- The stabilized code-base plan records the layout generated at the final

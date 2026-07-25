@@ -134,11 +134,33 @@ def growLayout (blocks : List Block) :
                 (b :: rest, placed)
             | none => ([b], placed)
 
-/-- Greedy fallthrough-maximising block order: seed chains at the entry then at
-every block label in order, laying each block right after its unconditional-jump
-predecessor whenever possible. -/
+/-- Every label some block nominates as its fallthrough successor. -/
+def nominatedLabels (blocks : List Block) : List Label :=
+  blocks.filterMap succLabel?
+
+/-- Chain heads: blocks no other block can fall through *into*.  Seeding here
+first is what makes the greedy layout maximal — a block that is somebody's
+fallthrough successor must not be consumed as a chain seed before its
+predecessor gets the chance to claim it, or the edge is lost for good. -/
+def chainHeadLabels (blocks : List Block) : List Label :=
+  (blocks.filter fun b => !(nominatedLabels blocks).contains b.label).map
+    (·.label)
+
+/-- Greedy fallthrough-maximising block order: seed chains at the entry, then at
+every chain head, then at every remaining block label (which mops up blocks only
+reachable inside a fallthrough cycle), laying each block right after the
+predecessor whose trailing `.jump` can then be elided.
+
+Seeding chain heads before the bare label list is what lifts the layout from
+"first-come" to maximal: with the plain label-order seeding, a block that was
+some branch's else-successor would frequently be picked as a fresh chain seed
+first, stranding its predecessor's `.jump` tail (572 sole-predecessor targets
+were left non-adjacent that way). Every seed list containing all block labels
+yields the same coverage/`Nodup` facts, since `foldl_seed_mem` and
+`foldLabels_spec` are proved for an arbitrary seed list. -/
 def layoutBlocks (p : Program) : List Block :=
-  let seeds := p.entry :: p.blocks.map (·.label)
+  let seeds :=
+    p.entry :: (chainHeadLabels p.blocks ++ p.blocks.map (·.label))
   (seeds.foldl
     (fun (st : List Block × List Label) s =>
       let g := growLayout p.blocks p.blocks.length s st.2
@@ -190,7 +212,8 @@ theorem layoutBlocks_mem (p : Program) {b : Block}
     (hb : b ∈ layoutBlocks p) : b ∈ p.blocks := by
   unfold layoutBlocks at hb
   -- The fold accumulates `st.1 ++ rest`; each `rest ⊆ p.blocks` by `growLayout_mem`.
-  set seeds := p.entry :: p.blocks.map (·.label) with hseeds
+  set seeds :=
+    p.entry :: (chainHeadLabels p.blocks ++ p.blocks.map (·.label)) with hseeds
   clear hseeds
   suffices H : ∀ (ss : List Label) (acc : List Block × List Label),
       (∀ x ∈ acc.1, x ∈ p.blocks) →
@@ -402,8 +425,10 @@ theorem foldl_seed_mem (blocks : List Block) {n : Nat} (hn : 0 < n) :
 /-- Coverage: every original block is laid out. -/
 theorem layoutBlocks_coverage (p : Program) (h : p.LabelsUnique)
     {b0 : Block} (hb0 : b0 ∈ p.blocks) : b0 ∈ layoutBlocks p := by
-  have hseed : b0.label ∈ (p.entry :: p.blocks.map Block.label) :=
-    List.mem_cons_of_mem _ (List.mem_map.mpr ⟨b0, hb0, rfl⟩)
+  have hseed : b0.label ∈
+      (p.entry :: (chainHeadLabels p.blocks ++ p.blocks.map Block.label)) :=
+    List.mem_cons_of_mem _
+      (List.mem_append_right _ (List.mem_map.mpr ⟨b0, hb0, rfl⟩))
   have hlk : lookup? p.blocks b0.label = some b0 := by
     unfold lookup?
     have := Program.findBlock?_eq_some_of_mem h hb0
@@ -411,12 +436,15 @@ theorem layoutBlocks_coverage (p : Program) (h : p.LabelsUnique)
     exact this
   have hpos : 0 < p.blocks.length := List.length_pos_of_mem hb0
   have hin : b0.label ∈
-      ((p.entry :: p.blocks.map Block.label).foldl (fun st x =>
+      ((p.entry ::
+          (chainHeadLabels p.blocks ++ p.blocks.map Block.label)).foldl
+        (fun st x =>
           let g := growLayout p.blocks p.blocks.length x st.2
           (st.1 ++ g.1, g.2)) ([], [])).2 :=
     foldl_seed_mem p.blocks hpos _ ([], []) b0.label hseed hlk
   obtain ⟨hH1, _hND⟩ :=
-    foldLabels_spec p.blocks p.blocks.length (p.entry :: p.blocks.map Block.label)
+    foldLabels_spec p.blocks p.blocks.length
+      (p.entry :: (chainHeadLabels p.blocks ++ p.blocks.map Block.label))
       ([], []) (by intro l; simp) (by simp)
   have hlab : b0.label ∈ (layoutBlocks p).map Block.label := by
     have := (hH1 b0.label).mp hin
@@ -436,7 +464,7 @@ theorem layoutBlocks_coverage (p : Program) (h : p.LabelsUnique)
 theorem layoutBlocks_labels_nodup (p : Program) :
     ((layoutBlocks p).map Block.label).Nodup := by
   have := (foldLabels_spec p.blocks p.blocks.length
-    (p.entry :: p.blocks.map Block.label) ([], [])
+    (p.entry :: (chainHeadLabels p.blocks ++ p.blocks.map Block.label)) ([], [])
     (by intro l; simp) (by simp)).2
   simpa [layoutBlocks] using this
 
