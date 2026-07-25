@@ -137,7 +137,7 @@ theorem type?_conj_bindLocals_single (d offset : Nat) (name : String) (s : Shape
     refine congrArg some ?_
     simp only [remapShape]
     congr 1
-    rw [swapPos_set_comm 0 (d + 1) s.slots offset (.local name) h0 hd,
+    rw [swapPos_set_comm 0 (d + 1) s.slots offset (Shape.slotOfBinder name) h0 hd,
       ← remapDepth_eq_transpIdx]
   · push_neg at hOff
     have hL : Instr.type? (.bindLocals offset [name]) s = none := by

@@ -335,6 +335,57 @@ theorem openRun_cleanupManyPreserving?
                   · exact hFinalShared.trans hMidShared
                   · exact hFinalReturns.trans hMidReturns
 
+/-- The zero-byte return-value retag emitted at the end of a preserving cleanup
+runs to the identity: `bindLocals` is a type-level marker whose Structured
+semantics is `.ok state`. -/
+@[simp] theorem openRun_retagPreservedWords (preserve : Nat)
+    (target : Structured.RunState) :
+    Structured.InteractionSemantics.Code.openRun
+        (Ctx.retagPreservedWords preserve) target =
+      .done (.ok target) := by
+  cases preserve with
+  | zero => rfl
+  | succ count =>
+      rw [Ctx.retagPreservedWords,
+        Structured.InteractionSemantics.Code.openRun_single]
+      unfold Structured.InteractionSemantics.BasicInstr.openStep
+        Structured.InteractionSemantics.BasicInstr.openStepEVM
+      simp [Structured.BasicInstr.step, Simulation.Interaction.map,
+        Simulation.Interaction.pure, Structured.RunState.withEVM]
+
+/-- **Preserving cleanup, including the trailing zero-byte return-value retag.**
+
+This is the form the procedure-exit call sites consume: `cleanupToPreserving?`
+emits the value-preserving `SWAP`/`POP` schedule followed by a `bindLocals`
+marker that reclassifies the kept return values as anonymous words.  The marker
+lowers to no bytes and steps to the identity, so the runtime conclusion is
+exactly that of `openRun_cleanupManyPreserving?`. -/
+theorem openRun_cleanupToPreserving?
+    {ctx : Ctx} {preserve targetDepth : Nat} {code : Structured.Code}
+    {values discarded suffix : List Word}
+    {target : Structured.RunState}
+    (hCode : ctx.cleanupToPreserving? preserve targetDepth = some code)
+    (hValuesLength : values.length = preserve)
+    (hDiscardedLength : discarded.length = ctx.layout.length - targetDepth)
+    (hStack : target.evm.stack = values ++ discarded ++ suffix) :
+    ∃ final,
+      Structured.InteractionSemantics.Code.openRun code target =
+          .done (.ok final) ∧
+        final.evm.stack = values ++ suffix ∧
+        final.evm.toSharedState = target.evm.toSharedState ∧
+        final.returns = target.returns := by
+  unfold Ctx.cleanupToPreserving? at hCode
+  split at hCode
+  · rcases Option.map_eq_some_iff.mp hCode with ⟨many, hMany, hManyCode⟩
+    subst hManyCode
+    obtain ⟨final, hRun, hFinalStack, hFinalShared, hFinalReturns⟩ :=
+      openRun_cleanupManyPreserving? hMany hValuesLength hDiscardedLength
+        hStack
+    refine ⟨final, ?_, hFinalStack, hFinalShared, hFinalReturns⟩
+    rw [Structured.InteractionSemantics.Code.openRun_append, hRun]
+    simpa using openRun_retagPreservedWords preserve final
+  · simp at hCode
+
 end InteractionCleanupPreservation
 end Locals
 end EvmCompiler

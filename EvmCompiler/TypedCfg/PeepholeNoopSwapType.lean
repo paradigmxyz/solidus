@@ -334,12 +334,12 @@ theorem take_append_single_drop {α : Type _} :
 theorem type?_bindLocals_single (offset : Nat) (name : String) (s : Shape)
     (h : offset < s.slots.length) :
     Instr.type? (.bindLocals offset [name]) s
-      = some { s with slots := s.slots.set offset (.local name) } := by
+      = some { s with slots := s.slots.set offset (Shape.slotOfBinder name) } := by
   simp only [Instr.type?, Shape.bindLocals?, Shape.length, List.length_cons,
     List.length_nil, List.map_cons, List.map_nil, Nat.zero_add,
     List.append_assoc, List.singleton_append]
   rw [if_pos (by omega : offset + 1 ≤ s.slots.length)]
-  rw [take_append_single_drop s.slots offset (.local name) h]
+  rw [take_append_single_drop s.slots offset (Shape.slotOfBinder name) h]
 
 /-- **`bindLocals` (single name) window preservation.** -/
 theorem type?_window_bindLocals_single {d offset : Nat} {name : String}
@@ -377,11 +377,12 @@ theorem type?_window_bindLocals_single {d offset : Nat} {name : String}
     swapPos_length 0 (d + 1) s0.slots
   have h0' : 0 < (swapPos 0 (d + 1) s0.slots).length := by rw [hlen]; exact h0
   have hd1' : d + 1 < (swapPos 0 (d + 1) s0.slots).length := by rw [hlen]; exact hd1
-  have hslots : s3.slots = s0.slots.set (remapDepth d offset) (.local name) := by
+  have hslots :
+      s3.slots = s0.slots.set (remapDepth d offset) (Shape.slotOfBinder name) := by
     rw [hs3slots]
     simp only [hs1slots]
     rw [swapPos_set_comm 0 (d + 1) (swapPos 0 (d + 1) s0.slots) offset
-        (.local name) h0' hd1',
+        (Shape.slotOfBinder name) h0' hd1',
       swapPos_involutive 0 (d + 1) s0.slots h0 hd1, ← remapDepth_eq_transpIdx]
   have htail : s3.tail = s0.tail := by rw [hs3tail, hs1tail]
   obtain ⟨sl3, tl3⟩ := s3

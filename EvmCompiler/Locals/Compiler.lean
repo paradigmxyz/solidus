@@ -2222,7 +2222,14 @@ theorem Ctx.cleanupToPreserving?_noCallCreate {ctx : Ctx}
     code.usesCallCreate = false := by
   unfold Ctx.cleanupToPreserving? at hCleanup
   split at hCleanup
-  · exact Ctx.cleanupManyPreserving?_noCallCreate hCleanup
+  · rcases Option.map_eq_some_iff.mp hCleanup with ⟨many, hMany, hCode⟩
+    subst hCode
+    have hManyNo := Ctx.cleanupManyPreserving?_noCallCreate hMany
+    have hRetagNo := Ctx.retagPreservedWords_usesCallCreate preserve
+    simpa [Structured.Code.usesCallCreate, hManyNo, hRetagNo] using
+      And.intro
+        (Structured.Code.all_false_of_usesCallCreate_false hManyNo)
+        (Structured.Code.all_false_of_usesCallCreate_false hRetagNo)
   · simp at hCleanup
 
 theorem Ctx.cleanupAll_noCallCreate (ctx : Ctx) :

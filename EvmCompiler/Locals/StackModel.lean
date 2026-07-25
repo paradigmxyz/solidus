@@ -1,4 +1,8 @@
 import EvmCompiler.Locals.Syntax
+-- `TypedCfg.Shape.anonymousBinder` only: the reserved zero-byte retag binder
+-- name.  `TypedCfg.Syntax` depends on nothing but `Assembly.Syntax`, so this
+-- introduces no layering cycle.
+import EvmCompiler.TypedCfg.Syntax
 import Mathlib.Tactic.IntervalCases
 
 namespace EvmCompiler
@@ -557,10 +561,43 @@ def cleanupManyPreserving? : Nat → Nat → Option Structured.Code
       let tail ← cleanupManyPreserving? count temps
       some (head ++ tail)
 
+/--
+Zero-byte retag of the `preserve` values kept on top by a preserving cleanup.
+
+A preserving cleanup is only ever emitted at a procedure exit, where the values
+it keeps are the procedure's return values.  Those values were pushed by
+duplicating the named locals holding them, so the typed CFG still classifies
+them as `.local` slots — but `Shape.procExit` requires anonymous `.word` slots.
+`bindLocals` is a compiler-owned pseudo-instruction that lowers to no bytes at
+all (`TypedCfg.Instr.lower? (.bindLocals _ _) = some []`) and whose runtime
+semantics is the identity, so binding the kept values to
+`Shape.anonymousBinder` performs that reclassification for free.
+
+The alternative the compiler used to emit was `add(x, 0)` per returned value,
+which is also value-preserving but costs `PUSH1 0x00 ; ADD` — three runtime
+bytes and eight gas per returned value per exit, purely to change a type tag.
+-/
+def retagPreservedWords (preserve : Nat) : Structured.Code :=
+  match preserve with
+  | 0 => []
+  | count + 1 =>
+      [Structured.BasicInstr.bindLocals 0
+        (List.replicate (count + 1) TypedCfg.Shape.anonymousBinder)]
+
+@[simp] theorem retagPreservedWords_zero :
+    retagPreservedWords 0 = [] := rfl
+
+@[simp] theorem retagPreservedWords_usesCallCreate (preserve : Nat) :
+    (retagPreservedWords preserve).usesCallCreate = false := by
+  cases preserve <;>
+    simp [retagPreservedWords, Structured.Code.usesCallCreate,
+      Structured.BasicInstr.usesCallCreate]
+
 def cleanupToPreserving? (ctx : Ctx) (preserve targetDepth : Nat) :
     Option Structured.Code :=
   if targetDepth ≤ ctx.layout.length then
-    cleanupManyPreserving? (ctx.layout.length - targetDepth) preserve
+    (cleanupManyPreserving? (ctx.layout.length - targetDepth) preserve).map
+      (· ++ retagPreservedWords preserve)
   else
     none
 
