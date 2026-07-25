@@ -519,9 +519,20 @@ theorem closedLinear_pushCode (value : Word) :
   cases hMask : Assembly.maskWidth? value with
   | none =>
       rw [hMask] at hi
-      simp only [List.mem_singleton] at hi
-      subst hi
-      exact closedLinear_push _
+      cases hEnc : Assembly.shiftEncode? value with
+      | none =>
+          rw [hEnc] at hi
+          simp only [List.mem_singleton] at hi
+          subst hi
+          exact closedLinear_push _
+      | some k =>
+          rw [hEnc] at hi
+          simp only [List.mem_cons, List.not_mem_nil, or_false] at hi
+          rcases hi with h | h | h <;> subst h
+          · exact closedLinear_push _
+          · exact closedLinear_push _
+          · exact closedLinear_prim (input := 2) (output := 1)
+              (by decide) (by decide) (by decide) rfl rfl
   | some w =>
       rw [hMask] at hi
       simp only [List.mem_cons, List.not_mem_nil, or_false] at hi
