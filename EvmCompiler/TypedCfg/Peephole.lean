@@ -36,6 +36,9 @@ def peepholeBody : List Instr → List Instr
       | .push _, .pop :: rest' => rest'
       | .swap d, .swap d' :: rest' =>
           if d = d' then rest' else .swap d :: .swap d' :: rest'
+      | .push v, .push v' :: rest' =>
+          if v = v' then .push v :: .dup 0 :: rest'
+          else .push v :: .push v' :: rest'
       | instr', tail => instr' :: tail
 
 @[simp] theorem peepholeBody_nil : peepholeBody [] = [] := rfl
@@ -47,6 +50,9 @@ theorem peepholeBody_cons (instr : Instr) (rest : List Instr) :
       | .push _, .pop :: rest' => rest'
       | .swap d, .swap d' :: rest' =>
           if d = d' then rest' else .swap d :: .swap d' :: rest'
+      | .push v, .push v' :: rest' =>
+          if v = v' then .push v :: .dup 0 :: rest'
+          else .push v :: .push v' :: rest'
       | instr', tail => instr' :: tail := rfl
 
 /-- The peephole never grows a body. -/
@@ -65,6 +71,12 @@ theorem peepholeBody_length_le :
         simp only [List.length_cons]; omega
       · -- swap;swap arm: `if d = d'` cancels, else keeps.
         rename_i d d' rest' hEq
+        have hlen : (peepholeBody rest).length = rest'.length + 1 := by
+          rw [hEq]; simp
+        split <;> simp only [List.length_cons] <;> omega
+      · -- push;push arm: `if v = v'` rewrites the second push to `dup 0`
+        -- (same instruction count, strictly fewer emitted bytes), else keeps.
+        rename_i v v' rest' hEq
         have hlen : (peepholeBody rest).length = rest'.length + 1 := by
           rw [hEq]; simp
         split <;> simp only [List.length_cons] <;> omega

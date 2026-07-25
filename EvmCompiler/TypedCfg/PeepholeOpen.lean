@@ -83,6 +83,32 @@ theorem peepholeBody_bodyType? :
               rw [← hEq]
               simpa [Block.bodyType?, hHeadType] using
                 peepholeBody_bodyType? rest middle output hTailType
+          · -- push;push arm: instr = .push v, peepholeBody rest = .push v' :: rest'
+            rename_i v v' rest' hEq
+            have hMiddle : middle =
+                { input with slots := .literal v :: input.slots } := by
+              simpa [Instr.type?] using hHeadType.symm
+            subst hMiddle
+            have ihB := peepholeBody_bodyType? rest
+              { input with slots := .literal v :: input.slots } output hTailType
+            rw [hEq] at ihB
+            split
+            · -- v = v': the repeated push becomes `dup 0`, which types the same
+              rename_i hvv
+              subst hvv
+              have hDupType :
+                  Instr.type? (.dup 0)
+                      { input with slots := .literal v :: input.slots } =
+                    some { slots := .literal v :: .literal v :: input.slots,
+                           tail := input.tail } := by
+                simp [Instr.type?, Shape.get?]
+              simpa [Block.bodyType?, Instr.type?, hDupType] using ihB
+            · -- v ≠ v': keeps both pushes (= .push v :: peepholeBody rest)
+              rw [← hEq]
+              simpa [Block.bodyType?, hHeadType] using
+                peepholeBody_bodyType? rest
+                  { input with slots := .literal v :: input.slots } output
+                  hTailType
           · -- keep arm
             simpa [Block.bodyType?, hHeadType] using
               peepholeBody_bodyType? rest middle output hTailType
@@ -195,7 +221,11 @@ theorem forall_pcIndependent_peephole {body : List Instr}
     (h : body.Forall Instr.ProgramCounterIndependent) :
     (peepholeBody body).Forall Instr.ProgramCounterIndependent := by
   rw [List.forall_iff_forall_mem] at h ⊢
-  exact fun i hi => h i (mem_peepholeBody hi)
+  intro i hi
+  rcases mem_peepholeBody hi with hMem | hDup
+  · exact h i hMem
+  · subst hDup
+    simp [Instr.ProgramCounterIndependent, Instr.effects]
 
 theorem forall_pcIndependent_tail_of_cons {i : Instr} {rest : List Instr}
     (h : (i :: rest).Forall Instr.ProgramCounterIndependent) :
@@ -401,6 +431,131 @@ theorem openRunBody_peephole_congr :
               subst leftShape; subst rightShape
               exact
                 openRunBody_peephole_congr rest middle output
+                  leftAfter rightAfter hTailType hTailPC hRightReal hAfter
+          · -- push;push arm: instr = .push v, peepholeBody rest = .push v' :: rest'
+            rename_i v v' rest' hEq
+            have hMiddle : middle =
+                { input with slots := .literal v :: input.slots } := by
+              simpa [Instr.type?] using hHeadType.symm
+            subst hMiddle
+            split
+            · -- v = v': the repeated `push v` becomes `dup 0` (same stack, one
+              -- byte instead of `1 + width v`).  Structurally the mirror of the
+              -- push;pop arm: fire the shared leading `push v` on both sides,
+              -- recurse on `rest`, then bridge the LHS `dup 0` to the RHS second
+              -- `push v` with `dup1_after_push_sameRuntimeData`.
+              rename_i hvv
+              subst hvv
+              have hPushRel :
+                  SameRuntimeData
+                    (state1.replaceStackAndIncrPC (state1.stack.push v) 33)
+                    (state2.replaceStackAndIncrPC (state2.stack.push v) 33) :=
+                SameRuntimeData.replaceStackAndIncrPC (pcΔ := 33) hRel
+                  (congrArg (fun st => st.push v) (SameRuntimeData.stack_eq hRel))
+              have hPushReal2 :
+                  StackRealizes { input with slots := .literal v :: input.slots }
+                    (state2.replaceStackAndIncrPC (state2.stack.push v) 33) := by
+                unfold StackRealizes at hReal2 ⊢
+                simp only [Shape.length, List.length_cons,
+                  EvmYul.EVM.State.replaceStackAndIncrPC, EvmYul.EVM.State.incrPC,
+                  EvmYul.Stack.push, List.length_cons] at *
+                omega
+              have ihB := peepholeBody_bodyType? rest
+                { input with slots := .literal v :: input.slots } output hTailType
+              rw [hEq] at ihB
+              have hRest'BodyType :
+                  Block.bodyType? rest'
+                      { slots := .literal v :: .literal v :: input.slots,
+                        tail := input.tail } = some output := by
+                simpa [Block.bodyType?, Instr.type?] using ihB
+              have hRest'PC : rest'.Forall Instr.ProgramCounterIndependent := by
+                have hp := forall_pcIndependent_peephole hTailPC
+                rw [hEq] at hp
+                exact forall_pcIndependent_tail_of_cons hp
+              obtain ⟨dupState1, hDupStep, hDupRel⟩ :=
+                dup1_after_push_sameRuntimeData
+                  (state1.replaceStackAndIncrPC (state1.stack.push v) 33) v
+                  state1.stack
+                  (by simp [EvmYul.EVM.State.replaceStackAndIncrPC,
+                    EvmYul.EVM.State.incrPC, EvmYul.Stack.push]) 33
+              have hDupType :
+                  Instr.type? (.dup 0)
+                      { input with slots := .literal v :: input.slots } =
+                    some { slots := .literal v :: .literal v :: input.slots,
+                           tail := input.tail } := by
+                simp [Instr.type?, Shape.get?]
+              have hLHS :
+                  Block.openRunBody (.push v :: .dup 0 :: rest') input state1 =
+                    Block.openRunBody rest'
+                      { slots := .literal v :: .literal v :: input.slots,
+                        tail := input.tail } dupState1 := by
+                rw [openRunBody_push_cons v (.dup 0 :: rest') input state1,
+                  openRunBody_nonprim_cons (by intro op; simp)]
+                simp [TypedCfg.Instr.runAt, hDupType, Instr.runState,
+                  Option.elim, hDupStep]
+              have hRHS :
+                  Block.openRunBody (Instr.push v :: rest) input state2 =
+                    Block.openRunBody rest
+                      { input with slots := .literal v :: input.slots }
+                      (state2.replaceStackAndIncrPC (state2.stack.push v) 33) :=
+                openRunBody_push_cons v rest input state2
+              have ihRest :=
+                openRunBody_peephole_congr rest
+                  { input with slots := .literal v :: input.slots } output
+                  (state1.replaceStackAndIncrPC (state1.stack.push v) 33)
+                  (state2.replaceStackAndIncrPC (state2.stack.push v) 33)
+                  hTailType hTailPC hPushReal2 hPushRel
+              rw [hEq, openRunBody_push_cons v rest'
+                { input with slots := .literal v :: input.slots }
+                (state1.replaceStackAndIncrPC (state1.stack.push v) 33)] at ihRest
+              have hCong :=
+                InteractionCongruence.Block.openRunBody_runtimeRel
+                  hRest'BodyType hRest'PC hDupRel
+              have hFinal :
+                  Simulation.Interaction.Rel (Instr.RuntimeAtRel output)
+                    (Block.openRunBody (.push v :: .dup 0 :: rest') input state1)
+                    (Block.openRunBody (Instr.push v :: rest) input state2) := by
+                rw [hLHS, hRHS]
+                refine Simulation.Interaction.Rel.mono
+                  (Simulation.Interaction.Rel.trans hCong ihRest) ?_
+                rintro l r ⟨m, ha, hb⟩
+                exact runtimeAtRel_trans ha hb
+              exact hFinal
+            · -- v ≠ v': no rewrite — behaves exactly as the keep arm.
+              rw [← hEq]
+              have hHead :=
+                InteractionCongruence.Instr.openRunAt_runtimeRel
+                  hHeadType hHeadPC hRel
+              have hGuard := openRunAt_stackRealizes hHeadType hReal2
+              have hStrong' :
+                  Simulation.Interaction.Rel
+                    (Simulation.Interaction.ExceptRel
+                      (fun a b : EVMException => a = b)
+                      (fun lp rp : EVMState × Shape =>
+                        SameRuntimeData lp.1 rp.1 ∧
+                          lp.2 = { input with slots := .literal v :: input.slots } ∧
+                          rp.2 = { input with slots := .literal v :: input.slots } ∧
+                          StackRealizes
+                            { input with slots := .literal v :: input.slots } rp.1))
+                    _ _ :=
+                Simulation.Interaction.Rel.mono
+                  (Simulation.Interaction.Rel.strengthen_right hHead hGuard) (by
+                    rintro l r ⟨hER, hSR⟩
+                    cases hER with
+                    | error he => exact .error he
+                    | ok hSS => exact .ok ⟨hSS.1, hSS.2.1, hSS.2.2, hSR⟩)
+              unfold InteractionSemantics.Block.openRunBody
+                Control.Block.runBody
+              apply Simulation.Interaction.Rel.bind hStrong'
+              intro leftPair rightPair hPair
+              rcases leftPair with ⟨leftAfter, leftShape⟩
+              rcases rightPair with ⟨rightAfter, rightShape⟩
+              obtain ⟨hAfter, hLeftShape, hRightShape, hRightReal⟩ := hPair
+              change SameRuntimeData leftAfter rightAfter at hAfter
+              subst hLeftShape; subst hRightShape
+              exact
+                openRunBody_peephole_congr rest
+                  { input with slots := .literal v :: input.slots } output
                   leftAfter rightAfter hTailType hTailPC hRightReal hAfter
           · -- keep arm: peepholeBody (instr :: rest) = instr :: peepholeBody rest
             have hHead :=

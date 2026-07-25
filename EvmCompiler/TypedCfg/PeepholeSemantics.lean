@@ -177,10 +177,14 @@ theorem runBody_map_erase :
                   simp only [hT, hS, Bind.bind, Except.bind]
                   exact runBody_map_erase rest out hSafe.tail hRel'
 
-/-- The peephole only ever drops instructions, so every instruction it keeps
-was already present. -/
+/-- The peephole only ever drops instructions or rewrites a repeated `push v`
+into `dup 0`, so every instruction it keeps was already present — with the
+single exception of the freshly introduced `dup 0` (the `push v ; push v`
+arm).  `.dup 0` is unconditionally `peepholeSafe` and
+`ProgramCounterIndependent`, so both consumers of this lemma discharge the
+extra disjunct outright. -/
 theorem mem_peepholeBody {x : Instr} :
-    ∀ {body : List Instr}, x ∈ peepholeBody body → x ∈ body
+    ∀ {body : List Instr}, x ∈ peepholeBody body → x ∈ body ∨ x = .dup 0
   | [], hx => by simp [peepholeBody] at hx
   | instr :: rest, hx => by
       rw [peepholeBody_cons] at hx
@@ -189,23 +193,40 @@ theorem mem_peepholeBody {x : Instr} :
         rename_i v rest' hEq
         have hmem : x ∈ peepholeBody rest := by
           rw [hEq]; exact List.mem_cons_of_mem _ hx
-        exact List.mem_cons_of_mem _ (mem_peepholeBody hmem)
+        exact (mem_peepholeBody hmem).imp (List.mem_cons_of_mem _) id
       · -- swap;swap arm: `if d = d'` cancels to `rest'`, else keeps both swaps.
         rename_i d d' rest' hEq
         split at hx
         · -- d = d': `x ∈ rest'`
           have hmem : x ∈ peepholeBody rest := by
             rw [hEq]; exact List.mem_cons_of_mem _ hx
-          exact List.mem_cons_of_mem _ (mem_peepholeBody hmem)
+          exact (mem_peepholeBody hmem).imp (List.mem_cons_of_mem _) id
         · -- d ≠ d': `x ∈ .swap d :: .swap d' :: rest'`
           rcases List.mem_cons.mp hx with h | h
-          · exact h ▸ List.mem_cons_self ..
+          · exact Or.inl (h ▸ List.mem_cons_self ..)
           · have hmem : x ∈ peepholeBody rest := by rw [hEq]; exact h
-            exact List.mem_cons_of_mem _ (mem_peepholeBody hmem)
+            exact (mem_peepholeBody hmem).imp (List.mem_cons_of_mem _) id
+      · -- push;push arm: `if v = v'` rewrites to `.push v :: .dup 0 :: rest'`
+        -- (the ONLY arm that introduces a new instruction), else keeps both.
+        rename_i v v' rest' hEq
+        split at hx
+        · -- v = v': `x ∈ .push v :: .dup 0 :: rest'`
+          rcases List.mem_cons.mp hx with h | h
+          · exact Or.inl (h ▸ List.mem_cons_self ..)
+          · rcases List.mem_cons.mp h with h' | h'
+            · exact Or.inr h'
+            · have hmem : x ∈ peepholeBody rest := by
+                rw [hEq]; exact List.mem_cons_of_mem _ h'
+              exact (mem_peepholeBody hmem).imp (List.mem_cons_of_mem _) id
+        · -- v ≠ v': `x ∈ .push v :: .push v' :: rest'`
+          rcases List.mem_cons.mp hx with h | h
+          · exact Or.inl (h ▸ List.mem_cons_self ..)
+          · have hmem : x ∈ peepholeBody rest := by rw [hEq]; exact h
+            exact (mem_peepholeBody hmem).imp (List.mem_cons_of_mem _) id
       · -- keep arm: `x ∈ instr :: peepholeBody rest`.
         rcases List.mem_cons.mp hx with h | h
-        · exact h ▸ List.mem_cons_self ..
-        · exact List.mem_cons_of_mem _ (mem_peepholeBody h)
+        · exact Or.inl (h ▸ List.mem_cons_self ..)
+        · exact (mem_peepholeBody h).imp (List.mem_cons_of_mem _) id
 
 /-- Congruence of `runBody` under a leading common instruction: if two bodies
 have observationally equal `runBody` from every shape/state, so do they after
@@ -226,8 +247,11 @@ theorem runBody_cons_congr (i : Instr) {A1 A2 : List Instr}
       exact h out st'
 
 theorem BodySafe.peephole {body : List Instr}
-    (h : BodySafe body) : BodySafe (peepholeBody body) :=
-  fun i hi => h i (mem_peepholeBody hi)
+    (h : BodySafe body) : BodySafe (peepholeBody body) := by
+  intro i hi
+  rcases mem_peepholeBody hi with hMem | hDup
+  · exact h i hMem
+  · subst hDup; rfl
 
 -- NOTE (session 54, Obstacle A): the closed-level preservation theorem
 -- `peepholeBody_runBody_erase` and its dead lift
