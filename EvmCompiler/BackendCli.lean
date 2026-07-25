@@ -172,6 +172,401 @@ def allowOversizeFromEnv : IO Bool := do
       pure !(v == "" || v == "0" || v == "false" || v == "False"
         || v == "FALSE" || v == "no" || v == "off" || v == "OFF")
 
+namespace DirectReturnProbe
+
+abbrev TokenTargets := List (Assembly.Word × Assembly.Label)
+
+def tokenTargets (program : TypedCfg.Program) : TokenTargets :=
+  program.blocks.flatMap fun block =>
+    match block.term with
+    | .returnDispatch _ sites => sites.map fun site => (site.token, site.target)
+    | _ => []
+
+def lookupTarget? (targets : TokenTargets)
+    (token : Assembly.Word) : Option Assembly.Label :=
+  (targets.find? fun entry => entry.1 == token).map Prod.snd
+
+def lowerInstrAt? (targets : TokenTargets) (instr : TypedCfg.Instr)
+    (shape : TypedCfg.Shape) :
+    Option (Assembly.Program × TypedCfg.Shape) := do
+  let (code, output) ← instr.lowerAt? shape
+  match instr with
+  | .returnToken token =>
+      let target ← lookupTarget? targets token
+      some ([.pushLabel target], output)
+  | _ => some (code, output)
+
+def lowerBodyFrom? (targets : TokenTargets) :
+    List TypedCfg.Instr → TypedCfg.Shape →
+      Option (Assembly.Program × TypedCfg.Shape)
+  | [], shape => some ([], shape)
+  | instr :: rest, shape => do
+      let (head, next) ← lowerInstrAt? targets instr shape
+      let (tail, output) ← lowerBodyFrom? targets rest next
+      some (head ++ tail, output)
+
+def lowerTerm? (shape : TypedCfg.Shape) :
+    TypedCfg.Terminator → Option Assembly.Program
+  | .returnDispatch returnCount sites => do
+      let depth ← shape.returnTokenDepth?
+      if sites.isEmpty ∨ depth ≠ returnCount ∨ 15 < depth then
+        none
+      else
+        some
+          (Assembly.StackShuffle.liftBuriedToTop depth ++
+            [.jumpDynamic])
+  | term => term.lowerAt? shape
+
+def lowerBlock? (targets : TokenTargets)
+    (block : TypedCfg.Block) : Option Assembly.Program := do
+  let (body, output) ← lowerBodyFrom? targets block.body block.input
+  if output = block.output then
+    let term ← lowerTerm? output block.term
+    some (.label block.label :: body ++ term)
+  else
+    none
+
+def lowerBlocks? (targets : TokenTargets) :
+    List TypedCfg.Block → Option Assembly.Program
+  | [] => some []
+  | block :: rest => do
+      let head ← lowerBlock? targets block
+      let tail ← lowerBlocks? targets rest
+      some (head ++ tail)
+
+def lowerProgram? (program : TypedCfg.Program) : Option Assembly.Program := do
+  let blocks ← program.blocksInLoweringOrder?
+  lowerBlocks? (tokenTargets program) blocks
+
+def blockTail? : Assembly.Program → Assembly.Label → Option Assembly.Program
+  | [], _ => none
+  | .label candidate :: rest, label =>
+      if candidate = label then some rest else blockTail? rest label
+  | _ :: rest, label => blockTail? rest label
+
+def blockRefs : Assembly.Program → List Assembly.Label
+  | [] => []
+  | .label _ :: _ => []
+  | instr :: rest => instr.targets ++ blockRefs rest
+
+def visitLabels (source : Assembly.Program) :
+    Nat → List Assembly.Label → List Assembly.Label → List Assembly.Label
+  | 0, _, seen => seen
+  | _fuel, [], seen => seen
+  | fuel + 1, label :: pending, seen =>
+      if seen.contains label then
+        visitLabels source fuel pending seen
+      else
+        let refs := (blockTail? source label).map blockRefs |>.getD []
+        visitLabels source fuel (refs ++ pending) (label :: seen)
+
+def reachableLabels (entry : Assembly.Label)
+    (source : Assembly.Program) : List Assembly.Label :=
+  visitLabels source (source.length + 1) [entry] []
+
+def filterReachableFrom (reachable : List Assembly.Label) :
+    Bool → Assembly.Program → Assembly.Program
+  | _keep, [] => []
+  | _keep, .label label :: rest =>
+      let keep := reachable.contains label
+      if keep then
+        .label label :: filterReachableFrom reachable true rest
+      else
+        filterReachableFrom reachable false rest
+  | true, instr :: rest =>
+      instr :: filterReachableFrom reachable true rest
+  | false, _ :: rest =>
+      filterReachableFrom reachable false rest
+
+def filterReachable (entry : Assembly.Label)
+    (source : Assembly.Program) : Assembly.Program :=
+  filterReachableFrom (reachableLabels entry source) false source
+
+abbrev LabelAliases := List (Assembly.Label × Assembly.Label)
+
+def resolveAlias (aliases : LabelAliases)
+    (label : Assembly.Label) : Assembly.Label :=
+  (aliases.find? fun entry => entry.1 == label).map Prod.snd |>.getD label
+
+structure MachineBlock where
+  label : Assembly.Label
+  code : Assembly.Program
+  deriving DecidableEq, Repr
+
+def finishMachineBlock (block : MachineBlock) : MachineBlock :=
+  { block with code := block.code.reverse }
+
+def machineBlocksRev :
+    Assembly.Program → Option MachineBlock → List MachineBlock →
+      List MachineBlock
+  | [], none, blocks => blocks.reverse
+  | [], some block, blocks =>
+      (finishMachineBlock block :: blocks).reverse
+  | .label label :: rest, none, blocks =>
+      machineBlocksRev rest (some { label := label, code := [] }) blocks
+  | .label label :: rest, some block, blocks =>
+      machineBlocksRev rest (some { label := label, code := [] })
+        (finishMachineBlock block :: blocks)
+  | instr :: rest, none, blocks =>
+      machineBlocksRev rest none blocks
+  | instr :: rest, some block, blocks =>
+      machineBlocksRev rest
+        (some { block with code := instr :: block.code }) blocks
+
+def machineBlocks (source : Assembly.Program) : List MachineBlock :=
+  machineBlocksRev source none []
+
+def rewriteMachineInstr (aliases : LabelAliases) :
+    Assembly.Instr → Assembly.Instr
+  | .pushLabel target => .pushLabel (resolveAlias aliases target)
+  | .jump target => .jump (resolveAlias aliases target)
+  | .jumpi target => .jumpi (resolveAlias aliases target)
+  | instr => instr
+
+def rewriteMachineBlock (aliases : LabelAliases)
+    (block : MachineBlock) : MachineBlock :=
+  { block with
+    code := block.code.map (rewriteMachineInstr aliases) }
+
+def flattenMachineBlocks (blocks : List MachineBlock) : Assembly.Program :=
+  blocks.flatMap fun block => .label block.label :: block.code
+
+def findSameMachine? (blocks : List MachineBlock)
+    (block : MachineBlock) : Option MachineBlock :=
+  blocks.find? fun candidate => candidate.code == block.code
+
+def collectMachineAliases :
+    List MachineBlock → List MachineBlock → LabelAliases →
+      List MachineBlock × LabelAliases
+  | [], kept, aliases => (kept.reverse, aliases)
+  | block :: rest, kept, aliases =>
+      match findSameMachine? kept block with
+      | some canonical =>
+          collectMachineAliases rest kept
+            ((block.label, canonical.label) :: aliases)
+      | none => collectMachineAliases rest (block :: kept) aliases
+
+def dedupMachineOnce (source : Assembly.Program) :
+    Assembly.Program × Bool :=
+  let (blocks, aliases) := collectMachineAliases (machineBlocks source) [] []
+  if aliases.isEmpty then
+    (source, false)
+  else
+    (flattenMachineBlocks (blocks.map (rewriteMachineBlock aliases)), true)
+
+def dedupMachineFuel : Nat → Assembly.Program → Assembly.Program
+  | 0, source => source
+  | fuel + 1, source =>
+      let next := dedupMachineOnce source
+      if next.2 then dedupMachineFuel fuel next.1 else next.1
+
+def dedupMachine (source : Assembly.Program) : Assembly.Program :=
+  dedupMachineFuel (source.length + 1) source
+
+def typedSinkTopUnder : Nat → List TypedCfg.Instr
+  | 0 => []
+  | depth + 1 => .swap depth :: typedSinkTopUnder depth
+
+structure SharedCallEntry where
+  label : Assembly.Label
+  argc : Nat
+  deriving DecidableEq, Repr
+
+def callEntry? (program : TypedCfg.Program)
+    (block : TypedCfg.Block) : Option SharedCallEntry := do
+  let .jump target := block.term | none
+  let .returnToken _ :: rest := block.body | none
+  let entry ← program.findBlock? target
+  let argc ← entry.input.returnTokenDepth?
+  if 0 < argc ∧ rest = typedSinkTopUnder argc then
+    some { label := target, argc }
+  else
+    none
+
+def sharedCallEntries (program : TypedCfg.Program) :
+    List SharedCallEntry :=
+  let calls := program.blocks.filterMap (callEntry? program)
+  calls.filter fun entry =>
+    2 ≤ (calls.filter fun candidate => candidate = entry).length
+
+def lookupSharedEntry? (entries : List SharedCallEntry)
+    (label : Assembly.Label) : Option SharedCallEntry :=
+  entries.find? fun entry => entry.label = label
+
+def rotateReturnTokenToTop (shape : TypedCfg.Shape)
+    (argc : Nat) : Option TypedCfg.Shape := do
+  let token ← shape.slots[argc]?
+  if token = .returnToken then
+    some
+      { shape with
+        slots :=
+          token :: shape.slots.take argc ++ shape.slots.drop (argc + 1) }
+  else
+    none
+
+def shareCallBlock (entries : List SharedCallEntry)
+    (block : TypedCfg.Block) : TypedCfg.Block :=
+  match block.term, block.body with
+  | .jump target, .returnToken token :: rest =>
+      match lookupSharedEntry? entries target with
+      | none => block
+      | some entry =>
+          if rest = typedSinkTopUnder entry.argc then
+            match TypedCfg.Instr.type? (.returnToken token) block.input with
+            | none => block
+            | some output =>
+                { block with body := [.returnToken token], output }
+          else
+            block
+  | _, _ => block
+
+def shareEntryBlock (entries : List SharedCallEntry)
+    (block : TypedCfg.Block) : TypedCfg.Block :=
+  match lookupSharedEntry? entries block.label with
+  | none => block
+  | some entry =>
+      match rotateReturnTokenToTop block.input entry.argc with
+      | none => block
+      | some input =>
+          { block with
+            input
+            body := typedSinkTopUnder entry.argc ++ block.body }
+
+def shareCallEntryShuffles (program : TypedCfg.Program) : TypedCfg.Program :=
+  let entries := sharedCallEntries program
+  { program with
+    blocks :=
+      (program.blocks.map (shareCallBlock entries)).map
+        (shareEntryBlock entries) }
+
+def selectedProgram? (cfg : TypedCfg.Program) : Option TypedCfg.Program := do
+  let q :=
+    TypedCfg.Peephole.seamCancelProgramEff
+      (TypedCfg.Peephole.peepholeProgram
+        (TypedCfg.Peephole.normalizeProgram cfg))
+  let _ ← q.compileCertified?
+  let chain := TypedCfg.ShuffleCanon.chainCanonProgram q
+  let selected :=
+    match chain.compileCertified? with
+    | none => q
+    | some _ =>
+        let reordered := TypedCfg.BlockReorder.reorderProgram chain
+        if reordered.compileCertified?.isSome then reordered else chain
+  let shared := shareCallEntryShuffles selected
+  if shared.compileCertified?.isSome then some shared else some selected
+
+def labelDest? (labels : Assembly.Compact.LabelTable)
+    (label : Assembly.Label) : Option Nat :=
+  (labels.find? fun entry => entry.1 == label).map Prod.snd
+
+def widthForValue? (value : Assembly.Word) : Option Nat :=
+  if value.toNat = 0 then some 0
+  else Assembly.Compact.widthForWord? value
+
+def widthForDest? (dest : Nat) : Option Nat :=
+  if dest = 0 then some 0
+  else Assembly.Compact.widthForNat? dest
+
+def instrSize? (labels : Assembly.Compact.LabelTable) :
+    Assembly.Instr → Option Nat
+  | .label _ | .prim _ | .jumpDynamic => some 1
+  | .push value => do
+      let width ← widthForValue? value
+      some (width + 1)
+  | .pushLabel target => do
+      let dest ← labelDest? labels target
+      let width ← widthForDest? dest
+      some (width + 1)
+  | .jump target | .jumpi target => do
+      let dest ← labelDest? labels target
+      let width ← widthForDest? dest
+      some (width + 2)
+
+def layoutFrom? (labels : Assembly.Compact.LabelTable) :
+    Assembly.Program → Nat →
+      Option (Assembly.Compact.LabelTable × Nat)
+  | [], pc => some ([], pc)
+  | instr :: rest, pc => do
+      let size ← instrSize? labels instr
+      let (tail, finalPc) ← layoutFrom? labels rest (pc + size)
+      match instr with
+      | .label label => some ((label, pc) :: tail, finalPc)
+      | _ => some (tail, finalPc)
+
+def initialLabels (source : Assembly.Program) :
+    Assembly.Compact.LabelTable :=
+  source.filterMap fun instr =>
+    match instr with
+    | .label label => some (label, 0)
+    | _ => none
+
+def relocate? (source : Assembly.Program) :
+    Nat → Assembly.Compact.LabelTable →
+      Option (Assembly.Compact.LabelTable × Nat)
+  | 0, _ => none
+  | fuel + 1, labels => do
+      let next ← layoutFrom? labels source 0
+      if next.1 == labels then some next
+      else relocate? source fuel next.1
+
+def encodePush (width : Nat) (value : Assembly.Word) : List UInt8 :=
+  Assembly.Compact.encodeInstr
+    (Assembly.Compact.pushInstrOfWidth width value)
+
+def emit? (labels : Assembly.Compact.LabelTable) :
+    Assembly.Program → Option (List UInt8)
+  | [] => some []
+  | instr :: rest => do
+      let head ←
+        match instr with
+        | .label _ =>
+            some (Assembly.Compact.encodeInstr .jumpdest)
+        | .prim op =>
+            some (Assembly.Compact.encodeInstr (.prim op))
+        | .push value => do
+            let width ← widthForValue? value
+            some (encodePush width value)
+        | .pushLabel target => do
+            let dest ← labelDest? labels target
+            let width ← widthForDest? dest
+            some (encodePush width (EvmYul.UInt256.ofNat dest))
+        | .jump target => do
+            let dest ← labelDest? labels target
+            let width ← widthForDest? dest
+            some
+              (encodePush width (EvmYul.UInt256.ofNat dest) ++
+                Assembly.Compact.encodeInstr .jump)
+        | .jumpi target => do
+            let dest ← labelDest? labels target
+            let width ← widthForDest? dest
+            some
+              (encodePush width (EvmYul.UInt256.ofNat dest) ++
+                Assembly.Compact.encodeInstr .jumpi)
+        | .jumpDynamic =>
+            some (Assembly.Compact.encodeInstr .jump)
+      let tail ← emit? labels rest
+      some (head ++ tail)
+
+def bytes? (artifact : Compiler.StackArtifact.Artifact) :
+    Option (List UInt8) := do
+  let program ← selectedProgram? artifact.cfg
+  let lowered ← lowerProgram? program
+  let source := filterReachable program.entry (dedupMachine lowered)
+  let prepared := Assembly.Compact.prepare source
+  let (labels, _) ← relocate? prepared 64 (initialLabels prepared)
+  let code ← emit? labels prepared
+  some (code ++ Solidity.Frontend.Object.verifiedCodeSentinel)
+
+end DirectReturnProbe
+
+def directReturnProbeFromEnv : IO Bool := do
+  match ← IO.getEnv "SOLIDUS_DIRECT_RETURN_PROBE" with
+  | none => pure false
+  | some raw =>
+      let v := raw.trim
+      pure !(v == "" || v == "0" || v == "false" || v == "False"
+        || v == "FALSE" || v == "no" || v == "off" || v == "OFF")
+
 /-- Fail-closed deployability guard on the emitted image. This is a
 product-level check, NOT a theorem-covered property: the public correctness
 theorem (`Solidus.compile_correct`) says nothing about EIP-170/EIP-3860
@@ -1237,6 +1632,7 @@ def run (config : Config) : IO Unit := do
 
 def runRaw (config : RawConfig) : IO Unit := do
   let allowOversize ← allowOversizeFromEnv
+  let directReturnProbe ← directReturnProbeFromEnv
   let decodeStart ← IO.monoMsNow
   let input ← IO.FS.readFile config.rawPath
   let program? :=
@@ -1305,6 +1701,18 @@ def runRaw (config : RawConfig) : IO Unit := do
               throw (IO.userError
                 "raw object-image rejected: no stack-headroom certificate")
           | some bytes =>
+              let bytes ←
+                if directReturnProbe &&
+                    config.selection.objectSelector == .runtime then
+                  match DirectReturnProbe.bytes?
+                      artifact.codeArtifact.compiled with
+                  | some directBytes => pure directBytes
+                  | none =>
+                      throw
+                        (IO.userError
+                          "direct-return probe compilation returned none")
+                else
+                  pure bytes
               if let some program := program? then
                 checkImmutableLoadCoverage config.selection.objectSelector
                   program.object
