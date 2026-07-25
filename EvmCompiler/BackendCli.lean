@@ -729,7 +729,11 @@ def printStackDiagnostics
     Assembly.Compact.compile? artifact.certified.target
   let compactBytes := compactArtifact?.map (·.bytes.size) |>.getD 0
   let compactBranchWidth :=
-    compactArtifact?.map (·.branchWidth) |>.getD 0
+    compactArtifact?.map
+      (fun artifact =>
+        artifact.branchWidths.foldl
+          (fun maximum entry => max maximum entry.2) 0)
+      |>.getD 0
   let assemblyStats :=
     stackArtifact?.map
       (fun artifact =>
@@ -1041,26 +1045,26 @@ def runCompactAnalysis (source : Assembly.Program) : IO Unit := do
   IO.println
     ("compact_preparation_safe=" ++ boolString preparationSafe)
   if !preparationSafe then return
-  let branchWidth? := Assembly.Compact.branchWidthFor? [] physical
+  let relocation? := Assembly.Compact.relocateBranches? [] physical
   IO.println
     ("compact_branch_width=" ++
-      match branchWidth? with
+      match relocation? with
       | none => "none"
-      | some width => toString width)
-  let some branchWidth := branchWidth? | return
-  let layout? := Assembly.Compact.layout? [] physical branchWidth
-  IO.println ("compact_layout=" ++ boolString layout?.isSome)
-  let some (labels, codeLength) := layout? | return
+      | some (branchWidths, _, _) =>
+          toString <| branchWidths.foldl
+            (fun maximum entry => max maximum entry.2) 0)
+  let some (branchWidths, labels, codeLength) := relocation? | return
+  IO.println "compact_layout=true"
   IO.println
     ("compact_layout_labels=" ++ toString labels.length ++
       "\tbytes=" ++ toString codeLength)
-  let emitted? := Assembly.Compact.emit? [] physical branchWidth labels
+  let emitted? := Assembly.Compact.emit? [] physical branchWidths labels
   IO.println ("compact_emit=" ++ boolString emitted?.isSome)
   let some emitted := emitted? | return
   IO.println
     ("compact_emit_instructions=" ++ toString emitted.code.length)
   let blocks? :=
-    Assembly.Compact.emitBlocksFast? [] physical branchWidth labels
+    Assembly.Compact.emitBlocksFast? [] physical branchWidths labels
   IO.println ("compact_blocks=" ++ boolString blocks?.isSome)
   let some blocks := blocks? | return
   IO.println ("compact_block_count=" ++ toString blocks.length)

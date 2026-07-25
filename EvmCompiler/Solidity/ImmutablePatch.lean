@@ -713,7 +713,7 @@ theorem pushDiffSites_of_differingPushPcsFrom?
   | case5 => exact absurd hDiff (by simp)
 
 private theorem layoutRev?_eq_of_pushDiffSites
-    {pins : List Nat} {bw : Nat}
+    {pins : List Nat} {bw : Assembly.Compact.BranchWidths}
     {a b : Assembly.Program} {spc : Nat} {sites : List (Nat × Word × Word)}
     (h : PushDiffSites a b spc sites)
     (hPins : ∀ s ∈ sites, s.1 ∈ pins) :
@@ -744,28 +744,102 @@ private theorem layoutRev?_eq_of_pushDiffSites
           simp only [Assembly.Compact.layoutRev?, hSize, Option.bind_some]
           exact ih hPins _ _
 
-private theorem branchWidthFor?_eq_of_pushDiffSites
-    {pins : List Nat}
-    {a b : Assembly.Program} {sites : List (Nat × Word × Word)}
-    (h : PushDiffSites a b 0 sites)
-    (hPins : ∀ s ∈ sites, s.1 ∈ pins) :
-    Assembly.Compact.branchWidthFor? pins b =
-      Assembly.Compact.branchWidthFor? pins a := by
-  unfold Assembly.Compact.branchWidthFor?
-  have hFits : (fun width => Assembly.Compact.branchWidthFits? pins b width) =
-      (fun width => Assembly.Compact.branchWidthFits? pins a width) := by
-    funext width
-    unfold Assembly.Compact.branchWidthFits? Assembly.Compact.layout?
-    rw [layoutRev?_eq_of_pushDiffSites h hPins 0 []]
-  rw [hFits]
-
 private theorem layout?_eq_of_pushDiffSites
-    {pins : List Nat} {bw : Nat}
+    {pins : List Nat} {bw : Assembly.Compact.BranchWidths}
     {a b : Assembly.Program} {sites : List (Nat × Word × Word)}
     (h : PushDiffSites a b 0 sites)
     (hPins : ∀ s ∈ sites, s.1 ∈ pins) :
     Assembly.Compact.layout? pins b bw = Assembly.Compact.layout? pins a bw :=
   layoutRev?_eq_of_pushDiffSites h hPins 0 []
+
+private theorem PushDiffSites.length_eq
+    {a b : Assembly.Program} {spc : Nat}
+    {sites : List (Nat × Word × Word)}
+    (h : PushDiffSites a b spc sites) :
+    b.length = a.length := by
+  induction h <;> simp_all
+
+private theorem initialBranchWidthsRev_eq_of_pushDiffSites
+    {a b : Assembly.Program} {spc : Nat}
+    {sites : List (Nat × Word × Word)}
+    (h : PushDiffSites a b spc sites) :
+    ∀ acc,
+      Assembly.Compact.initialBranchWidthsRev b spc acc =
+        Assembly.Compact.initialBranchWidthsRev a spc acc := by
+  induction h with
+  | nil => intro acc; rfl
+  | push va vb rest ih =>
+      intro acc
+      exact ih acc
+  | keep instr rest ih =>
+      intro acc
+      cases instr <;> exact ih _
+
+private theorem branchWidthsForLabelsRev?_eq_of_pushDiffSites
+    {labels : Assembly.Compact.LabelTable}
+    {a b : Assembly.Program} {spc : Nat}
+    {sites : List (Nat × Word × Word)}
+    (h : PushDiffSites a b spc sites) :
+    ∀ acc,
+      Assembly.Compact.branchWidthsForLabelsRev? labels b spc acc =
+        Assembly.Compact.branchWidthsForLabelsRev? labels a spc acc := by
+  induction h with
+  | nil => intro acc; rfl
+  | push va vb rest ih =>
+      intro acc
+      exact ih acc
+  | keep instr rest ih =>
+      rename_i a' b' spc' sites'
+      intro acc
+      cases instr with
+      | label | prim | push | pushLabel | jumpDynamic =>
+          exact ih acc
+      | jump target | jumpi target =>
+          simp only [Assembly.Compact.branchWidthsForLabelsRev?]
+          cases hDest : Assembly.Compact.lookupLabel? labels target with
+          | none => simp [hDest]
+          | some dest =>
+              cases hWidth : Assembly.Compact.widthForNat? dest with
+              | none => simp [hWidth]
+              | some width =>
+                  simpa [hWidth] using ih ((spc', width) :: acc)
+
+private theorem relocateBranchesLoop?_eq_of_pushDiffSites
+    {pins : List Nat}
+    {a b : Assembly.Program} {sites : List (Nat × Word × Word)}
+    (h : PushDiffSites a b 0 sites)
+    (hPins : ∀ s ∈ sites, s.1 ∈ pins) :
+    ∀ fuel widths,
+      Assembly.Compact.relocateBranchesLoop? pins b fuel widths =
+        Assembly.Compact.relocateBranchesLoop? pins a fuel widths := by
+  intro fuel
+  induction fuel with
+  | zero =>
+      intro widths
+      rfl
+  | succ fuel ih =>
+      intro widths
+      unfold Assembly.Compact.relocateBranchesLoop?
+      rw [layout?_eq_of_pushDiffSites h hPins]
+      cases hLayout : Assembly.Compact.layout? pins a widths with
+      | none => simp [hLayout]
+      | some layoutResult =>
+          rcases layoutResult with ⟨labels, codeLength⟩
+          simp [hLayout, Assembly.Compact.branchWidthsForLabels?,
+            branchWidthsForLabelsRev?_eq_of_pushDiffSites h, ih]
+
+private theorem relocateBranches?_eq_of_pushDiffSites
+    {pins : List Nat}
+    {a b : Assembly.Program} {sites : List (Nat × Word × Word)}
+    (h : PushDiffSites a b 0 sites)
+    (hPins : ∀ s ∈ sites, s.1 ∈ pins) :
+    Assembly.Compact.relocateBranches? pins b =
+      Assembly.Compact.relocateBranches? pins a := by
+  unfold Assembly.Compact.relocateBranches?
+  rw [h.length_eq]
+  unfold Assembly.Compact.initialBranchWidths
+  rw [initialBranchWidthsRev_eq_of_pushDiffSites h []]
+  exact relocateBranchesLoop?_eq_of_pushDiffSites h hPins _ _
 
 /-- Flattened bytes of the emitted source blocks. -/
 private def blockBytes (blocks : List Assembly.Compact.SourceBlock) :
@@ -781,7 +855,8 @@ private theorem blockBytes_cons (block : Assembly.Compact.SourceBlock)
   simp [blockBytes, Assembly.Compact.blocksCode]
 
 private theorem emitBlocksFrom?_byteDiff
-    {pins : List Nat} {bw : Nat} {table : Assembly.Compact.LabelTable}
+    {pins : List Nat} {bw : Assembly.Compact.BranchWidths}
+    {table : Assembly.Compact.LabelTable}
     {a b : Assembly.Program} {spc : Nat} {sites : List (Nat × Word × Word)}
     (h : PushDiffSites a b spc sites)
     (hPins : ∀ s ∈ sites, s.1 ∈ pins) :
@@ -930,27 +1005,19 @@ private theorem compile?_pinnedPushPcs
         by_cases hSafe : Assembly.Compact.preparationSafeIndexed? source
             (Assembly.Compact.prepare source) preparation = true
         · simp [hSafe] at hCompile
-          cases hWidth : Assembly.Compact.branchWidthFor? pins
+          cases hRelocate : Assembly.Compact.relocateBranches? pins
               (Assembly.Compact.prepare source) with
-          | none => simp [hWidth] at hCompile
-          | some branchWidth =>
-              simp [hWidth] at hCompile
-              cases hLayout : Assembly.Compact.layout? pins
-                  (Assembly.Compact.prepare source) branchWidth with
-              | none => simp [hLayout] at hCompile
-              | some layoutResult =>
-                  cases layoutResult with
-                  | mk labels codeLength =>
-                      simp [hLayout] at hCompile
-                      cases hEmit : Assembly.Compact.emit? pins
-                          (Assembly.Compact.prepare source) branchWidth
-                          labels with
+          | none => simp [hRelocate] at hCompile
+          | some relocation =>
+              rcases relocation with ⟨branchWidths, labels, codeLength⟩
+              simp [hRelocate] at hCompile
+              cases hEmit : Assembly.Compact.emit? pins
+                          (Assembly.Compact.prepare source) branchWidths labels with
                       | none => simp [hEmit] at hCompile
                       | some program =>
                           simp [hEmit] at hCompile
                           cases hBlocks : Assembly.Compact.emitBlocks? pins
-                              (Assembly.Compact.prepare source) branchWidth
-                              labels with
+                              (Assembly.Compact.prepare source) branchWidths labels with
                           | none => simp [hBlocks] at hCompile
                           | some blocks =>
                               simp [hBlocks] at hCompile
@@ -1006,33 +1073,23 @@ theorem compile?_byteDiff_of_differingPushPcs
   have hValidB := Assembly.Compact.compile?_valid hB
   have hPinsA : ca.pinnedPushPcs = pins := compile?_pinnedPushPcs hA
   have hPinsB : cb.pinnedPushPcs = pins := compile?_pinnedPushPcs hB
-  -- Both compiles select the same branch width.
-  have hWidthA := hValidA.selectedBranchWidth
-  have hWidthB := hValidB.selectedBranchWidth
-  rw [hPinsA, hValidA.physicalSource] at hWidthA
-  rw [hPinsB, hValidB.physicalSource] at hWidthB
-  have hWidthEq : Assembly.Compact.branchWidthFor? pins
-      (Assembly.Compact.prepare sourceB) =
-      Assembly.Compact.branchWidthFor? pins
-        (Assembly.Compact.prepare sourceA) :=
-    branchWidthFor?_eq_of_pushDiffSites hSites hPinsSites
-  have hSameWidth : cb.branchWidth = ca.branchWidth := by
-    rw [hWidthEq, hWidthA] at hWidthB
-    exact (Option.some.inj hWidthB).symm
-  -- Both compiles produce the same label table.
-  have hLayoutA := hValidA.layout
-  have hLayoutB := hValidB.layout
-  rw [hPinsA, hValidA.physicalSource] at hLayoutA
-  rw [hPinsB, hValidB.physicalSource, hSameWidth] at hLayoutB
-  rw [layout?_eq_of_pushDiffSites hSites hPinsSites, hLayoutA] at hLayoutB
+  -- Both compiles produce the same relocation plan.
+  have hRelocateA := hValidA.relocated
+  have hRelocateB := hValidB.relocated
+  rw [hPinsA, hValidA.physicalSource] at hRelocateA
+  rw [hPinsB, hValidB.physicalSource] at hRelocateB
+  rw [relocateBranches?_eq_of_pushDiffSites hSites hPinsSites,
+    hRelocateA] at hRelocateB
+  have hRelocation := Option.some.inj hRelocateB
+  have hWidthsEq : cb.branchWidths = ca.branchWidths := by
+    exact (congrArg Prod.fst hRelocation).symm
   have hLabelsEq : cb.labels = ca.labels := by
-    have hPair := Option.some.inj hLayoutB
-    exact (congrArg Prod.fst hPair).symm
+    exact (congrArg (fun result => result.2.1) hRelocation).symm
   -- Compare the emitted blocks.
   have hBlocksA := hValidA.blocks
   have hBlocksB := hValidB.blocks
   rw [hPinsA, hValidA.physicalSource] at hBlocksA
-  rw [hPinsB, hValidB.physicalSource, hSameWidth, hLabelsEq] at hBlocksB
+  rw [hPinsB, hValidB.physicalSource, hWidthsEq, hLabelsEq] at hBlocksB
   rw [Assembly.Compact.emitBlocks?] at hBlocksA hBlocksB
   obtain ⟨ws, hWs, hWsMap⟩ :=
     emitBlocksFrom?_byteDiff hSites hPinsSites hBlocksA hBlocksB
