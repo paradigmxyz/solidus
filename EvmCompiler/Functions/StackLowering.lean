@@ -33,15 +33,19 @@ def exitStmts : Option Join → List Locals.Stmt
   | none => []
   | some exit => exit.statements
 
-/-- Copy a named return value into an anonymous word slot. The arithmetic is
-value-preserving, while the TypedCfg owner classifies the fresh result as
-`.word` rather than retaining the source `.local` tag across procedure exit. -/
+/-- Copy a named return value into an anonymous word slot.
+
+The copy itself is a plain `DUP`.  The reclassification of the fresh slot from
+the source `.local` tag to the anonymous `.word` tag that `Shape.procExit`
+demands is performed for free by the zero-byte `bindLocals` marker that
+`Locals.Ctx.cleanupToPreserving?` appends to every procedure-exit cleanup (see
+`Locals.Ctx.retagPreservedWords`).
+
+This used to be `add(x, 0)`: also value-preserving, but it paid `PUSH1 0x00 ;
+ADD` — three runtime bytes and eight gas per returned value per exit — purely
+to change a type tag. -/
 def returnWord (name : Name) : Expr 1 :=
-  .prim .add
-    (by
-      simpa using
-        Locals.ExprSeq.cons (.var name)
-          (Locals.ExprSeq.cons (.lit Lower.zero) Locals.ExprSeq.nil))
+  .var name
 
 def returnWords : (names : List Name) → Locals.ExprSeq names.length
   | [] => .nil

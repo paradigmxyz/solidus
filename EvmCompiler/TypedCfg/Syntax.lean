@@ -68,13 +68,50 @@ def pop (n : Nat) (shape : Shape) : Shape :=
 def pushWords (n : Nat) (shape : Shape) : Shape :=
   { shape with slots := List.replicate n Slot.word ++ shape.slots }
 
+/--
+The reserved binder name that retags a slot as an anonymous `.word` instead of
+a named `.local`.
+
+Real binder names are Yul identifiers or compiler-generated temporaries, all of
+which are non-empty, so the empty string is unambiguous.  It gives the
+compiler-owned zero-byte `bindLocals` pseudo-instruction a way to say "this
+slot is now an anonymous word" — the classification a procedure's return values
+need at procedure exit, where `Shape.procExit` demands `.word` slots.  Getting
+this wrong can only make a compile-time shape check *fail* (fail-closed): slot
+tags are never read by any semantics function, and the only semantic content of
+a `Shape` is its length (`StackRealizes shape state := shape.length ≤
+state.stack.length`) together with `returnTokenDepth?`.
+-/
+def anonymousBinder : String := ""
+
+/-- Interpret a `bindLocals` binder name as a slot tag: the reserved
+`anonymousBinder` produces an anonymous `.word`, every other name produces the
+corresponding `.local`. -/
+def slotOfBinder (name : String) : Slot :=
+  if name = anonymousBinder then .word else .local name
+
+@[simp] theorem slotOfBinder_anonymousBinder :
+    slotOfBinder anonymousBinder = .word := by
+  simp [slotOfBinder]
+
+theorem slotOfBinder_of_ne {name : String} (h : name ≠ anonymousBinder) :
+    slotOfBinder name = .local name := by
+  simp [slotOfBinder, h]
+
+@[simp] theorem slotOfBinder_replicate (count : Nat) :
+    (List.replicate count anonymousBinder).map slotOfBinder =
+      List.replicate count Slot.word := by
+  induction count with
+  | zero => rfl
+  | succ count ih => simp [List.replicate_succ, ih]
+
 def bindLocals? (offset : Nat) (names : List String)
     (shape : Shape) : Option Shape :=
   if offset + names.length ≤ shape.length then
     some
       { shape with
         slots :=
-          shape.slots.take offset ++ names.map Slot.local ++
+          shape.slots.take offset ++ names.map slotOfBinder ++
             shape.slots.drop (offset + names.length) }
   else
     none
