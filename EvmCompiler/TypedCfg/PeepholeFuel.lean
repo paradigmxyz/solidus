@@ -43,6 +43,55 @@ def LowerLe (peep orig : Option (Assembly.Program × Shape)) : Prop :=
   ∀ c' o', peep = some (c', o') →
     ∃ c, orig = some (c, o') ∧ c'.length ≤ c.length
 
+/-- `LowerLe` is transitive (used by the `push v ; push v → push v ; dup 0`
+arm, which factors through the intermediate doubled-push lowering). -/
+theorem LowerLe.trans {a b c : Option (Assembly.Program × Shape)}
+    (hab : LowerLe a b) (hbc : LowerLe b c) : LowerLe a c := by
+  intro c' o' hEq
+  obtain ⟨c1, hb, hlen1⟩ := hab c' o' hEq
+  obtain ⟨c2, hc, hlen2⟩ := hbc c1 o' hb
+  exact ⟨c2, hc, le_trans hlen1 hlen2⟩
+
+/-- Lowering `dup 0` where the original lowered a repeated `push v`: same output
+shape, same Assembly-instruction count (one fragment each).  The byte saving —
+`DUP1` is 1 byte where `PUSH_n v` is `1 + n` — is invisible to `LowerLe`, which
+counts fragments, so this is an equality-length `LowerLe`. -/
+theorem lowerBodyFrom?_dup0_push_le (v : Word) (rest' : List Instr)
+    (input : Shape) :
+    LowerLe
+      (Block.lowerBodyFrom? (.dup 0 :: rest')
+        { input with slots := .literal v :: input.slots })
+      (Block.lowerBodyFrom? (.push v :: rest')
+        { input with slots := .literal v :: input.slots }) := by
+  intro c' o' hEq
+  have hDup : Instr.lowerAt? (.dup 0)
+        { input with slots := .literal v :: input.slots } =
+      some ([Assembly.Instr.prim .dup1],
+        { slots := .literal v :: .literal v :: input.slots,
+          tail := input.tail }) := by
+    simp [Instr.lowerAt?, Instr.type?, Instr.lower?, Shape.get?]
+  have hPush : Instr.lowerAt? (.push v)
+        { input with slots := .literal v :: input.slots } =
+      some ([Assembly.Instr.push v],
+        { slots := .literal v :: .literal v :: input.slots,
+          tail := input.tail }) := by
+    simp [Instr.lowerAt?, Instr.type?, Instr.lower?]
+  rw [lowerBodyFrom?_cons, hDup] at hEq
+  simp only [Option.bind] at hEq
+  cases hTail : Block.lowerBodyFrom? rest'
+      { slots := .literal v :: .literal v :: input.slots,
+        tail := input.tail } with
+  | none => rw [hTail] at hEq; simp at hEq
+  | some q =>
+      obtain ⟨tailCode, tailOut⟩ := q
+      rw [hTail] at hEq
+      simp only [Option.some.injEq, Prod.mk.injEq] at hEq
+      obtain ⟨hc, ho⟩ := hEq
+      refine ⟨[Assembly.Instr.push v] ++ tailCode, ?_, ?_⟩
+      · rw [lowerBodyFrom?_cons, hPush]
+        simp only [Option.bind, hTail, ho]
+      · rw [← hc]; simp
+
 /-- Head-typed `LowerLe.cons`: a shared leading instruction that types `input`
 to `middle` propagates a `LowerLe` established at `middle`.  (Directional/typed,
 because the `swap ; swap` arm — unlike `push ; pop` — only lowers when the shape
@@ -162,6 +211,29 @@ theorem lowerBodyFrom?_peephole_le :
               rw [← hEq]
               exact LowerLe.cons hHeadType
                 (lowerBodyFrom?_peephole_le rest middle output hTailType)
+          · -- push;push arm: instr = .push v, peepholeBody rest = .push v' :: rest'
+            rename_i v v' rest' hEq
+            have hMiddle : middle =
+                { input with slots := .literal v :: input.slots } := by
+              simpa [Instr.type?] using hHeadType.symm
+            subst hMiddle
+            split
+            · -- v = v': the second push becomes `dup 0`; both lower to a single
+              -- Assembly instruction with the same output shape, so the
+              -- fragment-count bound routes through the doubled-push lowering.
+              rename_i hvv
+              subst hvv
+              refine LowerLe.cons hHeadType ?_
+              refine LowerLe.trans (lowerBodyFrom?_dup0_push_le v rest' input) ?_
+              have ih := lowerBodyFrom?_peephole_le rest
+                { input with slots := .literal v :: input.slots } output hTailType
+              rwa [hEq] at ih
+            · -- v ≠ v': keeps both pushes (= .push v :: peepholeBody rest)
+              rw [← hEq]
+              exact LowerLe.cons hHeadType
+                (lowerBodyFrom?_peephole_le rest
+                  { input with slots := .literal v :: input.slots } output
+                  hTailType)
           · -- keep arm
             exact LowerLe.cons hHeadType
               (lowerBodyFrom?_peephole_le rest middle output hTailType)
