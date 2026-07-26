@@ -50,6 +50,17 @@ def accepted : Instr → Bool
   | .label _ | .push _ | .pushLabel _ | .jump _ | .jumpi _ => true
   | .jumpDynamic => false
 
+/--
+Acceptance boundary for compiler-certified dynamic control.  It preserves the
+ordinary primitive whitelist and symbolic-target checks; the only additional
+instruction admitted is the raw `JUMP` used by a separately certified
+dispatcher.
+-/
+def acceptedWithDynamic : Instr → Bool
+  | .prim op => op.accepted
+  | .label _ | .push _ | .pushLabel _ | .jump _ | .jumpi _
+  | .jumpDynamic => true
+
 end Instr
 
 namespace Program
@@ -129,6 +140,13 @@ primitive-operation boundary centralized.
 def accepted (program : Program) : Bool :=
   instructionsAccepted program && labelsUnique program && allTargetsResolve program
 
+def instructionsAcceptedWithDynamic (program : Program) : Bool :=
+  program.all Instr.acceptedWithDynamic
+
+def acceptedWithDynamic (program : Program) : Bool :=
+  instructionsAcceptedWithDynamic program &&
+    labelsUnique program && allTargetsResolve program
+
 theorem labels_nodup_of_accepted {program : Program}
     (hAccepted : program.accepted = true) :
     program.labels.Nodup := by
@@ -145,6 +163,35 @@ theorem target_resolves_of_accepted {program : Program}
     ∃ pc, program.labelPc target = some pc := by
   have hAllTargets : program.allTargetsResolve = true := by
     simp only [accepted, Bool.and_eq_true] at hAccepted
+    exact hAccepted.2
+  have hInstrTargets :
+      instr.targets.all
+        (fun label => (program.labelPc label).isSome) = true :=
+    (List.all_eq_true.mp hAllTargets) instr hInstr
+  have hSome : (program.labelPc target).isSome = true :=
+    (List.all_eq_true.mp hInstrTargets) target hTarget
+  cases hPc : program.labelPc target with
+  | none =>
+      simp [hPc] at hSome
+  | some pc =>
+      exact ⟨pc, rfl⟩
+
+theorem labels_nodup_of_acceptedWithDynamic {program : Program}
+    (hAccepted : program.acceptedWithDynamic = true) :
+    program.labels.Nodup := by
+  have hUnique : program.labelsUnique = true := by
+    simp only [acceptedWithDynamic, Bool.and_eq_true] at hAccepted
+    exact hAccepted.1.2
+  exact (LabelList.unique?_eq_true_iff program.labels).mp hUnique
+
+theorem target_resolves_of_acceptedWithDynamic {program : Program}
+    {instr : Instr} {target : Label}
+    (hAccepted : program.acceptedWithDynamic = true)
+    (hInstr : instr ∈ program)
+    (hTarget : target ∈ instr.targets) :
+    ∃ pc, program.labelPc target = some pc := by
+  have hAllTargets : program.allTargetsResolve = true := by
+    simp only [acceptedWithDynamic, Bool.and_eq_true] at hAccepted
     exact hAccepted.2
   have hInstrTargets :
       instr.targets.all

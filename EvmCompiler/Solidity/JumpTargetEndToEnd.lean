@@ -1,5 +1,5 @@
-import EvmCompiler.Solidity.VerifiedStackObjectArtifact
-import EvmCompiler.Assembly.JumpTargetSound
+import EvmCompiler.Solidity.StackHeadroomEndToEnd
+import EvmCompiler.Assembly.RawStackHeadroomSound
 
 /-!
 # Verified-artifact bad-jump exclusion endpoint
@@ -42,14 +42,17 @@ theorem VerifiedStackObjectArtifact.x_ne_badJumpDestination
     {object : Object}
     {linkerSymbols : List (Name × Word)}
     {artifact : VerifiedStackObjectArtifact}
+    {cert : StackHeadroom.Cert}
     {gasfulInitial : Assembly.EVMState}
     (hObject :
       object.compileVerifiedStackObjectArtifactWithLinkerSymbols?
           linkerSymbols = some artifact)
+    (hCert : artifact.stackHeadroomCert? = some cert)
     (hCode :
       gasfulInitial.executionEnv.code =
         Assembly.Bytecode.ofList artifact.image.bytes)
-    (hPc : gasfulInitial.pc = EvmYul.UInt256.ofNat 0) :
+    (hPc : gasfulInitial.pc = EvmYul.UInt256.ofNat 0)
+    (hStack : gasfulInitial.stack = []) :
     ∀ fuel,
       EvmYul.EVM.X fuel
           (EvmYul.EVM.D_J
@@ -57,16 +60,11 @@ theorem VerifiedStackObjectArtifact.x_ne_badJumpDestination
             (EvmYul.UInt256.ofNat 0))
           gasfulInitial ≠
         .error EvmYul.EVM.ExecutionException.BadJumpDestination := by
-  obtain ⟨_children, _plan, _codeArtifact, _hChildren, _hPlan, _hFinish,
-      hCodeIn, _hArtifactChildren, _hContext, _hChildImages, _hPayload,
-      _hImage⟩ :=
-    Object.compileVerifiedStackObjectArtifactWithLinkerSymbols?_parts
-      hObject
-  obtain ⟨_hResolved, _hOrdered, _hLower, _hStackLower, _pinnedPushPcs,
-      _hPins, hCompact, _hBytes, _hMarker⟩ :=
-    Object.compileVerifiedStackCodeArtifactIn?_parts hCodeIn
   have hDecode :=
     Object.compileVerifiedStackObjectArtifactWithLinkerSymbols?_decodingCorrect
+      hObject
+  obtain ⟨hProgram, hLayout, hWindow, hBytes, hSentinelFits⟩ :=
+    Object.compileVerifiedStackObjectArtifactWithLinkerSymbols?_selectedCompactProperties
       hObject
   obtain ⟨plan, hImage⟩ :=
     Object.compileVerifiedStackObjectArtifactWithLinkerSymbols?_sentinelImage
@@ -74,39 +72,23 @@ theorem VerifiedStackObjectArtifact.x_ne_badJumpDestination
   have hSentinel : Assembly.Compact.decodeAt
       (Assembly.Bytecode.ofList artifact.image.bytes)
       (Assembly.Compact.Program.codeByteLength
-        artifact.codeArtifact.compact.program.code)
+        (artifact.codeChoice.compact
+          artifact.codeArtifact).program.code)
       (.prim .invalid) := by
     rw [hImage]
     simpa [Object.verifiedCodeSentinel, List.append_assoc] using
-      (Assembly.GasfulBridge.compact_compile_sentinel_decodeAt
-        hCompact plan.payload)
-  have hInitialPoint :=
-    Assembly.GasfulBridge.artifactFramePoint_initial hCompact hCode hPc
-  have hOrdinary :
-      Assembly.GasfulBridge.ArtifactOrdinaryBoundaryStepInvariant
-        artifact.codeArtifact.compact
-        (Assembly.Bytecode.ofList artifact.image.bytes)
-        (EvmYul.EVM.D_J
-          (Assembly.Bytecode.ofList artifact.image.bytes)
-          (EvmYul.UInt256.ofNat 0)) :=
-    Assembly.GasfulBridge.artifactOrdinaryBoundaryStepInvariant_of_compile
-      hCompact hDecode
-  have hStepInv :
-      Assembly.GasfulBridge.ArtifactFrameStepInvariant
-        artifact.codeArtifact.compact
-        (Assembly.Bytecode.ofList artifact.image.bytes)
-        (EvmYul.EVM.D_J
-          (Assembly.Bytecode.ofList artifact.image.bytes)
-          (EvmYul.UInt256.ofNat 0)) := by
-    intro current next stepFuel hPoint hPrefix hStep hContinues
-    exact (Assembly.GasfulBridge.artifactFrameStepInvariant_of_ordinaryBoundary
-      hCompact hDecode hSentinel hOrdinary) hPoint hPrefix hStep hContinues
-  have hFrame :=
-    Assembly.GasfulBridge.artifactFrameInvariant_of_step hInitialPoint
-      hStepInv
-  exact Assembly.GasfulBridge.x_ne_badJumpDestination_of_frame
-    hCompact hDecode hSentinel hFrame
-    (Assembly.GasfulBridge.labelTargetsListed_D_J hCompact hDecode)
+      (StackHeadroom.raw_compact_sentinel_decodeAt hBytes
+        hSentinelFits plan.payload)
+  have hRaw :=
+    StackHeadroom.mkRawCert?_rawCheck
+      (by
+        simpa [VerifiedStackObjectArtifact.stackHeadroomCert?] using
+          hCert)
+  exact
+    StackHeadroom.x_ne_badJumpDestination_of_rawCert hProgram hDecode
+      hRaw hSentinel
+      (StackHeadroom.rawJumpdestsListed_D_J hLayout hWindow hDecode)
+      hCode hPc hStack
 
 /-- Suffix-tolerant variant for creation frames: the concrete entry point is
 `X fuel (D_J (image.bytes ++ suffix) 0)` over `image.bytes ++ suffix`
@@ -115,15 +97,18 @@ theorem VerifiedStackObjectArtifact.x_ne_badJumpDestination_withCodeSuffix
     {object : Object}
     {linkerSymbols : List (Name × Word)}
     {artifact : VerifiedStackObjectArtifact}
+    {cert : StackHeadroom.Cert}
     {gasfulInitial : Assembly.EVMState}
     (suffix : List UInt8)
     (hObject :
       object.compileVerifiedStackObjectArtifactWithLinkerSymbols?
           linkerSymbols = some artifact)
+    (hCert : artifact.stackHeadroomCert? = some cert)
     (hCode :
       gasfulInitial.executionEnv.code =
         Assembly.Bytecode.ofList (artifact.image.bytes ++ suffix))
-    (hPc : gasfulInitial.pc = EvmYul.UInt256.ofNat 0) :
+    (hPc : gasfulInitial.pc = EvmYul.UInt256.ofNat 0)
+    (hStack : gasfulInitial.stack = []) :
     ∀ fuel,
       EvmYul.EVM.X fuel
           (EvmYul.EVM.D_J
@@ -131,56 +116,35 @@ theorem VerifiedStackObjectArtifact.x_ne_badJumpDestination_withCodeSuffix
             (EvmYul.UInt256.ofNat 0))
           gasfulInitial ≠
         .error EvmYul.EVM.ExecutionException.BadJumpDestination := by
-  obtain ⟨_children, _plan, _codeArtifact, _hChildren, _hPlan, _hFinish,
-      hCodeIn, _hArtifactChildren, _hContext, _hChildImages, _hPayload,
-      _hImage⟩ :=
-    Object.compileVerifiedStackObjectArtifactWithLinkerSymbols?_parts
-      hObject
-  obtain ⟨_hResolved, _hOrdered, _hLower, _hStackLower, _pinnedPushPcs,
-      _hPins, hCompact, _hBytes, _hMarker⟩ :=
-    Object.compileVerifiedStackCodeArtifactIn?_parts hCodeIn
   have hDecode :=
     Object.compileVerifiedStackObjectArtifactWithLinkerSymbols?_decodingCorrect_withCodeSuffix
       hObject suffix
+  obtain ⟨hProgram, hLayout, hWindow, hBytes, hSentinelFits⟩ :=
+    Object.compileVerifiedStackObjectArtifactWithLinkerSymbols?_selectedCompactProperties
+      hObject
   obtain ⟨plan, hImage⟩ :=
     Object.compileVerifiedStackObjectArtifactWithLinkerSymbols?_sentinelImage
       hObject
   have hSentinel : Assembly.Compact.decodeAt
       (Assembly.Bytecode.ofList (artifact.image.bytes ++ suffix))
       (Assembly.Compact.Program.codeByteLength
-        artifact.codeArtifact.compact.program.code)
+        (artifact.codeChoice.compact
+          artifact.codeArtifact).program.code)
       (.prim .invalid) := by
     rw [hImage]
     simpa [Object.verifiedCodeSentinel, List.append_assoc] using
-      (Assembly.GasfulBridge.compact_compile_sentinel_decodeAt
-        hCompact (plan.payload ++ suffix))
-  have hInitialPoint :=
-    Assembly.GasfulBridge.artifactFramePoint_initial hCompact hCode hPc
-  have hOrdinary :
-      Assembly.GasfulBridge.ArtifactOrdinaryBoundaryStepInvariant
-        artifact.codeArtifact.compact
-        (Assembly.Bytecode.ofList (artifact.image.bytes ++ suffix))
-        (EvmYul.EVM.D_J
-          (Assembly.Bytecode.ofList (artifact.image.bytes ++ suffix))
-          (EvmYul.UInt256.ofNat 0)) :=
-    Assembly.GasfulBridge.artifactOrdinaryBoundaryStepInvariant_of_compile
-      hCompact hDecode
-  have hStepInv :
-      Assembly.GasfulBridge.ArtifactFrameStepInvariant
-        artifact.codeArtifact.compact
-        (Assembly.Bytecode.ofList (artifact.image.bytes ++ suffix))
-        (EvmYul.EVM.D_J
-          (Assembly.Bytecode.ofList (artifact.image.bytes ++ suffix))
-          (EvmYul.UInt256.ofNat 0)) := by
-    intro current next stepFuel hPoint hPrefix hStep hContinues
-    exact (Assembly.GasfulBridge.artifactFrameStepInvariant_of_ordinaryBoundary
-      hCompact hDecode hSentinel hOrdinary) hPoint hPrefix hStep hContinues
-  have hFrame :=
-    Assembly.GasfulBridge.artifactFrameInvariant_of_step hInitialPoint
-      hStepInv
-  exact Assembly.GasfulBridge.x_ne_badJumpDestination_of_frame
-    hCompact hDecode hSentinel hFrame
-    (Assembly.GasfulBridge.labelTargetsListed_D_J hCompact hDecode)
+      (StackHeadroom.raw_compact_sentinel_decodeAt hBytes
+        hSentinelFits (plan.payload ++ suffix))
+  have hRaw :=
+    StackHeadroom.mkRawCert?_rawCheck
+      (by
+        simpa [VerifiedStackObjectArtifact.stackHeadroomCert?] using
+          hCert)
+  exact
+    StackHeadroom.x_ne_badJumpDestination_of_rawCert hProgram hDecode
+      hRaw hSentinel
+      (StackHeadroom.rawJumpdestsListed_D_J hLayout hWindow hDecode)
+      hCode hPc hStack
 
 /-- Escape-free refinement for compiled artifacts: any `RunRefinesOpen`
 witness over the artifact's gasful run against its own jumpdest scan
@@ -193,6 +157,7 @@ theorem VerifiedStackObjectArtifact.runRefinesOpen_noBadJump
     {object : Object}
     {linkerSymbols : List (Name × Word)}
     {artifact : VerifiedStackObjectArtifact}
+    {cert : StackHeadroom.Cert}
     {gasfulInitial : Assembly.EVMState}
     {fuel : Nat}
     {openRun :
@@ -202,10 +167,12 @@ theorem VerifiedStackObjectArtifact.runRefinesOpen_noBadJump
     (hObject :
       object.compileVerifiedStackObjectArtifactWithLinkerSymbols?
           linkerSymbols = some artifact)
+    (hCert : artifact.stackHeadroomCert? = some cert)
     (hCode :
       gasfulInitial.executionEnv.code =
         Assembly.Bytecode.ofList artifact.image.bytes)
     (hPc : gasfulInitial.pc = EvmYul.UInt256.ofNat 0)
+    (hStack : gasfulInitial.stack = [])
     (hRefines :
       Assembly.GasfulBridge.RunRefinesOpen
         (EvmYul.EVM.X fuel
@@ -222,14 +189,15 @@ theorem VerifiedStackObjectArtifact.runRefinesOpen_noBadJump
         gasfulInitial)
       openRun transcript :=
   Assembly.GasfulBridge.runRefinesOpenNoBadJump_of_ne hRefines
-    (VerifiedStackObjectArtifact.x_ne_badJumpDestination hObject hCode hPc
-      fuel)
+    (VerifiedStackObjectArtifact.x_ne_badJumpDestination hObject hCert
+      hCode hPc hStack fuel)
 
 /-- Suffix-tolerant escape-free refinement for creation frames. -/
 theorem VerifiedStackObjectArtifact.runRefinesOpen_noBadJump_withCodeSuffix
     {object : Object}
     {linkerSymbols : List (Name × Word)}
     {artifact : VerifiedStackObjectArtifact}
+    {cert : StackHeadroom.Cert}
     {gasfulInitial : Assembly.EVMState}
     {fuel : Nat}
     {openRun :
@@ -240,10 +208,12 @@ theorem VerifiedStackObjectArtifact.runRefinesOpen_noBadJump_withCodeSuffix
     (hObject :
       object.compileVerifiedStackObjectArtifactWithLinkerSymbols?
           linkerSymbols = some artifact)
+    (hCert : artifact.stackHeadroomCert? = some cert)
     (hCode :
       gasfulInitial.executionEnv.code =
         Assembly.Bytecode.ofList (artifact.image.bytes ++ suffix))
     (hPc : gasfulInitial.pc = EvmYul.UInt256.ofNat 0)
+    (hStack : gasfulInitial.stack = [])
     (hRefines :
       Assembly.GasfulBridge.RunRefinesOpen
         (EvmYul.EVM.X fuel
@@ -261,7 +231,7 @@ theorem VerifiedStackObjectArtifact.runRefinesOpen_noBadJump_withCodeSuffix
       openRun transcript :=
   Assembly.GasfulBridge.runRefinesOpenNoBadJump_of_ne hRefines
     (VerifiedStackObjectArtifact.x_ne_badJumpDestination_withCodeSuffix
-      suffix hObject hCode hPc fuel)
+      suffix hObject hCert hCode hPc hStack fuel)
 
 end Frontend
 end Solidity

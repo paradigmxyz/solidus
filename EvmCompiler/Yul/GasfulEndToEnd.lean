@@ -1,6 +1,7 @@
 import EvmCompiler.Yul.EndToEnd
 import EvmCompiler.Assembly.GasfulBridgeLayout
 import EvmCompiler.Assembly.GasfulFuelBound
+import EvmCompiler.Assembly.RawStackHeadroomSound
 
 namespace EvmCompiler
 namespace Yul
@@ -60,14 +61,13 @@ theorem optimizedSolcYulToGasfulRawBytecodeOfOpenRunBridge
             gasfulInitial)
           (Assembly.Compact.InteractionSemantics.openRunNResult
             (Assembly.Bytecode.ofList artifact.image.bytes)
-            (2 *
-              ((Structured.InteractionStaticCost.blockBudget
-                  artifact.codeArtifact.compiled.expressions.toStructured
-                  structuredFuel
-                  artifact.codeArtifact.compiled.expressions.toStructured.body +
-                    1) *
-                TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
-                  artifact.codeArtifact.compiled.cfg))
+            ((Structured.InteractionStaticCost.blockBudget
+                artifact.codeArtifact.compiled.expressions.toStructured
+                structuredFuel
+                artifact.codeArtifact.compiled.expressions.toStructured.body +
+                  1) *
+              artifact.codeChoice.executionFuelFactor
+                artifact.codeArtifact)
             { (initialExpressionsState artifact baseSource).evm with
               pc := EvmYul.UInt256.ofNat 0 })
           transcript) :
@@ -84,14 +84,13 @@ theorem optimizedSolcYulToGasfulRawBytecodeOfOpenRunBridge
             (installedSourceState artifact baseSource))
           (Assembly.Compact.InteractionSemantics.openRunNResult
             (Assembly.Bytecode.ofList artifact.image.bytes)
-            (2 *
-              ((Structured.InteractionStaticCost.blockBudget
-                  artifact.codeArtifact.compiled.expressions.toStructured
-                  structuredFuel
-                  artifact.codeArtifact.compiled.expressions.toStructured.body +
-                    1) *
-                TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
-                  artifact.codeArtifact.compiled.cfg))
+            ((Structured.InteractionStaticCost.blockBudget
+                artifact.codeArtifact.compiled.expressions.toStructured
+                structuredFuel
+                artifact.codeArtifact.compiled.expressions.toStructured.body +
+                  1) *
+              artifact.codeChoice.executionFuelFactor
+                artifact.codeArtifact)
             { (initialExpressionsState artifact baseSource).evm with
               pc := EvmYul.UInt256.ofNat 0 }) ∧
         Assembly.GasfulBridge.RunRefinesOpen
@@ -102,14 +101,13 @@ theorem optimizedSolcYulToGasfulRawBytecodeOfOpenRunBridge
             gasfulInitial)
           (Assembly.Compact.InteractionSemantics.openRunNResult
             (Assembly.Bytecode.ofList artifact.image.bytes)
-            (2 *
-              ((Structured.InteractionStaticCost.blockBudget
-                  artifact.codeArtifact.compiled.expressions.toStructured
-                  structuredFuel
-                  artifact.codeArtifact.compiled.expressions.toStructured.body +
-                    1) *
-                TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
-                  artifact.codeArtifact.compiled.cfg))
+            ((Structured.InteractionStaticCost.blockBudget
+                artifact.codeArtifact.compiled.expressions.toStructured
+                structuredFuel
+                artifact.codeArtifact.compiled.expressions.toStructured.body +
+                  1) *
+              artifact.codeChoice.executionFuelFactor
+                artifact.codeArtifact)
             { (initialExpressionsState artifact baseSource).evm with
               pc := EvmYul.UInt256.ofNat 0 })
           transcript := by
@@ -135,7 +133,7 @@ theorem verifiedArtifact_frameCodeInvariant_of_layout
           linkerSymbols = some artifact)
     (hLayout :
       Assembly.GasfulBridge.FrameLayoutInvariant
-        artifact.codeArtifact.compact.program
+        (artifact.codeChoice.compact artifact.codeArtifact).program
         (Assembly.Bytecode.ofList artifact.image.bytes)
         (EvmYul.EVM.D_J
           (Assembly.Bytecode.ofList artifact.image.bytes)
@@ -147,29 +145,22 @@ theorem verifiedArtifact_frameCodeInvariant_of_layout
         (Assembly.Bytecode.ofList artifact.image.bytes)
         (EvmYul.UInt256.ofNat 0))
       gasfulInitial := by
-  obtain ⟨_children, _plan, _codeArtifact, _hChildren, _hPlan, _hFinish,
-      hCode, _hArtifactChildren, _hContext, _hChildImages, _hPayload,
-      _hImage⟩ :=
-    Solidity.Frontend.Object.compileVerifiedStackObjectArtifactWithLinkerSymbols?_parts
+  obtain ⟨hValid, _hLayout, _hWindow, hBytes, hSentinelFits⟩ :=
+    Solidity.Frontend.Object.compileVerifiedStackObjectArtifactWithLinkerSymbols?_selectedCompactProperties
       hObject
-  obtain ⟨_hResolved, _hOrdered, _hLower, _hStack, _pinnedPushPcs,
-      _hPins, hCompact, _hBytes, _hMarker⟩ :=
-    Solidity.Frontend.Object.compileVerifiedStackCodeArtifactIn?_parts hCode
-  have hValid : artifact.codeArtifact.compact.program.Valid :=
-    (Assembly.Compact.compile?_valid hCompact).wellFormed.1
   obtain ⟨plan, hImage⟩ :=
     Solidity.Frontend.Object.compileVerifiedStackObjectArtifactWithLinkerSymbols?_sentinelImage
       hObject
   have hSentinel : Assembly.Compact.decodeAt
       (Assembly.Bytecode.ofList artifact.image.bytes)
       (Assembly.Compact.Program.codeByteLength
-        artifact.codeArtifact.compact.program.code)
+        (artifact.codeChoice.compact artifact.codeArtifact).program.code)
       (.prim .invalid) := by
     rw [hImage]
     simpa [Solidity.Frontend.Object.verifiedCodeSentinel,
       List.append_assoc] using
-      (Assembly.GasfulBridge.compact_compile_sentinel_decodeAt
-        hCompact plan.payload)
+      (Assembly.StackHeadroom.raw_compact_sentinel_decodeAt
+        hBytes hSentinelFits plan.payload)
   exact Assembly.GasfulBridge.frameCodeInvariant_of_layout hValid
     (Solidity.Frontend.Object.compileVerifiedStackObjectArtifactWithLinkerSymbols?_decodingCorrect
       hObject)
@@ -261,6 +252,7 @@ theorem verifiedArtifact_frameStepInvariant_of_ordinaryBoundary
     (hObject :
       object.compileVerifiedStackObjectArtifactWithLinkerSymbols?
           linkerSymbols = some artifact)
+    (hStandard : artifact.codeChoice = .standard)
     {validJumps : Array Assembly.Word}
     (hOrdinary :
       Assembly.GasfulBridge.ArtifactOrdinaryBoundaryStepInvariant
@@ -289,15 +281,20 @@ theorem verifiedArtifact_frameStepInvariant_of_ordinaryBoundary
       (.prim .invalid) := by
     rw [hImage]
     simpa [Solidity.Frontend.Object.verifiedCodeSentinel,
+      Solidity.Frontend.VerifiedStackCodeChoice.compact, hStandard,
       List.append_assoc] using
       (Assembly.GasfulBridge.compact_compile_sentinel_decodeAt
         hCompact plan.payload)
+  have hDecode : Assembly.Compact.DecodingCorrect
+      artifact.codeArtifact.compact.program
+      (Assembly.Bytecode.ofList artifact.image.bytes) := by
+    simpa [Solidity.Frontend.VerifiedStackCodeChoice.compact, hStandard] using
+      (Solidity.Frontend.Object.compileVerifiedStackObjectArtifactWithLinkerSymbols?_decodingCorrect
+        hObject)
   intro current next stepFuel hPoint hPrefix hStep hContinues
   exact (Assembly.GasfulBridge.artifactFrameStepInvariant_of_ordinaryBoundary
     (validJumps := validJumps) hCompact
-    (Solidity.Frontend.Object.compileVerifiedStackObjectArtifactWithLinkerSymbols?_decodingCorrect
-      hObject)
-    hSentinel hOrdinary) hPoint hPrefix hStep hContinues
+    hDecode hSentinel hOrdinary) hPoint hPrefix hStep hContinues
 
 theorem verifiedArtifact_ordinaryBoundaryInvariant_of_remainingPrim
     {object : Solidity.Frontend.Object}
@@ -307,6 +304,7 @@ theorem verifiedArtifact_ordinaryBoundaryInvariant_of_remainingPrim
     (hObject :
       object.compileVerifiedStackObjectArtifactWithLinkerSymbols?
           linkerSymbols = some artifact)
+    (hStandard : artifact.codeChoice = .standard)
     {validJumps : Array Assembly.Word}
     (hRemaining :
       Assembly.GasfulBridge.ArtifactRemainingPrimBoundaryStepInvariant
@@ -325,11 +323,18 @@ theorem verifiedArtifact_ordinaryBoundaryInvariant_of_remainingPrim
   obtain ⟨_hResolved, _hOrdered, _hLower, _hStack, _pinnedPushPcs,
       _hPins, hCompact, _hBytes, _hMarker⟩ :=
     Solidity.Frontend.Object.compileVerifiedStackCodeArtifactIn?_parts hCode
-  exact Assembly.GasfulBridge.artifactOrdinaryBoundaryStepInvariant_of_remainingPrim
-    hCompact
-    (Solidity.Frontend.Object.compileVerifiedStackObjectArtifactWithLinkerSymbols?_decodingCorrect
-      hObject)
-    hRemaining
+  have hDecode : Assembly.Compact.DecodingCorrect
+      artifact.codeArtifact.compact.program
+      (Assembly.Bytecode.ofList artifact.image.bytes) := by
+    simpa [Solidity.Frontend.VerifiedStackCodeChoice.compact, hStandard] using
+      (Solidity.Frontend.Object.compileVerifiedStackObjectArtifactWithLinkerSymbols?_decodingCorrect
+        hObject)
+  intro current next block stepFuel hCodeAt hBlock hPcAt hNotJump
+    hNotJumpi hPrefix hStep hContinues
+  exact
+    (Assembly.GasfulBridge.artifactOrdinaryBoundaryStepInvariant_of_remainingPrim
+      hCompact hDecode hRemaining)
+      hCodeAt hBlock hPcAt hNotJump hNotJumpi hPrefix hStep hContinues
 
 theorem verifiedArtifact_ordinaryBoundaryInvariant
     {object : Solidity.Frontend.Object}
@@ -339,6 +344,7 @@ theorem verifiedArtifact_ordinaryBoundaryInvariant
     (hObject :
       object.compileVerifiedStackObjectArtifactWithLinkerSymbols?
           linkerSymbols = some artifact)
+    (hStandard : artifact.codeChoice = .standard)
     (validJumps : Array Assembly.Word) :
     Assembly.GasfulBridge.ArtifactOrdinaryBoundaryStepInvariant
       artifact.codeArtifact.compact
@@ -352,10 +358,205 @@ theorem verifiedArtifact_ordinaryBoundaryInvariant
   obtain ⟨_hResolved, _hOrdered, _hLower, _hStack, _pinnedPushPcs,
       _hPins, hCompact, _hBytes, _hMarker⟩ :=
     Solidity.Frontend.Object.compileVerifiedStackCodeArtifactIn?_parts hCode
-  exact Assembly.GasfulBridge.artifactOrdinaryBoundaryStepInvariant_of_compile
-    hCompact
+  have hDecode : Assembly.Compact.DecodingCorrect
+      artifact.codeArtifact.compact.program
+      (Assembly.Bytecode.ofList artifact.image.bytes) := by
+    simpa [Solidity.Frontend.VerifiedStackCodeChoice.compact, hStandard] using
+      (Solidity.Frontend.Object.compileVerifiedStackObjectArtifactWithLinkerSymbols?_decodingCorrect
+        hObject)
+  intro current next block stepFuel hCodeAt hBlock hPcAt hNotJump
+    hNotJumpi hPrefix hStep hContinues
+  exact
+    (Assembly.GasfulBridge.artifactOrdinaryBoundaryStepInvariant_of_compile
+      hCompact hDecode)
+      hCodeAt hBlock hPcAt hNotJump hNotJumpi hPrefix hStep hContinues
+
+/-- Choice-aware gasful frame invariant. Standard compact code keeps the
+source-layout proof; late-return compact code uses the fail-closed raw
+emitted-program certificate selected by the object compiler. -/
+theorem verifiedArtifact_frameCodeInvariant_of_initial
+    {object : Solidity.Frontend.Object}
+    {linkerSymbols : List
+      (Solidity.Frontend.Name × Solidity.Frontend.Word)}
+    {artifact : Solidity.Frontend.VerifiedStackObjectArtifact}
+    {bytes : ByteArray}
+    {validJumps : Array Assembly.Word}
+    {initial : Assembly.EVMState}
+    (hObject :
+      object.compileVerifiedStackObjectArtifactWithLinkerSymbols?
+          linkerSymbols = some artifact)
+    (hCode : initial.executionEnv.code = bytes)
+    (hPc : initial.pc = EvmYul.UInt256.ofNat 0)
+    (hStack : initial.stack = [])
+    (hDecode : Assembly.Compact.DecodingCorrect
+      (artifact.codeChoice.compact artifact.codeArtifact).program bytes)
+    (hSentinel : Assembly.Compact.decodeAt bytes
+      (Assembly.Compact.Program.codeByteLength
+        (artifact.codeChoice.compact artifact.codeArtifact).program.code)
+      (.prim .invalid)) :
+    Assembly.GasfulBridge.FrameCodeInvariant bytes validJumps initial := by
+  obtain ⟨_children, _plan, _codeArtifact, _hChildren, _hPlan, _hFinish,
+      hCodeArtifact, hChoice, _hArtifactChildren, _hContext, _hChildImages,
+      _hPayload, _hComputedCode, _hMarkerCode, _hImage⟩ :=
+    Solidity.Frontend.Object.compileVerifiedStackObjectArtifactWithLinkerSymbols?_parts
+      hObject
+  obtain ⟨_hResolved, _hOrdered, _hLower, _hStack, _pinnedPushPcs,
+      _hPins, hCompact, _hBytes, _hMarker⟩ :=
+    Solidity.Frontend.Object.compileVerifiedStackCodeArtifactIn?_parts
+      hCodeArtifact
+  have hSelectedValid :
+      (artifact.codeChoice.compact artifact.codeArtifact).program.Valid :=
+    (Solidity.Frontend.Object.compileVerifiedStackObjectArtifactWithLinkerSymbols?_selectedCompactProperties
+      hObject).1
+  cases hSelected : artifact.codeChoice with
+  | standard =>
+      have hDecodeStandard : Assembly.Compact.DecodingCorrect
+          artifact.codeArtifact.compact.program bytes := by
+        simpa [Solidity.Frontend.VerifiedStackCodeChoice.compact,
+          hSelected] using hDecode
+      have hSentinelStandard : Assembly.Compact.decodeAt bytes
+          (Assembly.Compact.Program.codeByteLength
+            artifact.codeArtifact.compact.program.code)
+          (.prim .invalid) := by
+        simpa [Solidity.Frontend.VerifiedStackCodeChoice.compact,
+          hSelected] using hSentinel
+      have hInitialPoint :
+          Assembly.GasfulBridge.ArtifactFramePoint
+            artifact.codeArtifact.compact bytes initial :=
+        Assembly.GasfulBridge.artifactFramePoint_initial
+          hCompact hCode hPc
+      have hOrdinary :
+          Assembly.GasfulBridge.ArtifactOrdinaryBoundaryStepInvariant
+            artifact.codeArtifact.compact bytes validJumps :=
+        Assembly.GasfulBridge.artifactOrdinaryBoundaryStepInvariant_of_compile
+          hCompact hDecodeStandard
+      have hStep :
+          Assembly.GasfulBridge.ArtifactFrameStepInvariant
+            artifact.codeArtifact.compact bytes validJumps :=
+        Assembly.GasfulBridge.artifactFrameStepInvariant_of_ordinaryBoundary
+          hCompact hDecodeStandard hSentinelStandard hOrdinary
+      have hFrame :=
+        Assembly.GasfulBridge.artifactFrameInvariant_of_step
+          hInitialPoint hStep
+      have hLayout :=
+        Assembly.GasfulBridge.frameLayoutInvariant_of_artifactFrameInvariant
+          hCompact hFrame
+      exact
+        Assembly.GasfulBridge.frameCodeInvariant_of_layout
+          (Assembly.Compact.compile?_valid hCompact).wellFormed.1
+          hDecodeStandard hSentinelStandard hLayout
+  | late candidate =>
+      have hChoiceLate :
+          object.verifiedStackCodeChoice artifact.codeArtifact =
+            .late candidate := by
+        calc
+          object.verifiedStackCodeChoice artifact.codeArtifact =
+              artifact.codeChoice := hChoice.symm
+          _ = .late candidate := hSelected
+      obtain ⟨cert, hCert⟩ :=
+        Solidity.Frontend.Object.verifiedStackCodeChoice_late_rawCert
+          hChoiceLate
+      have hRaw :
+          Assembly.StackHeadroom.rawCheck?
+              candidate.base.base.compact.asCompact cert =
+            true :=
+        Assembly.StackHeadroom.mkRawCert?_rawCheck hCert
+      have hValidLate :
+          candidate.base.base.compact.asCompact.program.Valid := by
+        simpa [Solidity.Frontend.VerifiedStackCodeChoice.compact,
+          hSelected] using hSelectedValid
+      have hDecodeLate : Assembly.Compact.DecodingCorrect
+          candidate.base.base.compact.asCompact.program bytes := by
+        simpa [Solidity.Frontend.VerifiedStackCodeChoice.compact,
+          hSelected] using hDecode
+      have hSentinelLate : Assembly.Compact.decodeAt bytes
+          (Assembly.Compact.Program.codeByteLength
+            candidate.base.base.compact.asCompact.program.code)
+          (.prim .invalid) := by
+        simpa [Solidity.Frontend.VerifiedStackCodeChoice.compact,
+          hSelected] using hSentinel
+      have hInitialPoint :
+          Assembly.StackHeadroom.RawPoint bytes cert.table initial :=
+        Assembly.StackHeadroom.rawPoint_initial hRaw hCode hPc hStack
+      have hLayout :=
+        Assembly.StackHeadroom.frameLayoutInvariant_of_rawCert
+          (validJumps := validJumps)
+          hValidLate hDecodeLate hRaw hSentinelLate hInitialPoint
+      exact
+        Assembly.GasfulBridge.frameCodeInvariant_of_layout
+          hValidLate hDecodeLate hSentinelLate hLayout
+
+theorem verifiedArtifact_frameCodeInvariant
+    {object : Solidity.Frontend.Object}
+    {linkerSymbols : List
+      (Solidity.Frontend.Name × Solidity.Frontend.Word)}
+    {artifact : Solidity.Frontend.VerifiedStackObjectArtifact}
+    {baseSource : EvmYul.SharedState .Yul}
+    {gasfulInitial : Assembly.EVMState}
+    (hObject :
+      object.compileVerifiedStackObjectArtifactWithLinkerSymbols?
+          linkerSymbols = some artifact)
+    (hInitial :
+      Assembly.GasfulBridge.OpenStateRel gasfulInitial
+        { (initialExpressionsState artifact baseSource).evm with
+          pc := EvmYul.UInt256.ofNat 0 }) :
+    Assembly.GasfulBridge.FrameCodeInvariant
+      (Assembly.Bytecode.ofList artifact.image.bytes)
+      (EvmYul.EVM.D_J
+        (Assembly.Bytecode.ofList artifact.image.bytes)
+        (EvmYul.UInt256.ofNat 0))
+      gasfulInitial := by
+  obtain ⟨_hValid, _hLayout, _hWindow, hBytes, hSentinelFits⟩ :=
+    Solidity.Frontend.Object.compileVerifiedStackObjectArtifactWithLinkerSymbols?_selectedCompactProperties
+      hObject
+  obtain ⟨plan, hImage⟩ :=
+    Solidity.Frontend.Object.compileVerifiedStackObjectArtifactWithLinkerSymbols?_sentinelImage
+      hObject
+  have hCode :
+      gasfulInitial.executionEnv.code =
+        Assembly.Bytecode.ofList artifact.image.bytes := by
+    calc
+      gasfulInitial.executionEnv.code =
+          ({ (initialExpressionsState artifact baseSource).evm with
+            pc := EvmYul.UInt256.ofNat 0 } :
+              Assembly.EVMState).executionEnv.code :=
+        hInitial.code_eq
+      _ = Assembly.Bytecode.ofList artifact.image.bytes := by
+        simp [initialExpressionsState, initialFunctionsState,
+          Functions.StackRelation.initialTarget, Structured.RunState.initial,
+          FunctionsInteractionRelation.ScopedStateRel.initialTarget,
+          FunctionsInteractionRelation.ScopedStateRel.installedSourceShared,
+          FunctionsInteractionRelation.SharedRel.toEVM,
+          FunctionsInteractionRelation.ExecutionEnvRel.toEVM]
+        simp [Simulation.OpenWorld.installEVMShared,
+          Simulation.OpenWorld.installEVM]
+  have hPc : gasfulInitial.pc = EvmYul.UInt256.ofNat 0 := by
+    simpa using hInitial.pc_eq
+  have hStack : gasfulInitial.stack = [] := by
+    calc
+      gasfulInitial.stack =
+          ({ (initialExpressionsState artifact baseSource).evm with
+            pc := EvmYul.UInt256.ofNat 0 } : Assembly.EVMState).stack :=
+        hInitial.stack_eq
+      _ = [] := by
+        simp [initialExpressionsState, initialFunctionsState,
+          Functions.StackRelation.initialTarget, Structured.RunState.initial,
+          FunctionsInteractionRelation.ScopedStateRel.initialTarget]
+  have hSentinel : Assembly.Compact.decodeAt
+      (Assembly.Bytecode.ofList artifact.image.bytes)
+      (Assembly.Compact.Program.codeByteLength
+        (artifact.codeChoice.compact artifact.codeArtifact).program.code)
+      (.prim .invalid) := by
+    rw [hImage]
+    simpa [Solidity.Frontend.Object.verifiedCodeSentinel,
+      List.append_assoc] using
+      (Assembly.StackHeadroom.raw_compact_sentinel_decodeAt
+        hBytes hSentinelFits plan.payload)
+  exact verifiedArtifact_frameCodeInvariant_of_initial hObject
+    hCode hPc hStack
     (Solidity.Frontend.Object.compileVerifiedStackObjectArtifactWithLinkerSymbols?_decodingCorrect
       hObject)
+    hSentinel
 
 theorem optimizedSolcYulToGasfulRawBytecodeOfRecursiveFrameBridge
     {object : Solidity.Frontend.Object}
@@ -385,86 +586,53 @@ theorem optimizedSolcYulToGasfulRawBytecodeOfRecursiveFrameBridge
             (installedSourceState artifact baseSource))
           (Assembly.Compact.InteractionSemantics.openRunNResult
             (Assembly.Bytecode.ofList artifact.image.bytes)
-            (2 *
-              ((Structured.InteractionStaticCost.blockBudget
-                  artifact.codeArtifact.compiled.expressions.toStructured
-                  structuredFuel
-                  artifact.codeArtifact.compiled.expressions.toStructured.body +
-                    1) *
-                TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
-                  artifact.codeArtifact.compiled.cfg))
+            ((Structured.InteractionStaticCost.blockBudget
+                artifact.codeArtifact.compiled.expressions.toStructured
+                structuredFuel
+                artifact.codeArtifact.compiled.expressions.toStructured.body +
+                  1) *
+              artifact.codeChoice.executionFuelFactor
+                artifact.codeArtifact)
             { (initialExpressionsState artifact baseSource).evm with
               pc := EvmYul.UInt256.ofNat 0 }) ∧
         Assembly.GasfulBridge.RunRefinesOpen
           (EvmYul.EVM.X
-            (2 *
-              ((Structured.InteractionStaticCost.blockBudget
-                  artifact.codeArtifact.compiled.expressions.toStructured
-                  structuredFuel
-                  artifact.codeArtifact.compiled.expressions.toStructured.body +
-                    1) *
-                TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
-                  artifact.codeArtifact.compiled.cfg))
+            ((Structured.InteractionStaticCost.blockBudget
+                artifact.codeArtifact.compiled.expressions.toStructured
+                structuredFuel
+                artifact.codeArtifact.compiled.expressions.toStructured.body +
+                  1) *
+              artifact.codeChoice.executionFuelFactor
+                artifact.codeArtifact)
             (EvmYul.EVM.D_J
               (Assembly.Bytecode.ofList artifact.image.bytes)
               (EvmYul.UInt256.ofNat 0))
             gasfulInitial)
           (Assembly.Compact.InteractionSemantics.openRunNResult
             (Assembly.Bytecode.ofList artifact.image.bytes)
-            (2 *
-              ((Structured.InteractionStaticCost.blockBudget
-                  artifact.codeArtifact.compiled.expressions.toStructured
-                  structuredFuel
-                  artifact.codeArtifact.compiled.expressions.toStructured.body +
-                    1) *
-                TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
-                  artifact.codeArtifact.compiled.cfg))
+            ((Structured.InteractionStaticCost.blockBudget
+                artifact.codeArtifact.compiled.expressions.toStructured
+                structuredFuel
+                artifact.codeArtifact.compiled.expressions.toStructured.body +
+                  1) *
+              artifact.codeChoice.executionFuelFactor
+                artifact.codeArtifact)
             { (initialExpressionsState artifact baseSource).evm with
               pc := EvmYul.UInt256.ofNat 0 })
           transcript := by
   obtain ⟨structuredFuel, hAccepted, hForward⟩ :=
     optimizedSolcYulToRawBytecode (sourceFuel := sourceFuel)
       (baseSource := baseSource) hObject
-  have hInitialPoint :=
-    verifiedArtifact_initialArtifactFramePoint hObject hInitial
-  have hOrdinary :
-      Assembly.GasfulBridge.ArtifactOrdinaryBoundaryStepInvariant
-        artifact.codeArtifact.compact
-        (Assembly.Bytecode.ofList artifact.image.bytes)
-        (EvmYul.EVM.D_J
-          (Assembly.Bytecode.ofList artifact.image.bytes)
-          (EvmYul.UInt256.ofNat 0)) :=
-    verifiedArtifact_ordinaryBoundaryInvariant hObject
-      (EvmYul.EVM.D_J
-        (Assembly.Bytecode.ofList artifact.image.bytes)
-        (EvmYul.UInt256.ofNat 0))
-  have hStepInvariant : Assembly.GasfulBridge.ArtifactFrameStepInvariant
-      artifact.codeArtifact.compact
-      (Assembly.Bytecode.ofList artifact.image.bytes)
-      (EvmYul.EVM.D_J
-        (Assembly.Bytecode.ofList artifact.image.bytes)
-        (EvmYul.UInt256.ofNat 0)) := by
-    intro current next stepFuel hPoint hPrefix hStep hContinues
-    exact (verifiedArtifact_frameStepInvariant_of_ordinaryBoundary
-      (validJumps := EvmYul.EVM.D_J
-        (Assembly.Bytecode.ofList artifact.image.bytes)
-        (EvmYul.UInt256.ofNat 0)) hObject hOrdinary)
-      hPoint hPrefix hStep hContinues
-  have hFrame := Assembly.GasfulBridge.artifactFrameInvariant_of_step
-    hInitialPoint hStepInvariant
-  have hLayout :=
-    verifiedArtifact_frameLayoutInvariant_of_artifactFrameInvariant
-      hObject hFrame
-  have hCode := verifiedArtifact_frameCodeInvariant_of_layout hObject hLayout
+  have hCode := verifiedArtifact_frameCodeInvariant hObject hInitial
   obtain ⟨transcript, hGasful⟩ :=
     Assembly.GasfulBridge.runRefinesOpen_recursive hCode
-      (2 *
-        ((Structured.InteractionStaticCost.blockBudget
-            artifact.codeArtifact.compiled.expressions.toStructured
-            structuredFuel
-            artifact.codeArtifact.compiled.expressions.toStructured.body + 1) *
-          TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
-            artifact.codeArtifact.compiled.cfg))
+      ((Structured.InteractionStaticCost.blockBudget
+                artifact.codeArtifact.compiled.expressions.toStructured
+                structuredFuel
+                artifact.codeArtifact.compiled.expressions.toStructured.body +
+                  1) *
+              artifact.codeChoice.executionFuelFactor
+                artifact.codeArtifact)
       Assembly.GasfulBridge.FrameReachable.initial hInitial
   exact ⟨structuredFuel, transcript, hAccepted, hForward, hGasful⟩
 
@@ -491,7 +659,7 @@ theorem verifiedArtifact_frameCodeInvariant_of_layoutWithCodeSuffix
           linkerSymbols = some artifact)
     (hLayout :
       Assembly.GasfulBridge.FrameLayoutInvariant
-        artifact.codeArtifact.compact.program
+        (artifact.codeChoice.compact artifact.codeArtifact).program
         (Assembly.Bytecode.ofList (artifact.image.bytes ++ suffix))
         (EvmYul.EVM.D_J
           (Assembly.Bytecode.ofList (artifact.image.bytes ++ suffix))
@@ -503,29 +671,22 @@ theorem verifiedArtifact_frameCodeInvariant_of_layoutWithCodeSuffix
         (Assembly.Bytecode.ofList (artifact.image.bytes ++ suffix))
         (EvmYul.UInt256.ofNat 0))
       gasfulInitial := by
-  obtain ⟨_children, _plan, _codeArtifact, _hChildren, _hPlan, _hFinish,
-      hCode, _hArtifactChildren, _hContext, _hChildImages, _hPayload,
-      _hImage⟩ :=
-    Solidity.Frontend.Object.compileVerifiedStackObjectArtifactWithLinkerSymbols?_parts
+  obtain ⟨hValid, _hLayout, _hWindow, hBytes, hSentinelFits⟩ :=
+    Solidity.Frontend.Object.compileVerifiedStackObjectArtifactWithLinkerSymbols?_selectedCompactProperties
       hObject
-  obtain ⟨_hResolved, _hOrdered, _hLower, _hStack, _pinnedPushPcs,
-      _hPins, hCompact, _hBytes, _hMarker⟩ :=
-    Solidity.Frontend.Object.compileVerifiedStackCodeArtifactIn?_parts hCode
-  have hValid : artifact.codeArtifact.compact.program.Valid :=
-    (Assembly.Compact.compile?_valid hCompact).wellFormed.1
   obtain ⟨plan, hImage⟩ :=
     Solidity.Frontend.Object.compileVerifiedStackObjectArtifactWithLinkerSymbols?_sentinelImage
       hObject
   have hSentinel : Assembly.Compact.decodeAt
       (Assembly.Bytecode.ofList (artifact.image.bytes ++ suffix))
       (Assembly.Compact.Program.codeByteLength
-        artifact.codeArtifact.compact.program.code)
+        (artifact.codeChoice.compact artifact.codeArtifact).program.code)
       (.prim .invalid) := by
     rw [hImage]
     simpa [Solidity.Frontend.Object.verifiedCodeSentinel,
       List.append_assoc] using
-      (Assembly.GasfulBridge.compact_compile_sentinel_decodeAt
-        hCompact (plan.payload ++ suffix))
+      (Assembly.StackHeadroom.raw_compact_sentinel_decodeAt
+        hBytes hSentinelFits (plan.payload ++ suffix))
   exact Assembly.GasfulBridge.frameCodeInvariant_of_layout hValid
     (Solidity.Frontend.Object.compileVerifiedStackObjectArtifactWithLinkerSymbols?_decodingCorrect_withCodeSuffix
       hObject suffix)
@@ -623,6 +784,7 @@ theorem verifiedArtifact_frameStepInvariant_of_ordinaryBoundaryWithCodeSuffix
     (hObject :
       object.compileVerifiedStackObjectArtifactWithLinkerSymbols?
           linkerSymbols = some artifact)
+    (hStandard : artifact.codeChoice = .standard)
     {validJumps : Array Assembly.Word}
     (hOrdinary :
       Assembly.GasfulBridge.ArtifactOrdinaryBoundaryStepInvariant
@@ -651,15 +813,20 @@ theorem verifiedArtifact_frameStepInvariant_of_ordinaryBoundaryWithCodeSuffix
       (.prim .invalid) := by
     rw [hImage]
     simpa [Solidity.Frontend.Object.verifiedCodeSentinel,
+      Solidity.Frontend.VerifiedStackCodeChoice.compact, hStandard,
       List.append_assoc] using
       (Assembly.GasfulBridge.compact_compile_sentinel_decodeAt
         hCompact (plan.payload ++ suffix))
+  have hDecode : Assembly.Compact.DecodingCorrect
+      artifact.codeArtifact.compact.program
+      (Assembly.Bytecode.ofList (artifact.image.bytes ++ suffix)) := by
+    simpa [Solidity.Frontend.VerifiedStackCodeChoice.compact, hStandard] using
+      (Solidity.Frontend.Object.compileVerifiedStackObjectArtifactWithLinkerSymbols?_decodingCorrect_withCodeSuffix
+        hObject suffix)
   intro current next stepFuel hPoint hPrefix hStep hContinues
   exact (Assembly.GasfulBridge.artifactFrameStepInvariant_of_ordinaryBoundary
-    (validJumps := validJumps) hCompact
-    (Solidity.Frontend.Object.compileVerifiedStackObjectArtifactWithLinkerSymbols?_decodingCorrect_withCodeSuffix
-      hObject suffix)
-    hSentinel hOrdinary) hPoint hPrefix hStep hContinues
+    (validJumps := validJumps) hCompact hDecode hSentinel hOrdinary)
+      hPoint hPrefix hStep hContinues
 
 theorem verifiedArtifact_ordinaryBoundaryInvariantWithCodeSuffix
     {object : Solidity.Frontend.Object}
@@ -670,6 +837,7 @@ theorem verifiedArtifact_ordinaryBoundaryInvariantWithCodeSuffix
     (hObject :
       object.compileVerifiedStackObjectArtifactWithLinkerSymbols?
           linkerSymbols = some artifact)
+    (hStandard : artifact.codeChoice = .standard)
     (validJumps : Array Assembly.Word) :
     Assembly.GasfulBridge.ArtifactOrdinaryBoundaryStepInvariant
       artifact.codeArtifact.compact
@@ -683,10 +851,98 @@ theorem verifiedArtifact_ordinaryBoundaryInvariantWithCodeSuffix
   obtain ⟨_hResolved, _hOrdered, _hLower, _hStack, _pinnedPushPcs,
       _hPins, hCompact, _hBytes, _hMarker⟩ :=
     Solidity.Frontend.Object.compileVerifiedStackCodeArtifactIn?_parts hCode
-  exact Assembly.GasfulBridge.artifactOrdinaryBoundaryStepInvariant_of_compile
-    hCompact
+  have hDecode : Assembly.Compact.DecodingCorrect
+      artifact.codeArtifact.compact.program
+      (Assembly.Bytecode.ofList (artifact.image.bytes ++ suffix)) := by
+    simpa [Solidity.Frontend.VerifiedStackCodeChoice.compact, hStandard] using
+      (Solidity.Frontend.Object.compileVerifiedStackObjectArtifactWithLinkerSymbols?_decodingCorrect_withCodeSuffix
+        hObject suffix)
+  intro current next block stepFuel hCodeAt hBlock hPcAt hNotJump
+    hNotJumpi hPrefix hStep hContinues
+  exact
+    (Assembly.GasfulBridge.artifactOrdinaryBoundaryStepInvariant_of_compile
+      hCompact hDecode)
+      hCodeAt hBlock hPcAt hNotJump hNotJumpi hPrefix hStep hContinues
+
+theorem verifiedArtifact_frameCodeInvariantWithCodeSuffix
+    {object : Solidity.Frontend.Object}
+    {linkerSymbols : List
+      (Solidity.Frontend.Name × Solidity.Frontend.Word)}
+    {artifact : Solidity.Frontend.VerifiedStackObjectArtifact}
+    {baseSource : EvmYul.SharedState .Yul}
+    {gasfulInitial : Assembly.EVMState}
+    (suffix : List UInt8)
+    (hObject :
+      object.compileVerifiedStackObjectArtifactWithLinkerSymbols?
+          linkerSymbols = some artifact)
+    (hInitial :
+      Assembly.GasfulBridge.OpenStateRel gasfulInitial
+        { (initialExpressionsStateWithCodeSuffix
+            artifact suffix baseSource).evm with
+          pc := EvmYul.UInt256.ofNat 0 }) :
+    Assembly.GasfulBridge.FrameCodeInvariant
+      (Assembly.Bytecode.ofList (artifact.image.bytes ++ suffix))
+      (EvmYul.EVM.D_J
+        (Assembly.Bytecode.ofList (artifact.image.bytes ++ suffix))
+        (EvmYul.UInt256.ofNat 0))
+      gasfulInitial := by
+  obtain ⟨_hValid, _hLayout, _hWindow, hBytes, hSentinelFits⟩ :=
+    Solidity.Frontend.Object.compileVerifiedStackObjectArtifactWithLinkerSymbols?_selectedCompactProperties
+      hObject
+  obtain ⟨plan, hImage⟩ :=
+    Solidity.Frontend.Object.compileVerifiedStackObjectArtifactWithLinkerSymbols?_sentinelImage
+      hObject
+  have hCode :
+      gasfulInitial.executionEnv.code =
+        Assembly.Bytecode.ofList (artifact.image.bytes ++ suffix) := by
+    calc
+      gasfulInitial.executionEnv.code =
+          ({ (initialExpressionsStateWithCodeSuffix
+              artifact suffix baseSource).evm with
+            pc := EvmYul.UInt256.ofNat 0 } :
+              Assembly.EVMState).executionEnv.code :=
+        hInitial.code_eq
+      _ = Assembly.Bytecode.ofList
+          (artifact.image.bytes ++ suffix) := by
+        simp [initialExpressionsStateWithCodeSuffix,
+          initialFunctionsStateWithCodeSuffix,
+          Functions.StackRelation.initialTarget, Structured.RunState.initial,
+          FunctionsInteractionRelation.ScopedStateRel.initialTarget,
+          FunctionsInteractionRelation.ScopedStateRel.installedSourceShared,
+          FunctionsInteractionRelation.SharedRel.toEVM,
+          FunctionsInteractionRelation.ExecutionEnvRel.toEVM]
+        simp [Simulation.OpenWorld.installEVMShared,
+          Simulation.OpenWorld.installEVM]
+  have hPc : gasfulInitial.pc = EvmYul.UInt256.ofNat 0 := by
+    simpa using hInitial.pc_eq
+  have hStack : gasfulInitial.stack = [] := by
+    calc
+      gasfulInitial.stack =
+          ({ (initialExpressionsStateWithCodeSuffix
+              artifact suffix baseSource).evm with
+            pc := EvmYul.UInt256.ofNat 0 } :
+              Assembly.EVMState).stack :=
+        hInitial.stack_eq
+      _ = [] := by
+        simp [initialExpressionsStateWithCodeSuffix,
+          initialFunctionsStateWithCodeSuffix,
+          Functions.StackRelation.initialTarget, Structured.RunState.initial,
+          FunctionsInteractionRelation.ScopedStateRel.initialTarget]
+  have hSentinel : Assembly.Compact.decodeAt
+      (Assembly.Bytecode.ofList (artifact.image.bytes ++ suffix))
+      (Assembly.Compact.Program.codeByteLength
+        (artifact.codeChoice.compact artifact.codeArtifact).program.code)
+      (.prim .invalid) := by
+    rw [hImage]
+    simpa [Solidity.Frontend.Object.verifiedCodeSentinel,
+      List.append_assoc] using
+      (Assembly.StackHeadroom.raw_compact_sentinel_decodeAt
+        hBytes hSentinelFits (plan.payload ++ suffix))
+  exact verifiedArtifact_frameCodeInvariant_of_initial hObject
+    hCode hPc hStack
     (Solidity.Frontend.Object.compileVerifiedStackObjectArtifactWithLinkerSymbols?_decodingCorrect_withCodeSuffix
       hObject suffix)
+    hSentinel
 
 /-- Suffix-tolerant recursive frame-bridge endpoint. The concrete gasful run
 starts at EvmYul's real creation-frame entry
@@ -723,41 +979,38 @@ theorem optimizedSolcYulToGasfulRawBytecodeOfRecursiveFrameBridgeWithCodeSuffix
             (installedSourceStateWithCodeSuffix artifact suffix baseSource))
           (Assembly.Compact.InteractionSemantics.openRunNResult
             (Assembly.Bytecode.ofList (artifact.image.bytes ++ suffix))
-            (2 *
-              ((Structured.InteractionStaticCost.blockBudget
-                  artifact.codeArtifact.compiled.expressions.toStructured
-                  structuredFuel
-                  artifact.codeArtifact.compiled.expressions.toStructured.body +
-                    1) *
-                TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
-                  artifact.codeArtifact.compiled.cfg))
+            ((Structured.InteractionStaticCost.blockBudget
+                artifact.codeArtifact.compiled.expressions.toStructured
+                structuredFuel
+                artifact.codeArtifact.compiled.expressions.toStructured.body +
+                  1) *
+              artifact.codeChoice.executionFuelFactor
+                artifact.codeArtifact)
             { (initialExpressionsStateWithCodeSuffix
                 artifact suffix baseSource).evm with
               pc := EvmYul.UInt256.ofNat 0 }) ∧
         Assembly.GasfulBridge.RunRefinesOpen
           (EvmYul.EVM.X
-            (2 *
-              ((Structured.InteractionStaticCost.blockBudget
-                  artifact.codeArtifact.compiled.expressions.toStructured
-                  structuredFuel
-                  artifact.codeArtifact.compiled.expressions.toStructured.body +
-                    1) *
-                TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
-                  artifact.codeArtifact.compiled.cfg))
+            ((Structured.InteractionStaticCost.blockBudget
+                artifact.codeArtifact.compiled.expressions.toStructured
+                structuredFuel
+                artifact.codeArtifact.compiled.expressions.toStructured.body +
+                  1) *
+              artifact.codeChoice.executionFuelFactor
+                artifact.codeArtifact)
             (EvmYul.EVM.D_J
               (Assembly.Bytecode.ofList (artifact.image.bytes ++ suffix))
               (EvmYul.UInt256.ofNat 0))
             gasfulInitial)
           (Assembly.Compact.InteractionSemantics.openRunNResult
             (Assembly.Bytecode.ofList (artifact.image.bytes ++ suffix))
-            (2 *
-              ((Structured.InteractionStaticCost.blockBudget
-                  artifact.codeArtifact.compiled.expressions.toStructured
-                  structuredFuel
-                  artifact.codeArtifact.compiled.expressions.toStructured.body +
-                    1) *
-                TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
-                  artifact.codeArtifact.compiled.cfg))
+            ((Structured.InteractionStaticCost.blockBudget
+                artifact.codeArtifact.compiled.expressions.toStructured
+                structuredFuel
+                artifact.codeArtifact.compiled.expressions.toStructured.body +
+                  1) *
+              artifact.codeChoice.executionFuelFactor
+                artifact.codeArtifact)
             { (initialExpressionsStateWithCodeSuffix
                 artifact suffix baseSource).evm with
               pc := EvmYul.UInt256.ofNat 0 })
@@ -765,49 +1018,17 @@ theorem optimizedSolcYulToGasfulRawBytecodeOfRecursiveFrameBridgeWithCodeSuffix
   obtain ⟨structuredFuel, hAccepted, hForward⟩ :=
     optimizedSolcYulToRawBytecodeWithCodeSuffix (sourceFuel := sourceFuel)
       (baseSource := baseSource) suffix hObject
-  have hInitialPoint :=
-    verifiedArtifact_initialArtifactFramePointWithCodeSuffix suffix hObject
-      hInitial
-  have hOrdinary :
-      Assembly.GasfulBridge.ArtifactOrdinaryBoundaryStepInvariant
-        artifact.codeArtifact.compact
-        (Assembly.Bytecode.ofList (artifact.image.bytes ++ suffix))
-        (EvmYul.EVM.D_J
-          (Assembly.Bytecode.ofList (artifact.image.bytes ++ suffix))
-          (EvmYul.UInt256.ofNat 0)) :=
-    verifiedArtifact_ordinaryBoundaryInvariantWithCodeSuffix suffix hObject
-      (EvmYul.EVM.D_J
-        (Assembly.Bytecode.ofList (artifact.image.bytes ++ suffix))
-        (EvmYul.UInt256.ofNat 0))
-  have hStepInvariant : Assembly.GasfulBridge.ArtifactFrameStepInvariant
-      artifact.codeArtifact.compact
-      (Assembly.Bytecode.ofList (artifact.image.bytes ++ suffix))
-      (EvmYul.EVM.D_J
-        (Assembly.Bytecode.ofList (artifact.image.bytes ++ suffix))
-        (EvmYul.UInt256.ofNat 0)) := by
-    intro current next stepFuel hPoint hPrefix hStep hContinues
-    exact (verifiedArtifact_frameStepInvariant_of_ordinaryBoundaryWithCodeSuffix
-      (validJumps := EvmYul.EVM.D_J
-        (Assembly.Bytecode.ofList (artifact.image.bytes ++ suffix))
-        (EvmYul.UInt256.ofNat 0)) suffix hObject hOrdinary)
-      hPoint hPrefix hStep hContinues
-  have hFrame := Assembly.GasfulBridge.artifactFrameInvariant_of_step
-    hInitialPoint hStepInvariant
-  have hLayout :=
-    verifiedArtifact_frameLayoutInvariant_of_artifactFrameInvariantWithCodeSuffix
-      suffix hObject hFrame
   have hCode :=
-    verifiedArtifact_frameCodeInvariant_of_layoutWithCodeSuffix suffix hObject
-      hLayout
+    verifiedArtifact_frameCodeInvariantWithCodeSuffix suffix hObject hInitial
   obtain ⟨transcript, hGasful⟩ :=
     Assembly.GasfulBridge.runRefinesOpen_recursive hCode
-      (2 *
-        ((Structured.InteractionStaticCost.blockBudget
-            artifact.codeArtifact.compiled.expressions.toStructured
-            structuredFuel
-            artifact.codeArtifact.compiled.expressions.toStructured.body + 1) *
-          TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
-            artifact.codeArtifact.compiled.cfg))
+      ((Structured.InteractionStaticCost.blockBudget
+                artifact.codeArtifact.compiled.expressions.toStructured
+                structuredFuel
+                artifact.codeArtifact.compiled.expressions.toStructured.body +
+                  1) *
+              artifact.codeChoice.executionFuelFactor
+                artifact.codeArtifact)
       Assembly.GasfulBridge.FrameReachable.initial hInitial
   exact ⟨structuredFuel, transcript, hAccepted, hForward, hGasful⟩
 
@@ -862,27 +1083,25 @@ theorem optimizedSolcYulToGasfulRawBytecodeGasBounded
             (installedSourceState artifact baseSource))
           (Assembly.Compact.InteractionSemantics.openRunNResult
             (Assembly.Bytecode.ofList artifact.image.bytes)
-            (2 *
-              ((Structured.InteractionStaticCost.blockBudget
-                  artifact.codeArtifact.compiled.expressions.toStructured
-                  structuredFuel
-                  artifact.codeArtifact.compiled.expressions.toStructured.body +
-                    1) *
-                TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
-                  artifact.codeArtifact.compiled.cfg))
+            ((Structured.InteractionStaticCost.blockBudget
+                artifact.codeArtifact.compiled.expressions.toStructured
+                structuredFuel
+                artifact.codeArtifact.compiled.expressions.toStructured.body +
+                  1) *
+              artifact.codeChoice.executionFuelFactor
+                artifact.codeArtifact)
             { (initialExpressionsState artifact baseSource).evm with
               pc := EvmYul.UInt256.ofNat 0 }) ∧
         Assembly.GasfulBridge.RunRefinesOpenHalting
           (EvmYul.EVM.X
             (max
-              (2 *
-                ((Structured.InteractionStaticCost.blockBudget
-                    artifact.codeArtifact.compiled.expressions.toStructured
-                    structuredFuel
-                    artifact.codeArtifact.compiled.expressions.toStructured.body +
-                      1) *
-                  TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
-                    artifact.codeArtifact.compiled.cfg))
+              ((Structured.InteractionStaticCost.blockBudget
+                artifact.codeArtifact.compiled.expressions.toStructured
+                structuredFuel
+                artifact.codeArtifact.compiled.expressions.toStructured.body +
+                  1) *
+              artifact.codeChoice.executionFuelFactor
+                artifact.codeArtifact)
               (gasfulInitial.gasAvailable.toNat + 6))
             (EvmYul.EVM.D_J
               (Assembly.Bytecode.ofList artifact.image.bytes)
@@ -891,14 +1110,13 @@ theorem optimizedSolcYulToGasfulRawBytecodeGasBounded
           (Assembly.Compact.InteractionSemantics.openRunNResult
             (Assembly.Bytecode.ofList artifact.image.bytes)
             (max
-              (2 *
-                ((Structured.InteractionStaticCost.blockBudget
-                    artifact.codeArtifact.compiled.expressions.toStructured
-                    structuredFuel
-                    artifact.codeArtifact.compiled.expressions.toStructured.body +
-                      1) *
-                  TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
-                    artifact.codeArtifact.compiled.cfg))
+              ((Structured.InteractionStaticCost.blockBudget
+                artifact.codeArtifact.compiled.expressions.toStructured
+                structuredFuel
+                artifact.codeArtifact.compiled.expressions.toStructured.body +
+                  1) *
+              artifact.codeChoice.executionFuelFactor
+                artifact.codeArtifact)
               (gasfulInitial.gasAvailable.toNat + 6))
             { (initialExpressionsState artifact baseSource).evm with
               pc := EvmYul.UInt256.ofNat 0 })
@@ -906,48 +1124,17 @@ theorem optimizedSolcYulToGasfulRawBytecodeGasBounded
   obtain ⟨structuredFuel, hAccepted, hForward⟩ :=
     optimizedSolcYulToRawBytecode (sourceFuel := sourceFuel)
       (baseSource := baseSource) hObject
-  have hInitialPoint :=
-    verifiedArtifact_initialArtifactFramePoint hObject hInitial
-  have hOrdinary :
-      Assembly.GasfulBridge.ArtifactOrdinaryBoundaryStepInvariant
-        artifact.codeArtifact.compact
-        (Assembly.Bytecode.ofList artifact.image.bytes)
-        (EvmYul.EVM.D_J
-          (Assembly.Bytecode.ofList artifact.image.bytes)
-          (EvmYul.UInt256.ofNat 0)) :=
-    verifiedArtifact_ordinaryBoundaryInvariant hObject
-      (EvmYul.EVM.D_J
-        (Assembly.Bytecode.ofList artifact.image.bytes)
-        (EvmYul.UInt256.ofNat 0))
-  have hStepInvariant : Assembly.GasfulBridge.ArtifactFrameStepInvariant
-      artifact.codeArtifact.compact
-      (Assembly.Bytecode.ofList artifact.image.bytes)
-      (EvmYul.EVM.D_J
-        (Assembly.Bytecode.ofList artifact.image.bytes)
-        (EvmYul.UInt256.ofNat 0)) := by
-    intro current next stepFuel hPoint hPrefix hStep hContinues
-    exact (verifiedArtifact_frameStepInvariant_of_ordinaryBoundary
-      (validJumps := EvmYul.EVM.D_J
-        (Assembly.Bytecode.ofList artifact.image.bytes)
-        (EvmYul.UInt256.ofNat 0)) hObject hOrdinary)
-      hPoint hPrefix hStep hContinues
-  have hFrame := Assembly.GasfulBridge.artifactFrameInvariant_of_step
-    hInitialPoint hStepInvariant
-  have hLayout :=
-    verifiedArtifact_frameLayoutInvariant_of_artifactFrameInvariant
-      hObject hFrame
-  have hCode := verifiedArtifact_frameCodeInvariant_of_layout hObject hLayout
+  have hCode := verifiedArtifact_frameCodeInvariant hObject hInitial
   obtain ⟨transcript, hGasful⟩ :=
     Assembly.GasfulBridge.runRefinesOpen_recursive hCode
       (max
-        (2 *
-          ((Structured.InteractionStaticCost.blockBudget
-              artifact.codeArtifact.compiled.expressions.toStructured
-              structuredFuel
-              artifact.codeArtifact.compiled.expressions.toStructured.body +
-                1) *
-            TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
-              artifact.codeArtifact.compiled.cfg))
+        ((Structured.InteractionStaticCost.blockBudget
+                artifact.codeArtifact.compiled.expressions.toStructured
+                structuredFuel
+                artifact.codeArtifact.compiled.expressions.toStructured.body +
+                  1) *
+              artifact.codeChoice.executionFuelFactor
+                artifact.codeArtifact)
         (gasfulInitial.gasAvailable.toNat + 6))
       Assembly.GasfulBridge.FrameReachable.initial hInitial
   refine ⟨structuredFuel, transcript, hAccepted, hForward, ?_⟩
@@ -986,27 +1173,25 @@ theorem optimizedSolcYulToGasfulRawBytecodeGasBoundedCommittal
             (installedSourceState artifact baseSource))
           (Assembly.Compact.InteractionSemantics.openRunNResult
             (Assembly.Bytecode.ofList artifact.image.bytes)
-            (2 *
-              ((Structured.InteractionStaticCost.blockBudget
-                  artifact.codeArtifact.compiled.expressions.toStructured
-                  structuredFuel
-                  artifact.codeArtifact.compiled.expressions.toStructured.body +
-                    1) *
-                TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
-                  artifact.codeArtifact.compiled.cfg))
+            ((Structured.InteractionStaticCost.blockBudget
+                artifact.codeArtifact.compiled.expressions.toStructured
+                structuredFuel
+                artifact.codeArtifact.compiled.expressions.toStructured.body +
+                  1) *
+              artifact.codeChoice.executionFuelFactor
+                artifact.codeArtifact)
             { (initialExpressionsState artifact baseSource).evm with
               pc := EvmYul.UInt256.ofNat 0 }) ∧
         Assembly.GasfulBridge.RunRefinesOpenCommittal
           (EvmYul.EVM.X
             (max
-              (2 *
-                ((Structured.InteractionStaticCost.blockBudget
-                    artifact.codeArtifact.compiled.expressions.toStructured
-                    structuredFuel
-                    artifact.codeArtifact.compiled.expressions.toStructured.body +
-                      1) *
-                  TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
-                    artifact.codeArtifact.compiled.cfg))
+              ((Structured.InteractionStaticCost.blockBudget
+                artifact.codeArtifact.compiled.expressions.toStructured
+                structuredFuel
+                artifact.codeArtifact.compiled.expressions.toStructured.body +
+                  1) *
+              artifact.codeChoice.executionFuelFactor
+                artifact.codeArtifact)
               (gasfulInitial.gasAvailable.toNat + 6))
             (EvmYul.EVM.D_J
               (Assembly.Bytecode.ofList artifact.image.bytes)
@@ -1015,14 +1200,13 @@ theorem optimizedSolcYulToGasfulRawBytecodeGasBoundedCommittal
           (Assembly.Compact.InteractionSemantics.openRunNResult
             (Assembly.Bytecode.ofList artifact.image.bytes)
             (max
-              (2 *
-                ((Structured.InteractionStaticCost.blockBudget
-                    artifact.codeArtifact.compiled.expressions.toStructured
-                    structuredFuel
-                    artifact.codeArtifact.compiled.expressions.toStructured.body +
-                      1) *
-                  TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
-                    artifact.codeArtifact.compiled.cfg))
+              ((Structured.InteractionStaticCost.blockBudget
+                artifact.codeArtifact.compiled.expressions.toStructured
+                structuredFuel
+                artifact.codeArtifact.compiled.expressions.toStructured.body +
+                  1) *
+              artifact.codeChoice.executionFuelFactor
+                artifact.codeArtifact)
               (gasfulInitial.gasAvailable.toNat + 6))
             { (initialExpressionsState artifact baseSource).evm with
               pc := EvmYul.UInt256.ofNat 0 })
@@ -1070,27 +1254,25 @@ theorem optimizedSolcYulToGasfulRawBytecodeFinishedGasBounded
             (installedSourceState artifact baseSource))
           (Assembly.Compact.InteractionSemantics.openRunNResult
             (Assembly.Bytecode.ofList artifact.image.bytes)
-            (2 *
-              ((Structured.InteractionStaticCost.blockBudget
-                  artifact.codeArtifact.compiled.expressions.toStructured
-                  structuredFuel
-                  artifact.codeArtifact.compiled.expressions.toStructured.body +
-                    1) *
-                TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
-                  artifact.codeArtifact.compiled.cfg))
+            ((Structured.InteractionStaticCost.blockBudget
+                artifact.codeArtifact.compiled.expressions.toStructured
+                structuredFuel
+                artifact.codeArtifact.compiled.expressions.toStructured.body +
+                  1) *
+              artifact.codeChoice.executionFuelFactor
+                artifact.codeArtifact)
             { (initialExpressionsState artifact baseSource).evm with
               pc := EvmYul.UInt256.ofNat 0 }) ∧
         Assembly.GasfulBridge.RunRefinesOpenHalting
           (EvmYul.EVM.X
             (max
-              (2 *
-                ((Structured.InteractionStaticCost.blockBudget
-                    artifact.codeArtifact.compiled.expressions.toStructured
-                    structuredFuel
-                    artifact.codeArtifact.compiled.expressions.toStructured.body +
-                      1) *
-                  TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
-                    artifact.codeArtifact.compiled.cfg))
+              ((Structured.InteractionStaticCost.blockBudget
+                artifact.codeArtifact.compiled.expressions.toStructured
+                structuredFuel
+                artifact.codeArtifact.compiled.expressions.toStructured.body +
+                  1) *
+              artifact.codeChoice.executionFuelFactor
+                artifact.codeArtifact)
               (gasfulInitial.gasAvailable.toNat + 6))
             (EvmYul.EVM.D_J
               (Assembly.Bytecode.ofList artifact.image.bytes)
@@ -1099,14 +1281,13 @@ theorem optimizedSolcYulToGasfulRawBytecodeFinishedGasBounded
           (Assembly.Compact.InteractionSemantics.openRunNResult
             (Assembly.Bytecode.ofList artifact.image.bytes)
             (max
-              (2 *
-                ((Structured.InteractionStaticCost.blockBudget
-                    artifact.codeArtifact.compiled.expressions.toStructured
-                    structuredFuel
-                    artifact.codeArtifact.compiled.expressions.toStructured.body +
-                      1) *
-                  TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
-                    artifact.codeArtifact.compiled.cfg))
+              ((Structured.InteractionStaticCost.blockBudget
+                artifact.codeArtifact.compiled.expressions.toStructured
+                structuredFuel
+                artifact.codeArtifact.compiled.expressions.toStructured.body +
+                  1) *
+              artifact.codeChoice.executionFuelFactor
+                artifact.codeArtifact)
               (gasfulInitial.gasAvailable.toNat + 6))
             { (initialExpressionsState artifact baseSource).evm with
               pc := EvmYul.UInt256.ofNat 0 })
@@ -1154,27 +1335,25 @@ theorem optimizedSolcYulToGasfulRawBytecodeTerminalGasBounded
             (installedSourceState artifact baseSource))
           (Assembly.Compact.InteractionSemantics.openRunNResult
             (Assembly.Bytecode.ofList artifact.image.bytes)
-            (2 *
-              ((Structured.InteractionStaticCost.blockBudget
-                  artifact.codeArtifact.compiled.expressions.toStructured
-                  structuredFuel
-                  artifact.codeArtifact.compiled.expressions.toStructured.body +
-                    1) *
-                TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
-                  artifact.codeArtifact.compiled.cfg))
+            ((Structured.InteractionStaticCost.blockBudget
+                artifact.codeArtifact.compiled.expressions.toStructured
+                structuredFuel
+                artifact.codeArtifact.compiled.expressions.toStructured.body +
+                  1) *
+              artifact.codeChoice.executionFuelFactor
+                artifact.codeArtifact)
             { (initialExpressionsState artifact baseSource).evm with
               pc := EvmYul.UInt256.ofNat 0 }) ∧
         Assembly.GasfulBridge.RunRefinesOpenCommittal
           (EvmYul.EVM.X
             (max
-              (2 *
-                ((Structured.InteractionStaticCost.blockBudget
-                    artifact.codeArtifact.compiled.expressions.toStructured
-                    structuredFuel
-                    artifact.codeArtifact.compiled.expressions.toStructured.body +
-                      1) *
-                  TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
-                    artifact.codeArtifact.compiled.cfg))
+              ((Structured.InteractionStaticCost.blockBudget
+                artifact.codeArtifact.compiled.expressions.toStructured
+                structuredFuel
+                artifact.codeArtifact.compiled.expressions.toStructured.body +
+                  1) *
+              artifact.codeChoice.executionFuelFactor
+                artifact.codeArtifact)
               (gasfulInitial.gasAvailable.toNat + 6))
             (EvmYul.EVM.D_J
               (Assembly.Bytecode.ofList artifact.image.bytes)
@@ -1183,14 +1362,13 @@ theorem optimizedSolcYulToGasfulRawBytecodeTerminalGasBounded
           (Assembly.Compact.InteractionSemantics.openRunNResult
             (Assembly.Bytecode.ofList artifact.image.bytes)
             (max
-              (2 *
-                ((Structured.InteractionStaticCost.blockBudget
-                    artifact.codeArtifact.compiled.expressions.toStructured
-                    structuredFuel
-                    artifact.codeArtifact.compiled.expressions.toStructured.body +
-                      1) *
-                  TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
-                    artifact.codeArtifact.compiled.cfg))
+              ((Structured.InteractionStaticCost.blockBudget
+                artifact.codeArtifact.compiled.expressions.toStructured
+                structuredFuel
+                artifact.codeArtifact.compiled.expressions.toStructured.body +
+                  1) *
+              artifact.codeChoice.executionFuelFactor
+                artifact.codeArtifact)
               (gasfulInitial.gasAvailable.toNat + 6))
             { (initialExpressionsState artifact baseSource).evm with
               pc := EvmYul.UInt256.ofNat 0 })

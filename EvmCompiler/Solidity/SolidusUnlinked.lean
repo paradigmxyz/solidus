@@ -96,8 +96,8 @@ theorem compileUnlinked?_parts
 a successful unlinked compilation producing `bytes` and, for a deploy address
 assignment `values` whose library addresses are address-sized, a successful
 value compile `withValues`, patching the exported immutable/library windows of
-`bytes` with `values` reproduces `withValues.bytes` followed by the unchanged
-child payload; and that value compile is exactly the **original**
+`bytes` with `values` reproduces the selected value-compile bytes followed by
+the unchanged child payload; and that value compile is exactly the **original**
 (un-rewritten) object resolved with those addresses supplied alongside the
 JSON-provided ones — its ordered Yul program is the value compile's own
 ordered program, so every downstream semantic theorem about the supported
@@ -129,7 +129,10 @@ theorem compileUnlinked?_patchImmutablesAndLibraries_resolvesOriginal
                 (object.substituteUnlinkedLibraries
                   (object.missingLinkerSymbolNames provided)))
               (object.missingLinkerSymbolNames provided) values =
-            withValues.bytes ++ artifact.computed.payload ∧
+            ((object.substituteUnlinkedLibraries
+              (object.missingLinkerSymbolNames provided)).verifiedStackCodeChoice
+                withValues).bytes withValues ++
+              artifact.computed.payload ∧
           ∃ resolvedOriginal : Frontend.Object,
             object.resolveObjectBuiltinsIn?
                 { artifact.computed.context with

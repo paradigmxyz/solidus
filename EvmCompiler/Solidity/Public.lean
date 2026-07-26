@@ -39,7 +39,8 @@ theorem compileArtifactWithLinkerSymbols?_decodingCorrect
     {artifact : Artifact}
     (hCompile :
       program.compileArtifactWithLinkerSymbols? linkerSymbols = some artifact) :
-    Assembly.Compact.DecodingCorrect artifact.codeArtifact.compact.program
+    Assembly.Compact.DecodingCorrect
+      (artifact.codeChoice.compact artifact.codeArtifact).program
       (Assembly.Bytecode.ofList artifact.image.bytes) :=
   Object.compileVerifiedStackObjectArtifactWithLinkerSymbols?_decodingCorrect
     hCompile

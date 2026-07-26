@@ -767,7 +767,7 @@ theorem compileArtifactFromRawSolcIr?_decodingCorrect
     (hCompile :
       compileArtifactFromRawSolcIr? rawJson selection = some artifact) :
     Assembly.Compact.DecodingCorrect
-      artifact.codeArtifact.compact.program
+      (artifact.codeChoice.compact artifact.codeArtifact).program
       (Assembly.Bytecode.ofList artifact.image.bytes) := by
   unfold compileArtifactFromRawSolcIr? at hCompile
   cases hParse : Lean.Json.parse rawJson with
@@ -803,7 +803,7 @@ theorem compileArtifactFromRawSolcIr?_decodingCorrect_withCodeSuffix
       compileArtifactFromRawSolcIr? rawJson selection = some artifact)
     (suffix : List UInt8) :
     Assembly.Compact.DecodingCorrect
-      artifact.codeArtifact.compact.program
+      (artifact.codeChoice.compact artifact.codeArtifact).program
       (Assembly.Bytecode.ofList (artifact.image.bytes ++ suffix)) := by
   rcases compileArtifactFromRawSolcIr?_decoded hCompile with
     ⟨program, linkerSymbols, _hDecode, _hLinker, hProgramCompile⟩
@@ -1165,7 +1165,7 @@ theorem compileArtifactFromRawSolcIrWithLinkerSymbols?_decodingCorrect
       compileArtifactFromRawSolcIrWithLinkerSymbols? rawJson selection
         linkerSymbols = some artifact) :
     Assembly.Compact.DecodingCorrect
-      artifact.codeArtifact.compact.program
+      (artifact.codeChoice.compact artifact.codeArtifact).program
       (Assembly.Bytecode.ofList artifact.image.bytes) := by
   unfold compileArtifactFromRawSolcIrWithLinkerSymbols? at hCompile
   cases hDecode : decodeAndElaborateSolcIr? rawJson selection with

@@ -900,6 +900,7 @@ The exact fuel is the generated test-list length; the policy keeps each
 conditional edge inside the return-dispatch region.
 -/
 theorem returnDispatchTestCases_openRunUntilTransfer_of_all_ne
+    (continueTransfer : Assembly.Instr → Bool)
     {depth : Nat} {sites : List ReturnSite}
     {front suffix : List Word} {token : Word}
     {pre post : Assembly.Program} {state : EVMState}
@@ -925,11 +926,11 @@ theorem returnDispatchTestCases_openRunUntilTransfer_of_all_ne
         stack := front ++ token :: suffix
         pc := (pre ++ code).pcAfter }
     Assembly.InteractionSemantics.Source.openRunUntilTransferWithPolicy
-        TypedCfg.InteractionSemantics.Terminator.returnDispatchFlowPolicy
+        continueTransfer
         (pre ++ code ++ post) (fuel + code.length)
         { state with stack := front ++ token :: suffix } =
       Assembly.InteractionSemantics.Source.openRunUntilTransferWithPolicy
-        TypedCfg.InteractionSemantics.Terminator.returnDispatchFlowPolicy
+        continueTransfer
         (pre ++ code ++ post) fuel final := by
   dsimp only
   induction sites generalizing pre state fuel with
@@ -966,12 +967,12 @@ theorem returnDispatchTestCases_openRunUntilTransfer_of_all_ne
         simpa [hCodeEq, List.append_assoc] using hDest
       have hHead :=
         Assembly.StackShuffle.InteractionPreservation.dispatchTest_openRunUntilTransferWithPolicy
-            TypedCfg.InteractionSemantics.Terminator.returnDispatchFlowPolicy
+            continueTransfer
             (front := front) (suffix := suffix) (token := token)
             (probe := site.token) (label := site.caseLabel)
             (dest := dest) (pre := pre) (post := tailCode ++ post)
             (state := state) (fuel := fuel + tailCode.length)
-            (by rfl)
+            (Or.inr (Or.inr hSiteNe))
             (by
               simpa [headCode,
                 TypedCfg.Terminator.returnDispatchTest, hFront] using
@@ -988,12 +989,12 @@ theorem returnDispatchTestCases_openRunUntilTransfer_of_all_ne
           pc := (pre ++ headCode).pcAfter }
       have hHead' :
           Assembly.InteractionSemantics.Source.openRunUntilTransferWithPolicy
-              TypedCfg.InteractionSemantics.Terminator.returnDispatchFlowPolicy
+              continueTransfer
               (pre ++ headCode ++ tailCode ++ post)
               ((fuel + tailCode.length) + headCode.length)
               { state with stack := front ++ token :: suffix } =
             Assembly.InteractionSemantics.Source.openRunUntilTransferWithPolicy
-              TypedCfg.InteractionSemantics.Terminator.returnDispatchFlowPolicy
+              continueTransfer
               (pre ++ headCode ++ tailCode ++ post)
               (fuel + tailCode.length) mid := by
         simpa [headCode, TypedCfg.Terminator.returnDispatchTest,
@@ -1042,10 +1043,17 @@ probe, then continues at the selected case label with all later-test fuel
 untouched.
 -/
 theorem returnDispatchTestCases_openRunUntilTransfer_of_selected
+    (continueTransfer : Assembly.Instr → Bool)
     {depth : Nat} {before after : List ReturnSite} {site : ReturnSite}
     {front suffix : List Word} {token : Word}
     {pre post : Assembly.Program} {state : EVMState}
     (fuel : Nat)
+    (hContinue :
+      continueTransfer (.jumpi site.caseLabel) = true ∨
+        fuel +
+            (TypedCfg.Terminator.returnDispatchTestCases
+              depth after).length =
+          0)
     (hBound : depth < 16)
     (hFront : front.length = depth)
     (hBefore :
@@ -1072,11 +1080,11 @@ theorem returnDispatchTestCases_openRunUntilTransfer_of_selected
     ∃ caseDest,
       (pre ++ code ++ post).labelPc site.caseLabel = some caseDest ∧
       Assembly.InteractionSemantics.Source.openRunUntilTransferWithPolicy
-          TypedCfg.InteractionSemantics.Terminator.returnDispatchFlowPolicy
+          continueTransfer
           (pre ++ code ++ post) (fuel + code.length)
           { state with stack := front ++ token :: suffix } =
         Assembly.InteractionSemantics.Source.openRunUntilTransferWithPolicy
-          TypedCfg.InteractionSemantics.Terminator.returnDispatchFlowPolicy
+          continueTransfer
           (pre ++ code ++ post) (fuel + tailCode.length)
           { state with
             stack := front ++ token :: suffix
@@ -1129,6 +1137,7 @@ theorem returnDispatchTestCases_openRunUntilTransfer_of_selected
       pc := (pre ++ prefixCode).pcAfter }
   have hPrefix :=
     returnDispatchTestCases_openRunUntilTransfer_of_all_ne
+      continueTransfer
       (depth := depth) (sites := before)
       (front := front) (suffix := suffix) (token := token)
       (pre := pre) (post := siteCode ++ tailCode ++ post)
@@ -1137,13 +1146,13 @@ theorem returnDispatchTestCases_openRunUntilTransfer_of_selected
       hBound hFront hBefore hPrefixFits hPc hPrefixResolved
   have hPrefix' :
       Assembly.InteractionSemantics.Source.openRunUntilTransferWithPolicy
-          TypedCfg.InteractionSemantics.Terminator.returnDispatchFlowPolicy
+          continueTransfer
           (pre ++ code ++ post)
           (((fuel + tailCode.length) + siteCode.length) +
             prefixCode.length)
           { state with stack := front ++ token :: suffix } =
         Assembly.InteractionSemantics.Source.openRunUntilTransferWithPolicy
-          TypedCfg.InteractionSemantics.Terminator.returnDispatchFlowPolicy
+          continueTransfer
           (pre ++ code ++ post)
           ((fuel + tailCode.length) + siteCode.length) mid := by
     simpa [code, hCodeEq, mid, List.append_assoc] using hPrefix
@@ -1154,13 +1163,13 @@ theorem returnDispatchTestCases_openRunUntilTransfer_of_selected
     simpa [code, hCodeEq, List.append_assoc] using hCaseDest
   have hSite :=
     Assembly.StackShuffle.InteractionPreservation.dispatchTest_openRunUntilTransferWithPolicy
-        TypedCfg.InteractionSemantics.Terminator.returnDispatchFlowPolicy
+        continueTransfer
         (front := front) (suffix := suffix) (token := token)
         (probe := site.token) (label := site.caseLabel)
         (dest := caseDest) (pre := pre ++ prefixCode)
         (post := tailCode ++ post) (state := mid)
         (fuel := fuel + tailCode.length)
-        (by rfl)
+        (hContinue.elim Or.inl (fun hZero => Or.inr (Or.inl hZero)))
         (by
           simpa [siteCode, TypedCfg.Terminator.returnDispatchTest,
             hFront] using hSiteFits)
@@ -1175,11 +1184,11 @@ theorem returnDispatchTestCases_openRunUntilTransfer_of_selected
       pc := EvmYul.UInt256.ofNat caseDest }
   have hSite' :
       Assembly.InteractionSemantics.Source.openRunUntilTransferWithPolicy
-          TypedCfg.InteractionSemantics.Terminator.returnDispatchFlowPolicy
+          continueTransfer
           (pre ++ code ++ post)
           ((fuel + tailCode.length) + siteCode.length) mid =
         Assembly.InteractionSemantics.Source.openRunUntilTransferWithPolicy
-          TypedCfg.InteractionSemantics.Terminator.returnDispatchFlowPolicy
+          continueTransfer
           (pre ++ code ++ post)
           (fuel + tailCode.length) selected := by
     simpa [code, hCodeEq, siteCode,
@@ -1201,6 +1210,7 @@ Starting at a selected generated case, return dispatch removes the buried
 return token and exits at the source-visible target jump.
 -/
 theorem returnDispatchCase_openRunUntilTransfer
+    (continueTransfer : Assembly.Instr → Bool)
     {depth : Nat} {before after : List ReturnSite} {site : ReturnSite}
     {front suffix : List Word}
     {pre post : Assembly.Program} {state : EVMState}
@@ -1220,14 +1230,16 @@ theorem returnDispatchCase_openRunUntilTransfer
         (pre ++
           TypedCfg.Terminator.returnDispatchCases depth
             (before ++ site :: after) ++ post)
-        (.returnDispatch depth (before ++ site :: after))) :
+        (.returnDispatch depth (before ++ site :: after)))
+    (hExit :
+      continueTransfer (.jump site.target) = false) :
     ∃ targetDest,
       (pre ++
         TypedCfg.Terminator.returnDispatchCases depth
           (before ++ site :: after) ++ post).labelPc site.target =
         some targetDest ∧
       Assembly.InteractionSemantics.Source.openRunUntilTransferWithPolicy
-          TypedCfg.InteractionSemantics.Terminator.returnDispatchFlowPolicy
+          continueTransfer
           (pre ++
             TypedCfg.Terminator.returnDispatchCases depth
               (before ++ site :: after) ++ post)
@@ -1338,26 +1350,26 @@ theorem returnDispatchCase_openRunUntilTransfer
       afterLabel]
   have hLabelFlow :
       (Assembly.Instr.label site.caseLabel).classifyFlowWith
-          TypedCfg.InteractionSemantics.Terminator.returnDispatchFlowPolicy
+          continueTransfer
           start (.running afterLabel) =
         .next afterLabel := by
     rfl
   have hLabelRun :
       Assembly.InteractionSemantics.Source.openRunUntilTransferWithPolicy
-          TypedCfg.InteractionSemantics.Terminator.returnDispatchFlowPolicy
+          continueTransfer
           (pre ++
             TypedCfg.Terminator.returnDispatchCases depth
               (before ++ site :: after) ++ post)
           (((fuel + 1) + cleanup.length) + 1) start =
         Assembly.InteractionSemantics.Source.openRunUntilTransferWithPolicy
-          TypedCfg.InteractionSemantics.Terminator.returnDispatchFlowPolicy
+          continueTransfer
           (pre ++
             TypedCfg.Terminator.returnDispatchCases depth
               (before ++ site :: after) ++ post)
           ((fuel + 1) + cleanup.length) afterLabel := by
     have hRun :=
       source_openRunUntilTransferWithPolicy_succ_of_step_running
-        TypedCfg.InteractionSemantics.Terminator.returnDispatchFlowPolicy
+        continueTransfer
         ((fuel + 1) + cleanup.length)
         hLabelFit
         (by simpa [start, prefixCode] using hPc)
@@ -1371,7 +1383,7 @@ theorem returnDispatchCase_openRunUntilTransfer
           [Assembly.Instr.label site.caseLabel] ++ cleanup).pcAfter }
   have hCleanup :=
     Assembly.StackShuffle.InteractionPreservation.removeBuriedUnder_openRunUntilTransferWithPolicy
-        TypedCfg.InteractionSemantics.Terminator.returnDispatchFlowPolicy
+        continueTransfer
         (front := front) (suffix := suffix) (token := site.token)
         (pre :=
           pre ++ prefixCode ++ [Assembly.Instr.label site.caseLabel])
@@ -1382,13 +1394,13 @@ theorem returnDispatchCase_openRunUntilTransfer
         (by omega)
   have hCleanupRun :
       Assembly.InteractionSemantics.Source.openRunUntilTransferWithPolicy
-          TypedCfg.InteractionSemantics.Terminator.returnDispatchFlowPolicy
+          continueTransfer
           (pre ++
             TypedCfg.Terminator.returnDispatchCases depth
               (before ++ site :: after) ++ post)
           ((fuel + 1) + cleanup.length) afterLabel =
         Assembly.InteractionSemantics.Source.openRunUntilTransferWithPolicy
-          TypedCfg.InteractionSemantics.Terminator.returnDispatchFlowPolicy
+          continueTransfer
           (pre ++
             TypedCfg.Terminator.returnDispatchCases depth
               (before ++ site :: after) ++ post)
@@ -1427,14 +1439,14 @@ theorem returnDispatchCase_openRunUntilTransfer
       Assembly.Source.invalid]
   have hJumpFlow :
       (Assembly.Instr.jump site.target).classifyFlowWith
-          TypedCfg.InteractionSemantics.Terminator.returnDispatchFlowPolicy
+          continueTransfer
           cleaned
           (.running (Assembly.Source.jumpPc targetDest cleaned)) =
         .exit (.running (Assembly.Source.jumpPc targetDest cleaned)) := by
-    rfl
+    simp [Assembly.Instr.classifyFlowWith, hExit]
   have hJumpRun :
       Assembly.InteractionSemantics.Source.openRunUntilTransferWithPolicy
-          TypedCfg.InteractionSemantics.Terminator.returnDispatchFlowPolicy
+          continueTransfer
           (pre ++
             TypedCfg.Terminator.returnDispatchCases depth
               (before ++ site :: after) ++ post)
@@ -1445,7 +1457,7 @@ theorem returnDispatchCase_openRunUntilTransfer
               (Assembly.Source.jumpPc targetDest cleaned))) := by
     have hRun :=
       source_openRunUntilTransferWithPolicy_succ_of_step_exit
-        TypedCfg.InteractionSemantics.Terminator.returnDispatchFlowPolicy
+        continueTransfer
         (pre := jumpPre) (post := tailCode ++ post)
         (instr := Assembly.Instr.jump site.target)
         (state := cleaned)
@@ -1465,7 +1477,7 @@ theorem returnDispatchCase_openRunUntilTransfer
   refine ⟨targetDest, hTargetDest, ?_⟩
   change
     Assembly.InteractionSemantics.Source.openRunUntilTransferWithPolicy
-        TypedCfg.InteractionSemantics.Terminator.returnDispatchFlowPolicy
+        continueTransfer
         (pre ++
           TypedCfg.Terminator.returnDispatchCases depth
             (before ++ site :: after) ++ post)
@@ -1577,12 +1589,13 @@ theorem returnDispatch_selected_openRunUntilTransfer_rel
     rw [← hStack]
   have hSelected :=
     returnDispatchTestCases_openRunUntilTransfer_of_selected
+      TypedCfg.InteractionSemantics.Terminator.returnDispatchFlowPolicy
       (depth := depth) (before := before) (after := after)
       (site := site) (front := front) (suffix := suffix)
       (token := token) (pre := pre)
       (post := [Assembly.Instr.prim .invalid] ++ cases ++ post)
       (state := state) (fuel := 1 + cases.length)
-      hBound hFront hBefore hToken hTestCasesFits
+      (Or.inl rfl) hBound hFront hBefore hToken hTestCasesFits
       (by simpa [hStart] using hPc)
       (by simpa [testCases, List.append_assoc] using hResolvedCases')
   rcases hSelected with ⟨caseDest, hCaseDest, hSelectedRun⟩
@@ -1670,6 +1683,7 @@ theorem returnDispatch_selected_openRunUntilTransfer_rel
     tailTests.length + 1 + casePrefix.length + caseTail.length
   have hCaseRun :=
     returnDispatchCase_openRunUntilTransfer
+      TypedCfg.InteractionSemantics.Terminator.returnDispatchFlowPolicy
       (depth := depth) (before := before) (after := after)
       (site := site) (front := front) (suffix := suffix)
       (pre := caseBase) (post := post) (state := selected)
@@ -1678,7 +1692,7 @@ theorem returnDispatch_selected_openRunUntilTransfer_rel
       (by
         simp [selected, hToken, hCaseDestEq, casePrefix,
           Assembly.Program.pcAfter])
-      hResolvedTargets'
+      hResolvedTargets' rfl
   rcases hCaseRun with ⟨targetDest, hTargetDest, hCaseRun⟩
   have hTargetDest' :
       (pre ++
@@ -1804,6 +1818,7 @@ theorem returnDispatch_unknown_token_openRunUntilTransfer_rel
     rw [← hStack]
   have hTests :=
     returnDispatchTestCases_openRunUntilTransfer_of_all_ne
+      TypedCfg.InteractionSemantics.Terminator.returnDispatchFlowPolicy
       (depth := depth) (sites := sites)
       (front := front) (suffix := suffix) (token := token)
       (pre := pre)

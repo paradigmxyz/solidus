@@ -47,14 +47,13 @@ theorem optimizedSolcYulToRawBytecodeOfRelatedInitial
             (some artifact.codeArtifact.ordered.program.contract) source)
           (Assembly.Compact.InteractionSemantics.openRunNResult
             (Assembly.Bytecode.ofList artifact.image.bytes)
-            (2 *
-              ((Structured.InteractionStaticCost.blockBudget
-                  artifact.codeArtifact.compiled.expressions.toStructured
-                  structuredFuel
-                  artifact.codeArtifact.compiled.expressions.toStructured.body +
-                    1) *
-                TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
-                  artifact.codeArtifact.compiled.cfg))
+            ((Structured.InteractionStaticCost.blockBudget
+                artifact.codeArtifact.compiled.expressions.toStructured
+                structuredFuel
+                artifact.codeArtifact.compiled.expressions.toStructured.body +
+                  1) *
+              artifact.codeChoice.executionFuelFactor
+                artifact.codeArtifact)
             { expressionsState.evm with
               pc := EvmYul.UInt256.ofNat 0 }) :=
   Compiler.OpenInteractionComposition.compiledVerifiedStackObjectToRawBytecodeForwardPublic
@@ -96,13 +95,13 @@ theorem optimizedSolcYulToRawBytecodeTerminalOfRelatedInitial
             (some artifact.codeArtifact.ordered.program.contract) source)
           (Assembly.Compact.InteractionSemantics.openRunNResult
             (Assembly.Bytecode.ofList artifact.image.bytes)
-            (2 *
-              (Structured.InteractionStaticCost.blockBudget
-                  artifact.codeArtifact.compiled.expressions.toStructured
-                  structuredFuel
-                  artifact.codeArtifact.compiled.expressions.toStructured.body *
-                TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
-                  artifact.codeArtifact.compiled.cfg))
+            ((Structured.InteractionStaticCost.blockBudget
+                artifact.codeArtifact.compiled.expressions.toStructured
+                structuredFuel
+                artifact.codeArtifact.compiled.expressions.toStructured.body +
+                  1) *
+              artifact.codeChoice.executionFuelFactor
+                artifact.codeArtifact)
             { expressionsState.evm with
               pc := EvmYul.UInt256.ofNat 0 }) :=
   Compiler.OpenInteractionComposition.compiledVerifiedStackObjectToRawBytecodePublic
@@ -147,13 +146,13 @@ theorem optimizedSolcYulToRawBytecodeFinishedOfRelatedInitial
             (some artifact.codeArtifact.ordered.program.contract) source)
           (Assembly.Compact.InteractionSemantics.openRunNResult
             (Assembly.Bytecode.ofList artifact.image.bytes)
-            (2 *
-              (Structured.InteractionStaticCost.blockBudget
-                  artifact.codeArtifact.compiled.expressions.toStructured
-                  structuredFuel
-                  artifact.codeArtifact.compiled.expressions.toStructured.body *
-                TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
-                  artifact.codeArtifact.compiled.cfg))
+            ((Structured.InteractionStaticCost.blockBudget
+                artifact.codeArtifact.compiled.expressions.toStructured
+                structuredFuel
+                artifact.codeArtifact.compiled.expressions.toStructured.body +
+                  1) *
+              artifact.codeChoice.executionFuelFactor
+                artifact.codeArtifact)
             { expressionsState.evm with
               pc := EvmYul.UInt256.ofNat 0 }) :=
   Compiler.OpenInteractionComposition.compiledVerifiedStackObjectToRawBytecodeFinishedPublic
@@ -211,14 +210,13 @@ theorem optimizedSolcYulToRawBytecode
             (installedSourceState artifact baseSource))
           (Assembly.Compact.InteractionSemantics.openRunNResult
             (Assembly.Bytecode.ofList artifact.image.bytes)
-            (2 *
-              ((Structured.InteractionStaticCost.blockBudget
-                  artifact.codeArtifact.compiled.expressions.toStructured
-                  structuredFuel
-                  artifact.codeArtifact.compiled.expressions.toStructured.body +
-                    1) *
-                TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
-                  artifact.codeArtifact.compiled.cfg))
+            ((Structured.InteractionStaticCost.blockBudget
+                artifact.codeArtifact.compiled.expressions.toStructured
+                structuredFuel
+                artifact.codeArtifact.compiled.expressions.toStructured.body +
+                  1) *
+              artifact.codeChoice.executionFuelFactor
+                artifact.codeArtifact)
             { (initialExpressionsState artifact baseSource).evm with
               pc := EvmYul.UInt256.ofNat 0 }) := by
   apply optimizedSolcYulToRawBytecodeOfRelatedInitial hObject
@@ -258,14 +256,13 @@ theorem optimizedSolcYulToRawBytecodeFinished
             (installedSourceState artifact baseSource))
           (Assembly.Compact.InteractionSemantics.openRunNResult
             (Assembly.Bytecode.ofList artifact.image.bytes)
-            (2 *
-              ((Structured.InteractionStaticCost.blockBudget
-                  artifact.codeArtifact.compiled.expressions.toStructured
-                  structuredFuel
-                  artifact.codeArtifact.compiled.expressions.toStructured.body +
-                    1) *
-                TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
-                  artifact.codeArtifact.compiled.cfg))
+            ((Structured.InteractionStaticCost.blockBudget
+                artifact.codeArtifact.compiled.expressions.toStructured
+                structuredFuel
+                artifact.codeArtifact.compiled.expressions.toStructured.body +
+                  1) *
+              artifact.codeChoice.executionFuelFactor
+                artifact.codeArtifact)
             { (initialExpressionsState artifact baseSource).evm with
               pc := EvmYul.UInt256.ofNat 0 }) := by
   obtain ⟨structuredFuel, hAccepted, hForward⟩ :=
@@ -306,13 +303,13 @@ theorem optimizedSolcYulToRawBytecodeTerminal
             (installedSourceState artifact baseSource))
           (Assembly.Compact.InteractionSemantics.openRunNResult
             (Assembly.Bytecode.ofList artifact.image.bytes)
-            (2 *
-              (Structured.InteractionStaticCost.blockBudget
-                  artifact.codeArtifact.compiled.expressions.toStructured
-                  structuredFuel
-                  artifact.codeArtifact.compiled.expressions.toStructured.body *
-                TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
-                  artifact.codeArtifact.compiled.cfg))
+            ((Structured.InteractionStaticCost.blockBudget
+                artifact.codeArtifact.compiled.expressions.toStructured
+                structuredFuel
+                artifact.codeArtifact.compiled.expressions.toStructured.body +
+                  1) *
+              artifact.codeChoice.executionFuelFactor
+                artifact.codeArtifact)
             { (initialExpressionsState artifact baseSource).evm with
               pc := EvmYul.UInt256.ofNat 0 }) := by
   apply optimizedSolcYulToRawBytecodeTerminalOfRelatedInitial hObject
@@ -353,13 +350,13 @@ theorem optimizedSolcYulToRawBytecodeFinishedLegacy
             (installedSourceState artifact baseSource))
           (Assembly.Compact.InteractionSemantics.openRunNResult
             (Assembly.Bytecode.ofList artifact.image.bytes)
-            (2 *
-              (Structured.InteractionStaticCost.blockBudget
-                  artifact.codeArtifact.compiled.expressions.toStructured
-                  structuredFuel
-                  artifact.codeArtifact.compiled.expressions.toStructured.body *
-                TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
-                  artifact.codeArtifact.compiled.cfg))
+            ((Structured.InteractionStaticCost.blockBudget
+                artifact.codeArtifact.compiled.expressions.toStructured
+                structuredFuel
+                artifact.codeArtifact.compiled.expressions.toStructured.body +
+                  1) *
+              artifact.codeChoice.executionFuelFactor
+                artifact.codeArtifact)
             { (initialExpressionsState artifact baseSource).evm with
               pc := EvmYul.UInt256.ofNat 0 }) := by
   apply optimizedSolcYulToRawBytecodeFinishedOfRelatedInitial hObject
@@ -437,14 +434,13 @@ theorem optimizedSolcYulToRawBytecodeWithCodeSuffix
             (installedSourceStateWithCodeSuffix artifact suffix baseSource))
           (Assembly.Compact.InteractionSemantics.openRunNResult
             (Assembly.Bytecode.ofList (artifact.image.bytes ++ suffix))
-            (2 *
-              ((Structured.InteractionStaticCost.blockBudget
-                  artifact.codeArtifact.compiled.expressions.toStructured
-                  structuredFuel
-                  artifact.codeArtifact.compiled.expressions.toStructured.body +
-                    1) *
-                TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
-                  artifact.codeArtifact.compiled.cfg))
+            ((Structured.InteractionStaticCost.blockBudget
+                artifact.codeArtifact.compiled.expressions.toStructured
+                structuredFuel
+                artifact.codeArtifact.compiled.expressions.toStructured.body +
+                  1) *
+              artifact.codeChoice.executionFuelFactor
+                artifact.codeArtifact)
             { (initialExpressionsStateWithCodeSuffix
                 artifact suffix baseSource).evm with
               pc := EvmYul.UInt256.ofNat 0 }) := by
@@ -488,14 +484,13 @@ theorem optimizedSolcYulToRawBytecodeFinishedWithCodeSuffix
             (installedSourceStateWithCodeSuffix artifact suffix baseSource))
           (Assembly.Compact.InteractionSemantics.openRunNResult
             (Assembly.Bytecode.ofList (artifact.image.bytes ++ suffix))
-            (2 *
-              ((Structured.InteractionStaticCost.blockBudget
-                  artifact.codeArtifact.compiled.expressions.toStructured
-                  structuredFuel
-                  artifact.codeArtifact.compiled.expressions.toStructured.body +
-                    1) *
-                TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
-                  artifact.codeArtifact.compiled.cfg))
+            ((Structured.InteractionStaticCost.blockBudget
+                artifact.codeArtifact.compiled.expressions.toStructured
+                structuredFuel
+                artifact.codeArtifact.compiled.expressions.toStructured.body +
+                  1) *
+              artifact.codeChoice.executionFuelFactor
+                artifact.codeArtifact)
             { (initialExpressionsStateWithCodeSuffix
                 artifact suffix baseSource).evm with
               pc := EvmYul.UInt256.ofNat 0 }) := by
@@ -538,13 +533,13 @@ theorem optimizedSolcYulToRawBytecodeTerminalWithCodeSuffix
             (installedSourceStateWithCodeSuffix artifact suffix baseSource))
           (Assembly.Compact.InteractionSemantics.openRunNResult
             (Assembly.Bytecode.ofList (artifact.image.bytes ++ suffix))
-            (2 *
-              (Structured.InteractionStaticCost.blockBudget
-                  artifact.codeArtifact.compiled.expressions.toStructured
-                  structuredFuel
-                  artifact.codeArtifact.compiled.expressions.toStructured.body *
-                TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
-                  artifact.codeArtifact.compiled.cfg))
+            ((Structured.InteractionStaticCost.blockBudget
+                artifact.codeArtifact.compiled.expressions.toStructured
+                structuredFuel
+                artifact.codeArtifact.compiled.expressions.toStructured.body +
+                  1) *
+              artifact.codeChoice.executionFuelFactor
+                artifact.codeArtifact)
             { (initialExpressionsStateWithCodeSuffix
                 artifact suffix baseSource).evm with
               pc := EvmYul.UInt256.ofNat 0 }) := by

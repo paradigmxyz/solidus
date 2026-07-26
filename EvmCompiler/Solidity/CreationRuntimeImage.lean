@@ -447,37 +447,45 @@ theorem finishVerifiedStackObjectArtifact?_image_parts
           codeArtifact =
         some artifact) :
     artifact.image.name = object.name ∧
-      artifact.image.bytes = codeArtifact.bytes ++ plan.payload ∧
+      artifact.image.bytes =
+        artifact.codeChoice.bytes artifact.codeArtifact ++ plan.payload ∧
       artifact.image.layoutEntries = plan.layout ∧
-      codeArtifact.bytes.length = plan.codeBase ∧
+      (artifact.codeChoice.bytes artifact.codeArtifact).length =
+        plan.codeBase ∧
       artifact.children = childArtifacts := by
   unfold finishVerifiedStackObjectArtifact? at hFinish
-  cases hCodeLength : codeArtifact.bytes.length == plan.codeBase with
+  let codeChoice := object.verifiedStackCodeChoice codeArtifact
+  let codeBytes := codeChoice.bytes codeArtifact
+  let markerBytes := codeChoice.markerBytes codeArtifact
+  cases hCodeLength : codeBytes.length == plan.codeBase with
   | false =>
-      have hCodeNe : codeArtifact.bytes.length ≠ plan.codeBase := by
+      have hCodeNe : codeBytes.length ≠ plan.codeBase := by
         simpa using hCodeLength
-      simp [hCodeNe] at hFinish
+      simp [codeChoice, codeBytes, markerBytes, hCodeNe] at hFinish
   | true =>
-      have hCodeEq : codeArtifact.bytes.length = plan.codeBase := by
+      have hCodeEq : codeBytes.length = plan.codeBase := by
         simpa using hCodeLength
       cases hMarkerLength :
-          codeArtifact.immutableMarkerBytes.length == plan.codeBase with
+          markerBytes.length == plan.codeBase with
       | false =>
           have hMarkerNe :
-              codeArtifact.immutableMarkerBytes.length ≠ plan.codeBase := by
+              markerBytes.length ≠ plan.codeBase := by
             simpa using hMarkerLength
-          simp [hCodeEq, hMarkerNe] at hFinish
+          simp [codeChoice, codeBytes, markerBytes, hCodeEq, hMarkerNe]
+            at hFinish
       | true =>
           have hMarkerEq :
-              codeArtifact.immutableMarkerBytes.length = plan.codeBase := by
+              markerBytes.length = plan.codeBase := by
             simpa using hMarkerLength
           cases hPayloadReferences :
               ObjectItemRef.List.immutableReferenceEntriesFromNat?
                 object.data plan.childImages plan.codeBase plan.items with
           | none =>
-              simp [hCodeEq, hMarkerEq, hPayloadReferences] at hFinish
+              simp [codeChoice, codeBytes, markerBytes, hCodeEq, hMarkerEq,
+                hPayloadReferences] at hFinish
           | some payloadReferences =>
-              simp [hCodeEq, hMarkerEq, hPayloadReferences] at hFinish
+              simp [codeChoice, codeBytes, markerBytes, hCodeEq, hMarkerEq,
+                hPayloadReferences] at hFinish
               subst artifact
               exact ⟨rfl, rfl, rfl, hCodeEq, rfl⟩
 
@@ -532,8 +540,8 @@ theorem compileVerifiedStackObjectArtifactWithLinkerSymbols?_imageName
         some artifact) :
     artifact.image.name = object.name := by
   obtain ⟨_childArtifacts, _plan, _codeArtifact, _hChildren, _hPlan, hFinish,
-      _hCode, _hArtifactChildren, _hContext, _hChildImages, _hPayload,
-      _hImage⟩ :=
+      _hCode, _hChoice, _hArtifactChildren, _hContext, _hChildImages,
+      _hPayload, _hComputedCode, _hMarkerCode, _hImage⟩ :=
     compileVerifiedStackObjectArtifactWithLinkerSymbols?_parts hCompile
   exact (finishVerifiedStackObjectArtifact?_image_parts hFinish).1
 
@@ -580,8 +588,8 @@ theorem compileVerifiedStackObjectArtifact_child_image_embedded
           childArtifact.image.bytes.length =
         childArtifact.image.bytes := by
   obtain ⟨childArtifacts, plan, codeArtifact, hChildren, hPlan, hFinish,
-      hCode, hArtifactChildren, hContext, _hChildImages, _hPayloadComputed,
-      _hImage⟩ :=
+      hCode, _hChoice, hArtifactChildren, hContext, _hChildImages,
+      _hPayloadComputed, _hComputedCode, _hMarkerCode, _hImage⟩ :=
     compileVerifiedStackObjectArtifactWithLinkerSymbols?_parts hCompile
   -- The child compiles through the same verified entry point.
   obtain ⟨childArtifact, hChildAt, hChildCompile⟩ :=
@@ -595,7 +603,8 @@ theorem compileVerifiedStackObjectArtifact_child_image_embedded
   obtain ⟨hChildImages, hItems, hPayloadGen, hLayoutGen, hCtxLayout, hUnique⟩ :=
     planObjectArtifactFromChildImagesArtifactWith?_layout object linkerSymbols
       (childArtifacts.map VerifiedStackObjectArtifact.image)
-      object.compileVerifiedStackCodeArtifactIn? (·.bytes) hPlan
+      object.compileVerifiedStackCodeArtifactIn?
+      object.selectedVerifiedStackCodeBytes hPlan
   -- Image-level facts from the finisher.
   obtain ⟨_hImageName, hImageBytes, hLayoutEntries, hCodeLen, _hChildrenEq⟩ :=
     finishVerifiedStackObjectArtifact?_image_parts hFinish

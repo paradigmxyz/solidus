@@ -335,7 +335,7 @@ theorem guardBuried_source_exists {state : EVMState}
         EvmYul.EVM.State.incrPC]
     · simpa [guardBuried, duplicate] using hFinalPc
 
-theorem dispatchCondition_source_exists {state : EVMState}
+theorem dispatchCondition_source_run {state : EVMState}
     {front suffix : List Word} {token probe : Word}
     {pre post : Program}
     (hFits :
@@ -345,23 +345,22 @@ theorem dispatchCondition_source_exists {state : EVMState}
       ({ state with stack := front ++ token :: suffix }).pc =
         pre.pcAfter)
     (hBound : front.length < 16) :
-    Source.Eventually
-      (pre ++ [dupInstr (front.length + 1), .push probe, .prim .eq] ++ post)
-      { state with stack := front ++ token :: suffix }
-      (fun outcome =>
-        match outcome with
-        | .ok (.running final) =>
-            final.stack =
-                EvmYul.UInt256.eq probe token :: front ++ token :: suffix ∧
-              eraseRuntimeControl final =
-                eraseRuntimeControl
-                  { state with stack :=
-                      EvmYul.UInt256.eq probe token ::
-                        front ++ token :: suffix } ∧
-              final.pc =
-                (pre ++
-                  [dupInstr (front.length + 1), .push probe, .prim .eq]).pcAfter
-        | _ => False) := by
+    ∃ final,
+      Source.runNResult
+          (pre ++
+            [dupInstr (front.length + 1), .push probe, .prim .eq] ++ post)
+          3 { state with stack := front ++ token :: suffix } =
+        .ok (.running final) ∧
+      final.stack =
+          EvmYul.UInt256.eq probe token :: front ++ token :: suffix ∧
+      eraseRuntimeControl final =
+        eraseRuntimeControl
+          { state with stack :=
+              EvmYul.UInt256.eq probe token ::
+                front ++ token :: suffix } ∧
+      final.pc =
+        (pre ++
+          [dupInstr (front.length + 1), .push probe, .prim .eq]).pcAfter := by
   let duplicate := dupInstr (front.length + 1)
   let start : EVMState :=
     { state with stack := front ++ token :: suffix }
@@ -461,7 +460,7 @@ theorem dispatchCondition_source_exists {state : EVMState}
         (by simp [SourceLocalInstr]) rfl
         (by simpa [duplicate, List.append_assoc] using hFits.2.2.1)
         hAfterPushPc hEqStep)
-  refine ⟨3, .ok (.running finalState), ?_, ?_⟩
+  refine ⟨finalState, ?_, ?_, ?_, ?_⟩
   · unfold Source.runNResult Control.runNResultWith
     rw [show
       pre ++ [dupInstr (front.length + 1), .push probe, .prim .eq] ++ post =
@@ -490,29 +489,61 @@ theorem dispatchCondition_source_exists {state : EVMState}
     unfold Control.runNResultWith
     rw [hEqSource]
     rfl
-  · refine ⟨?_, ?_, ?_⟩
-    · simp [finalState, afterPush, afterDup,
-        EvmYul.EVM.State.replaceStackAndIncrPC, EvmYul.EVM.State.incrPC]
-    · simp [finalState, afterPush, afterDup, start, eraseRuntimeControl,
-        EvmYul.EVM.State.replaceStackAndIncrPC, EvmYul.EVM.State.incrPC]
-    · calc
-        finalState.pc = afterPush.pc + EvmYul.UInt256.ofNat 1 := by
-          simp [finalState, EvmYul.EVM.State.replaceStackAndIncrPC,
-            EvmYul.EVM.State.incrPC]
-        _ =
-            (pre ++ [duplicate, .push probe]).pcAfter +
-              EvmYul.UInt256.ofNat 1 := by rw [hAfterPushPc]
-        _ =
-            EvmYul.UInt256.ofNat
-              ((pre ++ [duplicate, .push probe]).byteLength + 1) := by
-          rw [Program.pcAfter, UInt256_ofNat_add]
-        _ =
-            (pre ++ [duplicate, .push probe, .prim .eq]).pcAfter := by
-          simp [Program.pcAfter, Program.byteLength_append,
-            Program.byteLength, Instr.byteSize, Nat.add_assoc]
-        _ =
-            (pre ++ [dupInstr (front.length + 1), .push probe, .prim .eq]).pcAfter := by
-          rfl
+  · simp [finalState, afterPush, afterDup,
+      EvmYul.EVM.State.replaceStackAndIncrPC, EvmYul.EVM.State.incrPC]
+  · simp [finalState, afterPush, afterDup, start, eraseRuntimeControl,
+      EvmYul.EVM.State.replaceStackAndIncrPC, EvmYul.EVM.State.incrPC]
+  · calc
+      finalState.pc = afterPush.pc + EvmYul.UInt256.ofNat 1 := by
+        simp [finalState, EvmYul.EVM.State.replaceStackAndIncrPC,
+          EvmYul.EVM.State.incrPC]
+      _ =
+          (pre ++ [duplicate, .push probe]).pcAfter +
+            EvmYul.UInt256.ofNat 1 := by rw [hAfterPushPc]
+      _ =
+          EvmYul.UInt256.ofNat
+            ((pre ++ [duplicate, .push probe]).byteLength + 1) := by
+        rw [Program.pcAfter, UInt256_ofNat_add]
+      _ =
+          (pre ++ [duplicate, .push probe, .prim .eq]).pcAfter := by
+        simp [Program.pcAfter, Program.byteLength_append,
+          Program.byteLength, Instr.byteSize, Nat.add_assoc]
+      _ =
+          (pre ++ [dupInstr (front.length + 1), .push probe, .prim .eq]).pcAfter := by
+        rfl
+
+theorem dispatchCondition_source_exists {state : EVMState}
+    {front suffix : List Word} {token probe : Word}
+    {pre post : Program}
+    (hFits :
+      Program.PCFitsFrom pre
+        [dupInstr (front.length + 1), .push probe, .prim .eq])
+    (hPc :
+      ({ state with stack := front ++ token :: suffix }).pc =
+        pre.pcAfter)
+    (hBound : front.length < 16) :
+    Source.Eventually
+      (pre ++ [dupInstr (front.length + 1), .push probe, .prim .eq] ++ post)
+      { state with stack := front ++ token :: suffix }
+      (fun outcome =>
+        match outcome with
+        | .ok (.running final) =>
+            final.stack =
+                EvmYul.UInt256.eq probe token :: front ++ token :: suffix ∧
+              eraseRuntimeControl final =
+                eraseRuntimeControl
+                  { state with stack :=
+                      EvmYul.UInt256.eq probe token ::
+                        front ++ token :: suffix } ∧
+              final.pc =
+                (pre ++
+                  [dupInstr (front.length + 1), .push probe, .prim .eq]).pcAfter
+        | _ => False) := by
+  obtain ⟨final, hRun, hStack, hRuntime, hFinalPc⟩ :=
+    dispatchCondition_source_run hFits hPc hBound
+  exact
+    ⟨3, .ok (.running final), hRun,
+      hStack, hRuntime, hFinalPc⟩
 
 theorem dispatchTest_source_exists {state : EVMState}
     {front suffix : List Word} {token probe : Word}

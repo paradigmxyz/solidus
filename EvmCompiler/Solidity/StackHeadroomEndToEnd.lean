@@ -1,5 +1,5 @@
 import EvmCompiler.Solidity.VerifiedStackObjectArtifact
-import EvmCompiler.Assembly.StackHeadroomSound
+import EvmCompiler.Assembly.RawStackHeadroomSound
 
 /-!
 # Verified-artifact stack-headroom endpoint
@@ -33,7 +33,8 @@ open EvmCompiler.Assembly
 def VerifiedStackObjectArtifact.stackHeadroomCert?
     (artifact : VerifiedStackObjectArtifact) :
     Option StackHeadroom.Cert :=
-  StackHeadroom.mkCert? artifact.codeArtifact.compact
+  StackHeadroom.mkRawCert?
+    (artifact.codeChoice.compact artifact.codeArtifact)
 
 /-- On a certified artifact image entered at pc `0` with an empty stack, the
 gasful frame interpreter never reports `StackOverflow`, for any jump-table
@@ -57,16 +58,11 @@ theorem VerifiedStackObjectArtifact.x_ne_stackOverflow
     ∀ fuel,
       EvmYul.EVM.X fuel validJumps gasfulInitial ≠
         .error EvmYul.EVM.ExecutionException.StackOverflow := by
-  obtain ⟨_children, _plan, _codeArtifact, _hChildren, _hPlan, _hFinish,
-      hCodeIn, _hArtifactChildren, _hContext, _hChildImages, _hPayload,
-      _hImage⟩ :=
-    Object.compileVerifiedStackObjectArtifactWithLinkerSymbols?_parts
-      hObject
-  obtain ⟨_hResolved, _hOrdered, _hLower, _hStackLower, _pinnedPushPcs,
-      _hPins, hCompact, _hBytes, _hMarker⟩ :=
-    Object.compileVerifiedStackCodeArtifactIn?_parts hCodeIn
   have hDecode :=
     Object.compileVerifiedStackObjectArtifactWithLinkerSymbols?_decodingCorrect
+      hObject
+  obtain ⟨hProgram, _hLayout, _hWindow, hBytes, hSentinelFits⟩ :=
+    Object.compileVerifiedStackObjectArtifactWithLinkerSymbols?_selectedCompactProperties
       hObject
   obtain ⟨plan, hImage⟩ :=
     Object.compileVerifiedStackObjectArtifactWithLinkerSymbols?_sentinelImage
@@ -74,34 +70,21 @@ theorem VerifiedStackObjectArtifact.x_ne_stackOverflow
   have hSentinel : Assembly.Compact.decodeAt
       (Assembly.Bytecode.ofList artifact.image.bytes)
       (Assembly.Compact.Program.codeByteLength
-        artifact.codeArtifact.compact.program.code)
+        (artifact.codeChoice.compact
+          artifact.codeArtifact).program.code)
       (.prim .invalid) := by
     rw [hImage]
     simpa [Object.verifiedCodeSentinel, List.append_assoc] using
-      (Assembly.GasfulBridge.compact_compile_sentinel_decodeAt
-        hCompact plan.payload)
-  have hInitialPoint :=
-    Assembly.GasfulBridge.artifactFramePoint_initial hCompact hCode hPc
-  have hOrdinary :
-      Assembly.GasfulBridge.ArtifactOrdinaryBoundaryStepInvariant
-        artifact.codeArtifact.compact
-        (Assembly.Bytecode.ofList artifact.image.bytes) validJumps :=
-    Assembly.GasfulBridge.artifactOrdinaryBoundaryStepInvariant_of_compile
-      (validJumps := validJumps) hCompact hDecode
-  have hStepInv :
-      Assembly.GasfulBridge.ArtifactFrameStepInvariant
-        artifact.codeArtifact.compact
-        (Assembly.Bytecode.ofList artifact.image.bytes) validJumps := by
-    intro current next stepFuel hPoint hPrefix hStep hContinues
-    exact (Assembly.GasfulBridge.artifactFrameStepInvariant_of_ordinaryBoundary
-      hCompact hDecode hSentinel hOrdinary) hPoint hPrefix hStep hContinues
-  have hFrame :=
-    Assembly.GasfulBridge.artifactFrameInvariant_of_step hInitialPoint
-      hStepInv
-  have hCheck := StackHeadroom.mkCert?_check hCert
-  intro fuel
-  exact StackHeadroom.x_ne_stackOverflow_of_cert hCompact hDecode hCheck
-    hSentinel hFrame hPc hStack fuel
+      (StackHeadroom.raw_compact_sentinel_decodeAt hBytes
+        hSentinelFits plan.payload)
+  have hRaw :=
+    StackHeadroom.mkRawCert?_rawCheck
+      (by
+        simpa [VerifiedStackObjectArtifact.stackHeadroomCert?] using
+          hCert)
+  exact
+    StackHeadroom.x_ne_stackOverflow_of_rawCert hProgram hDecode hRaw
+      hSentinel hCode hPc hStack
 
 /-- Suffix-tolerant variant for creation frames: the concrete entry point is
 `X fuel validJumps` over `image.bytes ++ suffix` (ABI-encoded constructor
@@ -126,53 +109,33 @@ theorem VerifiedStackObjectArtifact.x_ne_stackOverflow_withCodeSuffix
     ∀ fuel,
       EvmYul.EVM.X fuel validJumps gasfulInitial ≠
         .error EvmYul.EVM.ExecutionException.StackOverflow := by
-  obtain ⟨_children, _plan, _codeArtifact, _hChildren, _hPlan, _hFinish,
-      hCodeIn, _hArtifactChildren, _hContext, _hChildImages, _hPayload,
-      _hImage⟩ :=
-    Object.compileVerifiedStackObjectArtifactWithLinkerSymbols?_parts
-      hObject
-  obtain ⟨_hResolved, _hOrdered, _hLower, _hStackLower, _pinnedPushPcs,
-      _hPins, hCompact, _hBytes, _hMarker⟩ :=
-    Object.compileVerifiedStackCodeArtifactIn?_parts hCodeIn
   have hDecode :=
     Object.compileVerifiedStackObjectArtifactWithLinkerSymbols?_decodingCorrect_withCodeSuffix
       hObject suffix
+  obtain ⟨hProgram, _hLayout, _hWindow, hBytes, hSentinelFits⟩ :=
+    Object.compileVerifiedStackObjectArtifactWithLinkerSymbols?_selectedCompactProperties
+      hObject
   obtain ⟨plan, hImage⟩ :=
     Object.compileVerifiedStackObjectArtifactWithLinkerSymbols?_sentinelImage
       hObject
   have hSentinel : Assembly.Compact.decodeAt
       (Assembly.Bytecode.ofList (artifact.image.bytes ++ suffix))
       (Assembly.Compact.Program.codeByteLength
-        artifact.codeArtifact.compact.program.code)
+        (artifact.codeChoice.compact
+          artifact.codeArtifact).program.code)
       (.prim .invalid) := by
     rw [hImage]
     simpa [Object.verifiedCodeSentinel, List.append_assoc] using
-      (Assembly.GasfulBridge.compact_compile_sentinel_decodeAt
-        hCompact (plan.payload ++ suffix))
-  have hInitialPoint :=
-    Assembly.GasfulBridge.artifactFramePoint_initial hCompact hCode hPc
-  have hOrdinary :
-      Assembly.GasfulBridge.ArtifactOrdinaryBoundaryStepInvariant
-        artifact.codeArtifact.compact
-        (Assembly.Bytecode.ofList (artifact.image.bytes ++ suffix))
-        validJumps :=
-    Assembly.GasfulBridge.artifactOrdinaryBoundaryStepInvariant_of_compile
-      (validJumps := validJumps) hCompact hDecode
-  have hStepInv :
-      Assembly.GasfulBridge.ArtifactFrameStepInvariant
-        artifact.codeArtifact.compact
-        (Assembly.Bytecode.ofList (artifact.image.bytes ++ suffix))
-        validJumps := by
-    intro current next stepFuel hPoint hPrefix hStep hContinues
-    exact (Assembly.GasfulBridge.artifactFrameStepInvariant_of_ordinaryBoundary
-      hCompact hDecode hSentinel hOrdinary) hPoint hPrefix hStep hContinues
-  have hFrame :=
-    Assembly.GasfulBridge.artifactFrameInvariant_of_step hInitialPoint
-      hStepInv
-  have hCheck := StackHeadroom.mkCert?_check hCert
-  intro fuel
-  exact StackHeadroom.x_ne_stackOverflow_of_cert hCompact hDecode hCheck
-    hSentinel hFrame hPc hStack fuel
+      (StackHeadroom.raw_compact_sentinel_decodeAt hBytes
+        hSentinelFits (plan.payload ++ suffix))
+  have hRaw :=
+    StackHeadroom.mkRawCert?_rawCheck
+      (by
+        simpa [VerifiedStackObjectArtifact.stackHeadroomCert?] using
+          hCert)
+  exact
+    StackHeadroom.x_ne_stackOverflow_of_rawCert hProgram hDecode hRaw
+      hSentinel hCode hPc hStack
 
 /-- Escape-free refinement for certified artifacts: any `RunRefinesOpen`
 witness over the artifact's gasful run strengthens to the variant without

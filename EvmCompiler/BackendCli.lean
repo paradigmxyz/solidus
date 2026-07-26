@@ -4,6 +4,11 @@ import EvmCompiler.Assembly.Bytecode
 import EvmCompiler.Assembly.Compact
 import EvmCompiler.Functions.StackDiagnostics
 import EvmCompiler.Compiler.StackArtifact
+import EvmCompiler.TypedCfg.ReturnAddressProbe
+import EvmCompiler.TypedCfg.SharedReturnProbe
+import EvmCompiler.TypedCfg.LateReturnProbe
+import EvmCompiler.TypedCfg.LateReturnCompactPreservation
+import EvmCompiler.Assembly.StackHeadroom
 import EvmCompiler.Solidity.VerifiedStackObjectArtifact
 import EvmCompiler.Solidity.StackHeadroomEndToEnd
 import EvmCompiler.Solidus.Defs
@@ -665,11 +670,12 @@ def controlPatternStats (source : Assembly.Program) : ControlPatternStats :=
 structure ReturnDispatchStats where
   dispatches : Nat := 0
   sites : Nat := 0
+  distinctTargets : Nat := 0
   repeatedCleanupSwaps : Nat := 0
   sharedCleanupSwaps : Nat := 0
 
 def returnDispatchStats (program : TypedCfg.Program) : ReturnDispatchStats :=
-  program.blocks.foldl
+  let base : ReturnDispatchStats := program.blocks.foldl
     (fun stats block =>
       match block.term with
       | .returnDispatch returnCount sites =>
@@ -679,13 +685,42 @@ def returnDispatchStats (program : TypedCfg.Program) : ReturnDispatchStats :=
               stats.repeatedCleanupSwaps + returnCount * sites.length
             sharedCleanupSwaps := stats.sharedCleanupSwaps + returnCount }
       | _ => stats)
-    {}
+    ({} : ReturnDispatchStats)
+  let targets :=
+    TypedCfg.ReturnAddressLower.Program.returnSites program
+      |>.map TypedCfg.ReturnSite.target
+  { base with distinctTargets := targets.eraseDups.length }
 
 def printStackDiagnostics
     (source : String) (contract objectName : String)
     (functions : Functions.Program) : IO Unit := do
   let compileStart ← IO.monoMsNow
   let stackArtifact? := Compiler.StackArtifact.compile? functions
+  let returnAddressProbe? :=
+    TypedCfg.ReturnAddressProbe.compileFunctions? functions
+  let returnAddressHeadroom? :=
+    returnAddressProbe?.bind fun artifact =>
+      Assembly.StackHeadroom.mkCert? artifact.compact.asCompact
+  let sharedReturnProbe? :=
+    TypedCfg.SharedReturnProbe.compileFunctions? functions
+  let sharedReturnHeadroom? :=
+    sharedReturnProbe?.bind fun artifact =>
+      Assembly.StackHeadroom.mkCert? artifact.compact
+  let lateReturnProbe? :=
+    TypedCfg.LateReturnProbe.compileFunctions? functions
+  let lateOptimized? :=
+    stackArtifact?.bind fun artifact =>
+      TypedCfg.ReturnAddressProbe.optimizedCfg? artifact.cfg
+  let lateLowered? :=
+    lateOptimized?.bind TypedCfg.LateReturnProbe.Program.lower?
+  let lateCompact? :=
+    lateLowered?.bind TypedCfg.ReturnAddressProbe.Compact.compile?
+  let verifiedLateReturnProbe? :=
+    TypedCfg.LateReturnCompactPreservation.Compact.Verified.compileFunctions?
+      functions
+  let lateReturnHeadroom? :=
+    lateReturnProbe?.bind fun artifact =>
+      Assembly.StackHeadroom.mkCert? artifact.compact.asCompact
   let sourceAccepted :=
     Functions.SourceAcceptedCheck.Program.sourceAccepted? functions
   let normalized := Functions.StackPressureNormalization.Program.normalize functions
@@ -839,10 +874,88 @@ def printStackDiagnostics
     ("stack_program_return_dispatch=" ++
       "dispatches=" ++ toString dispatchStats.dispatches ++
       "\tsites=" ++ toString dispatchStats.sites ++
+      "\tdistinct_targets=" ++ toString dispatchStats.distinctTargets ++
       "\trepeated_cleanup_swaps=" ++
         toString dispatchStats.repeatedCleanupSwaps ++
       "\tshared_cleanup_swaps=" ++
         toString dispatchStats.sharedCleanupSwaps)
+  IO.println
+    ("stack_program_return_address_probe=" ++
+      "artifact=" ++ boolString returnAddressProbe?.isSome ++
+      "\tbytes=" ++
+        toString
+          (returnAddressProbe?.map (fun artifact =>
+            artifact.compact.bytes.size) |>.getD 0))
+  IO.println
+    ("stack_program_return_address_probe_hex=0x" ++
+      (returnAddressProbe?.map (fun artifact =>
+        bytesHex artifact.compact.bytes.toList) |>.getD ""))
+  IO.println
+    ("stack_program_return_address_probe_headroom=" ++
+      boolString returnAddressHeadroom?.isSome)
+  IO.println
+    ("stack_program_shared_return_probe=" ++
+      "artifact=" ++ boolString sharedReturnProbe?.isSome ++
+      "\tbytes=" ++
+        toString
+          (sharedReturnProbe?.map (fun artifact =>
+            artifact.compact.bytes.size) |>.getD 0))
+  IO.println
+    ("stack_program_shared_return_probe_hex=0x" ++
+      (sharedReturnProbe?.map (fun artifact =>
+        bytesHex artifact.compact.bytes.toList) |>.getD ""))
+  IO.println
+    ("stack_program_shared_return_probe_headroom=" ++
+      boolString sharedReturnHeadroom?.isSome)
+  IO.println
+    ("stack_program_late_return_probe=" ++
+      "artifact=" ++ boolString lateReturnProbe?.isSome ++
+      "\tbytes=" ++
+        toString
+          (lateReturnProbe?.map (fun artifact =>
+            artifact.compact.bytes.size) |>.getD 0))
+  IO.println
+    ("stack_program_late_return_stages=" ++
+      "optimized=" ++ boolString lateOptimized?.isSome ++
+      "\tunique=" ++
+        boolString
+          (lateOptimized?.map (fun optimized =>
+            TypedCfg.ReturnAddressLower.Program.tokensUnique? optimized &&
+              TypedCfg.LateReturnProbe.Program.localReturnTokensUnique?
+                optimized) |>.getD false) ++
+      "\tlowered=" ++ boolString lateLowered?.isSome ++
+      "\taccepted=" ++
+        boolString
+          (lateLowered?.map Assembly.Program.acceptedWithDynamic
+            |>.getD false) ++
+      "\ttargets=" ++
+        boolString
+          ((do
+            let optimized ← lateOptimized?
+            let lowered ← lateLowered?
+            pure
+              (TypedCfg.LateReturnProbe.Program.returnTargetsResolveNonzero?
+                optimized lowered))
+            |>.getD false) ++
+      "\tcompact=" ++ boolString lateCompact?.isSome)
+  IO.println
+    ("stack_program_late_return_probe_hex=0x" ++
+      (lateReturnProbe?.map (fun artifact =>
+        bytesHex artifact.compact.bytes.toList) |>.getD ""))
+  IO.println
+    ("stack_program_late_return_probe_headroom=" ++
+      boolString lateReturnHeadroom?.isSome)
+  IO.println
+    ("stack_program_verified_late_return_probe=" ++
+      "artifact=" ++ boolString verifiedLateReturnProbe?.isSome ++
+      "\tdispatchers=" ++
+        toString
+          (verifiedLateReturnProbe?.map (fun artifact =>
+            artifact.dispatchers.length) |>.getD 0) ++
+      "\tbytes=" ++
+        toString
+          (verifiedLateReturnProbe?.map (fun artifact =>
+            artifact.base.compact.bytes.size) |>.getD 0))
   IO.println
     ("timing\tstack_program\t" ++ toString (compileFinish - compileStart))
   match lowered? with

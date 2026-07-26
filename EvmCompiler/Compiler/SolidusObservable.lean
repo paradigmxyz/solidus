@@ -110,6 +110,36 @@ private theorem evmHaltTail
       · rw [hOutEq]
         exact (haltKind_output_congr hSameState).symm
 
+/-- The late-return compact relation carries stronger control-point data than
+the ordinary compact runtime relation. Forgetting those control witnesses
+retains exactly the runtime relation consumed by the observable tail. -/
+private theorem lateFullOutcomeRel_runtime
+    {sourceProgram : Assembly.Program}
+    {artifact :
+      TypedCfg.LateReturnCompactPreservation.Compact.Artifact}
+    {targetDone sourceDone : Assembly.Source.ExecutionOutcome}
+    (hRel :
+      TypedCfg.LateReturnCompactPreservation.Compact.Preparation.FullOutcomeRel
+        sourceProgram artifact targetDone sourceDone) :
+    Assembly.Compact.RuntimeOutcomeRel targetDone sourceDone := by
+  cases hRel with
+  | error hError =>
+      exact .error hError
+  | @ok targetResult sourceResult hResult =>
+      cases targetResult with
+      | running target =>
+          cases sourceResult with
+          | running source =>
+              exact .ok hResult.runtimeData
+          | halted source =>
+              exact False.elim hResult
+      | halted target =>
+          cases sourceResult with
+          | running source =>
+              exact False.elim hResult
+          | halted source =>
+              exact .ok hResult
+
 /-- Threading for an explicit source halt/revert: the middle Functions halt
 outcome relates to a bytecode-level halted result whose shared record is the
 (post-terminal) Functions halt shared state, with the output convention. -/
@@ -212,8 +242,44 @@ theorem observable
   obtain ⟨ordered, hSame, hVerified⟩ := h
   have hSameEq : sourceDone = ordered := hSame
   subst hSameEq
-  obtain ⟨generated, hCompact⟩ := hVerified
-  obtain ⟨assemblyDone, hAssembly, hCompactRel⟩ := hCompact
+  obtain ⟨generated, assembly, assemblyDone, hAssembly, hCompactRel⟩ :
+      ∃ generated :
+          Structured.TypedCfgPreservation.Program.GeneratedContext
+            artifact.codeArtifact.compiled.expressions.toStructured
+            artifact.codeArtifact.compiled.entryShapes
+            artifact.codeArtifact.compiled.cfg,
+        ∃ assembly assemblyDone,
+          Compiler.OpenInteractionComposition.YulStackAssemblyPrefixDoneRel
+              artifact.codeArtifact.compiled.expressions.toStructured
+              artifact.codeArtifact.compiled.entryShapes
+              artifact.codeArtifact.compiled.cfg generated assembly
+              sourceDone assemblyDone ∧
+            Assembly.Compact.RuntimeOutcomeRel targetDone assemblyDone := by
+    cases hChoice : artifact.codeChoice with
+    | standard =>
+        simp only
+          [Compiler.OpenInteractionComposition.VerifiedStackObjectPrefixDoneRel,
+            hChoice] at hVerified
+        obtain ⟨generated, assemblyDone, hAssembly, hCompactRel⟩ :=
+          hVerified
+        exact
+          ⟨generated, artifact.codeArtifact.compiled.certified.target,
+            assemblyDone, hAssembly, hCompactRel⟩
+    | late candidate =>
+        simp only
+          [Compiler.OpenInteractionComposition.VerifiedStackObjectPrefixDoneRel,
+            hChoice] at hVerified
+        obtain ⟨generated, cfgDone, hCfg, hGeneratedCompact⟩ := hVerified
+        obtain ⟨optimizedDone, hRuntime, hCompactRun⟩ :=
+          hGeneratedCompact
+        obtain ⟨lateDone, hRunLate, hFull⟩ := hCompactRun
+        have hRun :=
+          TypedCfg.InteractionPreservation.OpenBlock.runtime_left
+            hRuntime hRunLate
+        exact
+          ⟨generated, candidate.base.base.assembly, lateDone,
+            ⟨cfgDone, hCfg, hRun⟩,
+            Solidus.lateFullOutcomeRel_runtime hFull⟩
   obtain ⟨cfgDone, hCfg, hRun⟩ := hAssembly
   obtain ⟨structuredDone, hExpr, hPrefix⟩ := hCfg
   obtain ⟨middle, hDone, hControl⟩ := hExpr

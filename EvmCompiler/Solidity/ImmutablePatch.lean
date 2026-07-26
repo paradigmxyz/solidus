@@ -2239,14 +2239,13 @@ theorem Object.patchImmutables_image_compileWithImmutableValues?_ofCompile
     (hValues : object.compileVerifiedStackCodeArtifactWithImmutableValues?
       artifact.computed.context values = some withValues) :
     Bytecode.patchImmutables artifact.image.bytes
-      (Bytecode.immutableReferenceEntriesFromCodes
-        artifact.codeArtifact.bytes
-        artifact.codeArtifact.immutableMarkerBytes
-        (ImmutableReference.markerEntriesFromNat 0
-          object.loadImmutableNames))
-      values = withValues.bytes ++ artifact.computed.payload := by
+      (artifact.ownImmutableReferences object)
+      values =
+        (object.verifiedStackCodeChoice withValues).bytes withValues ++
+          artifact.computed.payload := by
   obtain ⟨childArtifacts, plan, codeArtifact, _hChildren, hPlan, _hFinish,
-      hCode, _hChildrenEq, hContextEq, _hChildImages, hPayloadEq, hImage⟩ :=
+      hCode, hChoice, _hChildrenEq, hContextEq, _hChildImages, hPayloadEq,
+      hComputedCode, hMarkerCode, hImage⟩ :=
     Object.compileVerifiedStackObjectArtifactWithLinkerSymbols?_parts
       hArtifact
   have hPlanIv : plan.context.immutableValues =
@@ -2271,13 +2270,66 @@ theorem Object.patchImmutables_image_compileWithImmutableValues?_ofCompile
   have hPatchCode :=
     Object.patchImmutables_compileWithImmutableValues?_ofCompile hBase
       hValues
-  have hInCode := Bytecode.immutableReferenceEntriesFromCodes_inBounds_zero
-    (zeroBytes := artifact.codeArtifact.bytes)
-    (markerBytes := artifact.codeArtifact.immutableMarkerBytes)
-    (entries := ImmutableReference.markerEntriesFromNat 0
-      object.loadImmutableNames)
-  rw [hImage, hPayloadEq, Bytecode.patchImmutables_append hInCode,
-    hPatchCode]
+  by_cases hNames : object.loadImmutableNames = []
+  · have hValuesIn := hValues
+    unfold Object.compileVerifiedStackCodeArtifactWithImmutableValues?
+      at hValuesIn
+    obtain ⟨_hResolvedV, _hOrderedV, _hLowerV, _hStackV, planV,
+        hPlanV, _hCompactV, _hBytesV, _hMarkerV, hGateV⟩ :=
+      Object.compileVerifiedStackCodeArtifactIn?_partsChecked hValuesIn
+    have hPlanVNil := immutablePushPlanFor?_nilNames hNames hPlanV
+    have hNoneV : planV.markerTarget? = none := by
+      rw [hPlanVNil]
+    have hValuesEmpty :=
+      (Object.immutablePatchChecked?_none_elim hNoneV hGateV).2
+    dsimp only at hValuesEmpty
+    have hContexts :
+        ({ plan.context with
+            immutableValues :=
+              ImmutableReference.zeroEntries object.loadImmutableNames } :
+          ObjectBuiltinContext) =
+        { plan.context with immutableValues := values } := by
+      rw [hNames, hValuesEmpty]
+      rfl
+    have hBaseIn := hBase
+    have hValuesIn' := hValues
+    unfold Object.compileVerifiedStackCodeArtifactWithImmutableValues?
+      at hBaseIn hValuesIn'
+    rw [hContexts] at hBaseIn
+    have hSame : artifact.codeArtifact = withValues :=
+      Option.some.inj (hBaseIn.symm.trans hValuesIn')
+    subst withValues
+    unfold VerifiedStackObjectArtifact.ownImmutableReferences
+    rw [hImage, hPayloadEq, hComputedCode, hMarkerCode, hChoice, hNames]
+    simp [ImmutableReference.markerEntriesFromNat,
+      Bytecode.immutableReferenceEntriesFromCodes,
+      Bytecode.patchImmutables]
+  · have hNotEmpty :
+        object.loadImmutableNames.isEmpty = false := by
+      cases hNamesList : object.loadImmutableNames with
+      | nil => exact False.elim (hNames hNamesList)
+      | cons head tail => rfl
+    have hArtifactStandard :
+        artifact.codeChoice = .standard := by
+      rw [hChoice]
+      exact
+        Object.verifiedStackCodeChoice_eq_standard_of_not_isEmpty
+          hNotEmpty
+    have hValuesStandard :
+        object.verifiedStackCodeChoice withValues = .standard :=
+      Object.verifiedStackCodeChoice_eq_standard_of_not_isEmpty hNotEmpty
+    have hInCode :=
+      Bytecode.immutableReferenceEntriesFromCodes_inBounds_zero
+        (zeroBytes := artifact.codeArtifact.bytes)
+        (markerBytes := artifact.codeArtifact.immutableMarkerBytes)
+        (entries := ImmutableReference.markerEntriesFromNat 0
+          object.loadImmutableNames)
+    unfold VerifiedStackObjectArtifact.ownImmutableReferences
+    rw [hImage, hPayloadEq, hComputedCode, hMarkerCode,
+      hArtifactStandard, hValuesStandard]
+    simp only [VerifiedStackCodeChoice.bytes]
+    simp only [VerifiedStackCodeChoice.markerBytes]
+    rw [Bytecode.patchImmutables_append hInCode, hPatchCode]
 
 end Frontend
 end Solidity

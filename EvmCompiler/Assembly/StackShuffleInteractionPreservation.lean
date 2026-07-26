@@ -45,7 +45,9 @@ theorem dispatchTest_openRunUntilTransferWithPolicy
     {front suffix : List Word} {token probe : Word}
     {label : Label} {dest : Nat} {pre post : Program}
     {state : EVMState} (fuel : Nat)
-    (hContinue : continueTransfer (.jumpi label) = true)
+    (hContinue :
+      continueTransfer (.jumpi label) = true ∨
+        fuel = 0 ∨ probe ≠ token)
     (hFits :
       Program.PCFitsFrom pre
         [dupInstr (front.length + 1), .push probe, .prim .eq, .jumpi label])
@@ -327,12 +329,6 @@ theorem dispatchTest_openRunUntilTransferWithPolicy
           (.running afterEq) =
         .next afterEq := by
     rfl
-  have hJumpFlow :
-      (Instr.jumpi label).classifyFlowWith continueTransfer afterEq
-          (.running jumpFinal) =
-        .next jumpFinal := by
-    simp [Instr.classifyFlowWith, hAfterEqStack,
-      EvmYul.Stack.pop, hContinue]
   have hFallthroughPc :
       Source.jumpiFallthroughPc afterEq =
         (pre ++
@@ -414,9 +410,51 @@ theorem dispatchTest_openRunUntilTransferWithPolicy
   have hJumpFits :
       (pre ++ [duplicate, .push probe, .prim .eq]).PCFits := by
     simpa [duplicate, List.append_assoc] using hFits.2.2.2.1
-  rw [source_openRunUntilTransferWithPolicy_succ_of_step_running
-    continueTransfer fuel hJumpFits hAfterEqPc hJumpOpen hJumpFlow]
-  rw [hJumpFinalEq]
+  by_cases hTransfers :
+      continueTransfer (.jumpi label) = true
+  · have hJumpFlow :
+        (Instr.jumpi label).classifyFlowWith continueTransfer afterEq
+            (.running jumpFinal) =
+          .next jumpFinal := by
+      simp [Instr.classifyFlowWith, hAfterEqStack,
+        EvmYul.Stack.pop, hTransfers]
+    rw [source_openRunUntilTransferWithPolicy_succ_of_step_running
+      continueTransfer fuel hJumpFits hAfterEqPc hJumpOpen hJumpFlow]
+    rw [hJumpFinalEq]
+  · have hTransferFalse :
+        continueTransfer (.jumpi label) = false :=
+      Bool.eq_false_of_not_eq_true hTransfers
+    have hOneNeZero :
+        EvmYul.UInt256.ofNat 1 ≠ EvmYul.UInt256.ofNat 0 := by
+      decide
+    by_cases hProbe : probe = token
+    · have hFuel : fuel = 0 := by
+        rcases hContinue with hTransfer | hRest
+        · exact False.elim (hTransfers hTransfer)
+        · exact hRest.resolve_right
+            (by simpa [hProbe])
+      subst fuel
+      have hJumpFlow :
+          (Instr.jumpi label).classifyFlowWith continueTransfer afterEq
+              (.running jumpFinal) =
+            .exit (.running jumpFinal) := by
+        simp [Instr.classifyFlowWith, hAfterEqStack,
+          EvmYul.Stack.pop, hTransferFalse, hProbe,
+          EvmYul.UInt256.eq, hOneNeZero]
+      rw [source_openRunUntilTransferWithPolicy_succ_of_step_exit
+        continueTransfer 0 hJumpFits hAfterEqPc hJumpOpen hJumpFlow]
+      rw [hJumpFinalEq]
+      rfl
+    · have hJumpFlow :
+          (Instr.jumpi label).classifyFlowWith continueTransfer afterEq
+              (.running jumpFinal) =
+            .next jumpFinal := by
+        simp [Instr.classifyFlowWith, hAfterEqStack,
+          EvmYul.Stack.pop, hTransferFalse, hProbe,
+          EvmYul.UInt256.eq]
+      rw [source_openRunUntilTransferWithPolicy_succ_of_step_running
+        continueTransfer fuel hJumpFits hAfterEqPc hJumpOpen hJumpFlow]
+      rw [hJumpFinalEq]
 
 /--
 The return-dispatch stack guard consumes its temporary duplicate and resumes

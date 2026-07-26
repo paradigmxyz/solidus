@@ -1565,7 +1565,8 @@ theorem Object.compileVerifiedStackObjectArtifactWithLinkerSymbols?_context_link
           linkerSymbols = some artifact) :
     artifact.computed.context.linkerSymbols = linkerSymbols := by
   obtain ⟨_childArtifacts, plan, _codeArtifact, _hChildren, hPlan, _hFinish,
-      _hCode, _hChildrenEq, hContextEq, _hChildImages, _hPayload, _hImage⟩ :=
+      _hCode, _hChoice, _hChildrenEq, hContextEq, _hChildImages, _hPayload,
+      _hComputedCode, _hMarkerCode, _hImage⟩ :=
     Object.compileVerifiedStackObjectArtifactWithLinkerSymbols?_parts
       hCompile
   rw [hContextEq]
@@ -1737,7 +1738,11 @@ theorem Object.patchImmutablesAndLibraries_image_ofCompileUnlinked
         (object.substituteUnlinkedLibraries
           (object.missingLinkerSymbolNames provided)))
       (object.missingLinkerSymbolNames provided) values =
-      withValues.bytes ++ artifact.computed.payload := by
+      (Object.verifiedStackCodeChoice
+        (object.substituteUnlinkedLibraries
+          (object.missingLinkerSymbolNames provided))
+        withValues).bytes withValues ++
+          artifact.computed.payload := by
   obtain ⟨hInner, hGate⟩ :=
     Object.compileVerifiedStackObjectArtifactUnlinked?_parts hUnlinked
   obtain ⟨_hNames, hDisjoint, hBounds, hZeros⟩ :=

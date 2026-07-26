@@ -83,27 +83,25 @@ theorem compile_correct_unlinked
             (Yul.EndToEnd.installedSourceState artifact baseSource))
           (Assembly.Compact.InteractionSemantics.openRunNResult
             (Assembly.Bytecode.ofList artifact.image.bytes)
-            (2 *
-              ((Structured.InteractionStaticCost.blockBudget
-                  artifact.codeArtifact.compiled.expressions.toStructured
-                  structuredFuel
-                  artifact.codeArtifact.compiled.expressions.toStructured.body +
-                    1) *
-                TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
-                  artifact.codeArtifact.compiled.cfg))
+            ((Structured.InteractionStaticCost.blockBudget
+                artifact.codeArtifact.compiled.expressions.toStructured
+                structuredFuel
+                artifact.codeArtifact.compiled.expressions.toStructured.body +
+                  1) *
+              artifact.codeChoice.executionFuelFactor
+                artifact.codeArtifact)
             { (Yul.EndToEnd.initialExpressionsState artifact baseSource).evm with
               pc := EvmYul.UInt256.ofNat 0 }) ∧
         Assembly.GasfulBridge.RunRefinesOpenTotal
           (EvmYul.EVM.X
             (max
-              (2 *
-                ((Structured.InteractionStaticCost.blockBudget
-                    artifact.codeArtifact.compiled.expressions.toStructured
-                    structuredFuel
-                    artifact.codeArtifact.compiled.expressions.toStructured.body +
-                      1) *
-                  TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
-                    artifact.codeArtifact.compiled.cfg))
+              ((Structured.InteractionStaticCost.blockBudget
+                artifact.codeArtifact.compiled.expressions.toStructured
+                structuredFuel
+                artifact.codeArtifact.compiled.expressions.toStructured.body +
+                  1) *
+              artifact.codeChoice.executionFuelFactor
+                artifact.codeArtifact)
               (gasfulInitial.gasAvailable.toNat + 6))
             (EvmYul.EVM.D_J
               (Assembly.Bytecode.ofList artifact.image.bytes)
@@ -112,14 +110,13 @@ theorem compile_correct_unlinked
           (Assembly.Compact.InteractionSemantics.openRunNResult
             (Assembly.Bytecode.ofList artifact.image.bytes)
             (max
-              (2 *
-                ((Structured.InteractionStaticCost.blockBudget
-                    artifact.codeArtifact.compiled.expressions.toStructured
-                    structuredFuel
-                    artifact.codeArtifact.compiled.expressions.toStructured.body +
-                      1) *
-                  TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
-                    artifact.codeArtifact.compiled.cfg))
+              ((Structured.InteractionStaticCost.blockBudget
+                artifact.codeArtifact.compiled.expressions.toStructured
+                structuredFuel
+                artifact.codeArtifact.compiled.expressions.toStructured.body +
+                  1) *
+              artifact.codeChoice.executionFuelFactor
+                artifact.codeArtifact)
               (gasfulInitial.gasAvailable.toNat + 6))
             { (Yul.EndToEnd.initialExpressionsState artifact baseSource).evm with
               pc := EvmYul.UInt256.ofNat 0 })

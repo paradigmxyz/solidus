@@ -75,9 +75,33 @@ def memStack (table : StackTable) (pc : Word) (astack : AbsStack) : Bool :=
 def stacksBounded? (table : StackTable) : Bool :=
   table.all (fun entry => decide (entry.2.length ≤ stackCap))
 
-/-- Abstract `EQ` on two cells: known exactly when both inputs are known. -/
-def absEq : Option Word → Option Word → Option Word
-  | some a, some b => some (EvmYul.UInt256.eq a b)
+/-- Abstract binary primitive on two cells: exact when both inputs are known. -/
+def absBin (op : Word → Word → Word) :
+    Option Word → Option Word → Option Word
+  | some a, some b => some (op a b)
+  | _, _ => none
+
+/--
+Precision budget for binary primitives.  Equality remains exact as before.
+Late return selection additionally needs multiplication by a boolean and
+addition with zero; restricting to those identities avoids distinguishing
+unbounded ordinary arithmetic values in the certificate worklist.
+-/
+def absTrackedBin (opcode : PrimOp) (op : Word → Word → Word) :
+    Option Word → Option Word → Option Word
+  | some a, some b =>
+      if opcode = .eq ∨
+          (opcode = .mul ∧
+            (a = EvmYul.UInt256.ofNat 0 ∨
+              a = EvmYul.UInt256.ofNat 1 ∨
+              b = EvmYul.UInt256.ofNat 0 ∨
+              b = EvmYul.UInt256.ofNat 1)) ∨
+          (opcode = .add ∧
+            (a = EvmYul.UInt256.ofNat 0 ∨
+              b = EvmYul.UInt256.ofNat 0)) then
+        some (op a b)
+      else
+        none
   | _, _ => none
 
 /-- Abstract `DUP n` (callers establish `1 ≤ n ≤ astack.length`). -/
@@ -94,27 +118,28 @@ def absSwap (n : Nat) (astack : AbsStack) : AbsStack :=
         (rest.take (n - 1) ++ top :: rest.drop n)
 
 /-- The exact abstract effect of one nonterminal primitive: cell-precise for
-`DUP`/`SWAP`/`EQ`, declared-arity erasure (unknown outputs) otherwise.
+`DUP`/`SWAP` and every binary primitive, declared-arity erasure (unknown
+outputs) otherwise.
 `none` when the declared operands do not fit in the abstract stack. -/
 def absPrim? (op : PrimOp) (astack : AbsStack) : Option AbsStack :=
-  if op = .eq then
-    match astack with
-    | a :: b :: rest => some (absEq a b :: rest)
-    | _ => none
-  else
-    match op.continuingStep? with
-    | some (.dup n) =>
-        if 1 ≤ n ∧ n ≤ astack.length then some (absDup n astack) else none
-    | some (.swap n) =>
-        if 1 ≤ n ∧ n + 1 ≤ astack.length then some (absSwap n astack)
-        else none
-    | _ =>
-        match op.stackArity? with
-        | none => none
-        | some (input, output) =>
-            if input ≤ astack.length then
-              some (List.replicate output none ++ astack.drop input)
-            else none
+  match op.continuingStep? with
+  | some (.bin f) =>
+      match astack with
+      | a :: b :: rest =>
+          some (absTrackedBin op f a b :: rest)
+      | _ => none
+  | some (.dup n) =>
+      if 1 ≤ n ∧ n ≤ astack.length then some (absDup n astack) else none
+  | some (.swap n) =>
+      if 1 ≤ n ∧ n + 1 ≤ astack.length then some (absSwap n astack)
+      else none
+  | _ =>
+      match op.stackArity? with
+      | none => none
+      | some (input, output) =>
+          if input ≤ astack.length then
+            some (List.replicate output none ++ astack.drop input)
+          else none
 
 /-- Per-block validation of the stack table against the block's static
 successors, per admitted abstract stack.  Blocks whose entry admits no
@@ -143,10 +168,24 @@ def blockOk? (artifact : Compact.Artifact) (table : StackTable)
       | none =>
           (stacksAt table
             (EvmYul.UInt256.ofNat block.compactPc)).isEmpty
-  | .pushLabel _ =>
-      (stacksAt table (EvmYul.UInt256.ofNat block.compactPc)).isEmpty
+  | .pushLabel target =>
+      match Compact.lookupLabel? artifact.labels target with
+      | some dest =>
+          (stacksAt table (EvmYul.UInt256.ofNat block.compactPc)).all
+            (fun astack =>
+              memStack table
+                (EvmYul.UInt256.ofNat
+                  (block.compactPc + artifact.branchWidth + 1))
+                (some (EvmYul.UInt256.ofNat dest) :: astack))
+      | none =>
+          (stacksAt table
+            (EvmYul.UInt256.ofNat block.compactPc)).isEmpty
   | .jumpDynamic =>
-      (stacksAt table (EvmYul.UInt256.ofNat block.compactPc)).isEmpty
+      (stacksAt table (EvmYul.UInt256.ofNat block.compactPc)).all
+        (fun astack =>
+          match astack with
+          | some dest :: rest => memStack table dest rest
+          | _ => false)
   | .jump target =>
       match Compact.lookupLabel? artifact.labels target with
       | some dest =>
@@ -227,6 +266,82 @@ def check? (artifact : Compact.Artifact) (cert : Cert) : Bool :=
   stacksBounded? cert.table &&
     memStack cert.table (EvmYul.UInt256.ofNat 0) [] &&
     artifact.blocks.all (blockOk? artifact cert.table)
+
+/-! ## Raw-program validator
+
+The source-block validator above is optimized for the ordinary compact
+compiler's fixed-label layout.  A second, strictly checked view validates the
+same abstract stacks directly against the emitted compact instruction stream.
+It therefore also covers certified physical-address pushes and dynamic
+`JUMP`s without trusting a second source-layout proof.
+-/
+
+def locatedAt? (program : Compact.Program) (pc : Nat) :
+    Option Compact.Located :=
+  program.code.find? fun located => decide (located.pc = pc)
+
+def jumpdestAt? (program : Compact.Program) (dest : Word) : Bool :=
+  match locatedAt? program dest.toNat with
+  | some located => decide (located.instr = .jumpdest)
+  | none => false
+
+def rawInstrOk? (program : Compact.Program) (table : StackTable)
+    (located : Compact.Located) (astack : AbsStack) : Bool :=
+  let nextPc :=
+    EvmYul.UInt256.ofNat (located.pc + located.instr.byteSize)
+  match located.instr with
+  | .push _ value =>
+      memStack table nextPc (some value :: astack)
+  | .push0 =>
+      memStack table nextPc
+        (some (EvmYul.UInt256.ofNat 0) :: astack)
+  | .jump =>
+      match astack with
+      | some dest :: rest =>
+          jumpdestAt? program dest && memStack table dest rest
+      | _ => false
+  | .jumpi =>
+      match astack with
+      | some dest :: cond :: rest =>
+          jumpdestAt? program dest &&
+            match cond with
+            | some value =>
+                if value = EvmYul.UInt256.ofNat 0 then
+                  memStack table nextPc rest
+                else
+                  memStack table dest rest
+            | none =>
+                memStack table dest rest &&
+                  memStack table nextPc rest
+      | _ => false
+  | .jumpdest =>
+      memStack table nextPc astack
+  | .prim op =>
+      if op = .invalid then
+        true
+      else
+        match op.stackArity? with
+        | none => true
+        | some _ =>
+            match absPrim? op astack with
+            | some astack' => memStack table nextPc astack'
+            | none => false
+
+def rawEntryOk? (artifact : Compact.Artifact) (table : StackTable)
+    (entry : Word × AbsStack) : Bool :=
+  if entry.1 =
+      EvmYul.UInt256.ofNat
+        (Compact.Program.codeByteLength artifact.program.code) then
+    true
+  else
+    match locatedAt? artifact.program entry.1.toNat with
+    | some located => rawInstrOk? artifact.program table located entry.2
+    | none => false
+
+def rawCheck? (artifact : Compact.Artifact) (cert : Cert) : Bool :=
+  stacksBounded? cert.table &&
+    memStack cert.table (EvmYul.UInt256.ofNat 0) [] &&
+      cert.table.all (rawEntryOk? artifact cert.table)
 
 /-! ## Indexed validator
 
@@ -381,10 +496,24 @@ def blockOkIdx? (artifact : Compact.Artifact)
       | none =>
           (stacksAtIdx idx
             (EvmYul.UInt256.ofNat block.compactPc)).isEmpty
-  | .pushLabel _ =>
-      (stacksAtIdx idx (EvmYul.UInt256.ofNat block.compactPc)).isEmpty
+  | .pushLabel target =>
+      match Compact.lookupLabel? artifact.labels target with
+      | some dest =>
+          (stacksAtIdx idx (EvmYul.UInt256.ofNat block.compactPc)).all
+            (fun astack =>
+              memStackIdx idx
+                (EvmYul.UInt256.ofNat
+                  (block.compactPc + artifact.branchWidth + 1))
+                (some (EvmYul.UInt256.ofNat dest) :: astack))
+      | none =>
+          (stacksAtIdx idx
+            (EvmYul.UInt256.ofNat block.compactPc)).isEmpty
   | .jumpDynamic =>
-      (stacksAtIdx idx (EvmYul.UInt256.ofNat block.compactPc)).isEmpty
+      (stacksAtIdx idx (EvmYul.UInt256.ofNat block.compactPc)).all
+        (fun astack =>
+          match astack with
+          | some dest :: rest => memStackIdx idx dest rest
+          | _ => false)
   | .jump target =>
       match Compact.lookupLabel? artifact.labels target with
       | some dest =>
@@ -502,8 +631,17 @@ def builderSuccessors (artifact : Compact.Artifact)
           artifact.branchWidth block.sourcePc block.sourceInstr with
       | some size => some [(block.compactPc + size, some value :: astack)]
       | none => none
-  | .pushLabel _ => none
-  | .jumpDynamic => none
+  | .pushLabel target =>
+      match Compact.lookupLabel? artifact.labels target with
+      | some dest =>
+          some
+            [(block.compactPc + artifact.branchWidth + 1,
+              some (EvmYul.UInt256.ofNat dest) :: astack)]
+      | none => none
+  | .jumpDynamic =>
+      match astack with
+      | some dest :: rest => some [(dest.toNat, rest)]
+      | _ => none
   | .jump target =>
       match Compact.lookupLabel? artifact.labels target with
       | some dest =>
@@ -625,6 +763,39 @@ theorem mkCert?_check {artifact : Compact.Artifact} {cert : Cert}
       · rw [if_neg hCheck] at hMk
         cases hMk
 
+/-- Certificate producer used at the deployed boundary.  The existing
+source-block checker remains the efficient builder gate; the emitted-program
+checker is an independent final validation of every admitted raw-PC state. -/
+def mkRawCert? (artifact : Compact.Artifact) : Option Cert := do
+  let cert ← mkCert? artifact
+  if rawCheck? artifact cert then some cert else none
+
+theorem mkRawCert?_check {artifact : Compact.Artifact} {cert : Cert}
+    (hMk : mkRawCert? artifact = some cert) :
+    check? artifact cert = true := by
+  unfold mkRawCert? at hMk
+  obtain ⟨built, hBuilt, hRest⟩ := Option.bind_eq_some_iff.mp hMk
+  by_cases hRaw : rawCheck? artifact built = true
+  · simp [hRaw] at hRest
+    subst cert
+    exact mkCert?_check hBuilt
+  · have hRawFalse : rawCheck? artifact built = false :=
+      Bool.eq_false_of_not_eq_true hRaw
+    simp [hRawFalse] at hRest
+
+theorem mkRawCert?_rawCheck {artifact : Compact.Artifact} {cert : Cert}
+    (hMk : mkRawCert? artifact = some cert) :
+    rawCheck? artifact cert = true := by
+  unfold mkRawCert? at hMk
+  obtain ⟨built, hBuilt, hRest⟩ := Option.bind_eq_some_iff.mp hMk
+  by_cases hRaw : rawCheck? artifact built = true
+  · simp [hRaw] at hRest
+    subst cert
+    exact hRaw
+  · have hRawFalse : rawCheck? artifact built = false :=
+      Bool.eq_false_of_not_eq_true hRaw
+    simp [hRawFalse] at hRest
+
 /-! ## Validator extraction lemmas -/
 
 theorem memStack_eq_true_iff {table : StackTable} {pc : Word}
@@ -683,6 +854,95 @@ theorem check?_blockOk {artifact : Compact.Artifact} {cert : Cert}
   unfold check? at hCheck
   simp only [Bool.and_eq_true] at hCheck
   exact List.all_eq_true.mp hCheck.2 block hMem
+
+theorem memStack_entry_mem {table : StackTable} {pc : Word}
+    {astack : AbsStack}
+    (hMem : memStack table pc astack = true) :
+    (pc, astack) ∈ table := by
+  have hIn := memStack_eq_true_iff.mp hMem
+  unfold stacksAt at hIn
+  obtain ⟨entry, hFiltered, hValue⟩ := List.mem_map.mp hIn
+  obtain ⟨hEntryMem, hPc⟩ := List.mem_filter.mp hFiltered
+  have hPcEq : entry.1 = pc := of_decide_eq_true hPc
+  have hStackEq : entry.2 = astack := hValue
+  rcases entry with ⟨entryPc, entryStack⟩
+  simp only at hPcEq hStackEq
+  subst entryPc
+  subst entryStack
+  exact hEntryMem
+
+theorem rawCheck?_bounded {artifact : Compact.Artifact} {cert : Cert}
+    (hCheck : rawCheck? artifact cert = true) :
+    stacksBounded? cert.table = true := by
+  unfold rawCheck? at hCheck
+  simp only [Bool.and_eq_true] at hCheck
+  exact hCheck.1.1
+
+theorem rawCheck?_anchor {artifact : Compact.Artifact} {cert : Cert}
+    (hCheck : rawCheck? artifact cert = true) :
+    memStack cert.table (EvmYul.UInt256.ofNat 0) [] = true := by
+  unfold rawCheck? at hCheck
+  simp only [Bool.and_eq_true] at hCheck
+  exact hCheck.1.2
+
+theorem rawCheck?_entry {artifact : Compact.Artifact} {cert : Cert}
+    {pc : Word} {astack : AbsStack}
+    (hCheck : rawCheck? artifact cert = true)
+    (hMem : memStack cert.table pc astack = true) :
+    rawEntryOk? artifact cert.table (pc, astack) = true := by
+  unfold rawCheck? at hCheck
+  simp only [Bool.and_eq_true] at hCheck
+  exact List.all_eq_true.mp hCheck.2 (pc, astack)
+    (memStack_entry_mem hMem)
+
+theorem rawCheck?_classify {artifact : Compact.Artifact} {cert : Cert}
+    {pc : Word} {astack : AbsStack}
+    (hCheck : rawCheck? artifact cert = true)
+    (hMem : memStack cert.table pc astack = true) :
+    pc =
+        EvmYul.UInt256.ofNat
+          (Compact.Program.codeByteLength artifact.program.code) ∨
+      ∃ located,
+        located ∈ artifact.program.code ∧
+          located.pc = pc.toNat ∧
+            rawInstrOk? artifact.program cert.table located astack =
+              true := by
+  have hEntry := rawCheck?_entry hCheck hMem
+  unfold rawEntryOk? at hEntry
+  by_cases hEnd :
+      pc =
+        EvmYul.UInt256.ofNat
+          (Compact.Program.codeByteLength artifact.program.code)
+  · exact Or.inl hEnd
+  · rw [if_neg hEnd] at hEntry
+    cases hLocated :
+        locatedAt? artifact.program pc.toNat with
+    | none =>
+        simp [hLocated] at hEntry
+    | some located =>
+        refine Or.inr ⟨located, ?_, ?_, ?_⟩
+        · exact List.mem_of_find?_eq_some hLocated
+        · have hFound := List.find?_some hLocated
+          simpa [locatedAt?] using of_decide_eq_true hFound
+        · simpa [hLocated] using hEntry
+
+theorem jumpdestAt?_sound {program : Compact.Program} {dest : Word}
+    (hJumpdest : jumpdestAt? program dest = true) :
+    ∃ located,
+      located ∈ program.code ∧
+        located.pc = dest.toNat ∧
+          located.instr = .jumpdest := by
+  unfold jumpdestAt? at hJumpdest
+  cases hLocated : locatedAt? program dest.toNat with
+  | none =>
+      simp [hLocated] at hJumpdest
+  | some located =>
+      simp only [hLocated] at hJumpdest
+      have hInstr : located.instr = .jumpdest :=
+        of_decide_eq_true hJumpdest
+      refine ⟨located, List.mem_of_find?_eq_some hLocated, ?_, hInstr⟩
+      have hFound := List.find?_some hLocated
+      simpa [locatedAt?] using of_decide_eq_true hFound
 
 end StackHeadroom
 end Assembly

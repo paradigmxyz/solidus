@@ -35,6 +35,37 @@ theorem agreesVal_none {w : Word} : AgreesVal none w := by
 
 theorem agreesVal_some {v w : Word} (h : AgreesVal (some v) w) : v = w := h
 
+theorem agreesVal_absTrackedBin
+    {opcode : PrimOp} {op : Word → Word → Word}
+    {left right : Option Word} {x y : Word}
+    (hLeft : AgreesVal left x)
+    (hRight : AgreesVal right y) :
+    AgreesVal (absTrackedBin opcode op left right) (op x y) := by
+  cases left with
+  | none =>
+      simp [absTrackedBin, AgreesVal]
+  | some left =>
+      cases right with
+      | none =>
+          simp [absTrackedBin, AgreesVal]
+      | some right =>
+          have hLeftEq : left = x := agreesVal_some hLeft
+          have hRightEq : right = y := agreesVal_some hRight
+          subst left
+          subst right
+          by_cases hTrack :
+              opcode = .eq ∨
+                (opcode = .mul ∧
+                  (x = EvmYul.UInt256.ofNat 0 ∨
+                    x = EvmYul.UInt256.ofNat 1 ∨
+                    y = EvmYul.UInt256.ofNat 0 ∨
+                    y = EvmYul.UInt256.ofNat 1)) ∨
+                (opcode = .add ∧
+                  (x = EvmYul.UInt256.ofNat 0 ∨
+                    y = EvmYul.UInt256.ofNat 0))
+          · simp [absTrackedBin, hTrack, AgreesVal]
+          · simp [absTrackedBin, hTrack, AgreesVal]
+
 theorem word_beq_eq_decide (a b : Word) :
     (a == b) = decide (a = b) := by
   cases a with | mk av =>
@@ -305,14 +336,38 @@ theorem agrees_absPrim_step
                 cases bv with
                 | none => exact agreesVal_none
                 | some b' =>
-                    have hax : a' = x := agreesVal_some hav
-                    have hby : b' = y := agreesVal_some hbv
-                    show AgreesVal (some (EvmYul.UInt256.eq a' b'))
-                      (EvmYul.UInt256.eq x y)
-                    rw [hax, hby]
-                    exact rfl
-  · simp only [absPrim?, if_neg hEqOp, hContinuing] at hAbs
+                    exact agreesVal_absTrackedBin hav hbv
+  · simp only [absPrim?, hContinuing] at hAbs
     split at hAbs
+    · -- Any binary primitive is exact when both abstract inputs are known.
+      rename_i f heq
+      injection heq with heq'
+      subst heq'
+      rw [PrimOp.step_eq_continuingStep_run hContinuing] at hPrim
+      cases astack with
+      | nil => cases hAbs
+      | cons av arest =>
+          cases arest with
+          | nil => cases hAbs
+          | cons bv arest2 =>
+              injection hAbs with hAbs'
+              subst hAbs'
+              obtain ⟨x, stail, hS1, hav, hAg1⟩ :=
+                agrees_cons_inv hAgrees
+              obtain ⟨y, srest, hS2, hbv, hAgRest⟩ :=
+                agrees_cons_inv hAg1
+              subst hS2
+              have hStackC : state.stack = x :: y :: srest := hS1
+              have hNextStack := primStep_run_bin_stack hStackC hPrim
+              rw [hNextStack]
+              refine agrees_cons ?_ hAgRest
+              cases av with
+              | none => exact agreesVal_none
+              | some a' =>
+                  cases bv with
+                  | none => exact agreesVal_none
+                  | some b' =>
+                      exact agreesVal_absTrackedBin hav hbv
     · -- DUP: cell-precise duplication
       rename_i n heq
       injection heq with heq'
