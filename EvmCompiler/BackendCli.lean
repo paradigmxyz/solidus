@@ -247,38 +247,45 @@ def resolveForSolcValidation?
       object.functions context
   some { object with dispatcher, functions, memoryContract }
 
+/-- Recover the Functions program that the verified object-image path already
+compiled. Creation objects (and any object whose code uses `datasize` /
+`dataoffset` of a child object) need the planner's layout; an empty
+`ObjectLayout` makes `resolveObjectBuiltinsIn?` return `none` on those
+builtins, which historically made `stack-diagnostics` / `stack-analysis` throw
+on Factory / CreateLifecycle / ProxyLifecycle even though `raw-image` succeeded.
+-/
+def functionsFromVerifiedObjectArtifact?
+    (object : Solidity.Frontend.Object)
+    (linkerSymbols : List
+      (Solidity.Frontend.Name × Solidity.Frontend.Word)) :
+    Option Functions.Program :=
+  (object.compileVerifiedStackObjectArtifactWithLinkerSymbols?
+      linkerSymbols).map fun artifact =>
+    artifact.codeArtifact.lower.toFunctions
+
+/-- Prefer the verified compile path's Functions program (correct child-object
+layout). Fall back to an empty-layout builtin resolve only when the full
+object-image planner declines — that path still works for pure runtime bodies
+that never reference child `datasize` / `dataoffset`. -/
 def functionsForStackDiagnostics?
     (object : Solidity.Frontend.Object)
     (linkerSymbols : List
       (Solidity.Frontend.Name × Solidity.Frontend.Word)) :
-    Option Functions.Program := do
-  let layout : Solidity.Frontend.ObjectLayout := { entries := [] }
-  let context :=
-    object.builtinContextWithLocalDataBaseAndLinkerSymbols
-      layout 0 linkerSymbols
-  let context :=
-    { context with
-      immutableValues :=
-        Solidity.Frontend.ImmutableReference.zeroEntries
-          object.loadImmutableNames }
-  let resolved ← object.resolveObjectBuiltinsIn? context
-  resolved.lowerCodeUnchecked?
-
-def verifiedStackCodeArtifact?
-    (object : Solidity.Frontend.Object)
-    (linkerSymbols : List
-      (Solidity.Frontend.Name × Solidity.Frontend.Word)) :
-    Option Solidity.Frontend.Object.VerifiedStackCodeArtifact := do
-  let layout : Solidity.Frontend.ObjectLayout := { entries := [] }
-  let context :=
-    object.builtinContextWithLocalDataBaseAndLinkerSymbols
-      layout 0 linkerSymbols
-  let context :=
-    { context with
-      immutableValues :=
-        Solidity.Frontend.ImmutableReference.zeroEntries
-          object.loadImmutableNames }
-  object.compileVerifiedStackCodeArtifactIn? context
+    Option Functions.Program :=
+  match functionsFromVerifiedObjectArtifact? object linkerSymbols with
+  | some functions => some functions
+  | none => do
+      let layout : Solidity.Frontend.ObjectLayout := { entries := [] }
+      let context :=
+        object.builtinContextWithLocalDataBaseAndLinkerSymbols
+          layout 0 linkerSymbols
+      let context :=
+        { context with
+          immutableValues :=
+            Solidity.Frontend.ImmutableReference.zeroEntries
+              object.loadImmutableNames }
+      let resolved ← object.resolveObjectBuiltinsIn? context
+      resolved.lowerCodeUnchecked?
 
 def boolString (value : Bool) : String :=
   if value then "true" else "false"
@@ -1006,7 +1013,15 @@ def runStackDiagnostics (config : Config)
     ("stack_frontend_compact_pinned_pushes=" ++
       toString
         (compactFrontendArtifact?.map (·.pinnedPushPcs.length) |>.getD 0))
-  match functionsForStackDiagnostics? program.object config.linkerSymbols with
+  -- Prefer Functions from the artifact we just built (same layout the image
+  -- path used). Avoid a second full planner run on the success path.
+  let functions? :=
+    match objectArtifact? with
+    | some artifact =>
+        some artifact.codeArtifact.lower.toFunctions
+    | none =>
+        functionsForStackDiagnostics? program.object config.linkerSymbols
+  match functions? with
   | none =>
       throw
         (IO.userError
