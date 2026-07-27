@@ -232,6 +232,27 @@ def checkImmutableLoadCoverage (selector : Solidity.RawAst.ObjectSelector)
               "; refusing to emit an image whose runtime would retain " ++
               "unpatched zero marker bytes"))
 
+/-- Bridge JSON carries no `ObjectSelector`. solc names the selected runtime
+object `…_deployed`; any other selected top-level contract object is treated
+as creation for the product deployability guards (EIP caps + immutable
+coverage). Explicit `.named` selections exist only on the raw path. -/
+def inferBridgeObjectSelector (objectName : String) :
+    Solidity.RawAst.ObjectSelector :=
+  if objectName.endsWith "_deployed" then
+    .runtime
+  else
+    .creation
+
+/-- Run the product deployability guards that the raw emit path already
+applies. Bridge `image`/`summary` historically skipped them, contradicting
+`PRODUCTION_ASSUMPTIONS.md` and allowing undeployable or unpatched-immutable
+images through the bridge CLI. -/
+def checkBridgeDeployability (object : Solidity.Frontend.Object)
+    (byteLen : Nat) (allowOversize : Bool) : IO Unit := do
+  let selector := inferBridgeObjectSelector object.name
+  checkImmutableLoadCoverage selector object
+  checkImageSizeCap selector byteLen allowOversize
+
 def resolveForSolcValidation?
     (object : Solidity.Frontend.Object)
     (computed : Solidity.Frontend.Object.ObjectComputedObjectData) :
@@ -1176,6 +1197,7 @@ def printCheck
   | none => pure ()
 
 def run (config : Config) : IO Unit := do
+  let allowOversize ← allowOversizeFromEnv
   let decodeStart ← IO.monoMsNow
   let input ← IO.FS.readFile config.bridgePath
   let program ←
@@ -1221,7 +1243,10 @@ def run (config : Config) : IO Unit := do
           | none =>
               throw (IO.userError
                 "object-image rejected: no stack-headroom certificate")
-          | some _ => printImage config.mode artifact.image
+          | some _ =>
+              checkBridgeDeployability program.object
+                artifact.image.bytes.length allowOversize
+              printImage config.mode artifact.image
       | .check =>
           let solcOk :=
             match resolveForSolcValidation? program.object artifact.computed with
