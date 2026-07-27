@@ -2740,9 +2740,7 @@ theorem controlFallthroughCons_of_compilers
           rawPoint.fallsThrough = true)
     (hPoint :
       ∀ {order rawPoint retain pointLowered pointCode middleCtx},
-        AllocationLayout.Ordering.build? targetCtx.layout
-            (StackSchedule.orderPriority pinned targetCtx.layout stmt fact) =
-          some order →
+        order.source = targetCtx.layout →
         StackSchedule.scheduleStmtFuelWithTargets targets scheduleFuel pinned
             order.target stmt fact = some rawPoint →
         AllocationLayout.RegularTransition.build? rawPoint.statementLayout
@@ -2796,7 +2794,7 @@ theorem controlFallthroughCons_of_compilers
       hWholeCode⟩ :=
     Locals.Block.compileOpen_append_components hCompile
   have hOrderSource : targetCtx.layout = order.source :=
-    (AllocationLayout.Ordering.build?_source hOrderBuild).symm
+    hOrderBuild.symm
   obtain ⟨orderArtifact⟩ :=
     StackTransitionCompilation.Ordering.compileArtifact order hOrderSource
   have hOrderPair :=
@@ -2859,9 +2857,7 @@ theorem controlFallthroughConsAt_of_compilers
           rawPoint.fallsThrough = true)
     (hPoint :
       ∀ {order rawPoint retain pointLowered pointCode middleCtx},
-        AllocationLayout.Ordering.build? targetCtx.layout
-            (StackSchedule.orderPriority pinned targetCtx.layout stmt fact) =
-          some order →
+        order.source = targetCtx.layout →
         StackSchedule.scheduleStmtFuelWithTargets targets scheduleFuel pinned
             order.target stmt fact = some rawPoint →
         AllocationLayout.RegularTransition.build? rawPoint.statementLayout
@@ -2922,7 +2918,7 @@ theorem controlFallthroughConsAt_of_compilers
       hWholeCode⟩ :=
     Locals.Block.compileOpen_append_components hCompile
   have hOrderSource : targetCtx.layout = order.source :=
-    (AllocationLayout.Ordering.build?_source hOrderBuild).symm
+    hOrderBuild.symm
   obtain ⟨orderArtifact⟩ :=
     StackTransitionCompilation.Ordering.compileArtifact order hOrderSource
   have hOrderPair :=
@@ -2992,9 +2988,7 @@ theorem compiledNonfallPoint_of_compilers
           rawPoint.fallsThrough = false)
     (hPoint :
       ∀ {order rawPoint pointLowered pointCode middleCtx},
-        AllocationLayout.Ordering.build? targetCtx.layout
-            (StackSchedule.orderPriority pinned targetCtx.layout stmt fact) =
-          some order →
+        order.source = targetCtx.layout →
         StackSchedule.scheduleStmtFuelWithTargets targets scheduleFuel pinned
             order.target stmt fact = some rawPoint →
         StackLowering.lowerPointFuel lowerFuel lowerCtx stmt
@@ -3028,7 +3022,7 @@ theorem compiledNonfallPoint_of_compilers
       hWholeCode⟩ :=
     Locals.Block.compileOpen_append_components hCompile
   have hOrderSource : targetCtx.layout = order.source :=
-    (AllocationLayout.Ordering.build?_source hOrderBuild).symm
+    hOrderBuild.symm
   obtain ⟨orderArtifact⟩ :=
     StackTransitionCompilation.Ordering.compileArtifact order hOrderSource
   have hOrderPair :=
@@ -3690,7 +3684,7 @@ theorem assignCons_of_compilers
       simpa [StackLowering.pointAccess?, Locals.Ctx.withLayout, hRawBefore]
         using hAccess
     have hOrderSource : targetCtx.layout = order.source :=
-      (AllocationLayout.Ordering.build?_source hOrderBuild).symm
+      hOrderBuild.symm
     have hOrderedNodup : order.target.Nodup :=
       order.target_nodup (by rw [← hOrderSource]; exact hNodup)
     exact
@@ -3802,7 +3796,7 @@ theorem callCons_of_compilers
       simpa [Locals.Ctx.withLayout] using
         hRawStatement.symm.trans hBuiltSource
     have hOrderSource : targetCtx.layout = order.source :=
-      (AllocationLayout.Ordering.build?_source hOrderBuild).symm
+      hOrderBuild.symm
     have hOrderedNodup : order.target.Nodup :=
       order.target_nodup (by rw [← hOrderSource]; exact hNodup)
     have hCallAccess :
@@ -3947,7 +3941,7 @@ theorem callConsAtSucc_of_compilers
       simpa [Locals.Ctx.withLayout] using
         hRawStatement.symm.trans hBuiltSource
     have hOrderSource : targetCtx.layout = order.source :=
-      (AllocationLayout.Ordering.build?_source hOrderBuild).symm
+      hOrderBuild.symm
     have hOrderedNodup : order.target.Nodup :=
       order.target_nodup (by rw [← hOrderSource]; exact hNodup)
     have hCallAccess :
@@ -4061,7 +4055,7 @@ theorem callConsAtOne_of_compilers
       simpa [Locals.Ctx.withLayout] using
         hRawStatement.symm.trans hBuiltSource
     have hOrderSource : targetCtx.layout = order.source :=
-      (AllocationLayout.Ordering.build?_source hOrderBuild).symm
+      hOrderBuild.symm
     have hOrderedNodup : order.target.Nodup :=
       order.target_nodup (by rw [← hOrderSource]; exact hNodup)
     obtain ⟨compiledRetain, hCompiledRetain, hCompiled⟩ :=
@@ -4791,7 +4785,7 @@ theorem regularLeafList_of_compilers
             Option.some.inj (hLowerRetain.symm.trans hPointRetain)
           subst lowerRetain
           have hOrderSource : targetCtx.layout = order.source :=
-            (AllocationLayout.Ordering.build?_source hOrderBuild).symm
+            hOrderBuild.symm
           have hAccess :
               StackAccess.Expr.check? order.target 0 expr = some () := by
             simpa [StackLowering.pointAccess?, hBefore] using hPointAccess
@@ -4924,7 +4918,7 @@ theorem regularLeafList_of_compilers
             Option.some.inj (hLowerRetain.symm.trans hPointRetain)
           subst lowerRetain
           have hOrderSource : targetCtx.layout = order.source :=
-            (AllocationLayout.Ordering.build?_source hOrderBuild).symm
+            hOrderBuild.symm
           have hAccess :
               StackAccess.Expr.check? order.target 0 value = some () := by
             simpa [StackLowering.pointAccess?, hBefore] using hPointAccess
@@ -5059,7 +5053,7 @@ theorem regularLeafList_of_compilers
             Option.some.inj (hLowerRetain.symm.trans hPointRetain)
           subst lowerRetain
           have hOrderSource : targetCtx.layout = order.source :=
-            (AllocationLayout.Ordering.build?_source hOrderBuild).symm
+            hOrderBuild.symm
           have hAccess :
               StackAccess.assign? order.target name value = some () := by
             simpa [StackLowering.pointAccess?, hBefore] using hPointAccess
@@ -5298,7 +5292,7 @@ theorem brkList_of_compilers
       lowered = order.statements ++ (exit.statements ++ [.brk]) := by
     simpa [StackLowering.exitStmts, hExitEq, List.append_assoc] using hLowered
   have hOrderSource : targetCtx.layout = order.source :=
-    (AllocationLayout.Ordering.build?_source hOrderBuild).symm
+    hOrderBuild.symm
   have hExitSource : order.target = exit.source :=
     (AllocationLayout.Join.build?_endpoints hExitBuild).1.symm
   rw [hLowered'] at hCompile
@@ -5427,7 +5421,7 @@ theorem contList_of_compilers
       lowered = order.statements ++ (exit.statements ++ [.cont]) := by
     simpa [StackLowering.exitStmts, hExitEq, List.append_assoc] using hLowered
   have hOrderSource : targetCtx.layout = order.source :=
-    (AllocationLayout.Ordering.build?_source hOrderBuild).symm
+    hOrderBuild.symm
   have hExitSource : order.target = exit.source :=
     (AllocationLayout.Join.build?_endpoints hExitBuild).1.symm
   rw [hLowered'] at hCompile
@@ -5545,7 +5539,7 @@ theorem terminalList_of_compilers
     Option.some.inj (hLowerOrder.symm.trans hPointOrder)
   subst lowerOrder
   have hOrderSource : targetCtx.layout = order.source :=
-    (AllocationLayout.Ordering.build?_source hOrderBuild).symm
+    hOrderBuild.symm
   rw [hLowered] at hCompile
   obtain
       ⟨orderCode, orderedCtx, bodyCode, hOrderCompile, hBodyCompile,
@@ -5649,7 +5643,7 @@ theorem terminalArgsList_of_compilers
     Option.some.inj (hLowerOrder.symm.trans hPointOrder)
   subst lowerOrder
   have hOrderSource : targetCtx.layout = order.source :=
-    (AllocationLayout.Ordering.build?_source hOrderBuild).symm
+    hOrderBuild.symm
   have hAccess :
       StackAccess.ExprSeq.check? order.target 0 args = some () := by
     simpa [StackLowering.pointAccess?, hBefore] using hPointAccess

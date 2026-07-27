@@ -218,6 +218,46 @@ def orderPriority (pinned : LiveSet) (layout : Locals.Layout) (stmt : Stmt)
         conservativeOrFallback
   | none => conservativeOrFallback
 
+/--
+The last private-valid bounded ordering policy. Whole-list scheduling retries
+with this priority when an optimized local choice makes any later statement or
+structured child unschedulable.
+-/
+def conservativeOrderPriority (pinned : LiveSet) (layout : Locals.Layout)
+    (stmt : Stmt) (facts : AllocationLivenessFacts.Point) : List Name :=
+  let allDying :=
+    layout.filter fun name => decide (name ∉ required pinned facts.liveAfter)
+  let reachableDying :=
+    (allDying.filter (accessible layout)).reverse
+  let preferredImmediate :=
+    if (StackAccess.Stmt.check? layout stmt).isSome then
+      match stmt with
+      | .let_ _ _ => reachableDying
+      | _ => []
+    else
+      StackAccess.Stmt.accessPriority stmt ++ reachableDying
+  let boundedFuture :=
+    (facts.nextUse.filter fun name =>
+      accessible layout name &&
+        decide (name ∈ facts.liveAfter) &&
+        match Locals.Layout.lookupDepth? name layout with
+        | some depth =>
+            decide (11 < facts.liveBefore.card) ||
+              decide (11 < facts.liveAfter.card) ||
+              decide (futurePromotionDepth < depth)
+        | none => false).take 16
+  let preferred :=
+    normalizePriority layout (preferredImmediate ++ boundedFuture)
+  let fallback :=
+    normalizePriority layout (StackAccess.Stmt.accessPriority stmt ++ allDying)
+  match AllocationLayout.Ordering.build? layout preferred with
+  | some order =>
+      if (StackAccess.Stmt.check? order.target stmt).isSome then
+        preferred
+      else
+        fallback
+  | none => fallback
+
 def covers (layout : Locals.Layout) (live : LiveSet) : Prop :=
   live ⊆ layoutSet layout
 
@@ -253,31 +293,42 @@ mutual
       List Stmt → List AllocationLivenessFacts.Point →
         Option (List Point × Locals.Layout)
     | [], [] => some ([], layout)
-    | stmt :: rest, facts :: restFacts => do
-        let order ← Ordering.build? layout (orderPriority pinned layout stmt facts)
-        let orderedLayout := order.target
-        if covers orderedLayout (residentBefore stmt facts) then
-        let point ←
-          scheduleStmtFuelWithTargets targets fuel pinned orderedLayout
-            stmt facts
-        let point := { point with order? := some order }
-        if point.fallsThrough then
-          let afterDemand :=
-            required pinned (nextLive facts.liveAfter rest restFacts)
-          if covers point.statementLayout afterDemand then
-          let retain ←
-            RegularTransition.build? point.statementLayout afterDemand
-          let point := { point with retain? := some retain }
-          let (tail, finalLayout) ←
-            scheduleStmtListFuelWithTargets targets fuel pinned retain.target
-              rest restFacts
-          some (point :: tail, finalLayout)
+    | stmt :: rest, facts :: restFacts =>
+        let attempt (priority : List Name) :
+            Option (List Point × Locals.Layout) := do
+          let order ← Ordering.build? layout priority
+          let orderedLayout := order.target
+          if covers orderedLayout (residentBefore stmt facts) then
+          let point ←
+            scheduleStmtFuelWithTargets targets fuel pinned orderedLayout
+              stmt facts
+          let point := { point with order? := some order }
+          if point.fallsThrough then
+            let afterDemand :=
+              required pinned (nextLive facts.liveAfter rest restFacts)
+            if covers point.statementLayout afterDemand then
+            let retain ←
+              RegularTransition.build? point.statementLayout afterDemand
+            let point := { point with retain? := some retain }
+            let (tail, finalLayout) ←
+              scheduleStmtListFuelWithTargets targets fuel pinned retain.target
+                rest restFacts
+            some (point :: tail, finalLayout)
+            else
+              none
+          else
+            some ({ point with retain? := none } :: [], point.statementLayout)
           else
             none
-        else
-          some ({ point with retain? := none } :: [], point.statementLayout)
-        else
-          none
+        match attempt (orderPriority pinned layout stmt facts) with
+        | some result => some result
+        | none =>
+            let conservative :=
+              conservativeOrderPriority pinned layout stmt facts
+            if conservative = orderPriority pinned layout stmt facts then
+              none
+            else
+              attempt conservative
     | _, _ => none
 
   def scheduleCaseRegionsFuelWithTargets
@@ -604,8 +655,8 @@ theorem scheduleStmtListFuelWithTargets_cons_components
       scheduleStmtListFuelWithTargets targets fuel pinned layout (stmt :: rest)
           (facts :: restFacts) = some (scheduledPoints, finalLayout)) :
     ∃ order rawPoint,
-      Ordering.build? layout (orderPriority pinned layout stmt facts) = some order ∧
-      scheduleStmtFuelWithTargets targets fuel pinned order.target stmt facts =
+      order.source = layout ∧
+        scheduleStmtFuelWithTargets targets fuel pinned order.target stmt facts =
           some rawPoint ∧
         ((rawPoint.fallsThrough = true ∧
             ∃ retain tail tailFinal,
@@ -623,41 +674,120 @@ theorem scheduleStmtListFuelWithTargets_cons_components
             scheduledPoints =
               [{ rawPoint with order? := some order, retain? := none }] ∧
             finalLayout = rawPoint.statementLayout)) := by
+  let attempt (priority : List Name) :
+      Option (List Point × Locals.Layout) := do
+    let order ← Ordering.build? layout priority
+    let orderedLayout := order.target
+    if covers orderedLayout (residentBefore stmt facts) then
+    let point ←
+      scheduleStmtFuelWithTargets targets fuel pinned orderedLayout stmt facts
+    let point := { point with order? := some order }
+    if point.fallsThrough then
+      let afterDemand :=
+        required pinned (nextLive facts.liveAfter rest restFacts)
+      if covers point.statementLayout afterDemand then
+      let retain ←
+        RegularTransition.build? point.statementLayout afterDemand
+      let point := { point with retain? := some retain }
+      let (tail, finalLayout) ←
+        scheduleStmtListFuelWithTargets targets fuel pinned retain.target
+          rest restFacts
+      some (point :: tail, finalLayout)
+      else
+        none
+    else
+      some ({ point with retain? := none } :: [], point.statementLayout)
+    else
+      none
   simp only [scheduleStmtListFuelWithTargets] at hSchedule
-  obtain ⟨order, hOrder, hAfterOrder⟩ :=
-    Option.bind_eq_some_iff.mp hSchedule
-  by_cases hCover : covers order.target (residentBefore stmt facts)
-  · rw [if_pos hCover] at hAfterOrder
-    obtain ⟨rawPoint, hPoint, hAfterPoint⟩ :=
-      Option.bind_eq_some_iff.mp hAfterOrder
-    refine ⟨order, rawPoint, hOrder, hPoint, ?_⟩
-    cases hFalls : rawPoint.fallsThrough with
-    | false =>
-        rw [hFalls] at hAfterPoint
-        have hResult := Option.some.inj hAfterPoint
-        injection hResult with hPoints hFinal
-        exact .inr ⟨rfl, hPoints.symm, hFinal.symm⟩
-    | true =>
-        rw [hFalls] at hAfterPoint
-        by_cases hAfterCover :
-            covers rawPoint.statementLayout
-              (required pinned
-                (nextLive facts.liveAfter rest restFacts))
-        · rw [if_pos hAfterCover] at hAfterPoint
-          obtain ⟨retain, hRetain, hAfterRetain⟩ :=
-            Option.bind_eq_some_iff.mp hAfterPoint
-          obtain ⟨result, hTail, hResult⟩ :=
-            Option.bind_eq_some_iff.mp hAfterRetain
-          rcases result with ⟨tail, tailFinal⟩
-          have hPair := Option.some.inj hResult
-          injection hPair with hPoints hFinal
-          exact
-            .inl ⟨rfl, retain, tail, tailFinal, hRetain, hTail,
-              hPoints.symm, hFinal.symm⟩
-        · rw [if_neg hAfterCover] at hAfterPoint
-          contradiction
-  · rw [if_neg hCover] at hAfterOrder
-    contradiction
+  change
+    (match attempt (orderPriority pinned layout stmt facts) with
+      | some result => some result
+      | none =>
+          let conservative :=
+            conservativeOrderPriority pinned layout stmt facts
+          if conservative = orderPriority pinned layout stmt facts then
+            none
+          else
+            attempt conservative) =
+      some (scheduledPoints, finalLayout) at hSchedule
+  have invert {priority : List Name}
+      (hAttempt :
+        attempt priority = some (scheduledPoints, finalLayout)) :
+      ∃ order rawPoint,
+        order.source = layout ∧
+          scheduleStmtFuelWithTargets targets fuel pinned order.target stmt facts =
+            some rawPoint ∧
+          ((rawPoint.fallsThrough = true ∧
+              ∃ retain tail tailFinal,
+                RegularTransition.build? rawPoint.statementLayout
+                    (required pinned
+                      (nextLive facts.liveAfter rest restFacts)) =
+                  some retain ∧
+                scheduleStmtListFuelWithTargets targets fuel pinned
+                    retain.target rest restFacts = some (tail, tailFinal) ∧
+                scheduledPoints =
+                  { rawPoint with order? := some order, retain? := some retain } ::
+                    tail ∧
+                finalLayout = tailFinal) ∨
+            (rawPoint.fallsThrough = false ∧
+              scheduledPoints =
+                [{ rawPoint with order? := some order, retain? := none }] ∧
+              finalLayout = rawPoint.statementLayout)) := by
+    dsimp only [attempt] at hAttempt
+    obtain ⟨order, hOrder, hAfterOrder⟩ :=
+      Option.bind_eq_some_iff.mp hAttempt
+    by_cases hCover : covers order.target (residentBefore stmt facts)
+    · rw [if_pos hCover] at hAfterOrder
+      obtain ⟨rawPoint, hPoint, hAfterPoint⟩ :=
+        Option.bind_eq_some_iff.mp hAfterOrder
+      refine
+        ⟨order, rawPoint, Ordering.build?_source hOrder, hPoint, ?_⟩
+      cases hFalls : rawPoint.fallsThrough with
+      | false =>
+          rw [hFalls] at hAfterPoint
+          have hResult := Option.some.inj hAfterPoint
+          injection hResult with hPoints hFinal
+          exact .inr ⟨rfl, hPoints.symm, hFinal.symm⟩
+      | true =>
+          rw [hFalls] at hAfterPoint
+          by_cases hAfterCover :
+              covers rawPoint.statementLayout
+                (required pinned
+                  (nextLive facts.liveAfter rest restFacts))
+          · rw [if_pos hAfterCover] at hAfterPoint
+            obtain ⟨retain, hRetain, hAfterRetain⟩ :=
+              Option.bind_eq_some_iff.mp hAfterPoint
+            obtain ⟨result, hTail, hResult⟩ :=
+              Option.bind_eq_some_iff.mp hAfterRetain
+            rcases result with ⟨tail, tailFinal⟩
+            have hPair := Option.some.inj hResult
+            injection hPair with hPoints hFinal
+            exact
+              .inl ⟨rfl, retain, tail, tailFinal, hRetain, hTail,
+                hPoints.symm, hFinal.symm⟩
+          · rw [if_neg hAfterCover] at hAfterPoint
+            contradiction
+    · rw [if_neg hCover] at hAfterOrder
+      contradiction
+  cases hPrimary :
+      attempt (orderPriority pinned layout stmt facts) with
+  | none =>
+      rw [hPrimary] at hSchedule
+      by_cases hSame :
+          conservativeOrderPriority pinned layout stmt facts =
+            orderPriority pinned layout stmt facts
+      · rw [if_pos hSame] at hSchedule
+        contradiction
+      · rw [if_neg hSame] at hSchedule
+        exact invert hSchedule
+  | some result =>
+      rw [hPrimary] at hSchedule
+      have hResult :
+          result = (scheduledPoints, finalLayout) :=
+        Option.some.inj hSchedule
+      subst result
+      exact invert hPrimary
 
 theorem scheduleStmtListFuelWithTargets_cons_fallsThrough_components
     {targets : ControlTargets} {fuel : Nat}
@@ -675,7 +805,7 @@ theorem scheduleStmtListFuelWithTargets_cons_fallsThrough_components
             some rawPoint →
           rawPoint.fallsThrough = true) :
     ∃ order rawPoint retain tailFinal,
-      Ordering.build? layout (orderPriority pinned layout stmt facts) = some order ∧
+      order.source = layout ∧
         scheduleStmtFuelWithTargets targets fuel pinned order.target stmt facts =
           some rawPoint ∧
         rawPoint.fallsThrough = true ∧
@@ -720,7 +850,7 @@ theorem scheduleStmtListFuelWithTargets_cons_nonfallthrough_components
             some rawPoint →
           rawPoint.fallsThrough = false) :
     ∃ order rawPoint,
-      Ordering.build? layout (orderPriority pinned layout stmt facts) = some order ∧
+      order.source = layout ∧
         scheduleStmtFuelWithTargets targets fuel pinned order.target stmt facts =
           some rawPoint ∧
         rawPoint.fallsThrough = false ∧
@@ -748,7 +878,7 @@ theorem scheduleStmtListFuel_cons_components
       scheduleStmtListFuel fuel pinned layout (stmt :: rest)
           (facts :: restFacts) = some (scheduledPoints, finalLayout)) :
     ∃ order rawPoint,
-      Ordering.build? layout (orderPriority pinned layout stmt facts) = some order ∧
+      order.source = layout ∧
       scheduleStmtFuel fuel pinned order.target stmt facts = some rawPoint ∧
         ((rawPoint.fallsThrough = true ∧
             ∃ retain tail tailFinal,
@@ -1794,7 +1924,7 @@ theorem scheduleStmtListFuelWithTargets_finalLayout_nodup
             scheduleStmtListFuelWithTargets_cons_components hSchedule
           have hOrderedNodup : order.target.Nodup :=
             order.target_nodup (by
-              rw [Ordering.build?_source hOrder]
+              rw [hOrder]
               exact hNodup)
           have hPointNodup : rawPoint.statementLayout.Nodup :=
             scheduleStmtFuelWithTargets_statementLayout_nodup hOrderedNodup
@@ -1821,7 +1951,7 @@ theorem scheduleStmtListFuelWithTargets_brk_components
           (.brk :: rest) (facts :: restFacts) =
         some (point :: points, finalLayout)) :
     ∃ order exit,
-      Ordering.build? layout (orderPriority pinned layout .brk facts) = some order ∧
+      order.source = layout ∧
         Join.build? order.target target = some exit ∧
         point.order? = some order ∧ point.beforeLayout = order.target ∧
         point.statementLayout = target ∧ point.exit? = some exit ∧
@@ -1862,7 +1992,7 @@ theorem scheduleStmtListFuelWithTargets_cont_components
           (.cont :: rest) (facts :: restFacts) =
         some (point :: points, finalLayout)) :
     ∃ order exit,
-      Ordering.build? layout (orderPriority pinned layout .cont facts) = some order ∧
+      order.source = layout ∧
         Join.build? order.target target = some exit ∧
         point.order? = some order ∧ point.beforeLayout = order.target ∧
         point.statementLayout = target ∧ point.exit? = some exit ∧
@@ -1901,8 +2031,7 @@ theorem scheduleStmtListFuel_expr_components
       scheduleStmtListFuel fuel pinned layout (.expr expr :: rest)
           (facts :: restFacts) = some (point :: points, finalLayout)) :
     ∃ order retain tailFinal,
-      Ordering.build? layout (orderPriority pinned layout (.expr expr) facts) =
-          some order ∧
+      order.source = layout ∧
         point.order? = some order ∧
         point.beforeLayout = order.target ∧
         point.statementLayout = order.target ∧
@@ -1947,8 +2076,7 @@ theorem scheduleStmtListFuel_let_components
       scheduleStmtListFuel fuel pinned layout (.let_ name value :: rest)
           (facts :: restFacts) = some (point :: points, finalLayout)) :
     ∃ order retain tailFinal,
-      Ordering.build? layout (orderPriority pinned layout (.let_ name value) facts) =
-          some order ∧
+      order.source = layout ∧
         point.order? = some order ∧
         name ∉ order.target ∧ point.beforeLayout = order.target ∧
         point.statementLayout = name :: order.target ∧
@@ -1992,8 +2120,7 @@ theorem scheduleStmtListFuel_assign_components
       scheduleStmtListFuel fuel pinned layout (.assign name value :: rest)
           (facts :: restFacts) = some (point :: points, finalLayout)) :
     ∃ order retain tailFinal,
-      Ordering.build? layout (orderPriority pinned layout (.assign name value) facts) =
-          some order ∧
+      order.source = layout ∧
         point.order? = some order ∧
         point.beforeLayout = order.target ∧
         point.statementLayout = order.target ∧
@@ -2038,8 +2165,7 @@ theorem scheduleStmtListFuel_terminal_components
       scheduleStmtListFuel fuel pinned layout (.terminal kind :: rest)
           (facts :: restFacts) = some (scheduledPoints, finalLayout)) :
     ∃ order point,
-      Ordering.build? layout (orderPriority pinned layout (.terminal kind) facts) =
-          some order ∧
+      order.source = layout ∧
         scheduledPoints = [point] ∧ point.order? = some order ∧
         point.beforeLayout = order.target ∧
         point.statementLayout = order.target ∧ point.retain? = none ∧
@@ -2073,8 +2199,7 @@ theorem scheduleStmtListFuel_terminalArgs_components
           (.terminalArgs kind args :: rest) (facts :: restFacts) =
         some (scheduledPoints, finalLayout)) :
     ∃ order point,
-      Ordering.build? layout
-          (orderPriority pinned layout (.terminalArgs kind args) facts) = some order ∧
+      order.source = layout ∧
         scheduledPoints = [point] ∧ point.order? = some order ∧
         point.beforeLayout = order.target ∧
         point.statementLayout = order.target ∧ point.retain? = none ∧
