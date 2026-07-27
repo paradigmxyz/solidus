@@ -162,6 +162,47 @@ def eip170RuntimeCap : Nat := 24576
 /-- EIP-3860 initcode size cap (bytes). -/
 def eip3860InitcodeCap : Nat := 49152
 
+/-- Whether `byteLen` exceeds the deployability cap for `selector`. Named
+objects are uncapped (same policy as `checkImageSizeCap`). -/
+def imageExceedsDeployabilityCapWith
+    (selector : Solidity.RawAst.ObjectSelector) (byteLen eip170Cap eip3860Cap : Nat) :
+    Bool :=
+  match selector with
+  | .runtime => decide (byteLen > eip170Cap)
+  | .creation => decide (byteLen > eip3860Cap)
+  | .named _ => false
+
+example :
+    imageExceedsDeployabilityCapWith .runtime (eip170RuntimeCap + 1)
+      eip170RuntimeCap eip3860InitcodeCap = true := rfl
+example :
+    imageExceedsDeployabilityCapWith .runtime eip170RuntimeCap
+      eip170RuntimeCap eip3860InitcodeCap = false := rfl
+example :
+    imageExceedsDeployabilityCapWith .creation (eip3860InitcodeCap + 1)
+      eip170RuntimeCap eip3860InitcodeCap = true := rfl
+example :
+    imageExceedsDeployabilityCapWith (.named "Lib") 999999
+      eip170RuntimeCap eip3860InitcodeCap = false := rfl
+
+/-- Optional test/harness override of the EIP-170 runtime cap. -/
+def eip170RuntimeCapFromEnv : IO Nat := do
+  match ← IO.getEnv "EVM_COMPILER_EIP170_CAP" with
+  | none => pure eip170RuntimeCap
+  | some raw =>
+      match raw.trim.toNat? with
+      | some n => pure n
+      | none => pure eip170RuntimeCap
+
+/-- Optional test/harness override of the EIP-3860 initcode cap. -/
+def eip3860InitcodeCapFromEnv : IO Nat := do
+  match ← IO.getEnv "EVM_COMPILER_EIP3860_CAP" with
+  | none => pure eip3860InitcodeCap
+  | some raw =>
+      match raw.trim.toNat? with
+      | some n => pure n
+      | none => pure eip3860InitcodeCap
+
 /-- Whether the environment requests the oversize opt-out. Mirrors the
 `env_flag_default` truthiness used by the Python harness glue. -/
 def allowOversizeFromEnv : IO Bool := do
@@ -179,18 +220,21 @@ admission. Runtime images larger than the EIP-170 cap and creation initcode
 larger than the EIP-3860 cap cannot be deployed on mainnet, so the CLI refuses
 to emit them unless the caller opts out (`EVM_COMPILER_ALLOW_OVERSIZE`). Named
 objects carry no creation/runtime classification, so no cap is applied to
-them. -/
+them. Caps default to 24576 / 49152 and may be overridden via
+`EVM_COMPILER_EIP170_CAP` / `EVM_COMPILER_EIP3860_CAP` for harness tests. -/
 def checkImageSizeCap (selector : Solidity.RawAst.ObjectSelector)
     (byteLen : Nat) (allowOversize : Bool) : IO Unit := do
+  let eip170Cap ← eip170RuntimeCapFromEnv
+  let eip3860Cap ← eip3860InitcodeCapFromEnv
   let spec? : Option (Nat × String × String × Bool) :=
     match selector with
-    | .runtime => some (eip170RuntimeCap, "runtime code", "EIP-170", false)
-    | .creation => some (eip3860InitcodeCap, "creation initcode", "EIP-3860", true)
+    | .runtime => some (eip170Cap, "runtime code", "EIP-170", false)
+    | .creation => some (eip3860Cap, "creation initcode", "EIP-3860", true)
     | .named _ => none
   match spec? with
   | none => pure ()
   | some (cap, what, eip, isCreation) =>
-      if byteLen > cap then
+      if imageExceedsDeployabilityCapWith selector byteLen eip170Cap eip3860Cap then
         let over := byteLen - cap
         let core :=
           "compiled " ++ what ++ " is " ++ toString byteLen ++
