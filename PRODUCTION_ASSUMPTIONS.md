@@ -399,7 +399,9 @@ EVM frame semantics:
   constructor arguments appended by the deployer). The check is a deployability
   backstop, not a compiler-correctness claim, and can be opted out of with
   `EVM_COMPILER_ALLOW_OVERSIZE=1` (used by the Arena benchmark harness, which
-  deliberately deploys oversized contracts);
+  deliberately deploys oversized contracts). For harness/regression tests the
+  numeric caps themselves may be overridden with `EVM_COMPILER_EIP170_CAP` /
+  `EVM_COMPILER_EIP3860_CAP` (bytes); when unset they remain 24576 / 49152;
 - compiler totality, acceptance of every valid Yul program, support for every
   fork or dialect, and optimization quality;
 - verification of solc's upstream Solidity-to-Yul transformation when Yul is
