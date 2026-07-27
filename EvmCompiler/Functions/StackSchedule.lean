@@ -117,16 +117,12 @@ def accessible (layout : Locals.Layout) (name : Name) : Bool :=
   | none => false
 
 /--
-Future-only values do not need eager promotion while they remain comfortably
-inside the EVM access window. Keeping five slots of headroom avoids the large
-per-statement permutation churn of promoting every live future value, while
-still moving values that are approaching the `DUP16`/`SWAP16` boundary.
-At boundaries with twelve or more live values, retain the eager policy. This
-also preserves headroom for multi-word return packing, where earlier pushes
-increase the effective depth of later return values.
+Demand-driven stack ordering with an exact declaration-boundary guard.
+Future-only locals normally keep their existing order. Before a declaration
+pushes a new local, however, preserve the next-use window if the ordering
+needed by the current statement would leave a future value at depth seventeen:
+the push would otherwise strand that value below `SWAP16`.
 -/
-def futurePromotionDepth : Nat := 12
-
 def orderPriority (pinned : LiveSet) (layout : Locals.Layout) (stmt : Stmt)
     (facts : AllocationLivenessFacts.Point) : List Name :=
   let allDying :=
@@ -140,19 +136,29 @@ def orderPriority (pinned : LiveSet) (layout : Locals.Layout) (stmt : Stmt)
       | _ => []
     else
       StackAccess.Stmt.accessPriority stmt ++ reachableDying
-  let boundedFuture :=
+  let immediate :=
+    ((AllocationLivenessFacts.stableUnique preferredImmediate).filter
+      fun name => decide (name ∈ layout)).take 16
+  let currentLayout :=
+    match AllocationLayout.Ordering.build? layout immediate with
+    | some order => order.target
+    | none => layout
+  let future :=
     (facts.nextUse.filter fun name =>
-      accessible layout name &&
-        decide (name ∈ facts.liveAfter) &&
-        match Locals.Layout.lookupDepth? name layout with
-        | some depth =>
-            decide (11 < facts.liveBefore.card) ||
-              decide (11 < facts.liveAfter.card) ||
-              decide (futurePromotionDepth < depth)
-        | none => false).take 16
+      accessible currentLayout name &&
+        decide (name ∈ facts.liveAfter)).take 16
+  let preserveFutureWindow :=
+    match stmt with
+    | .let_ _ _ =>
+        future.any fun name =>
+          match Locals.Layout.lookupDepth? name currentLayout with
+          | some depth => depth = 17
+          | none => false
+    | _ => false
   let preferred :=
     ((AllocationLivenessFacts.stableUnique
-        (preferredImmediate ++ boundedFuture)).filter
+        (preferredImmediate ++
+          if preserveFutureWindow then future else [])).filter
           fun name => decide (name ∈ layout)).take 16
   let fallback :=
     ((AllocationLivenessFacts.stableUnique
