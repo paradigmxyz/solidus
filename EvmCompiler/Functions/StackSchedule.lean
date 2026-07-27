@@ -116,13 +116,56 @@ def accessible (layout : Locals.Layout) (name : Name) : Bool :=
   | some depth => depth ≤ 17
   | none => false
 
+def normalizePriority (layout : Locals.Layout) (names : List Name) :
+    List Name :=
+  ((AllocationLivenessFacts.stableUnique names).filter
+    fun name => decide (name ∈ layout)).take 16
+
+def boundaryGrowth : Stmt → Nat
+  | .let_ _ _ => 1
+  | _ => 0
+
+def firstStranded? (layout : Locals.Layout) (growth : Nat) :
+    List Name → Option Name
+  | [] => none
+  | name :: rest =>
+      match Locals.Layout.lookupDepth? name layout with
+      | some depth =>
+          if depth + growth ≤ 17 then firstStranded? layout growth rest
+          else some name
+      | none => some name
+
 /--
-Demand-driven stack ordering with an exact declaration-boundary guard.
-Future-only locals normally keep their existing order. Before a declaration
-pushes a new local, however, preserve the next-use window if the ordering
-needed by the current statement would leave a future value at depth seventeen:
-the push would otherwise strand that value below `SWAP16`.
+Add only next-use locals that the current ordering would strand below the EVM
+access window. Each added name is promoted by the checked ordering builder;
+iteration handles a promotion exposing a different boundary value. `none`
+means the exact repair made no progress within the finite top-16 window.
 -/
+def protectFutureWindowFuel : Nat → Locals.Layout → Nat →
+    List Name → List Name → Option (List Name)
+  | 0, _, _, _, _ => none
+  | fuel + 1, layout, growth, future, preferred =>
+      let priority := normalizePriority layout preferred
+      match AllocationLayout.Ordering.build? layout priority with
+      | none => none
+      | some order =>
+          match firstStranded? order.target growth future with
+          | none => some preferred
+          | some name =>
+              let repaired := name :: preferred
+              if normalizePriority layout repaired = priority then none
+              else
+                protectFutureWindowFuel fuel layout growth future repaired
+
+/--
+Demand-driven stack ordering with a checked access-window fixpoint.
+Future-only locals keep their existing order unless the current permutation
+would make one of the next sixteen uses unrecoverable. Declarations account
+for their one-word growth. If the exact repair cannot fit, retain the
+previously private-valid bounded policy as a fail-closed fallback.
+-/
+def futurePromotionDepth : Nat := 12
+
 def orderPriority (pinned : LiveSet) (layout : Locals.Layout) (stmt : Stmt)
     (facts : AllocationLivenessFacts.Point) : List Name :=
   let allDying :=
@@ -136,41 +179,44 @@ def orderPriority (pinned : LiveSet) (layout : Locals.Layout) (stmt : Stmt)
       | _ => []
     else
       StackAccess.Stmt.accessPriority stmt ++ reachableDying
-  let immediate :=
-    ((AllocationLivenessFacts.stableUnique preferredImmediate).filter
-      fun name => decide (name ∈ layout)).take 16
-  let currentLayout :=
-    match AllocationLayout.Ordering.build? layout immediate with
-    | some order => order.target
-    | none => layout
   let future :=
     (facts.nextUse.filter fun name =>
-      accessible currentLayout name &&
+      accessible layout name &&
         decide (name ∈ facts.liveAfter)).take 16
-  let preserveFutureWindow :=
-    match stmt with
-    | .let_ _ _ =>
-        future.any fun name =>
-          match Locals.Layout.lookupDepth? name currentLayout with
-          | some depth => depth = 17
-          | none => false
-    | _ => false
+  let conservativeFuture :=
+    (facts.nextUse.filter fun name =>
+      accessible layout name &&
+        decide (name ∈ facts.liveAfter) &&
+        match Locals.Layout.lookupDepth? name layout with
+        | some depth =>
+            decide (11 < facts.liveBefore.card) ||
+              decide (11 < facts.liveAfter.card) ||
+              decide (futurePromotionDepth < depth)
+        | none => false).take 16
+  let guardedPreferred :=
+    (protectFutureWindowFuel 17 layout (boundaryGrowth stmt) future
+      preferredImmediate).getD (preferredImmediate ++ conservativeFuture)
   let preferred :=
-    ((AllocationLivenessFacts.stableUnique
-        (preferredImmediate ++
-          if preserveFutureWindow then future else [])).filter
-          fun name => decide (name ∈ layout)).take 16
+    normalizePriority layout guardedPreferred
+  let conservative :=
+    normalizePriority layout (preferredImmediate ++ conservativeFuture)
   let fallback :=
-    ((AllocationLivenessFacts.stableUnique
-        (StackAccess.Stmt.accessPriority stmt ++ allDying)).filter
-            fun name => decide (name ∈ layout)).take 16
+    normalizePriority layout (StackAccess.Stmt.accessPriority stmt ++ allDying)
+  let conservativeOrFallback :=
+    match AllocationLayout.Ordering.build? layout conservative with
+    | some order =>
+        if (StackAccess.Stmt.check? order.target stmt).isSome then
+          conservative
+        else
+          fallback
+    | none => fallback
   match AllocationLayout.Ordering.build? layout preferred with
   | some order =>
       if (StackAccess.Stmt.check? order.target stmt).isSome then
         preferred
       else
-        fallback
-  | none => fallback
+        conservativeOrFallback
+  | none => conservativeOrFallback
 
 def covers (layout : Locals.Layout) (live : LiveSet) : Prop :=
   live ⊆ layoutSet layout
@@ -2093,6 +2139,43 @@ def dormantCallSchedule? : Option Region := do
 
 theorem dormantCall_schedule_succeeds :
     dormantCallSchedule?.isSome = true := by
+  native_decide
+
+def crowdedBoundaryLayout : Locals.Layout :=
+  (List.range 18).map toString
+
+def crowdedBoundaryImmediate : List Name :=
+  (List.range 8).map fun index => toString (8 + index)
+
+def crowdedBoundaryFuture : List Name :=
+  (List.range 15).map toString ++ ["16"]
+
+def crowdedBoundaryRepair? : Option (List Name) :=
+  protectFutureWindowFuel 17 crowdedBoundaryLayout 1
+    crowdedBoundaryFuture crowdedBoundaryImmediate
+
+def crowdedBoundaryNaive : List Name :=
+  normalizePriority crowdedBoundaryLayout
+    (crowdedBoundaryImmediate ++ crowdedBoundaryFuture)
+
+theorem crowdedBoundary_naive_drops_last_future :
+    "16" ∉ crowdedBoundaryNaive := by
+  decide
+
+/--
+When the immediate and future priorities contain seventeen distinct names,
+blind concatenation truncates the final future value. The fixpoint instead
+keeps all sixteen future values and lets the current-statement check decide
+which immediate value may safely remain at depth seventeen.
+-/
+theorem crowdedBoundary_repair_is_safe :
+    crowdedBoundaryRepair?.any fun preferred =>
+      match Ordering.build?
+          crowdedBoundaryLayout
+          (normalizePriority crowdedBoundaryLayout preferred) with
+      | some order =>
+          (firstStranded? order.target 1 crowdedBoundaryFuture).isNone
+      | none => false := by
   native_decide
 
 end Examples
