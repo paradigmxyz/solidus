@@ -149,16 +149,14 @@ The remaining inherent burns (valid precompile intrinsics in
 kept — they are correctness paths — but bounded so their combined share is
 < 25% of total.
 
-## Diagnostics gap (kept, documented)
+## Diagnostics path (creation objects)
 
-Three contracts — `CreateLifecycleSurfaceBox`, `FactoryBox`,
-`ProxyLifecycleSurfaceBox` — return `FUNCTIONS_FAILED` from the *optional*
-`functionsForStackDiagnostics?` probe (a creation-object / linker artifact in
-that diagnostic path; `PEEPHOLE_PROGRESS.md` §98/§99). This is a probe-only gap:
-all three compile, deploy, and execute cleanly through the real
-`solidus-backend raw-image` pipeline and score normally. They are retained; only
-the auxiliary stack-diagnostics scanner (not the compile path, not the theorem)
-declines to introspect them.
+Creation objects that reference child `datasize` / `dataoffset` need the
+verified object-image planner's layout. The stack-diagnostics / stack-analysis
+CLI now takes the Functions program from that same planner artifact, so
+`CreateLifecycleSurfaceBox`, `FactoryBox`, and `ProxyLifecycleSurfaceBox` are
+introspectable (previously the probe used an empty `ObjectLayout` and failed
+at `resolveObjectBuiltinsIn?` even though `raw-image` succeeded).
 
 ## Baseline (new season, optimized compiler)
 
