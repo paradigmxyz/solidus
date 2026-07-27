@@ -1008,9 +1008,13 @@ def runStackDiagnostics (config : Config)
         (compactFrontendArtifact?.map (·.pinnedPushPcs.length) |>.getD 0))
   match functionsForStackDiagnostics? program.object config.linkerSymbols with
   | none =>
-      throw
-        (IO.userError
-          "stack diagnostic Yul-to-Functions normalization returned none")
+      -- Optional introspection tool: do not abort the process when the probe
+      -- cannot normalize (historically common on creation objects whose child
+      -- datasize/dataoffset need the verified layout). Emit a machine-readable
+      -- unavailable status so harnesses can continue.
+      IO.println "stack_diagnostics=unavailable"
+      IO.println
+        "stack_diagnostics_reason=yul_to_functions_normalization_none"
   | some functions =>
       printStackDiagnostics program.source program.contract
         program.object.name functions
@@ -1080,9 +1084,9 @@ def runStackAnalysis (config : Config)
     (program : Solidity.Frontend.Program) : IO Unit := do
   match functionsForStackDiagnostics? program.object config.linkerSymbols with
   | none =>
-      throw
-        (IO.userError
-          "stack analysis Yul-to-Functions normalization returned none")
+      IO.println "stack_analysis=unavailable"
+      IO.println
+        "stack_analysis_reason=yul_to_functions_normalization_none"
   | some functions =>
       let normalized :=
         Functions.StackPressureNormalization.Program.normalize functions
