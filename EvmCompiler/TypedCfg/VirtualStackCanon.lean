@@ -570,7 +570,35 @@ def typedBoundaryCandidate? (left right : Block)
           else
             none
 
-def cleanupBoundaryOnce? (left right : Block) : Option (Block × Block) := do
+def cleanupDropBoundaryOnce? (left right : Block) :
+    Option (Block × Block) := do
+  let (leftBeforePop, leftRuntime, leftSuffix) ←
+    splitLastRuntime? left.body
+  if leftRuntime = .pop then pure () else none
+  let (leftPrefix, leftSwap, leftMiddle) ←
+    splitLastRuntime? leftBeforePop
+  if leftSwap = .swap 0 then pure () else none
+  let (rightPrefix, rightRuntime, rightRest) ←
+    splitFirstRuntime? right.body
+  match rightRuntime with
+  | .pop =>
+      typedBoundaryCandidate? left right
+        (leftPrefix ++ leftMiddle ++ .pop :: leftSuffix)
+        right.body
+  | .swap depth =>
+      let (rightMiddle, rightSecond, rightSuffix) ←
+        splitFirstRuntime? rightRest
+      if rightSecond = .pop then
+        typedBoundaryCandidate? left right
+          (leftPrefix ++ .swap (depth + 1) :: leftMiddle ++
+            .pop :: leftSuffix)
+          (rightPrefix ++ rightMiddle ++ .pop :: rightSuffix)
+      else
+        none
+  | _ => none
+
+def cleanupTransportBoundaryOnce? (left right : Block) :
+    Option (Block × Block) := do
   let (leftPrefix, leftRuntime, leftSuffix) ←
     splitLastRuntime? left.body
   match leftRuntime with
@@ -595,6 +623,11 @@ def cleanupBoundaryOnce? (left right : Block) : Option (Block × Block) := do
             none
       | _ => none
   | _ => none
+
+def cleanupBoundaryOnce? (left right : Block) : Option (Block × Block) :=
+  match cleanupDropBoundaryOnce? left right with
+  | some cleaned => some cleaned
+  | none => cleanupTransportBoundaryOnce? left right
 
 def cleanupBoundary : Nat → Block → Block → Block × Block
   | 0, left, right => (left, right)
