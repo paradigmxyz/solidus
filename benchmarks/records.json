@@ -404,9 +404,55 @@
       "note": "Dense call tokens and safe primitive-argument hoisting; includes demirelo's PR #15 changes by cherry-pick. Backlog review: chronology uses the original qualifying score date.",
       "scored_at": "2026-07-26T14:04:02+00:00",
       "published_at": "2026-09-30T07:57:27+00:00"
+    },
+    {
+      "tag": "record-10",
+      "commit": "8b02dafc1549874ba7d8a64f406d7104e060253f",
+      "short_commit": "8b02dafc1",
+      "source_repo": "https://github.com/josusanmartin/solidus",
+      "source_branch": "verified-virtual-stack-scheduling",
+      "parent_tag": "record-9",
+      "based_on": "record-4",
+      "author": "@josusanmartin",
+      "team": "solo",
+      "author_url": "https://github.com/josusanmartin",
+      "pr": 17,
+      "pr_url": "https://github.com/paradigmxyz/solidus/pull/17",
+      "commit_url": "https://github.com/josusanmartin/solidus/commit/8b02dafc1549874ba7d8a64f406d7104e060253f",
+      "timestamp": "2026-07-26T21:59:46+00:00",
+      "total_gas": 64510009,
+      "total_deploy_gas": 62707309,
+      "total_exec_gas": 1802700,
+      "delta_gas": -1604164,
+      "delta_rel": -0.024264,
+      "beats_bar_rel": 0.024264,
+      "attestation": {
+        "proof_gate": "green",
+        "lake_build": "EvmCompiler.Verification",
+        "axioms_ok": true,
+        "axiom_footprint": [
+          "propext",
+          "Classical.choice",
+          "Quot.sound"
+        ],
+        "frozen_hashes_ok": true,
+        "frozen_import_closure_ok": true,
+        "frozen_definition_closure_ok": true,
+        "executor_version": "forge Version: 1.5.1-v1.5.1 | evm=cancun | deploy=real-create-else-computed | exec=measured-callgas+intrinsic (30M block-budget per call) | budget=30000000",
+        "corpus_id": "private-season-1:c61ed1f8aa756e3e",
+        "deterministic_double_compile": true,
+        "execution_differential": "Fresh public Forge execution differential passed, unoptimized and optimized, on the exact scored commit.",
+        "proof_gate_evidence": "Archived isolated from-source verification of the exact scored commit, at its original scoring time.",
+        "deterministic_double_compile_scope": "Fresh independent double compilation of three public sentinels: Simple.sol, Counter.sol, ArithmeticBox.sol; nonempty creation and runtime output byte-identical. The archived private run did not perform full-suite double compilation.",
+        "manual_fair_play_review": "No benchmark fingerprinting, benchmark-specific output substitution, harness tampering, or weakened proof boundary found in the reviewed changes.",
+        "reviewed_at": "2026-09-30T07:57:27+00:00"
+      },
+      "note": "Certified virtual-stack transport scheduling on PR #16. Backlog review: chronology uses the original qualifying score date.",
+      "scored_at": "2026-07-26T21:59:46+00:00",
+      "published_at": "2026-09-30T07:57:27+00:00"
     }
   ],
-  "current_record_tag": "record-9",
+  "current_record_tag": "record-10",
   "generated_at": "2026-09-30T07:57:27+00:00",
   "__schema__": "solidus records.json v1 (totals-only; see scripts/scorebot/records.py). Season-1 launch seed for the arena-branch ledger."
 }
