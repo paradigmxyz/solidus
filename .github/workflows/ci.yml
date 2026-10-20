@@ -320,6 +320,7 @@ jobs:
       - name: Install pinned solc (${{ env.SOLC_VERSION }})
         run: |
           set -euo pipefail
+          python3 -m pip install --user --upgrade pip==26.2.2
           python3 -m pip install --user "solc-select==1.2.0"
           export PATH="$HOME/.local/bin:$PATH"
           solc-select install "${SOLC_VERSION}"
