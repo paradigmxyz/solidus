@@ -516,32 +516,42 @@ theorem closedLinear_pushCode (value : Word) :
     ∀ i ∈ Assembly.pushCode value, ClosedLinear i := by
   intro i hi
   unfold Assembly.pushCode at hi
-  cases hMask : Assembly.maskWidth? value with
+  cases hComp : Assembly.complement? value with
   | none =>
-      rw [hMask] at hi
-      cases hEnc : Assembly.shiftEncode? value with
-      | none =>
-          rw [hEnc] at hi
-          simp only [List.mem_singleton] at hi
-          subst hi
-          exact closedLinear_push _
-      | some k =>
-          rw [hEnc] at hi
-          simp only [List.mem_cons, List.not_mem_nil, or_false] at hi
-          rcases hi with h | h | h <;> subst h
-          · exact closedLinear_push _
-          · exact closedLinear_push _
-          · exact closedLinear_prim (input := 2) (output := 1)
-              (by decide) (by decide) (by decide) rfl rfl
-  | some w =>
-      rw [hMask] at hi
+    cases hMask : Assembly.maskWidth? value with
+    | none =>
+        rw [hComp, hMask] at hi
+        cases hEnc : Assembly.shiftEncode? value with
+        | none =>
+            rw [hEnc] at hi
+            simp only [List.mem_singleton] at hi
+            subst hi
+            exact closedLinear_push _
+        | some k =>
+            rw [hEnc] at hi
+            simp only [List.mem_cons, List.not_mem_nil, or_false] at hi
+            rcases hi with h | h | h <;> subst h
+            · exact closedLinear_push _
+            · exact closedLinear_push _
+            · exact closedLinear_prim (input := 2) (output := 1)
+                (by decide) (by decide) (by decide) rfl rfl
+    | some w =>
+        rw [hComp, hMask] at hi
+        simp only [List.mem_cons, List.not_mem_nil, or_false] at hi
+        rcases hi with h | h | h | h <;> subst h
+        · exact closedLinear_push _
+        · exact closedLinear_prim (input := 1) (output := 1)
+            (by decide) (by decide) (by decide) rfl rfl
+        · exact closedLinear_push _
+        · exact closedLinear_prim (input := 2) (output := 1)
+            (by decide) (by decide) (by decide) rfl rfl
+  
+  | some inverse =>
+      rw [hComp] at hi
       simp only [List.mem_cons, List.not_mem_nil, or_false] at hi
-      rcases hi with h | h | h | h <;> subst h
+      rcases hi with h | h <;> subst h
       · exact closedLinear_push _
       · exact closedLinear_prim (input := 1) (output := 1)
-          (by decide) (by decide) (by decide) rfl rfl
-      · exact closedLinear_push _
-      · exact closedLinear_prim (input := 2) (output := 1)
           (by decide) (by decide) (by decide) rfl rfl
 
 /-- A fragment of `ClosedLinear` instructions runs closed: the open run over it
@@ -2387,82 +2397,35 @@ theorem returnDispatch_shared_missing_token_openRunUntilTransfer_rel
         TypedCfg.InteractionSemantics.Terminator.returnDispatchFlowPolicy
         (pre ++ code ++ post) code.length state) := by
   subst code
-  subst returnCount
-  cases sites with
-  | nil =>
-      exact (hSites rfl).elim
-  | cons site rest =>
-      let duplicate :=
-        Assembly.StackShuffle.dupInstr (depth + 1)
-      let restCode : Assembly.Program :=
-        Assembly.Instr.prim .pop ::
-          (Assembly.StackShuffle.liftBuriedToTop depth ++
-            TypedCfg.Terminator.returnDispatchCode 0 (site :: rest))
-      have hCodeHead :
-          TypedCfg.Terminator.returnDispatchSharedCode depth (site :: rest) =
-            duplicate :: restCode := by
-        simp [duplicate, restCode,
-          TypedCfg.Terminator.returnDispatchSharedCode,
-          Assembly.StackShuffle.guardedLiftBuriedToTop,
-          Assembly.StackShuffle.guardBuried, List.append_assoc]
-      have hFitsHead :
-          Assembly.Program.PCFitsFrom pre (duplicate :: restCode) := by
-        simpa [hCodeHead] using hFits
-      have hLen : state.stack.length ≤ depth := by
-        rw [List.getElem?_eq_none_iff] at hGet
-        exact hGet
-      have hDupError :
-          Assembly.Target.stepInstr
-              (Assembly.StackShuffle.targetInstr duplicate)
-              state =
-            .error .StackUnderflow := by
-        rw [show
-          duplicate =
-            Assembly.StackShuffle.dupInstr (depth + 1) from rfl]
-        rw [Assembly.StackShuffle.dupInstr_step_eq_dup
-          (by omega) (by omega)]
-        simp [EvmYul.dup,
-          show ¬depth + 1 ≤ state.stack.length by omega]
-      have hDupOpen :
-          Assembly.InteractionSemantics.Source.openStepAtResult
-              (pre ++ duplicate :: (restCode ++ post))
-              pre.byteLength duplicate state =
-            .done (.error .StackUnderflow) := by
-        rw [source_openStepAtResult_eq_done_of_stepAt
-          (Assembly.StackShuffle.InteractionPreservation.openStepAt_dupInstr_eq_done
-              (n := depth + 1) (by omega) (by omega))]
-        have hLocal :
-            Assembly.StackShuffle.SourceLocalInstr duplicate := by
-          simpa [duplicate] using
-            (Assembly.StackShuffle.dupInstr_sourceLocal
-              (n := depth + 1) (by omega) (by omega))
-        simp only [Assembly.Source.stepAtResult]
-        rw [Assembly.StackShuffle.source_stepAt_eq_targetInstr hLocal,
-          hDupError]
-        rfl
-      have hRunBase :=
-        source_openRunUntilTransferWithPolicy_succ_of_step_error
+  cases depth with
+  | zero =>
+      simpa [TypedCfg.Terminator.returnDispatchSharedCode,
+        Assembly.StackShuffle.guardedLiftBuriedToTop, Assembly.StackShuffle.liftBuriedToTop] using
+        (returnDispatch_missing_token_openRunUntilTransfer_rel hDepth hCount hSites rfl hBound hGet
+          (by simpa [TypedCfg.Terminator.returnDispatchSharedCode,
+            Assembly.StackShuffle.guardedLiftBuriedToTop, Assembly.StackShuffle.liftBuriedToTop] using hFits) hPc)
+  | succ depth =>
+      have hLen : state.stack.length ≤ depth + 1 := List.getElem?_eq_none_iff.mp hGet
+      have hFitsLift : Assembly.Program.PCFitsFrom pre
+          (Assembly.StackShuffle.liftBuriedToTop (depth + 1)) :=
+        Assembly.Program.PCFitsFrom.left hFits
+      have hRun := Assembly.StackShuffle.InteractionPreservation.lift_underflow_open
+        TypedCfg.InteractionSemantics.Terminator.returnDispatchFlowPolicy
+        (TypedCfg.Terminator.returnDispatchCode 0 sites).length
+        (pre := pre) (post := TypedCfg.Terminator.returnDispatchCode 0 sites ++ post)
+        (state := state) (by omega) hBound hLen hFitsLift hPc
+      have hError : Assembly.InteractionSemantics.Source.openRunUntilTransferWithPolicy
           TypedCfg.InteractionSemantics.Terminator.returnDispatchFlowPolicy
-          (pre := pre) (post := restCode ++ post)
-          (instr := duplicate) (state := state)
-          (err := .StackUnderflow)
-          restCode.length hFitsHead.1 hPc hDupOpen
-      have hRun :
-          Assembly.InteractionSemantics.Source.openRunUntilTransferWithPolicy
-              TypedCfg.InteractionSemantics.Terminator.returnDispatchFlowPolicy
-              (pre ++
-                TypedCfg.Terminator.returnDispatchSharedCode depth
-                  (site :: rest) ++ post)
-              (TypedCfg.Terminator.returnDispatchSharedCode depth
-                (site :: rest)).length state =
-            .done (.error .StackUnderflow) := by
-        rw [hCodeHead]
-        simpa [List.append_assoc] using hRunBase
-      rw [hRun]
+          (pre ++ TypedCfg.Terminator.returnDispatchSharedCode (depth + 1) sites ++ post)
+          (TypedCfg.Terminator.returnDispatchSharedCode (depth + 1) sites).length state =
+          .done (.error .StackUnderflow) := by
+        simpa [TypedCfg.Terminator.returnDispatchSharedCode,
+          Assembly.StackShuffle.guardedLiftBuriedToTop, List.length_append,
+          List.append_assoc, Nat.add_comm] using hRun
+      rw [hError]
       apply Simulation.Interaction.Rel.done
-      simp [Preservation.Block.RunSimulates,
-        TypedCfg.Block.runTerm, hDepth, hGet,
-        Preservation.Outcome.Simulates]
+      simp [Preservation.Block.RunSimulates, TypedCfg.Block.runTerm,
+        hDepth, hGet, Preservation.Outcome.Simulates]
 
 /--
 Direct TypedCfg terminators are related to the Assembly-owned runner that
@@ -3009,7 +2972,7 @@ theorem lowerAt?_openRunUntilTransfer_rel
               apply hResolved.1 site.target
               simp only [TypedCfg.Terminator.targets, List.mem_map]
               exact ⟨site, by simpa [scheduled] using hSite, rfl⟩
-            by_cases hShared : 2 < depth * (sites.length - 1)
+            by_cases hShared : 0 < depth * (sites.length - 1)
             · have hCodeEq :
                   code =
                     TypedCfg.Terminator.returnDispatchSharedCode

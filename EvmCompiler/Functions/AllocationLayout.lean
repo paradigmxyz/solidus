@@ -119,6 +119,52 @@ theorem build_run
                 exact ih hTail
           · simp [hDepth, hAccessible] at hBuild
 
+/-- Actual number of SWAP instructions needed by stable promotions. -/
+def promotionCost (promotions : List Promotion) : Nat :=
+  (promotions.map fun p => p.depth - 1).sum
+
+/-- Preserve the checked final layout, but avoid redundant stable promotions.
+The original construction is always retained as a fallback. -/
+def buildCompact (layout : Locals.Layout) (names : List Name) :
+    Option (List Promotion × Locals.Layout) :=
+  match build layout names with
+  | none => none
+  | some (promotions, target) =>
+      if names.length ≤ 1 ∨ promotionCost promotions = 0 then
+        some (promotions, target)
+      else
+      let candidates := (List.range (names.length + 1)).filterMap fun count =>
+        build layout (target.take count).reverse
+      let best := candidates.foldl (fun best candidate =>
+        if candidate.2 = target ∧
+            promotionCost candidate.1 < promotionCost best.1 then
+          candidate
+        else best) (promotions, target)
+      if run layout best.1 = some target then
+        some (best.1, target)
+      else
+        some (promotions, target)
+
+theorem buildCompact_run
+    {layout : Locals.Layout} {names : List Name}
+    {promotions : List Promotion} {final : Locals.Layout}
+    (hBuild : buildCompact layout names = some (promotions, final)) :
+    run layout promotions = some final := by
+  unfold buildCompact at hBuild
+  split at hBuild
+  · contradiction
+  · rename_i original target hOriginal
+    split at hBuild
+    · cases hBuild
+      exact build_run hOriginal
+    · dsimp only at hBuild
+      split at hBuild
+      · rename_i hRun
+        cases hBuild
+        exact hRun
+      · cases hBuild
+        exact build_run hOriginal
+
 def retained (layout : Locals.Layout) (live : LiveSet) : Locals.Layout :=
   layout.filter fun name => decide (name ∈ live)
 
@@ -302,7 +348,7 @@ end RegularTransition
 
 def scheduleRetain? (layout : Locals.Layout)
     (live : LiveSet) : Option Schedule := do
-  let (promotions, promoted) ← build layout (dead layout live)
+  let (promotions, promoted) ← buildCompact layout (dead layout live)
   let target := retained layout live
   if target = promoted.drop (promoted.length - target.length) then
     some { promotions, promoted, target }
@@ -322,7 +368,7 @@ theorem scheduleRetain?_sound
     (hSchedule : scheduleRetain? layout live = some schedule) :
     schedule.ValidFor layout live := by
   unfold scheduleRetain? at hSchedule
-  cases hBuild : build layout (dead layout live) with
+  cases hBuild : buildCompact layout (dead layout live) with
   | none => simp [hBuild] at hSchedule
   | some result =>
       rcases result with ⟨promotions, promoted⟩
@@ -343,7 +389,7 @@ theorem scheduleRetain?_sound
       · rw [if_pos hSuffix] at hSchedule
         have hEq := Option.some.inj hSchedule
         subst schedule
-        exact ⟨build_run hBuild, rfl, hSuffix⟩
+        exact ⟨buildCompact_run hBuild, rfl, hSuffix⟩
       · rw [if_neg hSuffix] at hSchedule
         contradiction
 
@@ -403,14 +449,14 @@ structure Ordering where
 namespace Ordering
 
 def build? (layout : Locals.Layout) (topFirst : List Name) : Option Ordering :=
-  match hBuild : build layout topFirst.reverse with
+  match hBuild : buildCompact layout topFirst.reverse with
   | none => none
   | some (promotions, target) =>
       some
         { source := layout
           promotions
           target
-          valid := build_run hBuild }
+          valid := buildCompact_run hBuild }
 
 theorem build?_source
     {layout : Locals.Layout} {topFirst : List Name} {ordering : Ordering}
@@ -472,7 +518,7 @@ def build? (source target : Locals.Layout) : Option Join := do
   | some retain =>
       let common := commonSuffixLength retain.target target
       let desiredPrefix := target.take (target.length - common)
-      match hOrder : build retain.target desiredPrefix.reverse with
+      match hOrder : buildCompact retain.target desiredPrefix.reverse with
       | none => none
       | some (promotions, ordered) =>
           if hTarget : ordered = target then
@@ -484,7 +530,7 @@ def build? (source target : Locals.Layout) : Option Join := do
                   { source := retain.target
                     promotions
                     target := ordered
-                    valid := build_run hOrder }
+                    valid := buildCompact_run hOrder }
                 retainSource := (Transition.build?_sound hRetain).1
                 orderSource := rfl
                 orderTarget := hTarget }

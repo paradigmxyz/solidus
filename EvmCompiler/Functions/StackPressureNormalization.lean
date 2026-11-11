@@ -230,10 +230,158 @@ theorem Expr.nodeCount_pos {results : Nat} (expr : Expr results) :
 def Expr.reassociateOr (expr : Expr 1) : Expr 1 :=
   Expr.rotateOrFuel (Expr.nodeCount expr) expr
 
+def Expr.isLiteral : Expr 1 → Bool
+  | .lit _ => true
+  | _ => false
+
 def Expr.orderAnd (args : Locals.ExprSeq 2) : Expr 1 :=
   match ExprSeq.ones? args with
-  | some [.lit value, right] => mkAnd right (.lit value)
+  | some [.lit value, right] =>
+      if Expr.isLiteral right then .prim .and args else mkAnd right (.lit value)
   | _ => .prim .and args
+
+namespace MaskFold
+
+def Expr.shlArgs? {results : Nat} : Expr results → Option (Expr 1 × Expr 1)
+  | .prim op args => do
+      if h : op = .shl then
+        have hInputs : Expressions.Structured.BasicOp.inputs op = 2 :=
+          congrArg Expressions.Structured.BasicOp.inputs h
+        let args : Locals.ExprSeq 2 := hInputs ▸ args
+        match ← ExprSeq.ones? args with
+        | [left, right] => some (left, right)
+        | _ => none
+      else
+        none
+  | _ => none
+
+def mkShl (left right : Expr 1) : Expr 1 :=
+  .prim .shl (.cons left (.cons right .nil))
+
+def foldSub (args : Locals.ExprSeq 2) : Expr 1 :=
+  match ExprSeq.ones? args with
+  | some [.lit one, shift] =>
+    match Expr.shlArgs? shift with
+    | some (.lit one', .lit k) =>
+        if one = EvmYul.UInt256.ofNat 1 ∧ one' = EvmYul.UInt256.ofNat 1 ∧
+            33 ≤ k.toNat ∧ k.toNat < 256 then
+          .lit (EvmYul.UInt256.sub (EvmYul.UInt256.shiftLeft one' k) one)
+        else .prim .sub args
+    | _ => .prim .sub args
+  | _ => .prim .sub args
+
+namespace Expr
+
+theorem shlArgs?_eq_mkShl {results : Nat} (expr : Expr results)
+    {left right : Expr 1}
+    (h : Expr.shlArgs? expr = some (left, right)) :
+    Sigma.mk results expr = Sigma.mk 1 (mkShl left right) := by
+  cases expr with
+  | lit => simp [Expr.shlArgs?] at h
+  | var => simp [Expr.shlArgs?] at h
+  | code code => simp [Expr.shlArgs?] at h
+  | prim op args =>
+      simp [Expr.shlArgs?] at h
+      rcases h with ⟨hOp, h⟩
+      cases hOp
+      rcases Option.bind_eq_some_iff.mp h with ⟨values, hValues, hMatch⟩
+      cases values with
+      | nil => simp at hMatch
+      | cons first rest =>
+          cases rest with
+          | nil => simp at hMatch
+          | cons second tail =>
+              cases tail with
+              | cons third tail => simp at hMatch
+              | nil =>
+                  simp only [Option.some.injEq, Prod.mk.injEq] at hMatch
+                  rcases hMatch with ⟨rfl, rfl⟩
+                  have hArgs := ExprSeq.ones?_eq_pair args hValues
+                  cases hArgs
+                  rfl
+
+end Expr
+
+namespace Primitive
+open Locals.InteractionSemantics Locals.InteractionSemantics.Primitive
+@[simp] theorem openEval_sub (state : State) (left right : Word) :
+    openEval .sub state [left, right] =
+      Simulation.Interaction.pure
+        (state, [EvmYul.UInt256.sub right left]) := by
+  rw [openEval_closedStep
+    (step := .bin EvmYul.UInt256.sub)
+    (by simp [Expressions.Structured.BasicOp.inputs])
+    (by simp [supportsOpen,
+      Locals.Source.PrimitiveSemantics.sourceContinuingStep?,
+      Structured.BasicOp.toPrimOp, Assembly.PrimOp.continuingStep?])
+    (by rfl) (by simp [Structured.BasicOp.toPrimOp])
+    (by simp [Structured.BasicOp.toPrimOp])]
+  unfold Simulation.Interaction.map
+  simp [Assembly.PrimStep.run, isolated, finish,
+    EvmYul.EVM.execBinOp, EvmYul.Stack.pop2,
+    EvmYul.Stack.push,
+    EvmYul.EVM.State.replaceStackAndIncrPC,
+    EvmYul.EVM.State.incrPC, Simulation.Interaction.bind_done_ok,
+    Locals.Source.State.withShared, Id.run, flip]
+
+@[simp] theorem openEval_shl (state : State) (left right : Word) :
+    openEval .shl state [left, right] =
+      Simulation.Interaction.pure
+        (state, [EvmYul.UInt256.shiftLeft left right]) := by
+  rw [openEval_closedStep
+    (step := .bin (flip EvmYul.UInt256.shiftLeft))
+    (by simp [Expressions.Structured.BasicOp.inputs])
+    (by simp [supportsOpen,
+      Locals.Source.PrimitiveSemantics.sourceContinuingStep?,
+      Structured.BasicOp.toPrimOp, Assembly.PrimOp.continuingStep?])
+    (by rfl) (by simp [Structured.BasicOp.toPrimOp])
+    (by simp [Structured.BasicOp.toPrimOp])]
+  unfold Simulation.Interaction.map
+  simp [Assembly.PrimStep.run, isolated, finish,
+    EvmYul.EVM.execBinOp, EvmYul.Stack.pop2,
+    EvmYul.Stack.push,
+    EvmYul.EVM.State.replaceStackAndIncrPC,
+    EvmYul.EVM.State.incrPC, Simulation.Interaction.bind_done_ok,
+    Locals.Source.State.withShared, Id.run, flip]
+
+
+end Primitive
+
+theorem mask_openEval (one one' k : Word) (state : Functions.InteractionSemantics.State) :
+    Functions.InteractionSemantics.Expr.openEval
+      (.prim .sub (.cons (.lit one) (.cons
+        (.prim .shl (.cons (.lit one') (.cons (.lit k) .nil))) .nil))) state =
+    Simulation.Interaction.pure
+      (state, [EvmYul.UInt256.sub (EvmYul.UInt256.shiftLeft one' k) one]) := by
+  simp [Functions.InteractionSemantics.Expr.openEval,
+    Locals.InteractionSemantics.Expr.openEval,
+    Locals.Source.Effectful.Expr.Control.eval,
+    Locals.Source.Effectful.Expr.Control.ExprSeq.eval,
+    Locals.InteractionSemantics.primitiveSemantics,
+    Primitive.openEval_sub, Primitive.openEval_shl,
+    Simulation.Interaction.bind_done_ok, Simulation.Interaction.pure, Pure.pure, Bind.bind]
+
+theorem foldSub_openEval (args : Locals.ExprSeq 2)
+    (state : Functions.InteractionSemantics.State) :
+    Functions.InteractionSemantics.Expr.openEval (foldSub args) state =
+      Functions.InteractionSemantics.Expr.openEval (.prim .sub args) state := by
+  unfold foldSub
+  split
+  next one shift hArgs =>
+    split
+    next one' k hShift =>
+      split
+      next hGuard =>
+        have hArgsEq := ExprSeq.ones?_eq_pair args hArgs
+        cases hArgsEq
+        have hShiftEq := Expr.shlArgs?_eq_mkShl shift hShift
+        cases hShiftEq
+        exact (mask_openEval one one' k state).symm
+      next => rfl
+    next => rfl
+  next => rfl
+
+end MaskFold
 
 def Expr.normalizePrim (op : Structured.BasicOp)
     (args : Locals.ExprSeq (Expressions.Structured.BasicOp.inputs op)) :
@@ -241,6 +389,7 @@ def Expr.normalizePrim (op : Structured.BasicOp)
   match op with
   | .or => Expr.reassociateOr (.prim .or args)
   | .and => Expr.orderAnd args
+  | .sub => MaskFold.foldSub args
   | op => .prim op args
 
 mutual
@@ -690,9 +839,11 @@ theorem orderAnd_openEval (args : Locals.ExprSeq 2)
   unfold Expr.orderAnd
   split
   next value right hArgs =>
-    have hArgsEq := ExprSeq.ones?_eq_pair args hArgs
-    cases hArgsEq
-    exact (openEval_and_lit_comm value right state).symm
+    split
+    · rfl
+    · have hArgsEq := ExprSeq.ones?_eq_pair args hArgs
+      cases hArgsEq
+      exact (openEval_and_lit_comm value right state).symm
   next => rfl
 
 theorem normalizePrim_openEval (op : Structured.BasicOp)
@@ -702,6 +853,7 @@ theorem normalizePrim_openEval (op : Structured.BasicOp)
         (Expr.normalizePrim op args) state =
       Functions.InteractionSemantics.Expr.openEval (.prim op args) state := by
   cases op <;> simp only [Expr.normalizePrim]
+  · exact MaskFold.foldSub_openEval args state
   · exact orderAnd_openEval args state
   · unfold Expr.reassociateOr
     exact Expr.rotateOrFuel_openEval _ _ state

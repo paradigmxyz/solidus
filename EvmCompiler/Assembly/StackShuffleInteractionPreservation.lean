@@ -852,66 +852,81 @@ theorem guardedLiftBuriedToTop_openRunUntilTransferWithPolicy
         continueTransfer
         (pre ++ guardedLiftBuriedToTop front.length ++ post)
         fuel final := by
-  have hGuardFits :
-      Program.PCFitsFrom pre (guardBuried front.length) :=
-    Program.PCFitsFrom.left
-      (by simpa [guardedLiftBuriedToTop, List.append_assoc] using hFits)
-  have hLiftFits :
-      Program.PCFitsFrom (pre ++ guardBuried front.length)
-        (liftBuriedToTop front.length) :=
-    Program.PCFitsFrom.right
-      (by simpa [guardedLiftBuriedToTop, List.append_assoc] using hFits)
-  let mid : EVMState :=
-    { state with
-      stack := front ++ token :: suffix
-      pc := (pre ++ guardBuried front.length).pcAfter }
-  let final : EVMState :=
-    { state with
-      stack := token :: front ++ suffix
-      pc := (pre ++ guardedLiftBuriedToTop front.length).pcAfter }
-  have hGuard :=
-    guardBuried_openRunUntilTransferWithPolicy
-      continueTransfer
-      (front := front) (suffix := suffix) (token := token)
-      (pre := pre) (post := liftBuriedToTop front.length ++ post)
-      (state := state)
-      (fuel := fuel + (liftBuriedToTop front.length).length)
-      hGuardFits hPc hBound
-  have hGuard' :
-      InteractionSemantics.Source.openRunUntilTransferWithPolicy
-          continueTransfer
-          (pre ++ guardedLiftBuriedToTop front.length ++ post)
-          ((fuel + (liftBuriedToTop front.length).length) + 2)
-          { state with stack := front ++ token :: suffix } =
-        InteractionSemantics.Source.openRunUntilTransferWithPolicy
-          continueTransfer
-          (pre ++ guardedLiftBuriedToTop front.length ++ post)
-          (fuel + (liftBuriedToTop front.length).length) mid := by
-    simpa [guardedLiftBuriedToTop, mid, List.append_assoc] using hGuard
-  have hLift :=
-    liftBuriedToTop_openRunUntilTransferWithPolicy
-      continueTransfer
-      (front := front) (suffix := suffix) (token := token)
-      (pre := pre ++ guardBuried front.length) (post := post)
-      (state := mid) (fuel := fuel)
-      hLiftFits (by simp [mid]) (by omega)
-  have hLift' :
-      InteractionSemantics.Source.openRunUntilTransferWithPolicy
-          continueTransfer
-          (pre ++ guardedLiftBuriedToTop front.length ++ post)
-          (fuel + (liftBuriedToTop front.length).length) mid =
-        InteractionSemantics.Source.openRunUntilTransferWithPolicy
-          continueTransfer
-          (pre ++ guardedLiftBuriedToTop front.length ++ post)
-          fuel final := by
-    simpa [guardedLiftBuriedToTop, mid, final, List.append_assoc] using hLift
-  rw [show
-    fuel + (guardedLiftBuriedToTop front.length).length =
-      (fuel + (liftBuriedToTop front.length).length) + 2 by
-    simp [guardedLiftBuriedToTop, guardBuried]
-    omega]
-  rw [hGuard', hLift']
+  simpa [guardedLiftBuriedToTop] using
+    (liftBuriedToTop_openRunUntilTransferWithPolicy continueTransfer
+      (state := state) (front := front) (suffix := suffix) (token := token)
+      (pre := pre) (post := post) (fuel := fuel) hFits hPc (by omega))
 
+theorem swap_underflow_open (policy : Instr → Bool) (fuel : Nat)
+    {n : Nat} {pre post : Program} {state : EVMState}
+    (hn : 1 ≤ n) (hb : n ≤ 16) (hLen : state.stack.length ≤ n)
+    (hFits : pre.PCFits) (hPc : state.pc = pre.pcAfter) :
+    Assembly.InteractionSemantics.Source.openRunUntilTransferWithPolicy policy
+      (pre ++ swapInstr n :: post) (fuel + 1) state = .done (.error .StackUnderflow) := by
+  have hOpen : Assembly.InteractionSemantics.Source.openStepAtResult
+      (pre ++ swapInstr n :: post) pre.byteLength (swapInstr n) state =
+      .done (.error .StackUnderflow) := by
+    rw [source_openStepAtResult_eq_done_of_stepAt
+      (openStepAt_swapInstr_eq_done hn hb)]
+    simp only [Source.stepAtResult, source_stepAt_eq_targetInstr (swapInstr_sourceLocal hn hb),
+      swapInstr_step_eq_swap hn hb]
+    simp [EvmYul.swap, show ¬ n + 1 ≤ state.stack.length by omega]
+  exact source_openRunUntilTransferWithPolicy_succ_of_step_error policy fuel hFits hPc hOpen
+
+theorem lift_underflow_open (policy : Instr → Bool) (fuel : Nat)
+    {depth : Nat} {pre post : Program} {state : EVMState}
+    (hd : 0 < depth) (hb : depth < 16) (hLen : state.stack.length ≤ depth)
+    (hFits : Program.PCFitsFrom pre (liftBuriedToTop depth))
+    (hPc : state.pc = pre.pcAfter) :
+    Assembly.InteractionSemantics.Source.openRunUntilTransferWithPolicy policy
+      (pre ++ liftBuriedToTop depth ++ post) (fuel + (liftBuriedToTop depth).length) state =
+      .done (.error .StackUnderflow) := by
+  have hc : state.stack = [] ∨ ∃ front token, state.stack = front ++ [token] := by
+    induction state.stack using List.reverseRecOn with
+    | nil => exact Or.inl rfl
+    | append_singleton front token _ => exact Or.inr ⟨front, token, rfl⟩
+  rcases hc with hs | ⟨front, token, hs⟩
+  · obtain ⟨tail, ht⟩ := lift_prefix_split (n := 0) hd
+    have ht' : liftBuriedToTop depth = swapInstr 1 :: tail := by
+      simpa [liftBuriedToTop] using ht
+    have hf : pre.PCFits := Program.PCFitsFrom.start hFits
+    simpa [ht', List.append_assoc, Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using
+      (swap_underflow_open policy (fuel + tail.length) (n := 1) (pre := pre) (post := tail ++ post)
+        (state := state) (by omega) (by omega) (by simp [hs]) hf hPc)
+  · have hl : front.length < depth := by simp [hs] at hLen; omega
+    obtain ⟨tail, ht⟩ := lift_prefix_split hl
+    have hFits' : Program.PCFitsFrom pre
+        (liftBuriedToTop front.length ++ (swapInstr (front.length + 1) :: tail)) := by
+      simpa [ht] using hFits
+    have hLift := liftBuriedToTop_openRunUntilTransferWithPolicy
+      policy (state := state) (front := front) (token := token) (suffix := [])
+      (pre := pre) (post := swapInstr (front.length + 1) :: tail ++ post)
+      (fuel := fuel + tail.length + 1)
+      (Program.PCFitsFrom.left hFits') hPc (by omega)
+    have hstate : { state with stack := front ++ token :: [] } = state := by
+      rw [← hs]
+    rw [hstate] at hLift
+    let mid : EVMState :=
+      { state with
+        stack := token :: front
+        pc := (pre ++ liftBuriedToTop front.length).pcAfter }
+    have hError := swap_underflow_open policy (fuel + tail.length)
+      (n := front.length + 1) (pre := pre ++ liftBuriedToTop front.length)
+      (post := tail ++ post) (state := mid) (by omega) (by omega)
+      (by simp [mid]) (Program.PCFitsFrom.start (Program.PCFitsFrom.right hFits')) (by rfl)
+    have heq :
+        (fuel + (liftBuriedToTop depth).length) =
+          (fuel + tail.length + 1) + (liftBuriedToTop front.length).length := by
+      simp [ht, Nat.add_comm, Nat.add_left_comm, Nat.add_assoc]
+    rw [heq]
+    have hLift' : Assembly.InteractionSemantics.Source.openRunUntilTransferWithPolicy policy
+        (pre ++ liftBuriedToTop depth ++ post)
+        ((fuel + tail.length + 1) + (liftBuriedToTop front.length).length) state =
+      Assembly.InteractionSemantics.Source.openRunUntilTransferWithPolicy policy
+        (pre ++ liftBuriedToTop depth ++ post) (fuel + tail.length + 1) mid := by
+      simpa [ht, mid, List.append_assoc] using hLift
+    rw [hLift']
+    simpa [ht, mid, List.append_assoc] using hError
 /--
 Removing a buried word consumes the lift sequence and one final `POP`, then
 resumes the shared transfer runner with the surrounding stack order restored.

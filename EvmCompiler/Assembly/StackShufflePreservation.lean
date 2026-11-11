@@ -835,88 +835,75 @@ theorem guardedLiftBuriedToTop_source_exists {state : EVMState}
               final.pc =
                 (pre ++ guardedLiftBuriedToTop front.length).pcAfter
         | _ => False) := by
-  have hGuardFits :
-      Program.PCFitsFrom pre (guardBuried front.length) :=
-    Program.PCFitsFrom.left
-      (by simpa [guardedLiftBuriedToTop, List.append_assoc] using hFits)
-  have hLiftFits :
-      Program.PCFitsFrom (pre ++ guardBuried front.length)
-        (liftBuriedToTop front.length) :=
-    Program.PCFitsFrom.right
-      (by simpa [guardedLiftBuriedToTop, List.append_assoc] using hFits)
-  have hGuard :=
-    guardBuried_source_exists
-      (state := state) (front := front) (suffix := suffix)
-      (token := token) (pre := pre)
-      (post := liftBuriedToTop front.length ++ post)
-      hGuardFits hPc hBound
-  refine
-    Source.Eventually.bind_running
-      (program :=
-        pre ++ guardedLiftBuriedToTop front.length ++ post)
-      (middle := fun guarded =>
-        guarded.stack = front ++ token :: suffix ∧
-          eraseRuntimeControl guarded =
-            eraseRuntimeControl
-              { state with stack := front ++ token :: suffix } ∧
-          guarded.pc = (pre ++ guardBuried front.length).pcAfter)
-      ?_ ?_
-  · exact Source.Eventually.mono
-      (by
-        simpa [guardedLiftBuriedToTop, List.append_assoc] using hGuard)
-      (by
-        intro outcome hOutcome
-        cases outcome with
-        | error err => cases hOutcome
-        | ok result =>
-            cases result with
-            | halted halt => cases hOutcome
-            | running guarded => exact hOutcome)
-  · intro guarded hGuarded
-    have hGuardedRecord :
-        { guarded with stack := front ++ token :: suffix } = guarded := by
-      rw [← hGuarded.1]
-    have hLift :=
-      liftBuriedToTop_source_exists
-        (state := guarded) (front := front) (suffix := suffix)
-        (token := token) (pre := pre ++ guardBuried front.length)
-        (post := post) hLiftFits
-        (by simpa [hGuarded.1] using hGuarded.2.2)
-        (by omega)
-    rw [hGuardedRecord] at hLift
-    exact Source.Eventually.mono
-      (by
-        simpa [guardedLiftBuriedToTop, List.append_assoc] using hLift)
-      (by
-        intro outcome hOutcome
-        cases outcome with
-        | error err => cases hOutcome
-        | ok result =>
-            cases result with
-            | halted halt => cases hOutcome
-            | running final =>
-                rcases hOutcome with ⟨hStack, hErase, hPcFinal⟩
-                refine ⟨hStack, ?_, ?_⟩
-                · calc
-                    eraseRuntimeControl final =
-                        eraseRuntimeControl
-                          { guarded with
-                            stack := token :: front ++ suffix } :=
-                      hErase
-                    _ =
-                        eraseRuntimeControl
-                          { state with
-                            stack := token :: front ++ suffix } := by
-                      exact
-                        eraseRuntimeControl_with_stack_congr
-                          (left := guarded)
-                          (right :=
-                            { state with
-                              stack := front ++ token :: suffix })
-                          (stack := token :: front ++ suffix)
-                          hGuarded.2.1
-                · simpa [guardedLiftBuriedToTop, List.append_assoc] using
-                    hPcFinal)
+  simpa [guardedLiftBuriedToTop] using
+    (liftBuriedToTop_source_exists (state := state) (front := front)
+      (suffix := suffix) (token := token) (pre := pre) (post := post)
+      hFits hPc (by omega))
+
+theorem swap_underflow_eventually {n : Nat} {pre post : Program} {state : EVMState}
+    (hn : 1 ≤ n) (hb : n ≤ 16) (hLen : state.stack.length ≤ n)
+    (hFit : pre.PCFits) (hPc : state.pc = pre.pcAfter) :
+    Source.Eventually (pre ++ [swapInstr n] ++ post) state
+      (fun outcome => outcome = .error .StackUnderflow) := by
+  have hStep : Source.stepResult (pre ++ [swapInstr n] ++ post) state =
+      .error .StackUnderflow := by
+    unfold Source.stepResult Source.stepResultWith
+    have hAt : Program.instrAtPc (pre ++ [swapInstr n] ++ post) state.pc.toNat =
+        some (pre.byteLength, swapInstr n) := by
+      unfold Program.instrAtPc
+      rw [hPc, hFit]
+      simpa using Program.instrAtPcFrom_append_boundary_cons pre post (swapInstr n) 0
+    rw [hAt]
+    simp only [Source.stepAtResult, source_stepAt_eq_targetInstr (swapInstr_sourceLocal hn hb),
+      swapInstr_step_eq_swap hn hb]
+    simp [EvmYul.swap, show ¬ n + 1 ≤ state.stack.length by omega]
+  refine ⟨1, .error .StackUnderflow, ?_, rfl⟩
+  have hStep' : Source.stepResult (pre ++ swapInstr n :: post) state = .error .StackUnderflow := by simpa using hStep
+  simp [Source.runNResult, Control.runNResultWith, hStep']
+
+theorem lift_underflow_eventually {depth : Nat} {pre post : Program} {state : EVMState}
+    (hd : 0 < depth) (hb : depth < 16) (hLen : state.stack.length ≤ depth)
+    (hFits : Program.PCFitsFrom pre (liftBuriedToTop depth))
+    (hPc : state.pc = pre.pcAfter) :
+    Source.Eventually (pre ++ liftBuriedToTop depth ++ post) state
+      (fun outcome => outcome = .error .StackUnderflow) := by
+  have hc : state.stack = [] ∨ ∃ front token, state.stack = front ++ [token] := by
+    induction state.stack using List.reverseRecOn with
+    | nil => exact Or.inl rfl
+    | append_singleton front token _ => exact Or.inr ⟨front, token, rfl⟩
+  rcases hc with hs | ⟨front, token, hs⟩
+  · obtain ⟨tail, ht⟩ := lift_prefix_split (n := 0) hd
+    have ht' : liftBuriedToTop depth = swapInstr 1 :: tail := by
+      simpa [liftBuriedToTop] using ht
+    have hf : pre.PCFits := Program.PCFitsFrom.start hFits
+    simpa [ht', List.append_assoc] using
+      (swap_underflow_eventually (n := 1) (pre := pre) (post := tail ++ post)
+        (state := state) (by omega) (by omega) (by simp [hs]) hf hPc)
+  · have hl : front.length < depth := by simp [hs] at hLen; omega
+    obtain ⟨tail, ht⟩ := lift_prefix_split hl
+    have hFits' : Program.PCFitsFrom pre
+        (liftBuriedToTop front.length ++ (swapInstr (front.length + 1) :: tail)) := by
+      simpa [ht] using hFits
+    have hLift := liftBuriedToTop_source_exists
+      (state := state) (front := front) (token := token) (suffix := [])
+      (pre := pre) (post := swapInstr (front.length + 1) :: tail ++ post)
+      (Program.PCFitsFrom.left hFits') hPc (by omega)
+    have hstate : { state with stack := front ++ token :: [] } = state := by
+      rw [← hs]
+    rw [hstate] at hLift
+    refine Source.Eventually.bind_running
+      (middle := fun final => final.stack = token :: front ∧
+        eraseRuntimeControl final = eraseRuntimeControl
+          {state with stack := token :: front} ∧
+        final.pc = (pre ++ liftBuriedToTop front.length).pcAfter) ?_ ?_
+    · simpa [ht, List.append_assoc] using hLift
+    · intro mid hm
+      have hf : (pre ++ liftBuriedToTop front.length).PCFits :=
+        Program.PCFitsFrom.start (Program.PCFitsFrom.right hFits')
+      simpa [ht, List.append_assoc] using
+        (swap_underflow_eventually (n := front.length + 1)
+          (pre := pre ++ liftBuriedToTop front.length) (post := tail ++ post)
+          (state := mid) (by omega) (by omega) (by simp [hm.1]) hf hm.2.2)
 
 theorem pop_cons_step {state : EVMState} {top : Word}
     {suffix : List Word} :

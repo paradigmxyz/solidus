@@ -62,7 +62,19 @@ def guardBuried (depth : Nat) : Program :=
 
 /-- Validate a buried item and then move it to the top of the stack. -/
 def guardedLiftBuriedToTop (depth : Nat) : Program :=
-  guardBuried depth ++ liftBuriedToTop depth
+  liftBuriedToTop depth
+
+theorem lift_prefix_split {depth n : Nat} (h : n < depth) :
+    ∃ tail, liftBuriedToTop depth = liftBuriedToTop n ++ swapInstr (n + 1) :: tail := by
+  induction depth with
+  | zero => omega
+  | succ depth ih =>
+      by_cases heq : n = depth
+      · subst n
+        exact ⟨[], by simp [liftBuriedToTop]⟩
+      · obtain ⟨tail, ht⟩ := ih (by omega)
+        exact ⟨tail ++ [swapInstr (depth + 1)], by simp [liftBuriedToTop, ht]⟩
+
 
 /-- Remove the item below `depth` visible items, preserving their order. -/
 def removeBuriedUnder (depth : Nat) : Program :=

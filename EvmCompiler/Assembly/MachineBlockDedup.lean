@@ -131,10 +131,44 @@ def collectSafeMachineAliases (entry : Label) :
         collectSafeMachineAliases entry rest (block :: kept) aliases
           (blockClosed? block)
 
+/-- Greedy physical fallthrough layout.  Certification below independently
+checks that every label still denotes its exact rewritten machine block. -/
+def layoutSuccessor? (block : MachineBlock) : Option Label :=
+  match block.code.getLast? with
+  | some (.jump target) => some target
+  | _ => none
+
+def growMachineLayout (blocks : List MachineBlock) :
+    Nat → Label → List Label → List MachineBlock × List Label
+  | 0, _, placed => ([], placed)
+  | fuel + 1, start, placed =>
+      if placed.contains start then ([], placed)
+      else
+        match findMachineBlock? blocks start with
+        | none => ([], placed)
+        | some block =>
+            let placed := start :: placed
+            match layoutSuccessor? block with
+            | none => ([block], placed)
+            | some target =>
+                let (tail, placed) := growMachineLayout blocks fuel target placed
+                (block :: tail, placed)
+
+def layoutMachineBlocks (entry : Label)
+    (blocks : List MachineBlock) : List MachineBlock :=
+  let successors := blocks.filterMap layoutSuccessor?
+  let heads := (blocks.filter fun block =>
+    !successors.contains block.label).map MachineBlock.label
+  let seeds := entry :: (heads ++ blocks.map MachineBlock.label)
+  (seeds.foldl (fun state seed =>
+    let grown := growMachineLayout blocks blocks.length seed state.2
+    (state.1 ++ grown.1, grown.2)) ([], [])).1
+
 def collectMachineAliases (entry : Label)
     (blocks : List MachineBlock) (kept : List MachineBlock)
     (aliases : LabelAliases) : List MachineBlock × LabelAliases :=
-  collectSafeMachineAliases entry blocks kept aliases false
+  let collected := collectSafeMachineAliases entry blocks kept aliases false
+  (layoutMachineBlocks entry collected.1, collected.2)
 
 def aliasesClosed? (original : List MachineBlock)
     (aliases : LabelAliases) : Bool :=
@@ -525,7 +559,7 @@ def traceCheck (entry : Label) :
         check entry current terminal && terminal.aliases.isEmpty)
   | current, round :: rest, output =>
       check entry current round && (
-        hasAliases round.aliases &&
+        decide (current ≠ round.output) &&
           traceCheck entry round.output rest output)
 
 inductive CertifiedTrace (entry : Label) : Program → Program → Prop where
@@ -533,7 +567,7 @@ inductive CertifiedTrace (entry : Label) : Program → Program → Prop where
       CertifiedTrace entry program program
   | step {source output : Program} {round : Cert}
       (checked : check entry source round = true)
-      (progress : hasAliases round.aliases = true)
+      (progress : decide (source ≠ round.output) = true)
       (tail : CertifiedTrace entry round.output output) :
       CertifiedTrace entry source output
 
@@ -591,7 +625,7 @@ def fixedPointFuel (entry : Label) :
   | 0, current => ([], current)
   | fuel + 1, current =>
       let round := candidate entry current
-      if check entry current round && hasAliases round.aliases then
+      if check entry current round && decide (current ≠ round.output) then
         let tail := fixedPointFuel entry fuel round.output
         (round :: tail.1, tail.2)
       else

@@ -91,8 +91,29 @@ def sortToId (b0 : List Nat) : List Nat :=
 /-- A `(0,d)`-transposition list realising the permutation whose net window is
 `target` (i.e. `netStack (starDecompose target) target.length = target`, the
 frontier correctness lemma). Selection sort is its own inverse under reversal. -/
+/- Sort cycles by moving the top value directly to its final position.
+The fuel bounds malformed inputs; soundness is checked independently below. -/
+def cycleSortFuel : Nat → List Nat → List Nat → List Nat
+  | 0, _, code => code
+  | fuel + 1, stack, code =>
+      let next := match stack.head? with
+        | some top => if top = 0 then
+            (List.range stack.length).findIdx (fun i => stack[i]? != some i)
+          else top
+        | none => 0
+      if next = 0 ∨ stack.length ≤ next then code
+      else cycleSortFuel fuel (applySwap next stack) (code ++ [next])
+
+/-- Candidate optimal star decomposition, admitted only by an exact finite
+permutation check. Otherwise the original proven selection sort is retained. -/
 def starDecompose (target : List Nat) : List Nat :=
-  (sortToId target).reverse
+  let baseline := (sortToId target).reverse
+  let candidate := (cycleSortFuel (2 * target.length) target []).reverse
+  if candidate.length < baseline.length ∧
+      netStack candidate target.length = target ∧
+      ∀ e ∈ candidate, 1 ≤ e ∧ e < target.length then
+    candidate
+  else baseline
 
 /-- Canonicalise a run of **cfg** swap depths, used only when strictly shorter
 (so `(canonSwaps s).length ≤ s.length` always).

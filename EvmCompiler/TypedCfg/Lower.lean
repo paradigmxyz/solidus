@@ -164,7 +164,7 @@ theorem scheduleReturnSites_perm (sites : List ReturnSite) :
 def returnDispatchLoweredCode (depth : Nat) (sites : List ReturnSite) :
     Assembly.Program :=
   let scheduled := scheduleReturnSites sites
-  if 2 < depth * (sites.length - 1) then
+  if 0 < depth * (sites.length - 1) then
     returnDispatchSharedCode depth scheduled
   else
     returnDispatchCode depth scheduled
@@ -186,7 +186,7 @@ theorem label_mem_returnDispatchLoweredCode
     apply List.mem_append_right
     exact List.mem_flatMap.mpr
       ⟨site, hScheduled, by simp [returnDispatchCase]⟩
-  by_cases hShared : 2 < depth * (sites.length - 1)
+  by_cases hShared : 0 < depth * (sites.length - 1)
   · simp only [returnDispatchLoweredCode, if_pos hShared,
       returnDispatchSharedCode, List.mem_append]
     exact Or.inr (hCase 0)
@@ -205,7 +205,7 @@ theorem jump_mem_returnDispatchLoweredCode
     apply List.mem_append_right
     exact List.mem_flatMap.mpr
       ⟨site, hScheduled, by simp [returnDispatchCase]⟩
-  by_cases hShared : 2 < depth * (sites.length - 1)
+  by_cases hShared : 0 < depth * (sites.length - 1)
   · simp only [returnDispatchLoweredCode, if_pos hShared,
       returnDispatchSharedCode, List.mem_append]
     exact Or.inr (hCase 0)

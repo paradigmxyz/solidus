@@ -86,6 +86,25 @@ theorem uint256_lor_comm (left right : Word) :
   exact congrArg (fun value => value % EvmYul.UInt256.size)
     (Nat.lor_comm _ _)
 
+theorem uint256_mul_comm (left right : Word) :
+    EvmYul.UInt256.mul left right = EvmYul.UInt256.mul right left := by
+  unfold EvmYul.UInt256.mul
+  congr 1
+  exact mul_comm _ _
+
+theorem uint256_xor_comm (left right : Word) :
+    EvmYul.UInt256.xor left right = EvmYul.UInt256.xor right left := by
+  unfold EvmYul.UInt256.xor
+  congr 1
+  apply Fin.ext
+  change Nat.xor left.1.val right.1.val % EvmYul.UInt256.size =
+    Nat.xor right.1.val left.1.val % EvmYul.UInt256.size
+  exact congrArg (fun value => value % EvmYul.UInt256.size) (Nat.xor_comm _ _)
+
+theorem uint256_eq_comm (left right : Word) :
+    EvmYul.UInt256.eq left right = EvmYul.UInt256.eq right left := by
+  simp only [EvmYul.UInt256.eq, eq_comm]
+
 def lookupAtom (values : ValueTable) (atom : Atom) : Word :=
   values[atom]!
 
@@ -1566,7 +1585,7 @@ theorem traceCommutative_step_map_eraseRuntimeControl
                       · simp [EvmYul.EVM.State.replaceStackAndIncrPC,
                           EvmYul.EVM.State.incrPC, EvmYul.Stack.push,
                           uint256_add_comm, uint256_land_comm,
-                          uint256_lor_comm]
+                          uint256_lor_comm, uint256_mul_comm, uint256_xor_comm, uint256_eq_comm]
 
 /--
 Runtime soundness for one trace primitive event when its recorded operand list

@@ -83,8 +83,13 @@ def placeAtom (atom : Atom) (prepared : Nat)
   let depth := prepared + localDepth
   if base.count atom ≤ neededBelow.count atom then
     emitDup depth state
-  else
+  else if depth = prepared then
     rotateAtomToTop depth state
+  else
+    -- Preserve only the already prepared prefix.  Unprepared survivors may
+    -- be permuted freely: the trace certificate checks the eventual layout.
+    let state ← rotateAtomToTop prepared state
+    emitSwap (depth - 1) state
 
 def prepareRev : List Atom → Nat → List Atom → CodeState →
     Option CodeState
@@ -127,14 +132,46 @@ partial def deleteExtras (desired : List Atom)
       let state ← emitSwap depth state
       deleteExtras desired (← emitPop state)
 
+partial def copyMissing (desired : List Atom) (state : CodeState) : Option CodeState := do
+  match desired.find? (fun atom => state.stack.count atom < desired.count atom) with
+  | none => some state
+  | some atom =>
+      let depth ← findAtomFrom atom 0 state.stack
+      copyMissing desired (← emitDup depth state)
+
+def swapPosition (position : Nat) (state : CodeState) : Option CodeState :=
+  if position = 0 then some state else emitSwap (position - 1) state
+
+/-- Fix slots from bottom to top, using at most two swaps for each slot. -/
+def reconcileSlots (desired : List Atom) : Nat → CodeState → Option CodeState
+  | 0, state => some state
+  | count + 1, state => do
+      let atom ← desired[count]?
+      if state.stack[count]? = some atom then
+        reconcileSlots desired count state
+      else
+        let position ← findAtomFrom atom 0 (state.stack.take (count + 1))
+        let state ← swapPosition position state
+        let state ← swapPosition count state
+        reconcileSlots desired count state
+
 def reconcile (desired : List Atom)
     (state : CodeState) : Option CodeState := do
   if state.stack = desired then
     some state
   else
     let state ← deleteExtras desired state
-    let state ← prepareRev desired.reverse 0 [] state
-    if state.stack = desired then some state else none
+    let rotated := do
+      let result ← prepareRev desired.reverse 0 [] state
+      if result.stack = desired then some result else none
+    let sorted := do
+      let result ← copyMissing desired state
+      let result ← reconcileSlots desired desired.length result
+      if result.stack = desired then some result else none
+    match rotated, sorted with
+    | some a, some b => if b.code.length < a.code.length then some b else some a
+    | none, other => other
+    | other, none => other
 
 structure State where
   source : List Atom
@@ -209,7 +246,7 @@ virtual-stack trace certificate. Keeping this list explicit makes the
 certificate fail closed for every other primitive.
 -/
 def traceCommutative? : Assembly.PrimOp → Bool
-  | .add | .and | .or => true
+  | .add | .and | .or | .mul | .xor | .eq => true
   | _ => false
 
 /--
@@ -291,6 +328,26 @@ partial def futureNeeds : List Instr → SourceState →
       let later ← futureNeeds rest after
       some (operands ++ later).eraseDups
 
+/-- Discard a dead top value immediately, before it obstructs operand access. -/
+partial def dropDeadTop (needed : List Atom) (state : CodeState) : Option CodeState :=
+  match state.stack with
+  | [] => some state
+  | atom :: _ =>
+      if needed.contains atom then some state
+      else do dropDeadTop needed (← emitPop state)
+
+/-- Select the shorter of the two certified operand orders. -/
+def preparePrimOperands (op : Assembly.PrimOp)
+    (operands surviving : List Atom) (state : CodeState) : Option CodeState :=
+  let normal := prepareOperands operands surviving state
+  if traceCommutative? op then
+    let reversed := prepareOperands operands.reverse surviving state
+    match normal, reversed with
+    | some a, some b => if b.code.length < a.code.length then some b else some a
+    | none, other => other
+    | other, none => other
+  else normal
+
 def translateInstr (instr : Instr) (futureNeeded : List Atom)
     (state : State) : Option State :=
   match instr with
@@ -304,13 +361,14 @@ def translateInstr (instr : Instr) (futureNeeded : List Atom)
       match state.source with
       | [] => none
       | _ :: source => some { state with source }
-  | .push _ | .returnToken _ =>
+  | .push _ | .returnToken _ => do
       let atom := state.nextAtom
+      let target ← dropDeadTop futureNeeded state.target
       some
         { source := atom :: state.source
           target :=
-            { code := state.target.code ++ [instr]
-              stack := atom :: state.target.stack }
+            { code := target.code ++ [instr]
+              stack := atom :: target.stack }
           nextAtom := atom + 1 }
   | .prim op => do
       if primAllowed op then pure () else none
@@ -321,7 +379,8 @@ def translateInstr (instr : Instr) (futureNeeded : List Atom)
       let surviving :=
         sourceTail.filter (fun atom => futureNeeded.contains atom)
           |>.eraseDups
-      let target ← prepareOperands operands surviving state.target
+      let target ← dropDeadTop (operands ++ surviving) state.target
+      let target ← preparePrimOperands op operands surviving target
       let outputAtoms := atomRangeFrom state.nextAtom outputs
       some
         { source := outputAtoms ++ sourceTail
@@ -398,6 +457,135 @@ def candidateCore? (chain : List Block) : Option (List Block) := do
     { source := atoms
       target := { stack := atoms }
       nextAtom := atoms.length }
+
+
+namespace Legacy
+
+def placeAtom (atom : Atom) (prepared : Nat)
+    (neededBelow : List Atom) (state : CodeState) : Option CodeState := do
+  let base := state.stack.drop prepared
+  let localDepth ← findAtomFrom atom 0 base
+  let depth := prepared + localDepth
+  if base.count atom ≤ neededBelow.count atom then
+    emitDup depth state
+  else
+    rotateAtomToTop depth state
+
+def prepareRev : List Atom → Nat → List Atom → CodeState →
+    Option CodeState
+  | [], _, _, state => some state
+  | atom :: rest, prepared, surviving, state => do
+      let state ← placeAtom atom prepared (surviving ++ rest) state
+      prepareRev rest (prepared + 1) surviving state
+
+def prepareOperands (operands surviving : List Atom)
+    (state : CodeState) : Option CodeState := do
+  if state.stack.take operands.length = operands &&
+      coversAtoms surviving (state.stack.drop operands.length) then
+    some state
+  else
+    let prepared ← prepareRev operands.reverse 0 surviving state
+    if prepared.stack.take operands.length = operands then
+      some prepared
+    else
+      none
+
+def reconcile (desired : List Atom)
+    (state : CodeState) : Option CodeState := do
+  if state.stack = desired then
+    some state
+  else
+    let state ← deleteExtras desired state
+    let state ← prepareRev desired.reverse 0 [] state
+    if state.stack = desired then some state else none
+
+def translateInstr (instr : Instr) (futureNeeded : List Atom)
+    (state : State) : Option State :=
+  match instr with
+  | .swap depth => do
+      let source ← sourceSwap? depth state.source
+      some { state with source }
+  | .dup depth => do
+      let source ← sourceDup? depth state.source
+      some { state with source }
+  | .pop =>
+      match state.source with
+      | [] => none
+      | _ :: source => some { state with source }
+  | .push _ | .returnToken _ =>
+      let atom := state.nextAtom
+      some
+        { source := atom :: state.source
+          target :=
+            { code := state.target.code ++ [instr]
+              stack := atom :: state.target.stack }
+          nextAtom := atom + 1 }
+  | .prim op => do
+      if primAllowed op then pure () else none
+      let (inputs, outputs) ← op.stackArity?
+      if inputs ≤ state.source.length then pure () else none
+      let operands := state.source.take inputs
+      let sourceTail := state.source.drop inputs
+      let surviving :=
+        sourceTail.filter (fun atom => futureNeeded.contains atom)
+          |>.eraseDups
+      let target ← prepareOperands operands surviving state.target
+      let outputAtoms := atomRangeFrom state.nextAtom outputs
+      some
+        { source := outputAtoms ++ sourceTail
+          target :=
+            { code := target.code ++ [instr]
+              stack := outputAtoms ++ target.stack.drop inputs }
+          nextAtom := state.nextAtom + outputs }
+  | .bindLocals _ _ | .bindScratch _ _ _ | .relabel _ =>
+      some state
+  | .unwind _ => none
+
+def translateChunk : List Instr → List Instr → State → Option State
+  | [], _, state => some state
+  | instr :: rest, future, state => do
+      let afterSource ←
+        sourceStep instr
+          { stack := state.source, nextAtom := state.nextAtom }
+      let needed ← futureNeeds (rest ++ future) afterSource
+      translateChunk rest future
+        (← translateInstr instr needed state)
+
+partial def distribute? : List Block → Shape → State →
+    Option (List Block)
+  | [], _, _ => some []
+  | [block], input, state => do
+      if state.target.code.isEmpty then pure () else none
+      let after ← translateChunk block.body [] state
+      let target ← reconcile after.source after.target
+      let body := target.code ++ [.relabel block.output]
+      if Block.bodyType? body input = some block.output then
+        pure ()
+      else
+        none
+      some [{ block with input, body }]
+  | block :: next :: rest, input, state => do
+      if state.target.code.isEmpty then pure () else none
+      let future := (next :: rest).flatMap Block.body
+      let after ← translateChunk block.body future state
+      let body := after.target.code
+      let output ← Block.bodyType? body input
+      if after.source.length = block.output.length then pure () else none
+      if after.target.stack.length = output.length then pure () else none
+      let tailState :=
+        { after with target := { after.target with code := [] } }
+      let tail ← distribute? (next :: rest) output tailState
+      some ({ block with input, body, output } :: tail)
+
+def candidateCore? (chain : List Block) : Option (List Block) := do
+  let head ← chain.head?
+  let atoms := List.range head.input.length
+  distribute? chain head.input
+    { source := atoms
+      target := { stack := atoms }
+      nextAtom := atoms.length }
+
+end Legacy
 
 structure BlockTrace where
   label : Label
@@ -501,10 +689,21 @@ def cleanupObservedCommBlocks? :
       let rest ← cleanupObservedCommBlocks? rest
       some (block :: rest)
 
-def candidate? (source : List Block) : Option (List Block) := do
-  let candidate ← candidateCore? source
-  let _ ← certify? source candidate
-  some candidate
+def candidate? (source : List Block) : Option (List Block) :=
+  let modern := do
+    let candidate ← candidateCore? source
+    let _ ← certify? source candidate
+    some candidate
+  let legacy := do
+    let candidate ← Legacy.candidateCore? source
+    let _ ← certify? source candidate
+    some candidate
+  match modern, legacy with
+  | some a, some b =>
+      if runtimeBodyCost (b.flatMap Block.body) < runtimeBodyCost (a.flatMap Block.body)
+        then some b else some a
+  | none, other => other
+  | other, none => other
 
 def blocksCost (blocks : List Block) : Nat :=
   runtimeBodyCost (blocks.flatMap Block.body)
@@ -652,7 +851,7 @@ def cleanupPairCandidate? (source : List Block) : Option (List Block) :=
 def hasRuntimeEvent (block : Block) : Bool :=
   block.body.any fun instr =>
     match instr with
-    | .dup _ | .push _ | .returnToken _ | .prim _ => true
+    | .dup _ | .push _ | .returnToken _ | .prim _ | .pop => true
     | _ => false
 
 def cleanupCandidate? (source : List Block) : Option (List Block) := do
