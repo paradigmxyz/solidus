@@ -1442,14 +1442,19 @@ theorem openRun_for_bounded_under_of_compileStmtFuel?
         {blockFuel : Nat} {bodySource : RunState},
         blockFuel < sourceFuel ->
         TypedCfgCompiler.compileBlockFuel? compilerFuel body
-            (bodyContext ctx regular (LabelSupply.label supply 2)
-              { condOutput with slots := condOutput.slots.tail })
+            { (bodyContext ctx regular (LabelSupply.label supply 2)
+                  { condOutput with slots := condOutput.slots.tail }) with
+              callBase := ctx.callBase + initResult.calls.length }
             initResult.next (LabelSupply.label supply 1)
             { condOutput with slots := condOutput.slots.tail }
             (LabelSupply.label supply 2) =
           some bodyResult ->
         TypedCfgCompiler.compileBlockFuel? compilerFuel post
-            (outerContext ctx) bodyResult.next
+            { outerContext ctx with
+              callBase :=
+                ctx.callBase + initResult.calls.length +
+                  bodyResult.calls.length }
+            bodyResult.next
             (LabelSupply.label supply 2)
             { condOutput with slots := condOutput.slots.tail }
             (LabelSupply.label supply 0) =
@@ -1482,7 +1487,11 @@ theorem openRun_for_bounded_under_of_compileStmtFuel?
         {blockFuel : Nat} {postSource : RunState},
         blockFuel < sourceFuel ->
         TypedCfgCompiler.compileBlockFuel? compilerFuel post
-            (outerContext ctx) bodyResult.next
+            { outerContext ctx with
+              callBase :=
+                ctx.callBase + initResult.calls.length +
+                  bodyResult.calls.length }
+            bodyResult.next
             (LabelSupply.label supply 2)
             { condOutput with slots := condOutput.slots.tail }
             (LabelSupply.label supply 0) =
@@ -1528,8 +1537,9 @@ theorem openRun_for_bounded_under_of_compileStmtFuel?
     simpa [outerContext] using hInitCompileRaw
   have hBodyCompile :
       TypedCfgCompiler.compileBlockFuel? compilerFuel body
-          (bodyContext ctx regular (LabelSupply.label supply 2)
-            { condOutput with slots := condOutput.slots.tail })
+          { (bodyContext ctx regular (LabelSupply.label supply 2)
+                { condOutput with slots := condOutput.slots.tail }) with
+            callBase := ctx.callBase + initResult.calls.length }
           initResult.next (LabelSupply.label supply 1)
           { condOutput with slots := condOutput.slots.tail }
           (LabelSupply.label supply 2) =
@@ -1537,7 +1547,11 @@ theorem openRun_for_bounded_under_of_compileStmtFuel?
     simpa [bodyContext] using hBodyCompileRaw
   have hPostCompile :
       TypedCfgCompiler.compileBlockFuel? compilerFuel post
-          (outerContext ctx) bodyResult.next
+          { outerContext ctx with
+            callBase :=
+              ctx.callBase + initResult.calls.length +
+                bodyResult.calls.length }
+          bodyResult.next
           (LabelSupply.label supply 2)
           { condOutput with slots := condOutput.slots.tail }
           (LabelSupply.label supply 0) =
@@ -1826,13 +1840,18 @@ theorem openRun_for_runtime_error_bounded_under_of_compileStmtFuel?
         {blockFuel : Nat} {bodySource : RunState},
         blockFuel < sourceFuel ->
         TypedCfgCompiler.compileBlockFuel? compilerFuel body
-            (bodyContext ctx regular (LabelSupply.label supply 2)
-              { condOutput with slots := condOutput.slots.tail })
+            { (bodyContext ctx regular (LabelSupply.label supply 2)
+                  { condOutput with slots := condOutput.slots.tail }) with
+              callBase := ctx.callBase + initResult.calls.length }
             initResult.next (LabelSupply.label supply 1)
             { condOutput with slots := condOutput.slots.tail }
             (LabelSupply.label supply 2) = some bodyResult ->
         TypedCfgCompiler.compileBlockFuel? compilerFuel post
-            (outerContext ctx) bodyResult.next
+            { outerContext ctx with
+              callBase :=
+                ctx.callBase + initResult.calls.length +
+                  bodyResult.calls.length }
+            bodyResult.next
             (LabelSupply.label supply 2)
             { condOutput with slots := condOutput.slots.tail }
             (LabelSupply.label supply 0) = some postResult ->
@@ -1861,13 +1880,18 @@ theorem openRun_for_runtime_error_bounded_under_of_compileStmtFuel?
         {blockFuel : Nat} {bodySource : RunState},
         blockFuel < sourceFuel ->
         TypedCfgCompiler.compileBlockFuel? compilerFuel body
-            (bodyContext ctx regular (LabelSupply.label supply 2)
-              { condOutput with slots := condOutput.slots.tail })
+            { (bodyContext ctx regular (LabelSupply.label supply 2)
+                  { condOutput with slots := condOutput.slots.tail }) with
+              callBase := ctx.callBase + initResult.calls.length }
             initResult.next (LabelSupply.label supply 1)
             { condOutput with slots := condOutput.slots.tail }
             (LabelSupply.label supply 2) = some bodyResult ->
         TypedCfgCompiler.compileBlockFuel? compilerFuel post
-            (outerContext ctx) bodyResult.next
+            { outerContext ctx with
+              callBase :=
+                ctx.callBase + initResult.calls.length +
+                  bodyResult.calls.length }
+            bodyResult.next
             (LabelSupply.label supply 2)
             { condOutput with slots := condOutput.slots.tail }
             (LabelSupply.label supply 0) = some postResult ->
@@ -1896,7 +1920,11 @@ theorem openRun_for_runtime_error_bounded_under_of_compileStmtFuel?
         {blockFuel : Nat} {postSource : RunState},
         blockFuel < sourceFuel ->
         TypedCfgCompiler.compileBlockFuel? compilerFuel post
-            (outerContext ctx) bodyResult.next
+            { outerContext ctx with
+              callBase :=
+                ctx.callBase + initResult.calls.length +
+                  bodyResult.calls.length }
+            bodyResult.next
             (LabelSupply.label supply 2)
             { condOutput with slots := condOutput.slots.tail }
             (LabelSupply.label supply 0) = some postResult ->
@@ -1922,7 +1950,11 @@ theorem openRun_for_runtime_error_bounded_under_of_compileStmtFuel?
         {blockFuel : Nat} {postSource : RunState},
         blockFuel < sourceFuel ->
         TypedCfgCompiler.compileBlockFuel? compilerFuel post
-            (outerContext ctx) bodyResult.next
+            { outerContext ctx with
+              callBase :=
+                ctx.callBase + initResult.calls.length +
+                  bodyResult.calls.length }
+            bodyResult.next
             (LabelSupply.label supply 2)
             { condOutput with slots := condOutput.slots.tail }
             (LabelSupply.label supply 0) = some postResult ->
@@ -1960,15 +1992,20 @@ theorem openRun_for_runtime_error_bounded_under_of_compileStmtFuel?
     simpa [outerContext] using hInitCompileRaw
   have hBodyCompile :
       TypedCfgCompiler.compileBlockFuel? compilerFuel body
-          (bodyContext ctx regular (LabelSupply.label supply 2)
-            { condOutput with slots := condOutput.slots.tail })
+          { (bodyContext ctx regular (LabelSupply.label supply 2)
+                { condOutput with slots := condOutput.slots.tail }) with
+            callBase := ctx.callBase + initResult.calls.length }
           initResult.next (LabelSupply.label supply 1)
           { condOutput with slots := condOutput.slots.tail }
           (LabelSupply.label supply 2) = some bodyResult := by
     simpa [bodyContext] using hBodyCompileRaw
   have hPostCompile :
       TypedCfgCompiler.compileBlockFuel? compilerFuel post
-          (outerContext ctx) bodyResult.next (LabelSupply.label supply 2)
+          { outerContext ctx with
+            callBase :=
+              ctx.callBase + initResult.calls.length +
+                bodyResult.calls.length }
+          bodyResult.next (LabelSupply.label supply 2)
           { condOutput with slots := condOutput.slots.tail }
           (LabelSupply.label supply 0) = some postResult := by
     simpa [outerContext] using hPostCompileRaw

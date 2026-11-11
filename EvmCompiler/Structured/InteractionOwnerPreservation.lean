@@ -263,6 +263,91 @@ theorem of_required_fallthrough
 
 end BoundaryShapes
 
+/-!
+Transport of every label-indexed contract across a shift of the dense
+call-token counter `Context.callBase`.
+
+`TypedCfgCompiler.Context.advance` (and the explicit `callBase` literals the
+statement-list, switch and loop arms now install) changes only that counter.
+`ContextSupports`, `ContinuationLabelsBeforeSupply`, `BoundaryShapes`,
+`Rel` and hence `FragmentContract` read a compiler context solely through its
+continuation labels and shapes, so each transports definitionally.
+-/
+namespace CallBase
+
+theorem contextSupports
+    {ctx : TypedCfgCompiler.Context}
+    {canBreak canContinue canLeave : Bool}
+    (base : Nat)
+    (hSupports :
+      TypedCfgPreservation.OutcomeSimulation.ContextSupports
+        ctx canBreak canContinue canLeave) :
+    TypedCfgPreservation.OutcomeSimulation.ContextSupports
+      { ctx with callBase := base } canBreak canContinue canLeave where
+  breakLabel := hSupports.breakLabel
+  continueLabel := hSupports.continueLabel
+  leaveLabel := hSupports.leaveLabel
+
+theorem continuationLabels
+    {ctx : TypedCfgCompiler.Context}
+    {regular : Assembly.Label} {supply : LabelSupply}
+    (base : Nat)
+    (hBefore :
+      TypedCfgCompilerFacts.ContinuationLabelsBeforeSupply
+        ctx regular supply) :
+    TypedCfgCompilerFacts.ContinuationLabelsBeforeSupply
+      { ctx with callBase := base } regular supply where
+  regular := hBefore.regular
+  breakLabel := hBefore.breakLabel
+  continueLabel := hBefore.continueLabel
+  leaveLabel := hBefore.leaveLabel
+
+theorem boundaryShapes
+    {cfg : TypedCfg.Program}
+    {result : TypedCfgCompiler.Result}
+    {ctx : TypedCfgCompiler.Context}
+    {regular : Assembly.Label}
+    (base : Nat)
+    (hShapes : BoundaryShapes cfg result ctx regular) :
+    BoundaryShapes cfg result { ctx with callBase := base } regular where
+  regular := hShapes.regular
+  break_ := hShapes.break_
+  continue_ := hShapes.continue_
+  leave := hShapes.leave
+
+theorem fragmentContract
+    {cfg : TypedCfg.Program}
+    {result : TypedCfgCompiler.Result}
+    {ctx : TypedCfgCompiler.Context}
+    {supply : LabelSupply}
+    {entry regular : Assembly.Label}
+    {input : TypedCfg.Shape}
+    {source : RunState} {tokens : List Word}
+    {policy : StopPolicy}
+    (base : Nat)
+    (contract :
+      FragmentContract cfg result ctx supply entry regular input
+        source tokens policy) :
+    FragmentContract cfg result { ctx with callBase := base } supply entry
+      regular input source tokens policy where
+  fits := contract.fits
+  regularAt := contract.regularAt
+  before := continuationLabels base contract.before
+  activation := contract.activation
+  boundary := contract.boundary
+  shapes := boundaryShapes base contract.shapes
+  stops := by
+    intro sourceOutcome targetOutcome hRel
+    exact
+      contract.stops
+        (sourceOutcome := sourceOutcome) (targetOutcome := targetOutcome)
+        hRel
+  nonregular := by
+    intro childResult childRegular sourceOutcome targetOutcome hMode hRel
+    exact contract.nonregular hMode hRel
+
+end CallBase
+
 namespace LoopContract
 
 theorem outer_before
@@ -457,9 +542,9 @@ theorem extension
 
 theorem before
     {program : Structured.Program} {proc : Structured.Proc}
-    {supply : LabelSupply} :
+    {supply : LabelSupply} (callBase : Nat) :
     TypedCfgCompilerFacts.ContinuationLabelsBeforeSupply
-      (InteractionCallPreservation.Call.procContext program proc)
+      (InteractionCallPreservation.Call.procContext program proc callBase)
       (ProcLabel.exit proc.name) supply := by
   exact
     { regular := by trivial
@@ -488,9 +573,10 @@ theorem shapes
     (fragment :
       TypedCfgPreservation.Program.ProcFragment
         entryShapes program.procs proc
-        generated.procBlocks generated.procCalls) :
+        generated.procBlocks generated.procCalls)
+    (callBase : Nat) :
     BoundaryShapes cfg fragment.result
-      (InteractionCallPreservation.Call.procContext program proc)
+      (InteractionCallPreservation.Call.procContext program proc callBase)
       (ProcLabel.exit proc.name) := by
   have hExitShape :=
     TypedCfgPreservation.LabelShape.procExit generated hLookup
@@ -522,9 +608,10 @@ theorem shapes
         exact hExitShape }
 
 theorem supports
-    (program : Structured.Program) (proc : Structured.Proc) :
+    (program : Structured.Program) (proc : Structured.Proc)
+    (callBase : Nat) :
     TypedCfgPreservation.OutcomeSimulation.ContextSupports
-      (InteractionCallPreservation.Call.procContext program proc)
+      (InteractionCallPreservation.Call.procContext program proc callBase)
       false false true := by
   exact
     { breakLabel := by simp
@@ -732,10 +819,10 @@ theorem switch_exec
                   hCompile hBlocks hResultCalls contract.fits
                   contract.regularAt contract.activation
                   contract.boundary contract.stops
-              intro bodyCompilerFuel bodySupply bodyEntry bodyInput
-                body bodyResult afterPop value hSelect hBodyCompile
-                hBodyBlocks hBodyResultCalls hBodySupply hReturns
-                hBodyFits hRequire hFallthrough
+              intro bodyCompilerFuel bodySupply bodyCallBase bodyEntry
+                bodyInput body bodyResult afterPop value hSelect
+                hBodyCompile hBodyBlocks hBodyResultCalls hBodySupply
+                hReturns hBodyFits hRequire hFallthrough
               have hSelectedWF :=
                 Structured.Switch.wf_of_select
                   hCasesWF hDefaultWF hSelect
@@ -752,7 +839,7 @@ theorem switch_exec
                 hBlockOwner (Nat.le_refl sourceFuel)
                   hBodyCompile hBodyBlocks hBodyResultCalls
                   hSelectedWF hSelectedFrameSafe hSelectedCalls
-                  hSupports hProcs
+                  (CallBase.contextSupports bodyCallBase hSupports) hProcs
               · intro hCanLeave
                 obtain ⟨frame, rest, hSourceEq⟩ :=
                   hSourceReturns hCanLeave
@@ -762,7 +849,8 @@ theorem switch_exec
                     regularAt :=
                       Or.inl
                         (contract.regularAt.before_succ.mono hBodySupply)
-                    before := hBefore
+                    before :=
+                      CallBase.continuationLabels bodyCallBase hBefore
                     activation :=
                       contract.activation.stmtFallthrough
                         hCompile hFallthrough
@@ -770,8 +858,9 @@ theorem switch_exec
                       (contract.boundary.mono hSupply).congr_returns
                         hReturns.symm
                     shapes :=
-                      contract.shapes.of_required_fallthrough
-                        hRequire hFallthrough
+                      CallBase.boundaryShapes bodyCallBase
+                        (contract.shapes.of_required_fallthrough
+                          hRequire hFallthrough)
                     stops := by
                       intro sourceOutcome targetOutcome hRel
                       apply contract.stops
@@ -939,9 +1028,11 @@ theorem for_exec
                   hBlockOwner (Nat.le_of_lt hFuel)
                     hBodyCompile hBodyBlocks hFacts.bodyCalls
                     hBodyWF hBodySafe hBodyCalls
-                    (TypedCfgPreservation.OutcomeSimulation.ContextSupports.loopBody
-                      hSupports regular (LabelSupply.label supply 2)
-                      branchInput)
+                    (CallBase.contextSupports
+                      (ctx.callBase + initResult.calls.length)
+                      (TypedCfgPreservation.OutcomeSimulation.ContextSupports.loopBody
+                        hSupports regular (LabelSupply.label supply 2)
+                        branchInput))
                     (by
                       simpa [InteractionLoopPreservation.Loop.bodyContext]
                         using hProcs)
@@ -955,9 +1046,11 @@ theorem for_exec
                       InteractionLoopPreservation.Loop.postStopPolicy] using
                     (show
                       FragmentContract cfg bodyResult
-                        (InteractionLoopPreservation.Loop.bodyContext
-                          ctx regular (LabelSupply.label supply 2)
-                          branchInput)
+                        { InteractionLoopPreservation.Loop.bodyContext
+                            ctx regular (LabelSupply.label supply 2)
+                            branchInput with
+                          callBase :=
+                            ctx.callBase + initResult.calls.length }
                         initResult.next
                         (LabelSupply.label supply 1)
                         (LabelSupply.label supply 2)
@@ -969,11 +1062,17 @@ theorem for_exec
                           branchInput source.returns tokens policy) from
                       { fits := by simpa [branchInput] using hBodyFits
                         regularAt := Or.inl hBodyBefore.regular
-                        before := hBodyBefore
+                        before :=
+                          CallBase.continuationLabels
+                            (ctx.callBase + initResult.calls.length)
+                            hBodyBefore
                         activation := by
                           simpa [branchInput] using hFacts.bodyActivation
                         boundary := hBodyBoundary.congr_returns hReturns.symm
-                        shapes := hBodyShapes
+                        shapes :=
+                          CallBase.boundaryShapes
+                            (ctx.callBase + initResult.calls.length)
+                            hBodyShapes
                         stops := by
                           intro sourceOutcome targetOutcome hRel
                           have hRel' :
@@ -1026,8 +1125,11 @@ theorem for_exec
                   hBlockOwner (Nat.le_of_lt hFuel)
                     hPostCompile hPostBlocks hFacts.postCalls
                     hPostWF hPostSafe hPostCalls
-                    (TypedCfgPreservation.OutcomeSimulation.ContextSupports.withoutLoop
-                      hSupports)
+                    (CallBase.contextSupports
+                      (ctx.callBase + initResult.calls.length +
+                        bodyResult.calls.length)
+                      (TypedCfgPreservation.OutcomeSimulation.ContextSupports.withoutLoop
+                        hSupports))
                     (by
                       simpa [InteractionLoopPreservation.Loop.outerContext]
                         using hProcs)
@@ -1040,7 +1142,10 @@ theorem for_exec
                       InteractionLoopPreservation.Loop.postStopPolicy] using
                     (show
                       FragmentContract cfg postResult
-                        (InteractionLoopPreservation.Loop.outerContext ctx)
+                        { InteractionLoopPreservation.Loop.outerContext ctx with
+                          callBase :=
+                            ctx.callBase + initResult.calls.length +
+                              bodyResult.calls.length }
                         bodyResult.next
                         (LabelSupply.label supply 2)
                         (LabelSupply.label supply 0)
@@ -1050,11 +1155,19 @@ theorem for_exec
                           source.returns tokens policy) from
                       { fits := by simpa [branchInput] using hPostFits
                         regularAt := Or.inl hPostBefore.regular
-                        before := hPostBefore
+                        before :=
+                          CallBase.continuationLabels
+                            (ctx.callBase + initResult.calls.length +
+                              bodyResult.calls.length)
+                            hPostBefore
                         activation := by
                           simpa [branchInput] using hFacts.bodyActivation
                         boundary := hPostBoundary.congr_returns hReturns.symm
-                        shapes := hPostShapes
+                        shapes :=
+                          CallBase.boundaryShapes
+                            (ctx.callBase + initResult.calls.length +
+                              bodyResult.calls.length)
+                            hPostShapes
                         stops := by
                           intro sourceOutcome targetOutcome hRel
                           have hRel' :
@@ -1131,7 +1244,7 @@ theorem call_exec
           CallContract.extension
             (source := source) (tokens := tokens)
             (args := args) (callerStack := callerStack)
-            (retc := proc.retc) (supply := supply)
+            (retc := proc.retc) (supply := ctx.callBase)
         exact
           contract.boundary.ownership.eq_false_of_stateRel_extension
             (TypedCfgPreservation.LabelShape.procEntry generated hLookup)
@@ -1144,13 +1257,13 @@ theorem call_exec
         have hExtension :
             TypedCfgPreservation.ActivationExtension
               source.returns tokens bodyState.returns
-              (Structured.Stmt.callToken supply :: tokens) := by
+              (Structured.Stmt.callToken ctx.callBase :: tokens) := by
           rw [hReturns]
           exact
             CallContract.extension
               (source := source) (tokens := tokens)
               (args := args) (callerStack := callerStack)
-              (retc := proc.retc) (supply := supply)
+              (retc := proc.retc) (supply := ctx.callBase)
         exact
           contract.boundary.ownership.eq_false_of_stateRel_extension
             (TypedCfgPreservation.LabelShape.procExit generated hLookup)
@@ -1161,7 +1274,7 @@ theorem call_exec
           CallContract.extension
             (source := source) (tokens := tokens)
             (args := args) (callerStack := callerStack)
-            (retc := proc.retc) (supply := supply)
+            (retc := proc.retc) (supply := ctx.callBase)
         have hFragmentShape :
             TypedCfgPreservation.LabelShape
               cfg fragment.entry fragment.input :=
@@ -1189,7 +1302,8 @@ theorem call_exec
             TypedCfgCompiler.compileBlockFuel?
                 (TypedCfgCompiler.blockFuel proc.body + 1)
                 proc.body
-                (InteractionCallPreservation.Call.procContext program proc)
+                (InteractionCallPreservation.Call.procContext program proc
+                  fragment.callBase)
                 fragment.supply fragment.entry fragment.input
                 (ProcLabel.exit proc.name) =
               some fragment.result := by
@@ -1200,19 +1314,19 @@ theorem call_exec
         have hExtension :
             TypedCfgPreservation.ActivationExtension
               source.returns tokens callSource.returns
-              (Structured.Stmt.callToken supply :: tokens) := by
+              (Structured.Stmt.callToken ctx.callBase :: tokens) := by
           simpa [callSource] using
             (CallContract.extension
               (source := source) (tokens := tokens)
               (args := args) (callerStack := callerStack)
-              (retc := proc.retc) (supply := supply))
+              (retc := proc.retc) (supply := ctx.callBase))
         have hShapes :=
-          CallContract.shapes generated hLookup fragment
+          CallContract.shapes generated hLookup fragment fragment.callBase
         apply
           hBlockOwner (Nat.le_refl sourceFuel)
             hFragmentCompile hFragmentBlocks hFragmentCalls
             hProcWF.2.2 hProcFrameSafe hProcCalls
-            (CallContract.supports program proc) rfl
+            (CallContract.supports program proc fragment.callBase) rfl
         · intro _hCanLeave
           exact
             ⟨{ callerStack := callerStack, retc := proc.retc },
@@ -1221,13 +1335,13 @@ theorem call_exec
             { fits :=
                 fragment.input_sourceFrameFits_of_splitArgs hSplit
               regularAt := Or.inl (by trivial)
-              before := CallContract.before
+              before := CallContract.before fragment.callBase
               activation :=
                 TypedCfgPreservation.ActivationInput.active
                   ⟨proc.argc, fragment.input_returnTokenDepth⟩
               boundary :=
                 contract.boundary.push_child hExtension hShapes
-                  CallContract.before
+                  (CallContract.before fragment.callBase)
               shapes := hShapes
               stops := by
                 intro sourceOutcome targetOutcome hRel
@@ -1878,7 +1992,9 @@ theorem block_owner
                                                         (Nat.succ
                                                           (stmtCompilerFuel +
                                                             1))
-                                                        { stmts := rest } ctx
+                                                        { stmts := rest }
+                                                        (ctx.advance
+                                                          headResult)
                                                         headResult.next
                                                         (TypedCfgCompiler.restLabel
                                                           supply)
@@ -1896,7 +2012,8 @@ theorem block_owner
                                                         (stmtCompilerFuel + 1))
                                                     (block :=
                                                       { stmts := rest })
-                                                    (ctx := ctx)
+                                                    (ctx :=
+                                                      ctx.advance headResult)
                                                     (supply :=
                                                       headResult.next)
                                                     (entry :=
@@ -1917,7 +2034,14 @@ theorem block_owner
                                                     hTailBlocks hTailCalls
                                                     hRestWF hRestSafe
                                                     (.mk hRestCalls)
-                                                    hSupports hProcs
+                                                    (CallBase.contextSupports
+                                                      (ctx.callBase +
+                                                        headResult.calls.length)
+                                                      hSupports)
+                                                    (by
+                                                      simpa
+                                                        [TypedCfgCompiler.Context.advance]
+                                                        using hProcs)
                                                 · intro hCanLeave
                                                   obtain
                                                       ⟨frame, remaining,
@@ -1927,7 +2051,11 @@ theorem block_owner
                                                     ⟨frame, remaining,
                                                       hReturns.trans
                                                         hSourceEq⟩
-                                                · exact hTailContract
+                                                · exact
+                                                    CallBase.fragmentContract
+                                                      (ctx.callBase +
+                                                        headResult.calls.length)
+                                                      hTailContract
 
 namespace GeneratedProgram
 

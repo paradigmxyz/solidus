@@ -58,8 +58,9 @@ theorem openRun_cons_bounded_under_of_compileStmtListFuel?
             entry input (TypedCfgCompiler.restLabel supply) =
           some headResult ->
         headResult.fallthrough? = some tailInput ->
-        TypedCfgCompiler.compileStmtListFuel? compilerFuel rest ctx
-            headResult.next (TypedCfgCompiler.restLabel supply)
+        TypedCfgCompiler.compileStmtListFuel? compilerFuel rest
+            (ctx.advance headResult) headResult.next
+            (TypedCfgCompiler.restLabel supply)
             tailInput regular = some tailResult ->
         TypedCfgPreservation.BlocksInProgram tailResult cfg ->
         OpenOutcome.Rel headResult ctx
@@ -92,8 +93,9 @@ theorem openRun_cons_bounded_under_of_compileStmtListFuel?
         TypedCfgPreservation.BlocksInProgram headResult cfg ->
         TypedCfgPreservation.CallsInProgram headResult generatedCalls ->
         headResult.fallthrough? = some tailInput ->
-        TypedCfgCompiler.compileStmtListFuel? compilerFuel rest ctx
-            headResult.next (TypedCfgCompiler.restLabel supply)
+        TypedCfgCompiler.compileStmtListFuel? compilerFuel rest
+            (ctx.advance headResult) headResult.next
+            (TypedCfgCompiler.restLabel supply)
             tailInput regular = some tailResult ->
         TypedCfgPreservation.BlocksInProgram tailResult cfg ->
         result = headResult.append tailResult ->
@@ -112,8 +114,9 @@ theorem openRun_cons_bounded_under_of_compileStmtListFuel?
             entry input (TypedCfgCompiler.restLabel supply) =
           some headResult ->
         headResult.fallthrough? = some tailInput ->
-        TypedCfgCompiler.compileStmtListFuel? compilerFuel rest ctx
-            headResult.next (TypedCfgCompiler.restLabel supply)
+        TypedCfgCompiler.compileStmtListFuel? compilerFuel rest
+            (ctx.advance headResult) headResult.next
+            (TypedCfgCompiler.restLabel supply)
             tailInput regular = some tailResult ->
         TypedCfgPreservation.BlocksInProgram tailResult cfg ->
         TypedCfgPreservation.CallsInProgram tailResult generatedCalls ->
@@ -226,8 +229,9 @@ theorem openRun_cons_runtime_error_bounded_under_of_compileStmtListFuel?
         TypedCfgCompiler.compileStmtFuel? compilerFuel stmt ctx supply
             entry input (TypedCfgCompiler.restLabel supply) = some headResult ->
         headResult.fallthrough? = some tailInput ->
-        TypedCfgCompiler.compileStmtListFuel? compilerFuel rest ctx
-            headResult.next (TypedCfgCompiler.restLabel supply)
+        TypedCfgCompiler.compileStmtListFuel? compilerFuel rest
+            (ctx.advance headResult) headResult.next
+            (TypedCfgCompiler.restLabel supply)
             tailInput regular = some tailResult ->
         TypedCfgPreservation.BlocksInProgram tailResult cfg ->
         OpenOutcome.Rel headResult ctx
@@ -260,8 +264,9 @@ theorem openRun_cons_runtime_error_bounded_under_of_compileStmtListFuel?
         TypedCfgPreservation.BlocksInProgram headResult cfg ->
         TypedCfgPreservation.CallsInProgram headResult generatedCalls ->
         headResult.fallthrough? = some tailInput ->
-        TypedCfgCompiler.compileStmtListFuel? compilerFuel rest ctx
-            headResult.next (TypedCfgCompiler.restLabel supply)
+        TypedCfgCompiler.compileStmtListFuel? compilerFuel rest
+            (ctx.advance headResult) headResult.next
+            (TypedCfgCompiler.restLabel supply)
             tailInput regular = some tailResult ->
         TypedCfgPreservation.BlocksInProgram tailResult cfg ->
         result = headResult.append tailResult ->
@@ -287,8 +292,9 @@ theorem openRun_cons_runtime_error_bounded_under_of_compileStmtListFuel?
         TypedCfgCompiler.compileStmtFuel? compilerFuel stmt ctx supply
             entry input (TypedCfgCompiler.restLabel supply) = some headResult ->
         headResult.fallthrough? = some tailInput ->
-        TypedCfgCompiler.compileStmtListFuel? compilerFuel rest ctx
-            headResult.next (TypedCfgCompiler.restLabel supply)
+        TypedCfgCompiler.compileStmtListFuel? compilerFuel rest
+            (ctx.advance headResult) headResult.next
+            (TypedCfgCompiler.restLabel supply)
             tailInput regular = some tailResult ->
         TypedCfgPreservation.BlocksInProgram tailResult cfg ->
         TypedCfgPreservation.CallsInProgram tailResult generatedCalls ->

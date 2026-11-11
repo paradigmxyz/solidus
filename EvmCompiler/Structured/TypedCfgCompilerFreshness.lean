@@ -253,7 +253,8 @@ theorem stmtList_next_ge
                   exact stmt_next_ge hHead
               | some tailInput =>
                   cases hTail :
-                      TypedCfgCompiler.compileStmtListFuel? fuel rest ctx
+                      TypedCfgCompiler.compileStmtListFuel? fuel rest
+                        (ctx.advance headResult)
                         headResult.next
                         (TypedCfgCompiler.restLabel supply)
                         tailInput regular with

@@ -285,9 +285,15 @@ theorem payloadItems?_object_mem
       exact (List.all_eq_true.mp hAll) _ hMemDefault
     have hMemEffective : ObjectItemRef.object i ∈ object.effectiveItems :=
       ObjectItemRef.mem_of_contains hContains
-    unfold ObjectItemRef.List.moveMetadataLast
-    exact List.mem_append_left _
-      (List.mem_filter.mpr ⟨hMemEffective, by simp [ObjectItemRef.isMetadata?]⟩)
+    unfold ObjectItemRef.List.dropUnnamedData
+      ObjectItemRef.List.moveMetadataLast
+    -- `dropUnnamedData` filters on `isUnnamedData?`, which is `false` on every
+    -- `.object` item by definition, so object indices survive the filter.
+    exact List.mem_filter.mpr
+      ⟨List.mem_append_left _
+          (List.mem_filter.mpr
+            ⟨hMemEffective, by simp [ObjectItemRef.isMetadata?]⟩),
+        by simp [ObjectItemRef.isUnnamedData?]⟩
   · simp [hValid] at hItems
 
 /-- The stabilized code-base plan records the layout generated at the final

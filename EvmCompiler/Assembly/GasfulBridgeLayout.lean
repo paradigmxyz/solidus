@@ -144,6 +144,8 @@ theorem compact_block_entry_mem
   obtain ⟨compactSize, hSize, hCode⟩ :=
     (Compact.compile?_blocksValid hCompile).block_emit_of_mem hBlock
   rcases block with ⟨sourcePc, compactPc, sourceInstr, code⟩
+  let block : Compact.SourceBlock :=
+    { sourcePc, compactPc, sourceInstr, code }
   cases sourceInstr with
   | label name =>
       simp [Compact.emitSourceBlock?, Compact.emitInstrRev?] at hCode
@@ -164,46 +166,52 @@ theorem compact_block_entry_mem
           simp [Compact.emitSourceBlock?, Compact.emitInstrRev?, hWidth]
             at hCode
           subst code
-          exact ⟨{ pc := compactPc, instr := .push width value },
-            hArtifact.mem_program_of_mem_block hBlock (by simp), rfl⟩
+          exact
+            ⟨{ pc := compactPc
+               instr := Compact.pushInstrOfWidth width value },
+              hArtifact.mem_program_of_mem_block hBlock (by simp), rfl⟩
   | pushLabel target =>
       simp [Compact.emitSourceBlock?, Compact.emitInstrRev?] at hCode
   | jump target =>
+      obtain ⟨width, hWidth, hWidthAt⟩ :=
+        Compact.compile?_lookupBranchWidth_of_jump hCompile hBlock rfl
+      change artifact.branchWidthAt block = width at hWidthAt
       cases hDest : Compact.lookupLabel? artifact.labels target with
       | none =>
           simp [Compact.emitSourceBlock?, Compact.emitInstrRev?, hDest]
             at hCode
       | some dest =>
-          by_cases hFits :
-              Compact.fitsWidth? artifact.branchWidth dest = true
+          by_cases hFits : Compact.fitsWidth? width dest = true
           · simp [Compact.emitSourceBlock?, Compact.emitInstrRev?, hDest,
-              hFits] at hCode
-            subst code
+              hWidth, hWidthAt, hFits, block] at hCode
+            cases hCode
             exact
               ⟨{ pc := compactPc
-                 instr := .push artifact.branchWidth
+                 instr := .push width
                    (EvmYul.UInt256.ofNat dest) },
                 hArtifact.mem_program_of_mem_block hBlock (by simp), rfl⟩
           · simp [Compact.emitSourceBlock?, Compact.emitInstrRev?, hDest,
-              hFits] at hCode
+              hWidth, hWidthAt, hFits, block] at hCode
   | jumpi target =>
+      obtain ⟨width, hWidth, hWidthAt⟩ :=
+        Compact.compile?_lookupBranchWidth_of_jumpi hCompile hBlock rfl
+      change artifact.branchWidthAt block = width at hWidthAt
       cases hDest : Compact.lookupLabel? artifact.labels target with
       | none =>
           simp [Compact.emitSourceBlock?, Compact.emitInstrRev?, hDest]
             at hCode
       | some dest =>
-          by_cases hFits :
-              Compact.fitsWidth? artifact.branchWidth dest = true
+          by_cases hFits : Compact.fitsWidth? width dest = true
           · simp [Compact.emitSourceBlock?, Compact.emitInstrRev?, hDest,
-              hFits] at hCode
-            subst code
+              hWidth, hWidthAt, hFits, block] at hCode
+            cases hCode
             exact
               ⟨{ pc := compactPc
-                 instr := .push artifact.branchWidth
+                 instr := .push width
                    (EvmYul.UInt256.ofNat dest) },
                 hArtifact.mem_program_of_mem_block hBlock (by simp), rfl⟩
           · simp [Compact.emitSourceBlock?, Compact.emitInstrRev?, hDest,
-              hFits] at hCode
+              hWidth, hWidthAt, hFits, block] at hCode
   | jumpDynamic =>
       simp [Compact.emitSourceBlock?, Compact.emitInstrRev?] at hCode
 
@@ -276,7 +284,7 @@ theorem compact_push_entry_mem
           some width ∧
         located ∈ artifact.program.code ∧
         located.pc = block.compactPc ∧
-        located.instr = .push width value := by
+        located.instr = Compact.pushInstrOfWidth width value := by
   have hArtifact := Compact.compile?_valid hCompile
   obtain ⟨_compactSize, hSize, hCode⟩ :=
     (Compact.compile?_blocksValid hCompile).block_emit_of_mem hBlock
@@ -289,7 +297,8 @@ theorem compact_push_entry_mem
   | some width =>
       simp [Compact.emitSourceBlock?, Compact.emitInstrRev?, hWidth] at hCode
       subst code
-      exact ⟨width, { pc := compactPc, instr := .push width value },
+      exact ⟨width,
+        { pc := compactPc, instr := Compact.pushInstrOfWidth width value },
         rfl, hArtifact.mem_program_of_mem_block hBlock (by simp), rfl, rfl⟩
 
 /-- The second instruction of every checked fixed-label branch block is also
@@ -303,47 +312,57 @@ theorem compact_branch_midpoint_mem
     (hInstr : block.sourceInstr =
       if isJumpi then .jumpi label else .jump label) :
     ∃ located, located ∈ artifact.program.code ∧
-      located.pc = block.compactPc + artifact.branchWidth + 1 ∧
+      located.pc = block.compactPc + artifact.branchWidthAt block + 1 ∧
       located.instr = if isJumpi then .jumpi else .jump := by
   have hArtifact := Compact.compile?_valid hCompile
   obtain ⟨compactSize, hSize, hCode⟩ :=
     (Compact.compile?_blocksValid hCompile).block_emit_of_mem hBlock
   rcases block with ⟨sourcePc, compactPc, sourceInstr, code⟩
+  let block : Compact.SourceBlock :=
+    { sourcePc, compactPc, sourceInstr, code }
   cases hJumpi : isJumpi
   · simp [hJumpi] at hInstr ⊢
     subst sourceInstr
+    obtain ⟨width, hWidth, hWidthAt⟩ :=
+      Compact.compile?_lookupBranchWidth_of_jump hCompile hBlock rfl
+    change artifact.branchWidthAt block = width at hWidthAt
+    rw [hWidthAt]
     cases hDest : Compact.lookupLabel? artifact.labels label with
     | none =>
         simp [Compact.emitSourceBlock?, Compact.emitInstrRev?, hDest] at hCode
     | some dest =>
-        by_cases hFits :
-            Compact.fitsWidth? artifact.branchWidth dest = true
+        by_cases hFits : Compact.fitsWidth? width dest = true
         · simp [Compact.emitSourceBlock?, Compact.emitInstrRev?, hDest,
-            hFits] at hCode
-          subst code
+            hWidth, hWidthAt, hFits, block] at hCode
+          cases hCode
           exact
-            ⟨{ pc := compactPc + artifact.branchWidth + 1,
+            ⟨{ pc := compactPc + width + 1,
                instr := .jump },
-              hArtifact.mem_program_of_mem_block hBlock (by simp), rfl, rfl⟩
+              hArtifact.mem_program_of_mem_block hBlock (by simp),
+              by simp [hWidthAt], rfl⟩
         · simp [Compact.emitSourceBlock?, Compact.emitInstrRev?, hDest,
-            hFits] at hCode
+            hWidth, hWidthAt, hFits, block] at hCode
   · simp [hJumpi] at hInstr ⊢
     subst sourceInstr
+    obtain ⟨width, hWidth, hWidthAt⟩ :=
+      Compact.compile?_lookupBranchWidth_of_jumpi hCompile hBlock rfl
+    change artifact.branchWidthAt block = width at hWidthAt
+    rw [hWidthAt]
     cases hDest : Compact.lookupLabel? artifact.labels label with
     | none =>
         simp [Compact.emitSourceBlock?, Compact.emitInstrRev?, hDest] at hCode
     | some dest =>
-        by_cases hFits :
-            Compact.fitsWidth? artifact.branchWidth dest = true
+        by_cases hFits : Compact.fitsWidth? width dest = true
         · simp [Compact.emitSourceBlock?, Compact.emitInstrRev?, hDest,
-            hFits] at hCode
-          subst code
+            hWidth, hWidthAt, hFits, block] at hCode
+          cases hCode
           exact
-            ⟨{ pc := compactPc + artifact.branchWidth + 1,
+            ⟨{ pc := compactPc + width + 1,
                instr := .jumpi },
-              hArtifact.mem_program_of_mem_block hBlock (by simp), rfl, rfl⟩
+              hArtifact.mem_program_of_mem_block hBlock (by simp),
+              by simp [hWidthAt], rfl⟩
         · simp [Compact.emitSourceBlock?, Compact.emitInstrRev?, hDest,
-            hFits] at hCode
+            hWidth, hWidthAt, hFits, block] at hCode
 
 /-- A successful compact label-table lookup names the entry instruction of an
 actual emitted source block, never an arbitrary payload `JUMPDEST`. -/
@@ -417,53 +436,63 @@ theorem compact_branch_entry_mem
       Compact.lookupLabel? artifact.labels label = some dest ∧
         located ∈ artifact.program.code ∧
         located.pc = block.compactPc ∧
-        located.instr = .push artifact.branchWidth
+        located.instr = .push (artifact.branchWidthAt block)
           (EvmYul.UInt256.ofNat dest) := by
   rcases block with ⟨sourcePc, compactPc, sourceInstr, code⟩
+  let block : Compact.SourceBlock :=
+    { sourcePc, compactPc, sourceInstr, code }
   have hArtifact := Compact.compile?_valid hCompile
   obtain ⟨_compactSize, _hSize, hCode⟩ :=
     (Compact.compile?_blocksValid hCompile).block_emit_of_mem hBlock
   cases hJumpi : isJumpi
   · simp [hJumpi] at hInstr
+    obtain ⟨width, hWidth, hWidthAt⟩ :=
+      Compact.compile?_lookupBranchWidth_of_jump hCompile hBlock
+        (by simpa [block] using hInstr)
+    change artifact.branchWidthAt block = width at hWidthAt
+    rw [hWidthAt]
     rw [hInstr] at hCode
     cases hDest : Compact.lookupLabel? artifact.labels label with
     | none =>
         simp [Compact.emitSourceBlock?, Compact.emitInstrRev?, hDest] at hCode
     | some dest =>
-        by_cases hFits :
-            Compact.fitsWidth? artifact.branchWidth dest = true
+        by_cases hFits : Compact.fitsWidth? width dest = true
         · simp [Compact.emitSourceBlock?, Compact.emitInstrRev?, hDest,
-            hFits] at hCode
-          subst code
+            hWidth, hWidthAt, hFits, block] at hCode
+          cases hCode
           let located : Compact.Located :=
             { pc := compactPc
-              instr := .push artifact.branchWidth
+              instr := .push width
                 (EvmYul.UInt256.ofNat dest) }
           exact ⟨dest, located, rfl,
             hArtifact.mem_program_of_mem_block hBlock (by simp [located]),
-            rfl, rfl⟩
+            rfl, by simp [located, hWidthAt]⟩
         · simp [Compact.emitSourceBlock?, Compact.emitInstrRev?, hDest,
-            hFits] at hCode
+            hWidth, hWidthAt, hFits, block] at hCode
   · simp [hJumpi] at hInstr
+    obtain ⟨width, hWidth, hWidthAt⟩ :=
+      Compact.compile?_lookupBranchWidth_of_jumpi hCompile hBlock
+        (by simpa [block] using hInstr)
+    change artifact.branchWidthAt block = width at hWidthAt
+    rw [hWidthAt]
     rw [hInstr] at hCode
     cases hDest : Compact.lookupLabel? artifact.labels label with
     | none =>
         simp [Compact.emitSourceBlock?, Compact.emitInstrRev?, hDest] at hCode
     | some dest =>
-        by_cases hFits :
-            Compact.fitsWidth? artifact.branchWidth dest = true
+        by_cases hFits : Compact.fitsWidth? width dest = true
         · simp [Compact.emitSourceBlock?, Compact.emitInstrRev?, hDest,
-            hFits] at hCode
-          subst code
+            hWidth, hWidthAt, hFits, block] at hCode
+          cases hCode
           let located : Compact.Located :=
             { pc := compactPc
-              instr := .push artifact.branchWidth
+              instr := .push width
                 (EvmYul.UInt256.ofNat dest) }
           exact ⟨dest, located, rfl,
             hArtifact.mem_program_of_mem_block hBlock (by simp [located]),
-            rfl, rfl⟩
+            rfl, by simp [located, hWidthAt]⟩
         · simp [Compact.emitSourceBlock?, Compact.emitInstrRev?, hDest,
-            hFits] at hCode
+            hWidth, hWidthAt, hFits, block] at hCode
 /-- A successful compact label lookup identifies a generated source boundary.
 The source PC is existential because only the compact destination is relevant
 to gasful control preservation. -/
@@ -496,7 +525,7 @@ theorem compact_branch_fallthrough_boundary
       Compact.BoundaryPair artifact.blocks
         artifact.physicalSource.byteLength
         (Compact.Program.codeByteLength artifact.program.code)
-        sourceNext (block.compactPc + artifact.branchWidth + 2) := by
+        sourceNext (block.compactPc + artifact.branchWidthAt block + 2) := by
   obtain ⟨compactSize, hSize, _hCode⟩ :=
     (Compact.compile?_blocksValid hCompile).block_emit_of_mem hBlock
   have hNext :=
@@ -505,17 +534,21 @@ theorem compact_branch_fallthrough_boundary
   rw [hArtifact.blockCode] at hNext
   cases hJumpi : isJumpi
   · simp [hJumpi] at hInstr
+    obtain ⟨width, hWidth, hWidthAt⟩ :=
+      Compact.compile?_lookupBranchWidth_of_jump hCompile hBlock hInstr
     rw [hInstr] at hSize hNext
-    simp [Compact.sourceInstrSizeAt?] at hSize
+    simp [Compact.sourceInstrSizeAt?, hWidth, hWidthAt] at hSize
     subst compactSize
     exact ⟨block.sourcePc + (Assembly.Instr.jump label).byteSize, by
-      simpa [Nat.add_assoc] using hNext⟩
+      simpa [hWidthAt, Nat.add_assoc] using hNext⟩
   · simp [hJumpi] at hInstr
+    obtain ⟨width, hWidth, hWidthAt⟩ :=
+      Compact.compile?_lookupBranchWidth_of_jumpi hCompile hBlock hInstr
     rw [hInstr] at hSize hNext
-    simp [Compact.sourceInstrSizeAt?] at hSize
+    simp [Compact.sourceInstrSizeAt?, hWidth, hWidthAt] at hSize
     subst compactSize
     exact ⟨block.sourcePc + (Assembly.Instr.jumpi label).byteSize, by
-      simpa [Nat.add_assoc] using hNext⟩
+      simpa [hWidthAt, Nat.add_assoc] using hNext⟩
 
 /-- Instruction-level control points generated by the compact compiler. A
 fixed-label branch has one internal point after its generated PUSH; all other
@@ -532,7 +565,7 @@ inductive CompactControlPoint (artifact : Compact.Artifact) : EVMState → Prop
         if isJumpi then .jumpi label else .jump label)
       (lookup : Compact.lookupLabel? artifact.labels label = some dest)
       (pc : state.pc = EvmYul.UInt256.ofNat
-        (block.compactPc + artifact.branchWidth + 1))
+        (block.compactPc + artifact.branchWidthAt block + 1))
       (stack : state.stack = EvmYul.UInt256.ofNat dest :: rest) :
       CompactControlPoint artifact state
   | sentinel {state : EVMState}
@@ -569,7 +602,7 @@ theorem artifactFramePoint_of_block_next
     (hCompile : Compact.compile? source pinnedPushPcs = some artifact)
     (hBlock : block ∈ artifact.blocks)
     (hSize : Compact.sourceInstrSizeAt? artifact.pinnedPushPcs
-      artifact.branchWidth block.sourcePc block.sourceInstr =
+      artifact.branchWidths block.sourcePc block.sourceInstr =
         some compactSize)
     (hCode : next.executionEnv.code = bytes)
     (hPc : next.pc = EvmYul.UInt256.ofNat
@@ -652,7 +685,7 @@ theorem artifactFramePoint_resource_step
           EvmYul.EVM.State.replaceStackAndIncrPC,
           EvmYul.EVM.State.incrPC, hPc, uint256_ofNat_add]
       have hSize : Compact.sourceInstrSizeAt? artifact.pinnedPushPcs
-          artifact.branchWidth block.sourcePc block.sourceInstr = some 1 := by
+          artifact.branchWidths block.sourcePc block.sourceInstr = some 1 := by
         simp [hInstr, Compact.sourceInstrSizeAt?]
       exact artifactFramePoint_of_block_next hCompile hBlock hSize
         hNextCode hNextPc
@@ -699,7 +732,7 @@ theorem artifactFramePoint_pc_step
           EvmYul.EVM.State.replaceStackAndIncrPC,
           EvmYul.EVM.State.incrPC, hPc, uint256_ofNat_add]
       have hSize : Compact.sourceInstrSizeAt? artifact.pinnedPushPcs
-          artifact.branchWidth block.sourcePc block.sourceInstr = some 1 := by
+          artifact.branchWidths block.sourcePc block.sourceInstr = some 1 := by
         simp [hInstr, Compact.sourceInstrSizeAt?]
       exact artifactFramePoint_of_block_next hCompile hBlock hSize
         hNextCode hNextPc
@@ -773,7 +806,7 @@ theorem artifactFramePoint_call_step
           _ = EvmYul.UInt256.ofNat (block.compactPc + 1) := by
             rw [hPc, uint256_ofNat_add]
       have hSize : Compact.sourceInstrSizeAt? artifact.pinnedPushPcs
-          artifact.branchWidth block.sourcePc block.sourceInstr = some 1 := by
+          artifact.branchWidths block.sourcePc block.sourceInstr = some 1 := by
         simp [hInstr, Compact.sourceInstrSizeAt?]
       exact artifactFramePoint_of_block_next hCompile hBlock hSize
         hNextCode hNextPc
@@ -847,7 +880,7 @@ theorem artifactFramePoint_create_step
           _ = EvmYul.UInt256.ofNat (block.compactPc + 1) := by
             rw [hPc, uint256_ofNat_add]
       have hSize : Compact.sourceInstrSizeAt? artifact.pinnedPushPcs
-          artifact.branchWidth block.sourcePc block.sourceInstr = some 1 := by
+          artifact.branchWidths block.sourcePc block.sourceInstr = some 1 := by
         simp [hInstr, Compact.sourceInstrSizeAt?]
       exact artifactFramePoint_of_block_next hCompile hBlock hSize
         hNextCode hNextPc
@@ -927,7 +960,7 @@ theorem artifactFramePoint_prim_continuing_step
           _ = EvmYul.UInt256.ofNat (block.compactPc + 1) := by
             rw [hPc, uint256_ofNat_add]
       have hSize : Compact.sourceInstrSizeAt? artifact.pinnedPushPcs
-          artifact.branchWidth block.sourcePc block.sourceInstr = some 1 := by
+          artifact.branchWidths block.sourcePc block.sourceInstr = some 1 := by
         simp [hInstr, Compact.sourceInstrSizeAt?]
       exact artifactFramePoint_of_block_next hCompile hBlock hSize
         hNextCode hNextPc
@@ -974,7 +1007,7 @@ theorem artifactFramePoint_label_step
         simpa using hStep.symm
       subst next
       have hSize : Compact.sourceInstrSizeAt? artifact.pinnedPushPcs
-          artifact.branchWidth block.sourcePc block.sourceInstr = some 1 := by
+          artifact.branchWidths block.sourcePc block.sourceInstr = some 1 := by
         simp [hInstr, Compact.sourceInstrSizeAt?]
       apply artifactFramePoint_of_block_next hCompile hBlock hSize
       · simpa [afterEVMInstructionChargeAt, afterMemoryChargeAt,
@@ -1002,6 +1035,44 @@ theorem artifactFramePoint_push_step
     ArtifactFramePoint artifact bytes next := by
   obtain ⟨width, located, hWidth, hMem, hLocatedPc, hLocatedInstr⟩ :=
     compact_push_entry_mem hCompile hBlock hInstr
+  by_cases hZeroWidth : width = 0
+  · subst hZeroWidth
+    have hValueZero := Compact.pushWidthAt?_zero_value hWidth
+    subst hValueZero
+    have hInstr0 : located.instr = .push0 := by
+      simpa [Compact.pushInstrOfWidth] using hLocatedInstr
+    obtain ⟨decoded, hInstrDecoded, hBytesDecoded⟩ :=
+      hDecode.decodes located hMem
+    rw [hInstr0] at hInstrDecoded
+    simp [Compact.Instr.decoded?] at hInstrDecoded
+    subst decoded
+    have hStatePc : state.pc = EvmYul.UInt256.ofNat located.pc :=
+      hPc.trans (congrArg EvmYul.UInt256.ofNat hLocatedPc.symm)
+    have hDecoded : EvmYul.EVM.decode state.executionEnv.code state.pc =
+        some (EvmYul.Operation.PUSH0, none) := by
+      simpa [hCode, hStatePc] using hBytesDecoded
+    cases stepFuel with
+    | zero => simp [EvmYul.EVM.step] at hStep
+    | succ fuel =>
+        rw [hDecoded] at hStep
+        simp only [Option.getD_some] at hStep
+        rw [evm_step_push0_eq_next fuel state] at hStep
+        have hNext :
+            next = gasfulPushNext 0 (EvmYul.UInt256.ofNat 0) state := by
+          simpa using hStep.symm
+        subst next
+        have hSize : Compact.sourceInstrSizeAt? artifact.pinnedPushPcs
+            artifact.branchWidths block.sourcePc block.sourceInstr =
+              some (0 + 1) := by
+          simp [hInstr, Compact.sourceInstrSizeAt?, hWidth]
+        apply artifactFramePoint_of_block_next hCompile hBlock hSize
+        · simpa [gasfulPushNext, afterEVMInstructionChargeAt,
+            afterMemoryChargeAt, chargeGas] using hCode
+        · simp [gasfulPushNext, EvmYul.EVM.State.replaceStackAndIncrPC,
+            EvmYul.EVM.State.incrPC, afterEVMInstructionChargeAt,
+            afterMemoryChargeAt, chargeGas, hPc, uint256_ofNat_add,
+            Nat.add_assoc]
+  simp only [Compact.pushInstrOfWidth, if_neg hZeroWidth] at hLocatedInstr
   have hLocatedValid :=
     (List.forall_iff_forall_mem.mp
       (Compact.compile?_valid hCompile).wellFormed.1) located hMem
@@ -1031,7 +1102,7 @@ theorem artifactFramePoint_push_step
         simpa using hStep.symm
       subst next
       have hSize : Compact.sourceInstrSizeAt? artifact.pinnedPushPcs
-          artifact.branchWidth block.sourcePc block.sourceInstr =
+          artifact.branchWidths block.sourcePc block.sourceInstr =
             some (width + 1) := by
         simp [hInstr, Compact.sourceInstrSizeAt?, hWidth]
       apply artifactFramePoint_of_block_next hCompile hBlock hSize
@@ -1053,7 +1124,7 @@ theorem artifactFramePoint_branch_push_next
     (hLookup : Compact.lookupLabel? artifact.labels label = some dest)
     (hPc : state.pc = EvmYul.UInt256.ofNat block.compactPc) :
     ArtifactFramePoint artifact bytes
-      (gasfulPushNext artifact.branchWidth
+      (gasfulPushNext (artifact.branchWidthAt block)
         (EvmYul.UInt256.ofNat dest) state) := by
   constructor
   · simpa [gasfulPushNext, afterEVMInstructionChargeAt,
@@ -1097,7 +1168,7 @@ theorem artifactFramePoint_branch_push_step
     (List.forall_iff_forall_mem.mp
       (Compact.compile?_valid hCompile).wellFormed.1) located hMem
   rw [hLocatedInstr] at hLocatedValid
-  have hFits : Compact.FitsWidth artifact.branchWidth
+  have hFits : Compact.FitsWidth (artifact.branchWidthAt block)
       (EvmYul.UInt256.ofNat dest).toNat := by
     simpa [Compact.Instr.Valid] using hLocatedValid
   obtain ⟨op, hOp⟩ := Compact.exists_pushOp_of_width
@@ -1112,14 +1183,14 @@ theorem artifactFramePoint_branch_push_step
   have hDecoded :
       EvmYul.EVM.decode state.executionEnv.code state.pc =
         some (op, some (EvmYul.UInt256.ofNat dest,
-          artifact.branchWidth)) := by
+          artifact.branchWidthAt block)) := by
     simpa [hCode, hStatePc] using hBytesDecoded
   have hExact := evm_step_push_eq_next fuel state
     (EvmYul.UInt256.ofNat dest) hFits hOp
   rw [hDecoded] at hStep
   simp only [Option.getD_some] at hStep
   rw [hExact] at hStep
-  have hNext : next = gasfulPushNext artifact.branchWidth
+  have hNext : next = gasfulPushNext (artifact.branchWidthAt block)
       (EvmYul.UInt256.ofNat dest) state := by
     simpa using hStep.symm
   rw [hNext]
@@ -1180,7 +1251,7 @@ theorem artifactFramePoint_branchMid_jumpi_next
     (hInstr : block.sourceInstr = .jumpi label)
     (hLookup : Compact.lookupLabel? artifact.labels label = some dest)
     (hPc : state.pc = EvmYul.UInt256.ofNat
-      (block.compactPc + artifact.branchWidth + 1)) :
+      (block.compactPc + artifact.branchWidthAt block + 1)) :
     ArtifactFramePoint artifact bytes
       (gasfulJumpiNext state rest (EvmYul.UInt256.ofNat dest) cond) := by
   constructor
@@ -1198,18 +1269,18 @@ theorem artifactFramePoint_branchMid_jumpi_next
       simp [gasfulJumpiNext, hCond, hPc]
       change EvmYul.UInt256.add
         (EvmYul.UInt256.ofNat
-          (block.compactPc + artifact.branchWidth + 1))
+          (block.compactPc + artifact.branchWidthAt block + 1))
         (EvmYul.UInt256.ofNat 1) =
           EvmYul.UInt256.ofNat
-            (block.compactPc + artifact.branchWidth + 2)
+            (block.compactPc + artifact.branchWidthAt block + 2)
       unfold EvmYul.UInt256.add EvmYul.UInt256.ofNat
       congr 1
       apply Fin.ext
       change
-        (((block.compactPc + artifact.branchWidth + 1) %
+        (((block.compactPc + artifact.branchWidthAt block + 1) %
             EvmYul.UInt256.size + 1 % EvmYul.UInt256.size) %
           EvmYul.UInt256.size) =
-        (block.compactPc + artifact.branchWidth + 2) %
+        (block.compactPc + artifact.branchWidthAt block + 2) %
           EvmYul.UInt256.size
       rw [← Nat.add_mod]
 
@@ -1227,7 +1298,7 @@ theorem artifactFramePoint_branchMid_jump_step
     (hInstr : block.sourceInstr = .jump label)
     (hLookup : Compact.lookupLabel? artifact.labels label = some dest)
     (hPc : state.pc = EvmYul.UInt256.ofNat
-      (block.compactPc + artifact.branchWidth + 1))
+      (block.compactPc + artifact.branchWidthAt block + 1))
     (hStack : state.stack = EvmYul.UInt256.ofNat dest :: rest)
     (hStep :
       EvmYul.EVM.step (fuel + 1) (dynamicGasCostAt state)
@@ -1277,7 +1348,7 @@ theorem artifactFramePoint_branchMid_jumpi_step
     (hInstr : block.sourceInstr = .jumpi label)
     (hLookup : Compact.lookupLabel? artifact.labels label = some dest)
     (hPc : state.pc = EvmYul.UInt256.ofNat
-      (block.compactPc + artifact.branchWidth + 1))
+      (block.compactPc + artifact.branchWidthAt block + 1))
     (hStack : state.stack =
       EvmYul.UInt256.ofNat dest :: cond :: rest)
     (hStep :
@@ -1328,7 +1399,7 @@ theorem artifactFramePoint_branchMid_step
       if isJumpi then .jumpi label else .jump label)
     (hLookup : Compact.lookupLabel? artifact.labels label = some dest)
     (hPc : state.pc = EvmYul.UInt256.ofNat
-      (block.compactPc + artifact.branchWidth + 1))
+      (block.compactPc + artifact.branchWidthAt block + 1))
     (hStack : state.stack = EvmYul.UInt256.ofNat dest :: rest)
     (hPrefix : XSstoreStipendChecksPass validJumps state)
     (hStep :

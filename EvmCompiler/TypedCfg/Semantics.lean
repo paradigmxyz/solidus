@@ -28,7 +28,8 @@ def runState (instr : Instr) (shape : Shape) (state : EVMState) :
   | .push value =>
       .ok
         (state.replaceStackAndIncrPC
-          (state.stack.push value) (pcΔ := 33))
+          (state.stack.push value)
+          (pcΔ := Assembly.pushPcDelta value))
   | .returnToken value =>
       .ok
         (state.replaceStackAndIncrPC

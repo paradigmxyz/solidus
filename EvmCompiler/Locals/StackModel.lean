@@ -1,4 +1,8 @@
 import EvmCompiler.Locals.Syntax
+-- `TypedCfg.Shape.anonymousBinder` only: the reserved zero-byte retag binder
+-- name.  `TypedCfg.Syntax` depends on nothing but `Assembly.Syntax`, so this
+-- introduces no layering cycle.
+import EvmCompiler.TypedCfg.Syntax
 import Mathlib.Tactic.IntervalCases
 
 namespace EvmCompiler
@@ -550,17 +554,119 @@ def cleanupOnePreserving? : Nat → Option Structured.Code
         ([Structured.BasicInstr.op op, Structured.BasicInstr.op .pop] ++
           restore)
 
-def cleanupManyPreserving? : Nat → Nat → Option Structured.Code
+/-- `count` bare `SWAP temps; POP` discards.
+
+`SWAP temps; POP` drops one value from under the preserved prefix exactly as
+`cleanupOnePreserving?` does, but leaves the prefix rotated **left by one**
+instead of paying `swapRestoreUpTo? (temps-1)` to put it back. Rotations
+accumulate, so `count` of them leave the prefix rotated left by `count`. -/
+def discardManyRotating? : Nat → Nat → Option Structured.Code
   | 0, _temps => some []
   | count + 1, temps => do
-      let head ← cleanupOnePreserving? temps
-      let tail ← cleanupManyPreserving? count temps
-      some (head ++ tail)
+      let op ← StackOp.swap? temps
+      let rest ← discardManyRotating? count temps
+      some ([Structured.BasicInstr.op op, Structured.BasicInstr.op .pop] ++ rest)
+
+/-- Undo `k` accumulated left-rotations of the top `temps` values. One
+right-rotation is `SWAP1 .. SWAP(temps-1)`, i.e. `swapRestoreUpTo? (temps-1)` —
+the very sequence `cleanupOnePreserving?` was paying per discard. -/
+def rotateRestore? : Nat → Nat → Option Structured.Code
+  | 0, _temps => some []
+  | k + 1, temps => do
+      let one ← swapRestoreUpTo? (temps - 1)
+      let rest ← rotateRestore? k temps
+      some (one ++ rest)
+
+/-- Drop `count` values from under `temps` preserved ones.
+
+The per-discard form (`cleanupOnePreserving?`) re-emits the restore rotation
+after *every* `POP`, costing `count * (temps + 1)`. Deferring the rotations
+costs `2 * count + (count % temps) * (temps - 1)` instead — the prefix only has
+to be put back once, and only by however much it is actually out of place.
+Checked equivalent to the per-discard form on every `(temps, count)` pair with
+`temps < 6, count < 9`; 31.5% fewer instructions over that range, and identical
+for `temps ≤ 1` where the old form was already tight. -/
+def cleanupManyPreservingRot? (count : Nat) : Nat → Option Structured.Code
+  | 0 => some (List.replicate count (Structured.BasicInstr.op .pop))
+  | temps + 1 => do
+      let body ← discardManyRotating? count (temps + 1)
+      let fixup ← rotateRestore? (count % (temps + 1)) (temps + 1)
+      some (body ++ fixup)
+
+/-- **Bulk teardown under a single preserved value.**
+
+With exactly one value `p` preserved on top of `count` values to discard, the
+rotating form emits `(SWAP1 ; POP)^count` — `2 * count` bytes.  A single
+`SWAP count` sinks `p` to the bottom of the discard window (`p, a₁ … a_count`
+becomes `a_count, a₁ … a_{count-1}, p`), after which the whole window is on top
+and `count` bare `POP`s clear it: `count + 1` bytes.
+
+`SWAP n` only exists for `1 ≤ n ≤ 16`, so this returns `none` for
+`count > 16`; the caller **falls back to the rotating form**, it never fails.
+`count = 0` is `[]` and `count = 1` ties the rotating form at two bytes, so
+both are routed to the fallback for free. -/
+def bulkDiscardUnderOne? (count : Nat) : Option Structured.Code := do
+  let op ← StackOp.swap? count
+  some (Structured.BasicInstr.op op ::
+    List.replicate count (Structured.BasicInstr.op .pop))
+
+/-- Drop `count` values from under `temps` preserved ones.
+
+The per-discard form (`cleanupOnePreserving?`) re-emits the restore rotation
+after *every* `POP`, costing `count * (temps + 1)`. Deferring the rotations
+costs `2 * count + (count % temps) * (temps - 1)` instead — the prefix only has
+to be put back once, and only by however much it is actually out of place.
+Checked equivalent to the per-discard form on every `(temps, count)` pair with
+`temps < 6, count < 9`; 31.5% fewer instructions over that range, and identical
+for `temps ≤ 1` where the old form was already tight.
+
+`temps = 1` is then further improved by `bulkDiscardUnderOne?`, which replaces
+`(SWAP1 ; POP)^count` with `SWAP count ; POP^count` whenever `count ≤ 16`. -/
+def cleanupManyPreserving? (count : Nat) : Nat → Option Structured.Code
+  | 0 => some (List.replicate count (Structured.BasicInstr.op .pop))
+  | 1 =>
+      match bulkDiscardUnderOne? count with
+      | some code => some code
+      | none => cleanupManyPreservingRot? count 1
+  | temps + 1 => cleanupManyPreservingRot? count (temps + 1)
+
+/--
+Zero-byte retag of the `preserve` values kept on top by a preserving cleanup.
+
+A preserving cleanup is only ever emitted at a procedure exit, where the values
+it keeps are the procedure's return values.  Those values were pushed by
+duplicating the named locals holding them, so the typed CFG still classifies
+them as `.local` slots — but `Shape.procExit` requires anonymous `.word` slots.
+`bindLocals` is a compiler-owned pseudo-instruction that lowers to no bytes at
+all (`TypedCfg.Instr.lower? (.bindLocals _ _) = some []`) and whose runtime
+semantics is the identity, so binding the kept values to
+`Shape.anonymousBinder` performs that reclassification for free.
+
+The alternative the compiler used to emit was `add(x, 0)` per returned value,
+which is also value-preserving but costs `PUSH0 ; ADD` — two runtime bytes and
+eight gas per returned value per exit, purely to change a type tag.
+-/
+def retagPreservedWords (preserve : Nat) : Structured.Code :=
+  match preserve with
+  | 0 => []
+  | count + 1 =>
+      [Structured.BasicInstr.bindLocals 0
+        (List.replicate (count + 1) TypedCfg.Shape.anonymousBinder)]
+
+@[simp] theorem retagPreservedWords_zero :
+    retagPreservedWords 0 = [] := rfl
+
+@[simp] theorem retagPreservedWords_usesCallCreate (preserve : Nat) :
+    (retagPreservedWords preserve).usesCallCreate = false := by
+  cases preserve <;>
+    simp [retagPreservedWords, Structured.Code.usesCallCreate,
+      Structured.BasicInstr.usesCallCreate]
 
 def cleanupToPreserving? (ctx : Ctx) (preserve targetDepth : Nat) :
     Option Structured.Code :=
   if targetDepth ≤ ctx.layout.length then
-    cleanupManyPreserving? (ctx.layout.length - targetDepth) preserve
+    (cleanupManyPreserving? (ctx.layout.length - targetDepth) preserve).map
+      (· ++ retagPreservedWords preserve)
   else
     none
 
@@ -568,13 +674,29 @@ def cleanupToPreserving? (ctx : Ctx) (preserve targetDepth : Nat) :
     cleanupManyPreserving? count 0 =
       some
         (List.replicate count
-          (Structured.BasicInstr.op .pop)) := by
-  induction count with
-  | zero =>
-      rfl
-  | succ count ih =>
-      simp [cleanupManyPreserving?, cleanupOnePreserving?, ih,
-        List.replicate_succ]
+          (Structured.BasicInstr.op .pop)) := rfl
+
+@[simp] theorem cleanupManyPreservingRot?_zero (count : Nat) :
+    cleanupManyPreservingRot? count 0 =
+      some
+        (List.replicate count
+          (Structured.BasicInstr.op .pop)) := rfl
+
+/-! `cleanupManyPreserving?` is the rotating schedule except at `temps = 1`,
+where it may take the `bulkDiscardUnderOne?` shortcut. -/
+
+theorem cleanupManyPreserving?_zero_eq (count : Nat) :
+    cleanupManyPreserving? count 0 = cleanupManyPreservingRot? count 0 := rfl
+
+theorem cleanupManyPreserving?_succ_succ_eq (count temps : Nat) :
+    cleanupManyPreserving? count (temps + 2) =
+      cleanupManyPreservingRot? count (temps + 2) := rfl
+
+theorem cleanupManyPreserving?_one (count : Nat) :
+    cleanupManyPreserving? count 1 =
+      match bulkDiscardUnderOne? count with
+      | some code => some code
+      | none => cleanupManyPreservingRot? count 1 := rfl
 
 @[simp] theorem cleanupToPreserving?_zero
     (ctx : Ctx) (targetDepth : Nat) :

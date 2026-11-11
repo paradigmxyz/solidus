@@ -5801,8 +5801,9 @@ theorem openRun_cons_under_of_compileStmtListFuel?
             entry input (TypedCfgCompiler.restLabel supply) =
           some headResult →
         headResult.fallthrough? = some tailInput →
-        TypedCfgCompiler.compileStmtListFuel? compilerFuel rest ctx
-            headResult.next (TypedCfgCompiler.restLabel supply)
+        TypedCfgCompiler.compileStmtListFuel? compilerFuel rest
+            (ctx.advance headResult) headResult.next
+            (TypedCfgCompiler.restLabel supply)
             tailInput regular =
           some tailResult →
         TypedCfgPreservation.BlocksInProgram tailResult cfg →
@@ -5892,8 +5893,9 @@ theorem openRun_cons_exec_under_of_compileStmtListFuel?
             entry input (TypedCfgCompiler.restLabel supply) =
           some headResult →
         headResult.fallthrough? = some tailInput →
-        TypedCfgCompiler.compileStmtListFuel? compilerFuel rest ctx
-            headResult.next (TypedCfgCompiler.restLabel supply)
+        TypedCfgCompiler.compileStmtListFuel? compilerFuel rest
+            (ctx.advance headResult) headResult.next
+            (TypedCfgCompiler.restLabel supply)
             tailInput regular =
           some tailResult →
         TypedCfgPreservation.BlocksInProgram tailResult cfg →
@@ -5929,8 +5931,9 @@ theorem openRun_cons_exec_under_of_compileStmtListFuel?
         TypedCfgPreservation.BlocksInProgram headResult cfg →
         TypedCfgPreservation.CallsInProgram headResult generatedCalls →
         headResult.fallthrough? = some tailInput →
-        TypedCfgCompiler.compileStmtListFuel? compilerFuel rest ctx
-            headResult.next (TypedCfgCompiler.restLabel supply)
+        TypedCfgCompiler.compileStmtListFuel? compilerFuel rest
+            (ctx.advance headResult) headResult.next
+            (TypedCfgCompiler.restLabel supply)
             tailInput regular =
           some tailResult →
         TypedCfgPreservation.BlocksInProgram tailResult cfg →
@@ -5949,8 +5952,9 @@ theorem openRun_cons_exec_under_of_compileStmtListFuel?
             entry input (TypedCfgCompiler.restLabel supply) =
           some headResult →
         headResult.fallthrough? = some tailInput →
-        TypedCfgCompiler.compileStmtListFuel? compilerFuel rest ctx
-            headResult.next (TypedCfgCompiler.restLabel supply)
+        TypedCfgCompiler.compileStmtListFuel? compilerFuel rest
+            (ctx.advance headResult) headResult.next
+            (TypedCfgCompiler.restLabel supply)
             tailInput regular =
           some tailResult →
         TypedCfgPreservation.BlocksInProgram tailResult cfg →
@@ -6075,8 +6079,9 @@ theorem openRun_cons_within_of_compileStmtListFuel?
             entry input (TypedCfgCompiler.restLabel supply) =
           some headResult →
         headResult.fallthrough? = some tailInput →
-        TypedCfgCompiler.compileStmtListFuel? compilerFuel rest ctx
-            headResult.next (TypedCfgCompiler.restLabel supply)
+        TypedCfgCompiler.compileStmtListFuel? compilerFuel rest
+            (ctx.advance headResult) headResult.next
+            (TypedCfgCompiler.restLabel supply)
             tailInput regular =
           some tailResult →
         TypedCfgPreservation.BlocksInProgram tailResult cfg →
@@ -6167,8 +6172,9 @@ theorem openRun_code_cons_within_of_compileStmtListFuel?
             ctx supply entry input (TypedCfgCompiler.restLabel supply) =
           some headResult →
         headResult.fallthrough? = some tailInput →
-        TypedCfgCompiler.compileStmtListFuel? compilerFuel rest ctx
-            headResult.next (TypedCfgCompiler.restLabel supply)
+        TypedCfgCompiler.compileStmtListFuel? compilerFuel rest
+            (ctx.advance headResult) headResult.next
+            (TypedCfgCompiler.restLabel supply)
             tailInput regular =
           some tailResult →
         TypedCfgPreservation.BlocksInProgram tailResult cfg →

@@ -116,7 +116,7 @@ theorem proc_blockGenShapeReg
     {block : TypedCfg.Block}
     (hMem : block ∈ context.procBlocks) :
     BlockGenShapeReg cfg source context.calls block := by
-  obtain ⟨proc, bsupply, entry, input, bodyResult,
+  obtain ⟨proc, bsupply, bcallBase, entry, input, bodyResult,
       hProcMem, hCompile, hReq, hBlocks, hBodyCalls, hDisj⟩ :=
     context.procBlocks_provenance_inProgram_fallthrough hMem
   have hLookup :

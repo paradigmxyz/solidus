@@ -214,6 +214,41 @@ def pureAliasPrim? : EvmYul.Operation .Yul → Bool
   | .Env .CALLDATASIZE => true
   | _ => false
 
+/-- Primitives admissible as *nested operands* of the direct arg-hoisting path.
+Superset of `pureAliasPrim?`; every entry must satisfy
+`hoistSafePrim?_toBasicOp_outputs_one` below, otherwise `toLocals?` fails and
+`lowerUnchecked?` fails CLOSED (no fallback at the direct-args gate).
+
+The additional returndata-size and self-balance observers are zero-input, so
+admitting them cannot deepen operand access while a direct expression is
+evaluated.  The direct gate also requires every sibling to satisfy this
+predicate, so no intervening argument can change what they observe.  One-input
+account/block observers and memory/storage loads deliberately remain on the
+bound path: their direct form can exceed transient stack headroom. -/
+def hoistSafePrim? : EvmYul.Operation .Yul → Bool
+  | .StopArith .STOP => false
+  | .StopArith _ => true
+  | .CompBit _ => true
+  | .Env .CALLER => true
+  | .Env .CALLDATASIZE => true
+  | .Env .CALLDATALOAD => true
+  | .Env .CALLVALUE => true
+  | .Env .ADDRESS => true
+  | .Env .ORIGIN => true
+  | .Env .GASPRICE => true
+  | .Env .CODESIZE => true
+  | .Env .RETURNDATASIZE => true
+  | .Block .TIMESTAMP => true
+  | .Block .NUMBER => true
+  | .Block .CHAINID => true
+  | .Block .BASEFEE => true
+  | .Block .GASLIMIT => true
+  | .Block .COINBASE => true
+  | .Block .PREVRANDAO => true
+  | .Block .SELFBALANCE => true
+  | .Block .BLOBBASEFEE => true
+  | _ => false
+
 mutual
   def toLocals? (results : Nat) :
       AstExpr → Option (Locals.Expr results)
@@ -350,7 +385,7 @@ mutual
     | .Lit _value => true
     | .Var _name => true
     | .Call (.inl prim) args =>
-        pureAliasPrim? prim && List.pureAliasArgsSafe? args
+        hoistSafePrim? prim && List.pureAliasArgsSafe? args
     | .Call (.inr _functionName) _args => false
 
   def List.pureAliasArgsSafe? : List AstExpr → Bool
@@ -388,6 +423,49 @@ def directPureArgSafeAt? (offset : Nat) (expr : AstExpr) : Bool :=
   pureAliasArgSafe? expr &&
     decide (pendingStackDepth expr + offset < 16)
 
+/-
+Expressions whose delayed value depends only on literal data and source
+locals.  Unlike the wider direct-argument predicate, this deliberately
+excludes environment and block observers: those primitives have no side
+effects, but their result need not remain stable across an effectful sibling.
+-/
+mutual
+  def delayedAlgebraicShapeSafe? : AstExpr → Bool
+    | .Lit _value => true
+    | .Var _name => true
+    | .Call (.inl (.StopArith .STOP)) _args => false
+    | .Call (.inl (.StopArith _primitive)) args =>
+        List.delayedAlgebraicShapesSafe? args
+    | .Call (.inl (.CompBit _primitive)) args =>
+        List.delayedAlgebraicShapesSafe? args
+    | .Call _callee _args => false
+
+  def List.delayedAlgebraicShapesSafe? : List AstExpr → Bool
+    | [] => true
+    | expr :: rest =>
+        delayedAlgebraicShapeSafe? expr &&
+          List.delayedAlgebraicShapesSafe? rest
+end
+
+def delayedAlgebraicArgSafe? (expr : AstExpr) : Bool :=
+  pureAliasArgSafe? expr && delayedAlgebraicShapeSafe? expr
+
+def List.delayedAlgebraicArgsSafe? (args : List AstExpr) : Bool :=
+  List.pureAliasArgsSafe? args &&
+    List.delayedAlgebraicShapesSafe? args
+
+def delayedAlgebraicArgSafeAt? (offset : Nat) (expr : AstExpr) : Bool :=
+  delayedAlgebraicArgSafe? expr &&
+    decide (pendingStackDepth expr + offset < 16)
+
+theorem delayedAlgebraicArgSafeAt?_directPureArgSafeAt?
+    {offset : Nat} {expr : AstExpr}
+    (hSafe : delayedAlgebraicArgSafeAt? offset expr = true) :
+    directPureArgSafeAt? offset expr = true := by
+  simp [delayedAlgebraicArgSafeAt?, delayedAlgebraicArgSafe?,
+    directPureArgSafeAt?] at hSafe ⊢
+  exact ⟨hSafe.1.1, hSafe.2⟩
+
 def deferredBoundArgSafe? : AstExpr → Bool
   | .Lit _value => true
   | .Var _name => true
@@ -399,6 +477,27 @@ theorem Prim.toUncheckedBasicOp?_eq_toBasicOp?_of_pureAlias
     Prim.toUncheckedBasicOp? prim = Prim.toBasicOp? prim := by
   cases prim <;>
     simp [pureAliasPrim?, Prim.toUncheckedBasicOp?] at hPure ⊢
+
+theorem Prim.toUncheckedBasicOp?_eq_toBasicOp?_of_hoistSafe
+    {prim : EvmYul.Operation .Yul}
+    (hSafe : hoistSafePrim? prim = true) :
+    Prim.toUncheckedBasicOp? prim = Prim.toBasicOp? prim := by
+  cases prim <;> rename_i primitive <;> cases primitive <;>
+    simp [hoistSafePrim?, Prim.toUncheckedBasicOp?] at hSafe ⊢
+
+/-- Static fence: every hoist-admissible primitive lowers to a 1-output basic
+op, so the direct path's `toLocals?` cannot fail on it. Re-admitting `gas` or
+`msize` (which `Prim.toBasicOp?` rejects) breaks this lemma at compile time
+instead of silently fail-closing whole contracts to zero bytes. -/
+theorem hoistSafePrim?_toBasicOp_outputs_one
+    {prim : EvmYul.Operation .Yul}
+    (hSafe : hoistSafePrim? prim = true) :
+    ∃ op, Prim.toBasicOp? prim = some op ∧
+      Expressions.Structured.BasicOp.outputs op = 1 := by
+  cases prim <;> rename_i primitive <;> cases primitive <;>
+    first
+      | exact absurd hSafe (by decide)
+      | exact ⟨_, rfl, rfl⟩
 
 mutual
   def lower? (results : Nat) (state : Fresh.State) :
@@ -554,10 +653,10 @@ mutual
     | expr :: rest => do
         let (preRest, lowerRest, state') ← List.lowerBound1Unchecked? state rest
         let (preHead, lowerHead, state'') ← lowerUnchecked? 1 state' expr
-        -- Keep a small direct window for stable leaves only. Compound
-        -- expressions are materialized at their Yul evaluation boundary.
-        if deferredBoundArgSafe? expr &&
-            lowerRest.length < 4 then
+        -- Algebraic trees over literals and locals remain stable across
+        -- effectful siblings. Keep them direct while every leaf remains
+        -- inside the EVM's DUP16 access window.
+        if delayedAlgebraicArgSafeAt? lowerRest.length expr then
           some (preRest ++ preHead, lowerHead :: lowerRest, state'')
         else
           let (tmp, state''') ← Fresh.fresh? state''
@@ -707,8 +806,7 @@ theorem lowerUnchecked?_stateExtends
               rcases headResult with
                 ⟨preHead, lowerHead, stateAfterHead⟩
               by_cases hDeferred :
-                  deferredBoundArgSafe? expr = true ∧
-                    lowerRest.length < 4
+                  delayedAlgebraicArgSafeAt? lowerRest.length expr = true
               · simp [List.lowerBound1Unchecked?, hRest, hHead, hDeferred]
                   at hList
                 rw [← hList.2.2]
@@ -763,8 +861,7 @@ theorem List.lowerBound1Unchecked?_stateExtends
               rcases headResult with
                 ⟨preHead, lowerHead, stateAfterHead⟩
               by_cases hDeferred :
-                  deferredBoundArgSafe? expr = true ∧
-                    lowerRest.length < 4
+                  delayedAlgebraicArgSafeAt? lowerRest.length expr = true
               · simp [List.lowerBound1Unchecked?, hRest, hHead, hDeferred]
                   at hLower
                 rw [← hLower.2.2]
@@ -818,10 +915,10 @@ theorem lower1Unchecked?_direct_parts
                   true :=
             Bool.and_eq_true_iff.mp hSafe
           have hAliasParts :
-              pureAliasPrim? prim = true ∧
+              hoistSafePrim? prim = true ∧
                 List.pureAliasArgsSafe? args = true := by
             simpa [pureAliasArgSafe?] using hSafeParts.1
-          have hPurePrim : pureAliasPrim? prim = true := by
+          have hPurePrim : hoistSafePrim? prim = true := by
             exact hAliasParts.1
           have hDirect : List.directPureArgsSafe? args = true := by
             have hPureArgs :
@@ -837,7 +934,7 @@ theorem lower1Unchecked?_direct_parts
               omega
             simp [List.directPureArgsSafe?, hPureArgs, hDepth]
           have hPrimEq :=
-            Prim.toUncheckedBasicOp?_eq_toBasicOp?_of_pureAlias hPurePrim
+            Prim.toUncheckedBasicOp?_eq_toBasicOp?_of_hoistSafe hPurePrim
           cases hOp : Prim.toBasicOp? prim with
           | none =>
               simp [lower1Unchecked?, lowerUnchecked?, hDirect, hPrimEq,
@@ -863,6 +960,17 @@ theorem lower1Unchecked?_direct_parts
                         simp [toLocals?, hOp, hArgs, hSeq, hOutputs]
                       · simp [lower1Unchecked?, lowerUnchecked?, hDirect,
                           hPrimEq, hOp, hArgs, hSeq, hOutputs] at hLower
+
+theorem lower1Unchecked?_delayedAlgebraic_parts
+    {offset : Nat} {state state' : Fresh.State}
+    {expr : AstExpr} {pre : List Functions.Stmt}
+    {lower : Locals.Expr 1}
+    (hSafe : delayedAlgebraicArgSafeAt? offset expr = true)
+    (hLower :
+      lower1Unchecked? state expr = some (pre, lower, state')) :
+    pre = [] ∧ state' = state ∧ toLocals? 1 expr = some lower :=
+  lower1Unchecked?_direct_parts
+    (delayedAlgebraicArgSafeAt?_directPureArgSafeAt? hSafe) hLower
 
 theorem lower1Unchecked?_deferred_parts
     {state state' : Fresh.State}
@@ -1700,8 +1808,7 @@ inductive UncheckedBoundLowering :
         EvmCompiler.Yul.Expr.lower1Unchecked? stateRest expr =
           some (preHead, lowerHead, stateHead))
       (hDirect :
-        deferredBoundArgSafe? expr = true ∧
-          lowerRest.length < 4) :
+        delayedAlgebraicArgSafeAt? lowerRest.length expr = true) :
       UncheckedBoundLowering state (expr :: rest)
         (preRest ++ preHead) (lowerHead :: lowerRest) stateHead
   | bound
@@ -1716,8 +1823,7 @@ inductive UncheckedBoundLowering :
         EvmCompiler.Yul.Expr.lower1Unchecked? stateRest expr =
           some (preHead, lowerHead, stateHead))
       (hDirect :
-        ¬(deferredBoundArgSafe? expr = true ∧
-          lowerRest.length < 4))
+        ¬delayedAlgebraicArgSafeAt? lowerRest.length expr = true)
       (hFresh : Fresh.fresh? stateHead = some (tmp, stateFresh)) :
       UncheckedBoundLowering state (expr :: rest)
         (preRest ++ preHead ++ [Functions.Stmt.let_ tmp lowerHead])
@@ -1817,8 +1923,7 @@ theorem uncheckedBoundLowering_of_lowerBound1Unchecked?
           | some headResult =>
               rcases headResult with ⟨preHead, lowerHead, stateHead⟩
               by_cases hDirect :
-                  deferredBoundArgSafe? expr = true ∧
-                    lowerRest.length < 4
+                  delayedAlgebraicArgSafeAt? lowerRest.length expr = true
               · have hHeadLower1 :
                     EvmCompiler.Yul.Expr.lower1Unchecked? stateRest expr =
                       some (preHead, lowerHead, stateHead) := by

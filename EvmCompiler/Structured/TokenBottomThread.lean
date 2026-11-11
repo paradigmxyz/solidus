@@ -530,30 +530,37 @@ theorem input_of_mkBlock?
 /-- **Proc-body membership inversion, token-at-bottom form.**  The additive mirror of
 `mem_procBlocks_provenance` (`InteractionProcBlockProvenance.lean`) emitting `TokenBottomOrNone
 input` on the recovered body-compile seed: `procEntry proc` (no-adapter route) or the relabel
-target `bodyInput` (adapter route), both token-at-bottom. -/
+target `bodyInput` (adapter route), both token-at-bottom.
+
+`callBase` is the dense return-token counter the caller threads into this proc-list segment; it
+is universally quantified because the induction visits each proc at a different counter value.
+The recovered per-proc `Context` records its own `bcallBase` (existentially bound — the drill's
+token-at-bottom conclusion is independent of the counter). -/
 theorem mem_procBlocks_tokenBottom
     {entryShapes : TypedCfgCompiler.ProcEntryShapes}
     {allProcs procs : List Structured.Proc}
     {supply next : LabelSupply}
     {procBlocks : List TypedCfg.Block}
     {procCalls : List TypedCfgCompiler.DispatchSite}
+    (callBase : Nat)
     (hLower :
       TypedCfgCompiler.lowerProcBodiesWithShapes? entryShapes allProcs procs
-          supply =
+          supply callBase =
         some (procBlocks, next, procCalls))
     {block : TypedCfg.Block}
     (hMem : block ∈ procBlocks) :
-    ∃ (proc : Structured.Proc) (bsupply : LabelSupply)
+    ∃ (proc : Structured.Proc) (bsupply : LabelSupply) (bcallBase : Nat)
       (entry : Assembly.Label) (input : TypedCfg.Shape)
       (bodyResult : TypedCfgCompiler.Result),
       TypedCfgCompiler.compileBlock? proc.body
           { procs := allProcs
             leaveLabel? := some (ProcLabel.exit proc.name)
-            leaveShape? := some (TypedCfgCompiler.Shape.procExit proc) }
+            leaveShape? := some (TypedCfgCompiler.Shape.procExit proc)
+            callBase := bcallBase }
           bsupply entry input (ProcLabel.exit proc.name) = some bodyResult ∧
       TokenBottomOrNone input ∧
       (block ∈ bodyResult.blocks ∨ block.input = TypedCfgCompiler.Shape.procEntry proc) := by
-  induction procs generalizing supply next procBlocks procCalls with
+  induction procs generalizing supply next procBlocks procCalls callBase with
   | nil =>
       simp only [TypedCfgCompiler.lowerProcBodiesWithShapes?, Option.some.injEq,
         Prod.mk.injEq] at hLower
@@ -569,7 +576,8 @@ theorem mem_procBlocks_tokenBottom
                 { procs := allProcs
                   leaveLabel? := some (ProcLabel.exit head.name)
                   leaveShape? :=
-                    some (TypedCfgCompiler.Shape.procExit head) }
+                    some (TypedCfgCompiler.Shape.procExit head)
+                  callBase := callBase }
                 supply (ProcLabel.entry head.name)
                 (TypedCfgCompiler.Shape.procEntry head)
                 (ProcLabel.exit head.name) with
@@ -585,7 +593,8 @@ theorem mem_procBlocks_tokenBottom
                   cases unit
                   cases hTail :
                       TypedCfgCompiler.lowerProcBodiesWithShapes?
-                        entryShapes allProcs rest compiled.next with
+                        entryShapes allProcs rest compiled.next
+                        (callBase + compiled.calls.length) with
                   | none =>
                       simp [hShape, hBody, hRequire, hTail] at hLower
                   | some tailResult =>
@@ -595,17 +604,17 @@ theorem mem_procBlocks_tokenBottom
                       simp only [List.mem_append] at hMem
                       rcases hMem with hHere | hThere
                       · exact
-                          ⟨head, supply, ProcLabel.entry head.name,
+                          ⟨head, supply, callBase, ProcLabel.entry head.name,
                             TypedCfgCompiler.Shape.procEntry head, compiled,
                             hBody,
                             TokenBottomShape.tokenBottomOrNone_procEntry head,
                             Or.inl hHere⟩
                       · obtain
-                          ⟨proc, bsupply, e, input, bodyResult,
+                          ⟨proc, bsupply, bcallBase, e, input, bodyResult,
                             hCompile, hTB, hDisj⟩ :=
-                          ih hTail hThere
+                          ih (callBase + compiled.calls.length) hTail hThere
                         exact
-                          ⟨proc, bsupply, e, input, bodyResult,
+                          ⟨proc, bsupply, bcallBase, e, input, bodyResult,
                             hCompile, hTB, hDisj⟩
       | some bodyInput =>
           cases hFrame :
@@ -629,7 +638,8 @@ theorem mem_procBlocks_tokenBottom
                         { procs := allProcs
                           leaveLabel? := some (ProcLabel.exit head.name)
                           leaveShape? :=
-                            some (TypedCfgCompiler.Shape.procExit head) }
+                            some (TypedCfgCompiler.Shape.procExit head)
+                          callBase := callBase }
                         supply (ProcLabel.body head.name) bodyInput
                         (ProcLabel.exit head.name) with
                   | none =>
@@ -645,7 +655,8 @@ theorem mem_procBlocks_tokenBottom
                           cases unit
                           cases hTail :
                               TypedCfgCompiler.lowerProcBodiesWithShapes?
-                                entryShapes allProcs rest compiled.next with
+                                entryShapes allProcs rest compiled.next
+                                (callBase + compiled.calls.length) with
                           | none =>
                               simp [hShape, hFrame, hAdapter, hBody, hRequire,
                                 hTail] at hLower
@@ -664,22 +675,25 @@ theorem mem_procBlocks_tokenBottom
                                 List.mem_append] at hMem
                               rcases hMem with hEq | hIn | hThere
                               · refine
-                                  ⟨head, supply, ProcLabel.body head.name,
+                                  ⟨head, supply, callBase,
+                                    ProcLabel.body head.name,
                                     bodyInput, compiled, hBody, hTBbody,
                                     Or.inr ?_⟩
                                 subst hEq
                                 exact input_of_mkBlock? hAdapter
                               · exact
-                                  ⟨head, supply, ProcLabel.body head.name,
+                                  ⟨head, supply, callBase,
+                                    ProcLabel.body head.name,
                                     bodyInput, compiled, hBody, hTBbody,
                                     Or.inl hIn⟩
                               · obtain
-                                  ⟨proc, bsupply, e, input, bodyResult,
-                                    hCompile, hTB, hDisj⟩ :=
-                                  ih hTail hThere
+                                  ⟨proc, bsupply, bcallBase, e, input,
+                                    bodyResult, hCompile, hTB, hDisj⟩ :=
+                                  ih (callBase + compiled.calls.length) hTail
+                                    hThere
                                 exact
-                                  ⟨proc, bsupply, e, input, bodyResult,
-                                    hCompile, hTB, hDisj⟩
+                                  ⟨proc, bsupply, bcallBase, e, input,
+                                    bodyResult, hCompile, hTB, hDisj⟩
 
 open TypedCfgPreservation (BlocksInProgram)
 open TypedCfgPreservation.Program (GeneratedContext)
@@ -706,8 +720,11 @@ theorem proc_tokenBottom
     {block : TypedCfg.Block}
     (hMem : block ∈ context.procBlocks) :
     TokenBottomOrNone block.input := by
-  obtain ⟨proc, bsupply, entry, input, bodyResult, hCompile, hTB, hDisj⟩ :=
-    mem_procBlocks_tokenBottom context.procsCompile hMem
+  obtain
+      ⟨proc, bsupply, bcallBase, entry, input, bodyResult,
+        hCompile, hTB, hDisj⟩ :=
+    mem_procBlocks_tokenBottom context.main.calls.length context.procsCompile
+      hMem
   rcases hDisj with hBody | hAdapterInput
   · exact (tbResult_of_compileBlock? hCompile hTB).1 block hBody
   · rw [hAdapterInput]

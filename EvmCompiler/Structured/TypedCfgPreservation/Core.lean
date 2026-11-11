@@ -2175,9 +2175,9 @@ theorem components_of_compileStmtListFuel?_cons
       ((headResult.fallthrough? = none ∧ result = headResult) ∨
         ∃ tailInput tailResult,
           headResult.fallthrough? = some tailInput ∧
-          TypedCfgCompiler.compileStmtListFuel? compilerFuel rest ctx
-              headResult.next (TypedCfgCompiler.restLabel supply)
-              tailInput regular =
+          TypedCfgCompiler.compileStmtListFuel? compilerFuel rest
+              (ctx.advance headResult) headResult.next
+              (TypedCfgCompiler.restLabel supply) tailInput regular =
             some tailResult ∧
           result = headResult.append tailResult) := by
   unfold TypedCfgCompiler.compileStmtListFuel? at hCompile
@@ -2196,9 +2196,9 @@ theorem components_of_compileStmtListFuel?_cons
               Or.inl ⟨hFallthrough, hEq.symm⟩⟩
       | some tailInput =>
           cases hTail :
-              TypedCfgCompiler.compileStmtListFuel? compilerFuel rest ctx
-                headResult.next (TypedCfgCompiler.restLabel supply)
-                tailInput regular with
+              TypedCfgCompiler.compileStmtListFuel? compilerFuel rest
+                (ctx.advance headResult) headResult.next
+                (TypedCfgCompiler.restLabel supply) tailInput regular with
           | none =>
               simp [hHead, hFallthrough, hTail] at hCompile
           | some tailResult =>
@@ -2949,6 +2949,11 @@ structure ProcFragment
     (procBlocks : List TypedCfg.Block)
     (procCalls : List TypedCfgCompiler.DispatchSite) where
   supply : LabelSupply
+  /--
+  Dense call-token base the whole-program lowering supplies at this
+  procedure's position in the source procedure list.
+  -/
+  callBase : Nat
   input : TypedCfg.Shape
   entry : Assembly.Label
   result : TypedCfgCompiler.Result
@@ -2956,7 +2961,8 @@ structure ProcFragment
     TypedCfgCompiler.compileBlock? proc.body
         { procs := allProcs
           leaveLabel? := some (ProcLabel.exit proc.name)
-          leaveShape? := some (TypedCfgCompiler.Shape.procExit proc) }
+          leaveShape? := some (TypedCfgCompiler.Shape.procExit proc)
+          callBase := callBase }
         supply entry input (ProcLabel.exit proc.name) =
       some result
   fallthrough :
@@ -3053,13 +3059,14 @@ def procFragment_of_lowerProcBodiesWithShapes?
     {procBlocks : List TypedCfg.Block}
     {procCalls : List TypedCfgCompiler.DispatchSite}
     {name : Structured.Name} {proc : Structured.Proc}
+    (callBase : Nat)
     (hLower :
       TypedCfgCompiler.lowerProcBodiesWithShapes? entryShapes allProcs
-          procs supply =
+          procs supply callBase =
         some (procBlocks, next, procCalls))
     (hLookup : Structured.ProcList.lookup? name procs = some proc) :
     ProcFragment entryShapes allProcs proc procBlocks procCalls := by
-  induction procs generalizing supply next procBlocks procCalls with
+  induction procs generalizing supply next procBlocks procCalls callBase with
   | nil =>
       simp [Structured.ProcList.lookup?] at hLookup
   | cons head rest ih =>
@@ -3075,7 +3082,8 @@ def procFragment_of_lowerProcBodiesWithShapes?
                   { procs := allProcs
                     leaveLabel? := some (ProcLabel.exit head.name)
                     leaveShape? :=
-                      some (TypedCfgCompiler.Shape.procExit head) }
+                      some (TypedCfgCompiler.Shape.procExit head)
+                    callBase := callBase }
                   supply (ProcLabel.entry head.name)
                   (TypedCfgCompiler.Shape.procEntry head)
                   (ProcLabel.exit head.name) with
@@ -3091,7 +3099,8 @@ def procFragment_of_lowerProcBodiesWithShapes?
                     cases unit
                     cases hTail :
                         TypedCfgCompiler.lowerProcBodiesWithShapes?
-                          entryShapes allProcs rest bodyResult.next with
+                          entryShapes allProcs rest bodyResult.next
+                          (callBase + bodyResult.calls.length) with
                     | none =>
                         simp [hShape, hBody, hRequire, hTail] at hLower
                     | some tailResult =>
@@ -3101,6 +3110,7 @@ def procFragment_of_lowerProcBodiesWithShapes?
                         rcases hLower with ⟨rfl, rfl, rfl⟩
                         exact
                           { supply := supply
+                            callBase := callBase
                             input := TypedCfgCompiler.Shape.procEntry head
                             entry := ProcLabel.entry head.name
                             result := bodyResult
@@ -3135,7 +3145,8 @@ def procFragment_of_lowerProcBodiesWithShapes?
                           { procs := allProcs
                             leaveLabel? := some (ProcLabel.exit head.name)
                             leaveShape? :=
-                              some (TypedCfgCompiler.Shape.procExit head) }
+                              some (TypedCfgCompiler.Shape.procExit head)
+                            callBase := callBase }
                           supply (ProcLabel.body head.name) bodyInput
                           (ProcLabel.exit head.name) with
                     | none =>
@@ -3150,7 +3161,8 @@ def procFragment_of_lowerProcBodiesWithShapes?
                             cases unit
                             cases hTail :
                                 TypedCfgCompiler.lowerProcBodiesWithShapes?
-                                  entryShapes allProcs rest bodyResult.next with
+                                  entryShapes allProcs rest bodyResult.next
+                                  (callBase + bodyResult.calls.length) with
                             | none =>
                                 simp [hShape, hFrame, hAdapter, hBody,
                                   hRequire, hTail] at hLower
@@ -3162,6 +3174,7 @@ def procFragment_of_lowerProcBodiesWithShapes?
                                 rcases hLower with ⟨rfl, rfl, rfl⟩
                                 exact
                                   { supply := supply
+                                    callBase := callBase
                                     input := bodyInput
                                     entry := ProcLabel.body head.name
                                     result := bodyResult
@@ -3190,7 +3203,8 @@ def procFragment_of_lowerProcBodiesWithShapes?
                   { procs := allProcs
                     leaveLabel? := some (ProcLabel.exit head.name)
                     leaveShape? :=
-                      some (TypedCfgCompiler.Shape.procExit head) }
+                      some (TypedCfgCompiler.Shape.procExit head)
+                    callBase := callBase }
                   supply (ProcLabel.entry head.name)
                   (TypedCfgCompiler.Shape.procEntry head)
                   (ProcLabel.exit head.name) with
@@ -3206,7 +3220,8 @@ def procFragment_of_lowerProcBodiesWithShapes?
                     cases unit
                     cases hTail :
                         TypedCfgCompiler.lowerProcBodiesWithShapes?
-                          entryShapes allProcs rest bodyResult.next with
+                          entryShapes allProcs rest bodyResult.next
+                          (callBase + bodyResult.calls.length) with
                     | none =>
                         simp [hShape, hBody, hRequire, hTail] at hLower
                     | some tailResult =>
@@ -3215,7 +3230,8 @@ def procFragment_of_lowerProcBodiesWithShapes?
                         simp [hShape, hBody, hRequire, hTail] at hLower
                         rcases hLower with ⟨rfl, rfl, rfl⟩
                         let fragment :=
-                          ih hTail hLookup
+                          ih (callBase + bodyResult.calls.length) hTail
+                            hLookup
                         exact
                           { fragment with
                             blocks := by
@@ -3262,7 +3278,8 @@ def procFragment_of_lowerProcBodiesWithShapes?
                           { procs := allProcs
                             leaveLabel? := some (ProcLabel.exit head.name)
                             leaveShape? :=
-                              some (TypedCfgCompiler.Shape.procExit head) }
+                              some (TypedCfgCompiler.Shape.procExit head)
+                            callBase := callBase }
                           supply (ProcLabel.body head.name) bodyInput
                           (ProcLabel.exit head.name) with
                     | none =>
@@ -3277,7 +3294,8 @@ def procFragment_of_lowerProcBodiesWithShapes?
                             cases unit
                             cases hTail :
                                 TypedCfgCompiler.lowerProcBodiesWithShapes?
-                                  entryShapes allProcs rest bodyResult.next with
+                                  entryShapes allProcs rest bodyResult.next
+                                  (callBase + bodyResult.calls.length) with
                             | none =>
                                 simp [hShape, hFrame, hAdapter, hBody,
                                   hRequire, hTail] at hLower
@@ -3288,7 +3306,8 @@ def procFragment_of_lowerProcBodiesWithShapes?
                                   hRequire, hTail] at hLower
                                 rcases hLower with ⟨rfl, rfl, rfl⟩
                                 let fragment :=
-                                  ih hTail hLookup
+                                  ih (callBase + bodyResult.calls.length)
+                                    hTail hLookup
                                 exact
                                   { fragment with
                                     blocks := by
@@ -3336,7 +3355,7 @@ theorem components_of_generateWithProcEntryShapes?
           TypedCfg.Shape.caller ProcLabel.programEnd =
         some main ∧
       TypedCfgCompiler.lowerProcBodiesWithShapes? entryShapes
-          source.procs source.procs main.next =
+          source.procs source.procs main.next main.calls.length =
         some (procBlocks, next, procCalls) ∧
       ((main.calls ++ procCalls).map
         TypedCfgCompiler.DispatchSite.token).Nodup ∧
@@ -3363,7 +3382,7 @@ theorem components_of_generateWithProcEntryShapes?
   | some main =>
       cases hProcs :
           TypedCfgCompiler.lowerProcBodiesWithShapes? entryShapes
-            source.procs source.procs main.next with
+            source.procs source.procs main.next main.calls.length with
       | none =>
           simp [hMain, hProcs] at hGenerate
       | some procResult =>
@@ -3399,7 +3418,7 @@ structure GeneratedContext
       some main
   procsCompile :
     TypedCfgCompiler.lowerProcBodiesWithShapes? entryShapes
-        source.procs source.procs main.next =
+        source.procs source.procs main.next main.calls.length =
       some (procBlocks, next, procCalls)
   tokensUnique :
     ((main.calls ++ procCalls).map
@@ -3483,7 +3502,7 @@ def of_generate
   | some main =>
       cases hProcs :
           TypedCfgCompiler.lowerProcBodiesWithShapes? entryShapes
-            source.procs source.procs main.next with
+            source.procs source.procs main.next main.calls.length with
       | none =>
           simp [hMain, hProcs] at hGenerate
       | some procResult =>
@@ -3537,7 +3556,7 @@ theorem procFragment_of_lookup?
         CallsInProgram fragment.result context.calls := by
   let fragment :=
     Program.procFragment_of_lowerProcBodiesWithShapes?
-      context.procsCompile hLookup
+      context.main.calls.length context.procsCompile hLookup
   refine ⟨fragment, ?_, ?_⟩
   · apply BlocksInProgram.of_subset_of_wellTyped context.wellTyped
     intro block hMem

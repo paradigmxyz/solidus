@@ -8,6 +8,51 @@ open Assembly
 
 attribute [local simp] Assembly.PrimStep.idRun_eq
 
+/--
+The dense call-token counter carries no lexical control information, so
+overriding it leaves the continuation view of a compiler context unchanged.
+-/
+theorem ofContext_callBase
+    (ctx : TypedCfgCompiler.Context) (callBase : Nat)
+    (regular : Assembly.Label) :
+    OutcomeSimulation.Continuations.ofContext
+        { ctx with callBase := callBase } regular =
+      OutcomeSimulation.Continuations.ofContext ctx regular := rfl
+
+/-- Advancing the dense call-token counter preserves the continuation view. -/
+theorem ofContext_advance
+    (ctx : TypedCfgCompiler.Context) (fragment : TypedCfgCompiler.Result)
+    (regular : Assembly.Label) :
+    OutcomeSimulation.Continuations.ofContext
+        (ctx.advance fragment) regular =
+      OutcomeSimulation.Continuations.ofContext ctx regular := rfl
+
+/-- Overriding the dense call-token counter preserves control permissions. -/
+theorem contextSupports_callBase
+    {ctx : TypedCfgCompiler.Context}
+    {canBreak canContinue canLeave : Bool}
+    (callBase : Nat)
+    (hSupports :
+      OutcomeSimulation.ContextSupports ctx canBreak canContinue canLeave) :
+    OutcomeSimulation.ContextSupports
+      { ctx with callBase := callBase } canBreak canContinue canLeave :=
+  { breakLabel := hSupports.breakLabel
+    continueLabel := hSupports.continueLabel
+    leaveLabel := hSupports.leaveLabel }
+
+/-- Advancing the dense call-token counter preserves control permissions. -/
+theorem contextSupports_advance
+    {ctx : TypedCfgCompiler.Context}
+    {canBreak canContinue canLeave : Bool}
+    (fragment : TypedCfgCompiler.Result)
+    (hSupports :
+      OutcomeSimulation.ContextSupports ctx canBreak canContinue canLeave) :
+    OutcomeSimulation.ContextSupports
+      (ctx.advance fragment) canBreak canContinue canLeave :=
+  { breakLabel := hSupports.breakLabel
+    continueLabel := hSupports.continueLabel
+    leaveLabel := hSupports.leaveLabel }
+
 namespace Stmt
 
 /--
@@ -1136,7 +1181,7 @@ theorem eventually_test
       (value :: value :: realizedTail)
   let afterPush :=
     afterDup.replaceStackAndIncrPC
-      (caseValue :: value :: value :: realizedTail) (pcΔ := 33)
+      (caseValue :: value :: value :: realizedTail) (pcΔ := Assembly.pushPcDelta caseValue)
   let afterEq :=
     afterPush.replaceStackAndIncrPC
       (EvmYul.UInt256.eq caseValue value :: value :: realizedTail)
@@ -1271,7 +1316,8 @@ theorem regular_cases_head_of_compileCasesFuel?
             rfl
       simp only [hRequire] at hCompile
       cases hTail :
-        TypedCfgCompiler.compileCasesFuel? compilerFuel rest ctx base
+        TypedCfgCompiler.compileCasesFuel? compilerFuel rest
+          (ctx.advance bodyResult) base
           bodyResult.next (idx + 1) valueShape bodyShape regular with
       | none =>
           simp [hTail] at hCompile
@@ -1378,7 +1424,8 @@ theorem regular_cases_tail_of_compileCasesFuel?
             rfl
       simp only [hRequire] at hCompile
       cases hTail :
-        TypedCfgCompiler.compileCasesFuel? compilerFuel rest ctx base
+        TypedCfgCompiler.compileCasesFuel? compilerFuel rest
+          (ctx.advance bodyResult) base
           bodyResult.next (idx + 1) valueShape bodyShape regular with
       | none =>
           simp [hTail] at hCompile
@@ -1435,9 +1482,10 @@ theorem path_cases_some_of_compileCasesFuel?
     (hPop : source.evm.stack.pop = some (stack, value))
     (hSelect : Switch.select value cases defaultBody = some selected)
     (hCasePreserves :
-      ∀ {bodyCompilerFuel caseSupply caseIdx : Nat}
+      ∀ {bodyCallBase bodyCompilerFuel caseSupply caseIdx : Nat}
         {bodyResult : TypedCfgCompiler.Result},
-        TypedCfgCompiler.compileBlockFuel? bodyCompilerFuel selected ctx
+        TypedCfgCompiler.compileBlockFuel? bodyCompilerFuel selected
+            { ctx with callBase := bodyCallBase }
             caseSupply (TypedCfgCompiler.switchBodyLabel base caseIdx)
             bodyShape regular =
           some bodyResult →
@@ -1451,7 +1499,7 @@ theorem path_cases_some_of_compileCasesFuel?
           source final tokens) :
     PathPreserves cfg (casesEntryLabel base idx cases) regular
       source final tokens := by
-  induction cases generalizing compilerFuel supply idx result selected with
+  induction cases generalizing compilerFuel supply idx result selected ctx with
   | nil =>
       cases compilerFuel with
       | zero =>
@@ -1496,7 +1544,8 @@ theorem path_cases_some_of_compileCasesFuel?
                     rfl
               simp only [hRequire] at hCompile
               cases hTail :
-                TypedCfgCompiler.compileCasesFuel? bodyCompilerFuel rest ctx
+                TypedCfgCompiler.compileCasesFuel? bodyCompilerFuel rest
+                  (ctx.advance bodyResult)
                   base bodyResult.next (idx + 1) valueShape bodyShape
                   regular with
               | none =>
@@ -1521,6 +1570,7 @@ theorem path_cases_some_of_compileCasesFuel?
                         hCompileFull hBlocks hHead hPopType hPop hEq
                         (fun hBodyCompile hCompiledBodyBlocks =>
                           hCasePreserves
+                            (bodyCallBase := ctx.callBase)
                             hBodyCompile hCompiledBodyBlocks)
                     simpa [casesEntryLabel] using
                       PathPreserves.of_regular hRegular
@@ -1567,9 +1617,10 @@ theorem outcome_cases_some_of_compileCasesFuel?
     (hPop : source.evm.stack.pop = some (stack, value))
     (hSelect : Switch.select value cases defaultBody = some selected)
     (hCasePath :
-      ∀ {bodyCompilerFuel caseSupply caseIdx : Nat}
+      ∀ {bodyCallBase bodyCompilerFuel caseSupply caseIdx : Nat}
         {bodyResult : TypedCfgCompiler.Result},
-        TypedCfgCompiler.compileBlockFuel? bodyCompilerFuel selected ctx
+        TypedCfgCompiler.compileBlockFuel? bodyCompilerFuel selected
+            { ctx with callBase := bodyCallBase }
             caseSupply (TypedCfgCompiler.switchBodyLabel base caseIdx)
             bodyShape regular =
           some bodyResult →
@@ -1585,7 +1636,7 @@ theorem outcome_cases_some_of_compileCasesFuel?
           continuations source outcome tokens) :
     OutcomeSimulation.Path cfg (casesEntryLabel base idx cases)
       continuations source outcome tokens := by
-  induction cases generalizing compilerFuel supply idx result selected with
+  induction cases generalizing compilerFuel supply idx result selected ctx with
   | nil =>
       cases compilerFuel with
       | zero =>
@@ -1629,7 +1680,8 @@ theorem outcome_cases_some_of_compileCasesFuel?
                     rfl
               simp only [hRequire] at hCompile
               cases hTail :
-                TypedCfgCompiler.compileCasesFuel? bodyCompilerFuel rest ctx
+                TypedCfgCompiler.compileCasesFuel? bodyCompilerFuel rest
+                  (ctx.advance bodyResult)
                   base bodyResult.next (idx + 1) valueShape bodyShape
                   regular with
               | none =>
@@ -1684,7 +1736,8 @@ theorem outcome_cases_some_of_compileCasesFuel?
                           hBlocks (by simp) hPopType hAfterTestRel hPop with
                       ⟨targetAfterPop, hEntryEventually, hAfterPopRel⟩
                     rcases
-                        hCasePath hBody hBodyBlocks hBodyCalls
+                        hCasePath (bodyCallBase := ctx.callBase)
+                          hBody hBodyBlocks hBodyCalls
                           targetAfterPop hAfterPopRel with
                       ⟨targetOutcome, hBodyEventually, hOutcomeRel⟩
                     refine ⟨targetOutcome, ?_, hOutcomeRel⟩
@@ -1752,7 +1805,7 @@ theorem path_cases_none_of_compileCasesFuel?
           source final tokens) :
     PathPreserves cfg (casesEntryLabel base idx cases) regular
       source final tokens := by
-  induction cases generalizing compilerFuel supply idx result with
+  induction cases generalizing compilerFuel supply idx result ctx with
   | nil =>
       cases compilerFuel with
       | zero =>
@@ -1797,7 +1850,8 @@ theorem path_cases_none_of_compileCasesFuel?
                     rfl
               simp only [hRequire] at hCompile
               cases hTail :
-                TypedCfgCompiler.compileCasesFuel? bodyCompilerFuel rest ctx
+                TypedCfgCompiler.compileCasesFuel? bodyCompilerFuel rest
+                  (ctx.advance bodyResult)
                   base bodyResult.next (idx + 1) valueShape bodyShape
                   regular with
               | none =>
@@ -2065,11 +2119,12 @@ theorem outcome_some_of_compileStmtFuel?
     (hSelect :
       Switch.select value cases defaultBody = some selected)
     (hSelectedPath :
-      ∀ {bodyCompilerFuel bodySupply : Nat}
+      ∀ {bodyCallBase bodyCompilerFuel bodySupply : Nat}
         {bodyEntry : Assembly.Label}
         {bodyShape : TypedCfg.Shape}
         {bodyResult : TypedCfgCompiler.Result},
-        TypedCfgCompiler.compileBlockFuel? bodyCompilerFuel selected ctx
+        TypedCfgCompiler.compileBlockFuel? bodyCompilerFuel selected
+            { ctx with callBase := bodyCallBase }
             bodySupply bodyEntry bodyShape regular =
           some bodyResult →
         BlocksInProgram bodyResult cfg →
@@ -2142,7 +2197,7 @@ theorem outcome_some_of_compileStmtFuel?
                 simpa [bodyShape] using hCasesCompileRaw
               cases hDefaultCompileRaw :
                   TypedCfgCompiler.compileDefaultFuel? (compilerFuel + 1)
-                    defaultBody ctx caseResult.next
+                    defaultBody (ctx.advance caseResult) caseResult.next
                     (LabelSupply.label supply 1)
                     valueShape
                     { valueShape with slots := valueShape.slots.tail }
@@ -2153,7 +2208,8 @@ theorem outcome_some_of_compileStmtFuel?
                   simp only [hDefaultCompileRaw] at hCompile
                   have hDefaultCompile :
                       TypedCfgCompiler.compileDefaultFuel?
-                          (compilerFuel + 1) defaultBody ctx
+                          (compilerFuel + 1) defaultBody
+                          (ctx.advance caseResult)
                           caseResult.next
                           (LabelSupply.label supply 1)
                           valueShape bodyShape regular =
@@ -2187,14 +2243,15 @@ theorem outcome_some_of_compileStmtFuel?
                     apply outcome_cases_some_of_compileCasesFuel?
                       hCasesCompile hCaseBlocks hCaseCalls
                       hValue hPopType hPop hSelect
-                    · intro bodyCompilerFuel caseSupply caseIdx bodyResult
-                        hBodyCompile hBodyBlocks hBodyCalls
+                    · intro bodyCallBase bodyCompilerFuel caseSupply caseIdx
+                        bodyResult hBodyCompile hBodyBlocks hBodyCalls
                       exact
                         hSelectedPath hBodyCompile hBodyBlocks hBodyCalls
                     · intro hDefault
                       have hDefaultSelected :
                           TypedCfgCompiler.compileDefaultFuel?
-                              (compilerFuel + 1) (some selected) ctx
+                              (compilerFuel + 1) (some selected)
+                              (ctx.advance caseResult)
                               caseResult.next
                               (LabelSupply.label supply 1)
                               valueShape bodyShape regular =
@@ -2205,7 +2262,10 @@ theorem outcome_some_of_compileStmtFuel?
                         hPopType hPop
                       intro bodyResult hBodyCompile hBodyBlocks hBodyCalls
                       exact
-                        hSelectedPath hBodyCompile hBodyBlocks hBodyCalls
+                        hSelectedPath
+                          (bodyCallBase :=
+                            ctx.callBase + caseResult.calls.length)
+                          hBodyCompile hBodyBlocks hBodyCalls
                   let firstTest := casesEntryLabel supply 0 cases
                   let head : TypedCfg.Block :=
                     { label := entry
@@ -2264,11 +2324,12 @@ theorem preserves_some_of_compileStmtFuel?
     (hSelect :
       Switch.select value cases defaultBody = some selected)
     (hSelectedPreserves :
-      ∀ {bodyCompilerFuel bodySupply : Nat}
+      ∀ {bodyCallBase bodyCompilerFuel bodySupply : Nat}
         {bodyEntry : Assembly.Label}
         {bodyShape : TypedCfg.Shape}
         {bodyResult : TypedCfgCompiler.Result},
-        TypedCfgCompiler.compileBlockFuel? bodyCompilerFuel selected ctx
+        TypedCfgCompiler.compileBlockFuel? bodyCompilerFuel selected
+            { ctx with callBase := bodyCallBase }
             bodySupply bodyEntry bodyShape regular =
           some bodyResult →
         BlocksInProgram bodyResult cfg →
@@ -2334,7 +2395,7 @@ theorem preserves_some_of_compileStmtFuel?
                 simpa [bodyShape] using hCasesCompileRaw
               cases hDefaultCompileRaw :
                   TypedCfgCompiler.compileDefaultFuel? (compilerFuel + 1)
-                    defaultBody ctx caseResult.next
+                    defaultBody (ctx.advance caseResult) caseResult.next
                     (LabelSupply.label supply 1)
                     valueShape
                     { valueShape with slots := valueShape.slots.tail }
@@ -2345,7 +2406,8 @@ theorem preserves_some_of_compileStmtFuel?
                   simp only [hDefaultCompileRaw] at hCompile
                   have hDefaultCompile :
                       TypedCfgCompiler.compileDefaultFuel?
-                          (compilerFuel + 1) defaultBody ctx
+                          (compilerFuel + 1) defaultBody
+                          (ctx.advance caseResult)
                           caseResult.next
                           (LabelSupply.label supply 1)
                           valueShape bodyShape regular =
@@ -2367,15 +2429,16 @@ theorem preserves_some_of_compileStmtFuel?
                         afterScrutinee final tokens := by
                     apply path_cases_some_of_compileCasesFuel?
                       hCasesCompile hCaseBlocks hValue hPopType hPop hSelect
-                    · intro bodyCompilerFuel caseSupply caseIdx bodyResult
-                        hBodyCompile hBodyBlocks
+                    · intro bodyCallBase bodyCompilerFuel caseSupply caseIdx
+                        bodyResult hBodyCompile hBodyBlocks
                       exact
                         hSelectedPreserves
                           hBodyCompile hBodyBlocks
                     · intro hDefault
                       have hDefaultSelected :
                           TypedCfgCompiler.compileDefaultFuel?
-                              (compilerFuel + 1) (some selected) ctx
+                              (compilerFuel + 1) (some selected)
+                              (ctx.advance caseResult)
                               caseResult.next
                               (LabelSupply.label supply 1)
                               valueShape bodyShape regular =
@@ -2387,6 +2450,8 @@ theorem preserves_some_of_compileStmtFuel?
                       intro bodyResult hBodyCompile hBodyBlocks
                       exact
                         hSelectedPreserves
+                          (bodyCallBase :=
+                            ctx.callBase + caseResult.calls.length)
                           hBodyCompile hBodyBlocks
                   let firstTest := casesEntryLabel supply 0 cases
                   let head : TypedCfg.Block :=
@@ -2504,7 +2569,7 @@ theorem preserves_none_of_compileStmtFuel?
                 simpa [bodyShape] using hCasesCompileRaw
               cases hDefaultCompileRaw :
                   TypedCfgCompiler.compileDefaultFuel? (compilerFuel + 1)
-                    defaultBody ctx caseResult.next
+                    defaultBody (ctx.advance caseResult) caseResult.next
                     (LabelSupply.label supply 1)
                     valueShape
                     { valueShape with slots := valueShape.slots.tail }
@@ -2515,7 +2580,8 @@ theorem preserves_none_of_compileStmtFuel?
                   simp only [hDefaultCompileRaw] at hCompile
                   have hDefaultCompile :
                       TypedCfgCompiler.compileDefaultFuel?
-                          (compilerFuel + 1) defaultBody ctx
+                          (compilerFuel + 1) defaultBody
+                          (ctx.advance caseResult)
                           caseResult.next
                           (LabelSupply.label supply 1)
                           valueShape bodyShape regular =
@@ -2543,7 +2609,8 @@ theorem preserves_none_of_compileStmtFuel?
                     intro hDefault
                     have hDefaultNone :
                         TypedCfgCompiler.compileDefaultFuel?
-                            (compilerFuel + 1) none ctx caseResult.next
+                            (compilerFuel + 1) none (ctx.advance caseResult)
+                            caseResult.next
                             (LabelSupply.label supply 1)
                             valueShape bodyShape regular =
                           some defaultResult := by
@@ -2704,7 +2771,8 @@ theorem components_of_compileStmtFuel?_for
               some { condOutput with slots := condOutput.slots.tail }
             continueLabel? := some (LabelSupply.label supply 2)
             continueShape? :=
-              some { condOutput with slots := condOutput.slots.tail } }
+              some { condOutput with slots := condOutput.slots.tail }
+            callBase := ctx.callBase + initResult.calls.length }
           initResult.next (LabelSupply.label supply 1)
           { condOutput with slots := condOutput.slots.tail }
           (LabelSupply.label supply 2) =
@@ -2717,7 +2785,10 @@ theorem components_of_compileStmtFuel?_for
             breakLabel? := none
             breakShape? := none
             continueLabel? := none
-            continueShape? := none }
+            continueShape? := none
+            callBase :=
+              ctx.callBase + initResult.calls.length +
+                bodyResult.calls.length }
           bodyResult.next (LabelSupply.label supply 2)
           { condOutput with slots := condOutput.slots.tail }
           (LabelSupply.label supply 0) =
@@ -3036,7 +3107,8 @@ theorem path_of_compileStmtFuel?_and_eval
                 some { condOutput with slots := condOutput.slots.tail }
               continueLabel? := some (LabelSupply.label supply 2)
               continueShape? :=
-                some { condOutput with slots := condOutput.slots.tail } }
+                some { condOutput with slots := condOutput.slots.tail }
+              callBase := ctx.callBase + initResult.calls.length }
             initResult.next (LabelSupply.label supply 1)
             { condOutput with slots := condOutput.slots.tail }
             (LabelSupply.label supply 2) =
@@ -3051,7 +3123,7 @@ theorem path_of_compileStmtFuel?_and_eval
             (OutcomeSimulation.Continuations.ofContext ctx regular))
           bodySource bodyOutcome tokens)
     (hPostPath :
-      ∀ {bodyResult postResult : TypedCfgCompiler.Result}
+      ∀ {initResult bodyResult postResult : TypedCfgCompiler.Result}
         {condOutput : TypedCfg.Shape}
         {postFuel : Nat} {postSource : RunState}
         {postOutcome : Structured.Outcome},
@@ -3060,7 +3132,10 @@ theorem path_of_compileStmtFuel?_and_eval
               breakLabel? := none
               breakShape? := none
               continueLabel? := none
-              continueShape? := none }
+              continueShape? := none
+              callBase :=
+                ctx.callBase + initResult.calls.length +
+                  bodyResult.calls.length }
             bodyResult.next (LabelSupply.label supply 2)
             { condOutput with slots := condOutput.slots.tail }
             (LabelSupply.label supply 0) =
@@ -3207,7 +3282,8 @@ theorem outcome_of_compileStmtFuel?_and_eval
                 some { condOutput with slots := condOutput.slots.tail }
               continueLabel? := some (LabelSupply.label supply 2)
               continueShape? :=
-                some { condOutput with slots := condOutput.slots.tail } }
+                some { condOutput with slots := condOutput.slots.tail }
+              callBase := ctx.callBase + initResult.calls.length }
             initResult.next (LabelSupply.label supply 1)
             { condOutput with slots := condOutput.slots.tail }
             (LabelSupply.label supply 2) =
@@ -3222,7 +3298,7 @@ theorem outcome_of_compileStmtFuel?_and_eval
             (OutcomeSimulation.Continuations.ofContext ctx regular))
           bodySource bodyOutcome tokens)
     (hPostPath :
-      ∀ {bodyResult postResult : TypedCfgCompiler.Result}
+      ∀ {initResult bodyResult postResult : TypedCfgCompiler.Result}
         {condOutput : TypedCfg.Shape}
         {postFuel : Nat} {postSource : RunState}
         {postOutcome : Structured.Outcome},
@@ -3231,7 +3307,10 @@ theorem outcome_of_compileStmtFuel?_and_eval
               breakLabel? := none
               breakShape? := none
               continueLabel? := none
-              continueShape? := none }
+              continueShape? := none
+              callBase :=
+                ctx.callBase + initResult.calls.length +
+                  bodyResult.calls.length }
             bodyResult.next (LabelSupply.label supply 2)
             { condOutput with slots := condOutput.slots.tail }
             (LabelSupply.label supply 0) =
@@ -3394,8 +3473,9 @@ theorem preserves_cons_of_compileStmtListFuel?_and_eval
         {tailFuel : Nat} {tailSource : RunState}
         {tailOutcome : Structured.Outcome},
         headResult.fallthrough? = some tailInput →
-        TypedCfgCompiler.compileStmtListFuel? compilerFuel rest ctx
-            headResult.next (TypedCfgCompiler.restLabel supply)
+        TypedCfgCompiler.compileStmtListFuel? compilerFuel rest
+            (ctx.advance headResult) headResult.next
+            (TypedCfgCompiler.restLabel supply)
             tailInput regular =
           some tailResult →
         BlocksInProgram tailResult cfg →
@@ -3549,8 +3629,9 @@ theorem regular_cons_of_compileStmtListFuel?
         {tailInput : TypedCfg.Shape}
         {tailResult : TypedCfgCompiler.Result},
         headResult.fallthrough? = some tailInput →
-        TypedCfgCompiler.compileStmtListFuel? compilerFuel rest ctx
-            headResult.next (TypedCfgCompiler.restLabel supply)
+        TypedCfgCompiler.compileStmtListFuel? compilerFuel rest
+            (ctx.advance headResult) headResult.next
+            (TypedCfgCompiler.restLabel supply)
             tailInput regular =
           some tailResult →
         BlocksInProgram tailResult cfg →
@@ -3575,8 +3656,9 @@ theorem regular_cons_of_compileStmtListFuel?
           cases hOutput
       | some tailInput =>
           cases hTailCompile :
-              TypedCfgCompiler.compileStmtListFuel? compilerFuel rest ctx
-                headResult.next (TypedCfgCompiler.restLabel supply)
+              TypedCfgCompiler.compileStmtListFuel? compilerFuel rest
+                (ctx.advance headResult) headResult.next
+                (TypedCfgCompiler.restLabel supply)
                 tailInput regular with
           | none =>
               simp [hHeadCompile, hFallthrough, hTailCompile] at hCompile
@@ -3798,7 +3880,7 @@ theorem entry_eventually_of_compileStmtFuel?
       StateRel
         ((source.withEVM { source.evm with stack := args }).pushReturn
           callerStack proc.retc)
-        (Structured.Stmt.callToken supply :: tokens) targetFinal := by
+        (Structured.Stmt.callToken ctx.callBase :: tokens) targetFinal := by
   rcases
       TypedCfgCompilerFacts.Call.components_of_compileStmtFuel?_call
         hLookup hCompile with
@@ -3813,7 +3895,7 @@ theorem entry_eventually_of_compileStmtFuel?
         { label := entry
           input := input
           body :=
-            .returnToken (Structured.Stmt.callToken supply) ::
+            .returnToken (Structured.Stmt.callToken ctx.callBase) ::
               TypedCfgCompiler.sinkTopUnder proc.argc
           output := output
           term := .jump (ProcLabel.entry name) })
@@ -3909,12 +3991,16 @@ mutual
                                   have hTailBlockCompile :
                                       TypedCfgCompiler.compileBlockFuel?
                                           (listFuel + 1)
-                                          { stmts := rest } ctx headResult.next
+                                          { stmts := rest }
+                                          (ctx.advance headResult)
+                                          headResult.next
                                           (TypedCfgCompiler.restLabel supply)
                                           tailInput regular =
                                         some tailResult := by
                                     simpa [TypedCfgCompiler.compileBlockFuel?]
                                       using hTailCompile
+                                  rw [← ofContext_advance ctx headResult
+                                    regular]
                                   exact
                                     outcome_block_of_compileFuel?_and_eval_with_calls
                                       generated hTailBlockCompile hTailBlocks
@@ -3922,7 +4008,9 @@ mutual
                                       hTailEval
                                       hRestWF hRestFrameSafe
                                       (.mk hRestCalls)
-                                      hSupports hProcs
+                                      (contextSupports_advance headResult
+                                        hSupports)
+                                      hProcs
                                       hProgramWF hProgramFrameSafe
             | @cons_brk fuel stmt rest state outState hStmt =>
                 cases hWF with
@@ -3954,12 +4042,16 @@ mutual
                                   have hTailBlockCompile :
                                       TypedCfgCompiler.compileBlockFuel?
                                           (listFuel + 1)
-                                          { stmts := rest } ctx headResult.next
+                                          { stmts := rest }
+                                          (ctx.advance headResult)
+                                          headResult.next
                                           (TypedCfgCompiler.restLabel supply)
                                           tailInput regular =
                                         some tailResult := by
                                     simpa [TypedCfgCompiler.compileBlockFuel?]
                                       using hTailCompile
+                                  rw [← ofContext_advance ctx headResult
+                                    regular]
                                   exact
                                     outcome_block_of_compileFuel?_and_eval_with_calls
                                       generated hTailBlockCompile hTailBlocks
@@ -3967,7 +4059,9 @@ mutual
                                       hTailEval
                                       hRestWF hRestFrameSafe
                                       (.mk hRestCalls)
-                                      hSupports hProcs
+                                      (contextSupports_advance headResult
+                                        hSupports)
+                                      hProcs
                                       hProgramWF hProgramFrameSafe
             | @cons_cont fuel stmt rest state outState hStmt =>
                 cases hWF with
@@ -3999,12 +4093,16 @@ mutual
                                   have hTailBlockCompile :
                                       TypedCfgCompiler.compileBlockFuel?
                                           (listFuel + 1)
-                                          { stmts := rest } ctx headResult.next
+                                          { stmts := rest }
+                                          (ctx.advance headResult)
+                                          headResult.next
                                           (TypedCfgCompiler.restLabel supply)
                                           tailInput regular =
                                         some tailResult := by
                                     simpa [TypedCfgCompiler.compileBlockFuel?]
                                       using hTailCompile
+                                  rw [← ofContext_advance ctx headResult
+                                    regular]
                                   exact
                                     outcome_block_of_compileFuel?_and_eval_with_calls
                                       generated hTailBlockCompile hTailBlocks
@@ -4012,7 +4110,9 @@ mutual
                                       hTailEval
                                       hRestWF hRestFrameSafe
                                       (.mk hRestCalls)
-                                      hSupports hProcs
+                                      (contextSupports_advance headResult
+                                        hSupports)
+                                      hProcs
                                       hProgramWF hProgramFrameSafe
             | @cons_leave fuel stmt rest state outState hStmt =>
                 cases hWF with
@@ -4044,12 +4144,16 @@ mutual
                                   have hTailBlockCompile :
                                       TypedCfgCompiler.compileBlockFuel?
                                           (listFuel + 1)
-                                          { stmts := rest } ctx headResult.next
+                                          { stmts := rest }
+                                          (ctx.advance headResult)
+                                          headResult.next
                                           (TypedCfgCompiler.restLabel supply)
                                           tailInput regular =
                                         some tailResult := by
                                     simpa [TypedCfgCompiler.compileBlockFuel?]
                                       using hTailCompile
+                                  rw [← ofContext_advance ctx headResult
+                                    regular]
                                   exact
                                     outcome_block_of_compileFuel?_and_eval_with_calls
                                       generated hTailBlockCompile hTailBlocks
@@ -4057,7 +4161,9 @@ mutual
                                       hTailEval
                                       hRestWF hRestFrameSafe
                                       (.mk hRestCalls)
-                                      hSupports hProcs
+                                      (contextSupports_advance headResult
+                                        hSupports)
+                                      hProcs
                                       hProgramWF hProgramFrameSafe
             | @cons_halt fuel stmt rest state outState kind hStmt =>
                 cases hWF with
@@ -4089,12 +4195,16 @@ mutual
                                   have hTailBlockCompile :
                                       TypedCfgCompiler.compileBlockFuel?
                                           (listFuel + 1)
-                                          { stmts := rest } ctx headResult.next
+                                          { stmts := rest }
+                                          (ctx.advance headResult)
+                                          headResult.next
                                           (TypedCfgCompiler.restLabel supply)
                                           tailInput regular =
                                         some tailResult := by
                                     simpa [TypedCfgCompiler.compileBlockFuel?]
                                       using hTailCompile
+                                  rw [← ofContext_advance ctx headResult
+                                    regular]
                                   exact
                                     outcome_block_of_compileFuel?_and_eval_with_calls
                                       generated hTailBlockCompile hTailBlocks
@@ -4102,7 +4212,9 @@ mutual
                                       hTailEval
                                       hRestWF hRestFrameSafe
                                       (.mk hRestCalls)
-                                      hSupports hProcs
+                                      (contextSupports_advance headResult
+                                        hSupports)
+                                      hProcs
                                       hProgramWF hProgramFrameSafe
   termination_by sourceFuel
 
@@ -4211,9 +4323,9 @@ mutual
                               Switch.outcome_some_of_compileStmtFuel?
                                 hCompile hBlocks hResultCalls hScrutineeSafe
                                 hScrutinee hPop hSelect
-                            intro bodyCompilerFuel bodySupply bodyEntry
-                              bodyShape bodyResult hBodyCompile hBodyBlocks
-                              hBodyResultCalls
+                            intro bodyCallBase bodyCompilerFuel bodySupply
+                              bodyEntry bodyShape bodyResult hBodyCompile
+                              hBodyBlocks hBodyResultCalls
                             have hSelectedWF :=
                               Structured.Switch.wf_of_select
                                 hCaseWF hDefaultWF hSelect
@@ -4223,13 +4335,16 @@ mutual
                             have hSelectedCalls :=
                               switch_property_of_select
                                 hCaseCalls hDefaultCalls hSelect
+                            rw [← ofContext_callBase ctx bodyCallBase regular]
                             exact
                               (outcome_block_of_compileFuel?_and_eval_with_calls
                                 generated hBodyCompile hBodyBlocks
                                 hBodyResultCalls
                                 hBodyEval
                                 hSelectedWF hSelectedFrameSafe hSelectedCalls
-                                hSupports hProcs
+                                (contextSupports_callBase bodyCallBase
+                                  hSupports)
+                                hProcs
                                 hProgramWF hProgramFrameSafe).path
         | @for_init_regular fuel _ _ _ _ _ _ _ hInitEval hLoopEval =>
             cases hWF with
@@ -4264,16 +4379,18 @@ mutual
                               generated hBodyCompile hBodyBlocks hBodyResultCalls
                               hBodyEval'
                               hBodyWF hBodySafe hBodyCalls
-                              (OutcomeSimulation.ContextSupports.loopBody
-                                hSupports regular
-                                (LabelSupply.label supply 2)
-                                { condOutput with
-                                  slots := condOutput.slots.tail })
+                              (contextSupports_callBase
+                                (ctx.callBase + initResult.calls.length)
+                                (OutcomeSimulation.ContextSupports.loopBody
+                                  hSupports regular
+                                  (LabelSupply.label supply 2)
+                                  { condOutput with
+                                    slots := condOutput.slots.tail }))
                               hProcs
                               hProgramWF hProgramFrameSafe).path
-                        · intro bodyResult postResult condOutput postFuel
-                            postSource postOutcome hPostCompile hPostBlocks
-                            hPostResultCalls hPostEval' hFuelLt
+                        · intro initResult bodyResult postResult condOutput
+                            postFuel postSource postOutcome hPostCompile
+                            hPostBlocks hPostResultCalls hPostEval' hFuelLt
                           simpa [Loop.postContinuations,
                             OutcomeSimulation.Continuations.ofContext] using
                             (outcome_block_of_compileFuel?_and_eval_with_calls
@@ -4281,8 +4398,11 @@ mutual
                               hPostResultCalls
                               hPostEval'
                               hPostWF hPostSafe hPostCalls
-                              (OutcomeSimulation.ContextSupports.withoutLoop
-                                hSupports)
+                              (contextSupports_callBase
+                                (ctx.callBase + initResult.calls.length +
+                                  bodyResult.calls.length)
+                                (OutcomeSimulation.ContextSupports.withoutLoop
+                                  hSupports))
                               hProcs
                               hProgramWF hProgramFrameSafe).path
         | @for_init_leave fuel _ _ _ _ _ _ hInitEval =>
@@ -4318,16 +4438,18 @@ mutual
                               generated hBodyCompile hBodyBlocks hBodyResultCalls
                               hBodyEval'
                               hBodyWF hBodySafe hBodyCalls
-                              (OutcomeSimulation.ContextSupports.loopBody
-                                hSupports regular
-                                (LabelSupply.label supply 2)
-                                { condOutput with
-                                  slots := condOutput.slots.tail })
+                              (contextSupports_callBase
+                                (ctx.callBase + initResult.calls.length)
+                                (OutcomeSimulation.ContextSupports.loopBody
+                                  hSupports regular
+                                  (LabelSupply.label supply 2)
+                                  { condOutput with
+                                    slots := condOutput.slots.tail }))
                               hProcs
                               hProgramWF hProgramFrameSafe).path
-                        · intro bodyResult postResult condOutput postFuel
-                            postSource postOutcome hPostCompile hPostBlocks
-                            hPostResultCalls hPostEval' hFuelLt
+                        · intro initResult bodyResult postResult condOutput
+                            postFuel postSource postOutcome hPostCompile
+                            hPostBlocks hPostResultCalls hPostEval' hFuelLt
                           simpa [Loop.postContinuations,
                             OutcomeSimulation.Continuations.ofContext] using
                             (outcome_block_of_compileFuel?_and_eval_with_calls
@@ -4335,8 +4457,11 @@ mutual
                               hPostResultCalls
                               hPostEval'
                               hPostWF hPostSafe hPostCalls
-                              (OutcomeSimulation.ContextSupports.withoutLoop
-                                hSupports)
+                              (contextSupports_callBase
+                                (ctx.callBase + initResult.calls.length +
+                                  bodyResult.calls.length)
+                                (OutcomeSimulation.ContextSupports.withoutLoop
+                                  hSupports))
                               hProcs
                               hProgramWF hProgramFrameSafe).path
         | @for_init_halt fuel _ _ _ _ _ _ _ hInitEval =>
@@ -4372,16 +4497,18 @@ mutual
                               generated hBodyCompile hBodyBlocks hBodyResultCalls
                               hBodyEval'
                               hBodyWF hBodySafe hBodyCalls
-                              (OutcomeSimulation.ContextSupports.loopBody
-                                hSupports regular
-                                (LabelSupply.label supply 2)
-                                { condOutput with
-                                  slots := condOutput.slots.tail })
+                              (contextSupports_callBase
+                                (ctx.callBase + initResult.calls.length)
+                                (OutcomeSimulation.ContextSupports.loopBody
+                                  hSupports regular
+                                  (LabelSupply.label supply 2)
+                                  { condOutput with
+                                    slots := condOutput.slots.tail }))
                               hProcs
                               hProgramWF hProgramFrameSafe).path
-                        · intro bodyResult postResult condOutput postFuel
-                            postSource postOutcome hPostCompile hPostBlocks
-                            hPostResultCalls hPostEval' hFuelLt
+                        · intro initResult bodyResult postResult condOutput
+                            postFuel postSource postOutcome hPostCompile
+                            hPostBlocks hPostResultCalls hPostEval' hFuelLt
                           simpa [Loop.postContinuations,
                             OutcomeSimulation.Continuations.ofContext] using
                             (outcome_block_of_compileFuel?_and_eval_with_calls
@@ -4389,8 +4516,11 @@ mutual
                               hPostResultCalls
                               hPostEval'
                               hPostWF hPostSafe hPostCalls
-                              (OutcomeSimulation.ContextSupports.withoutLoop
-                                hSupports)
+                              (contextSupports_callBase
+                                (ctx.callBase + initResult.calls.length +
+                                  bodyResult.calls.length)
+                                (OutcomeSimulation.ContextSupports.withoutLoop
+                                  hSupports))
                               hProcs
                               hProgramWF hProgramFrameSafe).path
         | brk =>
@@ -4438,7 +4568,7 @@ mutual
             subst result
             let site : TypedCfgCompiler.DispatchSite :=
               { procName := name
-                token := Structured.Stmt.callToken supply
+                token := Structured.Stmt.callToken ctx.callBase
                 returnLabel := regular
                 caseLabel := .generated supply 10000 }
             have hSiteMem : site ∈ generated.calls := by
@@ -4450,7 +4580,8 @@ mutual
               { procs := program.procs
                 leaveLabel? := some (ProcLabel.exit proc.name)
                 leaveShape? :=
-                  some (TypedCfgCompiler.Shape.procExit proc) }
+                  some (TypedCfgCompiler.Shape.procExit proc)
+                callBase := fragment.callBase }
             have hFragmentCompile :
                 TypedCfgCompiler.compileBlockFuel?
                     (TypedCfgCompiler.blockFuel proc.body + 1)
@@ -4470,7 +4601,7 @@ mutual
                     exact ⟨ProcLabel.exit proc.name, rfl⟩ }
             have hBodyPreserves :=
               outcome_block_of_compileFuel?_and_eval_with_calls
-                (tokens := Structured.Stmt.callToken supply :: tokens)
+                (tokens := Structured.Stmt.callToken ctx.callBase :: tokens)
                 generated hFragmentCompile hFragmentBlocks hFragmentCalls
                 hBody hProcWF.2.2 hProcFrameSafe hProcCalls
                 hProcSupports (by rfl)
@@ -4535,7 +4666,7 @@ mutual
             subst result
             let site : TypedCfgCompiler.DispatchSite :=
               { procName := name
-                token := Structured.Stmt.callToken supply
+                token := Structured.Stmt.callToken ctx.callBase
                 returnLabel := regular
                 caseLabel := .generated supply 10000 }
             have hSiteMem : site ∈ generated.calls := by
@@ -4547,7 +4678,8 @@ mutual
               { procs := program.procs
                 leaveLabel? := some (ProcLabel.exit proc.name)
                 leaveShape? :=
-                  some (TypedCfgCompiler.Shape.procExit proc) }
+                  some (TypedCfgCompiler.Shape.procExit proc)
+                callBase := fragment.callBase }
             have hFragmentCompile :
                 TypedCfgCompiler.compileBlockFuel?
                     (TypedCfgCompiler.blockFuel proc.body + 1)
@@ -4567,7 +4699,7 @@ mutual
                     exact ⟨ProcLabel.exit proc.name, rfl⟩ }
             have hBodyPreserves :=
               outcome_block_of_compileFuel?_and_eval_with_calls
-                (tokens := Structured.Stmt.callToken supply :: tokens)
+                (tokens := Structured.Stmt.callToken ctx.callBase :: tokens)
                 generated hFragmentCompile hFragmentBlocks hFragmentCalls
                 hBody hProcWF.2.2 hProcFrameSafe hProcCalls
                 hProcSupports (by rfl)
@@ -4633,7 +4765,8 @@ mutual
               { procs := program.procs
                 leaveLabel? := some (ProcLabel.exit proc.name)
                 leaveShape? :=
-                  some (TypedCfgCompiler.Shape.procExit proc) }
+                  some (TypedCfgCompiler.Shape.procExit proc)
+                callBase := fragment.callBase }
             have hFragmentCompile :
                 TypedCfgCompiler.compileBlockFuel?
                     (TypedCfgCompiler.blockFuel proc.body + 1)
@@ -4653,7 +4786,7 @@ mutual
                     exact ⟨ProcLabel.exit proc.name, rfl⟩ }
             have hBodyPreserves :=
               outcome_block_of_compileFuel?_and_eval_with_calls
-                (tokens := Structured.Stmt.callToken supply :: tokens)
+                (tokens := Structured.Stmt.callToken ctx.callBase :: tokens)
                 generated hFragmentCompile hFragmentBlocks hFragmentCalls
                 hBody hProcWF.2.2 hProcFrameSafe hProcCalls
                 hProcSupports (by rfl)

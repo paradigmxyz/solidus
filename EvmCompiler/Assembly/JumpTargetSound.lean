@@ -134,6 +134,32 @@ theorem artifactFramePoint_not_badJump
       | push value =>
           obtain ⟨width, located, hWidth, hMem, hLocatedPc, hLocatedInstr⟩ :=
             compact_push_entry_mem hCompile hBlock hInstr
+          by_cases hZeroWidth : width = 0
+          · subst hZeroWidth
+            have hValueZero := Compact.pushWidthAt?_zero_value hWidth
+            subst hValueZero
+            have hInstr0 : located.instr = .push0 := by
+              simpa [Compact.pushInstrOfWidth] using hLocatedInstr
+            obtain ⟨decoded, hInstrDecoded, hBytesDecoded⟩ :=
+              hDecode.decodes located hMem
+            rw [hInstr0] at hInstrDecoded
+            simp [Compact.Instr.decoded?] at hInstrDecoded
+            subst decoded
+            have hStatePc : state.pc = EvmYul.UInt256.ofNat located.pc :=
+              hPc.trans (congrArg EvmYul.UInt256.ofNat hLocatedPc.symm)
+            have hDecoded :
+                EvmYul.EVM.decode state.executionEnv.code state.pc =
+                  some (EvmYul.Operation.PUSH0, none) := by
+              simpa [hCode, hStatePc] using hBytesDecoded
+            constructor
+            · intro hBad
+              have hOpEq := hBad.1
+              simp [decodedOperationAt, hDecoded] at hOpEq
+            · intro hBad
+              have hOpEq := hBad.1
+              simp [decodedOperationAt, hDecoded] at hOpEq
+          simp only [Compact.pushInstrOfWidth, if_neg hZeroWidth]
+            at hLocatedInstr
           have hLocatedValid :=
             (List.forall_iff_forall_mem.mp
               (Compact.compile?_valid hCompile).wellFormed.1) located hMem
@@ -178,7 +204,7 @@ theorem artifactFramePoint_not_badJump
             (List.forall_iff_forall_mem.mp
               (Compact.compile?_valid hCompile).wellFormed.1) located hMem
           rw [hLocatedInstr] at hLocatedValid
-          have hFits : Compact.FitsWidth artifact.branchWidth
+          have hFits : Compact.FitsWidth (artifact.branchWidthAt block)
               (EvmYul.UInt256.ofNat dest).toNat := by
             simpa [Compact.Instr.Valid] using hLocatedValid
           obtain ⟨op, hOp⟩ := Compact.exists_pushOp_of_width
@@ -195,7 +221,7 @@ theorem artifactFramePoint_not_badJump
           have hDecoded :
               EvmYul.EVM.decode state.executionEnv.code state.pc =
                 some (op, some (EvmYul.UInt256.ofNat dest,
-                  artifact.branchWidth)) := by
+                  artifact.branchWidthAt block)) := by
             simpa [hCode, hStatePc] using hBytesDecoded
           constructor
           · intro hBad
@@ -220,7 +246,7 @@ theorem artifactFramePoint_not_badJump
             (List.forall_iff_forall_mem.mp
               (Compact.compile?_valid hCompile).wellFormed.1) located hMem
           rw [hLocatedInstr] at hLocatedValid
-          have hFits : Compact.FitsWidth artifact.branchWidth
+          have hFits : Compact.FitsWidth (artifact.branchWidthAt block)
               (EvmYul.UInt256.ofNat dest).toNat := by
             simpa [Compact.Instr.Valid] using hLocatedValid
           obtain ⟨op, hOp⟩ := Compact.exists_pushOp_of_width
@@ -237,7 +263,7 @@ theorem artifactFramePoint_not_badJump
           have hDecoded :
               EvmYul.EVM.decode state.executionEnv.code state.pc =
                 some (op, some (EvmYul.UInt256.ofNat dest,
-                  artifact.branchWidth)) := by
+                  artifact.branchWidthAt block)) := by
             simpa [hCode, hStatePc] using hBytesDecoded
           constructor
           · intro hBad
@@ -422,6 +448,29 @@ theorem step_error_ne_badJumpDestination_at
       | push value =>
           obtain ⟨width, located, hWidth, hMem, hLocatedPc, hLocatedInstr⟩ :=
             compact_push_entry_mem hCompile hBlock hInstr
+          by_cases hZeroWidth : width = 0
+          · subst hZeroWidth
+            have hValueZero := Compact.pushWidthAt?_zero_value hWidth
+            subst hValueZero
+            have hInstr0 : located.instr = .push0 := by
+              simpa [Compact.pushInstrOfWidth] using hLocatedInstr
+            obtain ⟨decoded, hInstrDecoded, hBytesDecoded⟩ :=
+              hDecode.decodes located hMem
+            rw [hInstr0] at hInstrDecoded
+            simp [Compact.Instr.decoded?] at hInstrDecoded
+            subst decoded
+            have hStatePc : state.pc = EvmYul.UInt256.ofNat located.pc :=
+              hPc.trans (congrArg EvmYul.UInt256.ofNat hLocatedPc.symm)
+            have hDecoded :
+                EvmYul.EVM.decode state.executionEnv.code state.pc =
+                  some (EvmYul.Operation.PUSH0, none) := by
+              simpa [hCode, hStatePc] using hBytesDecoded
+            rw [hDecoded] at hStep
+            simp only [Option.getD_some] at hStep
+            rw [evm_step_push0_eq_next fuel state] at hStep
+            cases hStep
+          simp only [Compact.pushInstrOfWidth, if_neg hZeroWidth]
+            at hLocatedInstr
           have hLocatedValid :=
             (List.forall_iff_forall_mem.mp
               (Compact.compile?_valid hCompile).wellFormed.1) located hMem
@@ -453,7 +502,7 @@ theorem step_error_ne_badJumpDestination_at
             (List.forall_iff_forall_mem.mp
               (Compact.compile?_valid hCompile).wellFormed.1) located hMem
           rw [hLocatedInstr] at hLocatedValid
-          have hFits : Compact.FitsWidth artifact.branchWidth
+          have hFits : Compact.FitsWidth (artifact.branchWidthAt block)
               (EvmYul.UInt256.ofNat dest).toNat := by
             simpa [Compact.Instr.Valid] using hLocatedValid
           obtain ⟨op, hOp⟩ := Compact.exists_pushOp_of_width
@@ -468,7 +517,7 @@ theorem step_error_ne_badJumpDestination_at
           have hDecoded :
               EvmYul.EVM.decode state.executionEnv.code state.pc =
                 some (op, some (EvmYul.UInt256.ofNat dest,
-                  artifact.branchWidth)) := by
+                  artifact.branchWidthAt block)) := by
             simpa [hCode, hStatePc] using hBytesDecoded
           rw [hDecoded] at hStep
           simp only [Option.getD_some] at hStep
@@ -483,7 +532,7 @@ theorem step_error_ne_badJumpDestination_at
             (List.forall_iff_forall_mem.mp
               (Compact.compile?_valid hCompile).wellFormed.1) located hMem
           rw [hLocatedInstr] at hLocatedValid
-          have hFits : Compact.FitsWidth artifact.branchWidth
+          have hFits : Compact.FitsWidth (artifact.branchWidthAt block)
               (EvmYul.UInt256.ofNat dest).toNat := by
             simpa [Compact.Instr.Valid] using hLocatedValid
           obtain ⟨op, hOp⟩ := Compact.exists_pushOp_of_width
@@ -498,7 +547,7 @@ theorem step_error_ne_badJumpDestination_at
           have hDecoded :
               EvmYul.EVM.decode state.executionEnv.code state.pc =
                 some (op, some (EvmYul.UInt256.ofNat dest,
-                  artifact.branchWidth)) := by
+                  artifact.branchWidthAt block)) := by
             simpa [hCode, hStatePc] using hBytesDecoded
           rw [hDecoded] at hStep
           simp only [Option.getD_some] at hStep

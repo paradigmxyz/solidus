@@ -7,14 +7,14 @@ Session 46 (see `TypedCfg/PEEPHOLE_PROGRESS.md` §Session-45 frontier item 1).
 
 The `callHead` disjunct is the only leg that PUSHES a ghost return frame: the compiled call-site
 block jumps to the callee entry after recording a return frame `{ callerStack := caller stack,
-retc := callee.retc }` under the fresh return token `callToken supply`.  The strengthened
+retc := callee.retc }` under the fresh return token `callToken ctx.callBase`.  The strengthened
 successor therefore needs its child `FrameConsistent` to carry ONE MORE head — the pushed
 frame's `FrameHeadConsistent` — atop the (transported) entry tail.
 
 This module banks `realizedWitnessFC_of_callHead_dispatch`, which ESTABLISHES the pushed frame's
 head consistency from:
 
-* the call's own registered dispatch site `S = { procName := name, token := callToken supply,
+* the call's own registered dispatch site `S = { procName := name, token := callToken ctx.callBase,
   returnLabel := regular, … }` (`components_of_compileStmtFuel?_call`), in `context.calls` via
   `hResultCalls`;
 * token uniqueness (`context.tokensUnique` + `List.inj_on_of_nodup_map`) to pin ANY site sharing
@@ -81,7 +81,7 @@ theorem realizedWitnessFC_of_callHead_dispatch
       ({ label := entry
          input := input
          body :=
-           .returnToken (Structured.Stmt.callToken supply) ::
+           .returnToken (Structured.Stmt.callToken ctx.callBase) ::
              TypedCfgCompiler.sinkTopUnder proc.argc
          output := output
          term := .jump (ProcLabel.entry name) } : TypedCfg.Block) ∈ result.blocks := by
@@ -92,7 +92,7 @@ theorem realizedWitnessFC_of_callHead_dispatch
           { label := entry
             input := input
             body :=
-              .returnToken (Structured.Stmt.callToken supply) ::
+              .returnToken (Structured.Stmt.callToken ctx.callBase) ::
                 TypedCfgCompiler.sinkTopUnder proc.argc
             output := output
             term := .jump (ProcLabel.entry name) } :=
@@ -103,7 +103,7 @@ theorem realizedWitnessFC_of_callHead_dispatch
         { label := entry
           input := input
           body :=
-            .returnToken (Structured.Stmt.callToken supply) ::
+            .returnToken (Structured.Stmt.callToken ctx.callBase) ::
               TypedCfgCompiler.sinkTopUnder proc.argc
           output := output
           term := .jump (ProcLabel.entry name) } :=
@@ -137,7 +137,7 @@ theorem realizedWitnessFC_of_callHead_dispatch
   -- The call's own registered dispatch site.
   set S : TypedCfgCompiler.DispatchSite :=
     { procName := name
-      token := Structured.Stmt.callToken supply
+      token := Structured.Stmt.callToken ctx.callBase
       returnLabel := regular
       caseLabel := .generated supply 10000 } with hSdef
   have hSMem : S ∈ context.calls := by
@@ -147,7 +147,7 @@ theorem realizedWitnessFC_of_callHead_dispatch
   have hPushHead :
       FrameHeadConsistent sourceProgram cfg context.calls
         { callerStack := source.evm.stack.drop proc.argc, retc := proc.retc }
-        (Structured.Stmt.callToken supply) := by
+        (Structured.Stmt.callToken ctx.callBase) := by
     intro site' proc' hSite'Mem hTok' hLookup'
     have hSiteEq : S = site' :=
       List.inj_on_of_nodup_map context.tokensUnique hSMem hSite'Mem
@@ -173,7 +173,7 @@ theorem realizedWitnessFC_of_callHead_dispatch
   -- (shape `returnShape`), which owns a token exactly when the entry call block's `input` does
   -- (reverse afterCall-transport), and then the entry's own `hLive` forces `tokens ≠ []`.
   have hPushLive :
-      FrameContinuationLive cfg context.calls (Structured.Stmt.callToken supply) tokens := by
+      FrameContinuationLive cfg context.calls (Structured.Stmt.callToken ctx.callBase) tokens := by
     intro site' callerInput hSite'Mem hTok' hLabelShape' hCallerOwns
     have hSiteEq : S = site' :=
       List.inj_on_of_nodup_map context.tokensUnique hSMem hSite'Mem
@@ -198,7 +198,7 @@ theorem realizedWitnessFC_of_callHead_dispatch
         ((source.withEVM
             { source.evm with stack := source.evm.stack.take proc.argc }).pushReturn
           (source.evm.stack.drop proc.argc) proc.retc).returns
-        (Structured.Stmt.callToken supply :: tokens)
+        (Structured.Stmt.callToken ctx.callBase :: tokens)
     have hReturnsEq :
         ((source.withEVM
               { source.evm with stack := source.evm.stack.take proc.argc }).pushReturn

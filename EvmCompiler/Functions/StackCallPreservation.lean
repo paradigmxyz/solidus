@@ -2027,16 +2027,11 @@ theorem openRun
     Simulation.Interaction.Rel.done_left hReturnRel
   cases hReturnDone with
   | @ok sourceResult targetAfterReturns hReturnResult =>
-      have hCleanupMany :
-          Locals.Ctx.cleanupManyPreserving? targetCtx.layout.length
-              returnNames.length = some cleanup := by
-        unfold Locals.Ctx.cleanupToPreserving? at hCleanup
-        simpa using hCleanup
       have hValuesLength : values.reverse.length = returnNames.length := by
         simpa using Functions.Source.Store.lookupMany_length hLookup
       have hDiscardedLength :
           (StackRelation.values source targetCtx.layout).length =
-            targetCtx.layout.length := by
+            targetCtx.layout.length - 0 := by
         simp [StackRelation.values]
       have hAfterStack :
           targetAfterReturns.evm.stack =
@@ -2045,11 +2040,11 @@ theorem openRun
         simp [List.append_assoc]
       obtain ⟨finalTarget, hCleanupRun, hFinalStack,
           hCleanupShared, hCleanupReturns⟩ :=
-        Locals.InteractionCleanupPreservation.openRun_cleanupManyPreserving?
+        Locals.InteractionCleanupPreservation.openRun_cleanupToPreserving?
           (values := values.reverse)
           (discarded := StackRelation.values source targetCtx.layout)
           (suffix := []) (target := targetAfterReturns)
-          hCleanupMany hValuesLength hDiscardedLength
+          hCleanup hValuesLength hDiscardedLength
           (by simpa using hAfterStack)
       have hFinalRel :
           StateRel returnNames.reverse [] (frame :: callerReturns)
@@ -2110,21 +2105,16 @@ theorem openRun_noReturns
           (Structured.Outcome.regular finalTarget) ∧
       CallResultRel frame callerReturns
         (.returned source []) (.regular finalTarget) := by
-  have hCleanupMany :
-      Locals.Ctx.cleanupManyPreserving? targetCtx.layout.length 0 =
-        some cleanup := by
-    unfold Locals.Ctx.cleanupToPreserving? at hCleanup
-    simpa using hCleanup
   have hDiscardedLength :
       (StackRelation.values source targetCtx.layout).length =
-        targetCtx.layout.length := by
+        targetCtx.layout.length - 0 := by
     simp [StackRelation.values]
   obtain ⟨finalTarget, hCleanupRun, hFinalStack,
       hCleanupShared, hCleanupReturns⟩ :=
-    Locals.InteractionCleanupPreservation.openRun_cleanupManyPreserving?
+    Locals.InteractionCleanupPreservation.openRun_cleanupToPreserving?
       (values := [])
       (discarded := StackRelation.values source targetCtx.layout)
-      (suffix := []) (target := target) hCleanupMany (by simp)
+      (suffix := []) (target := target) hCleanup (by simp)
       hDiscardedLength (by simpa using hInitial.stack)
   have hLookup :
       Functions.Source.Store.lookupMany [] source.vars = some [] := rfl

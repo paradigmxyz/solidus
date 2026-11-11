@@ -208,6 +208,133 @@ theorem uint256_eq_ne_zero (left right : Word) :
     simp [EvmYul.UInt256.eq, hOne]
   · simp [EvmYul.UInt256.eq, hEq, hZero]
 
+theorem guardBuried_source_exists {state : EVMState}
+    {front suffix : List Word} {token : Word}
+    {pre post : Program}
+    (hFits : Program.PCFitsFrom pre (guardBuried front.length))
+    (hPc :
+      ({ state with stack := front ++ token :: suffix }).pc =
+        pre.pcAfter)
+    (hBound : front.length < 16) :
+    Source.Eventually
+      (pre ++ guardBuried front.length ++ post)
+      { state with stack := front ++ token :: suffix }
+      (fun outcome =>
+        match outcome with
+        | .ok (.running final) =>
+            final.stack = front ++ token :: suffix ∧
+              eraseRuntimeControl final =
+                eraseRuntimeControl
+                  { state with stack := front ++ token :: suffix } ∧
+              final.pc = (pre ++ guardBuried front.length).pcAfter
+        | _ => False) := by
+  let duplicate := dupInstr (front.length + 1)
+  let start : EVMState :=
+    { state with stack := front ++ token :: suffix }
+  let afterDup : EVMState :=
+    start.replaceStackAndIncrPC (token :: front ++ token :: suffix)
+  let finalState : EVMState :=
+    afterDup.replaceStackAndIncrPC (front ++ token :: suffix)
+  have hDupStep :
+      Target.stepInstr (targetInstr duplicate) start = .ok afterDup := by
+    rw [show duplicate = dupInstr (front.length + 1) from rfl]
+    rw [dupInstr_step_eq_dup (by omega) (by omega)]
+    simpa [afterDup, start, List.append_assoc] using
+      (dup_append_token (state := state) (front := front)
+        (suffix := suffix) (token := token))
+  have hPopStep :
+      Target.stepInstr (targetInstr (.prim .pop)) afterDup =
+        .ok finalState := by
+    simp [targetInstr, finalState, afterDup, start, Target.stepInstr,
+      PrimOp.step, PrimOp.continuingStep?, PrimStep.run,
+      EvmYul.Stack.pop, EvmYul.EVM.State.replaceStackAndIncrPC,
+      EvmYul.EVM.State.incrPC, List.append_assoc]
+  have hDupByte : duplicate.byteSize = 1 :=
+    dupInstr_byteSize (by omega) (by omega)
+  have hAfterDupPc : afterDup.pc = (pre ++ [duplicate]).pcAfter := by
+    have hPcState : state.pc = pre.pcAfter := by simpa [start] using hPc
+    calc
+      afterDup.pc = state.pc + EvmYul.UInt256.ofNat 1 := by
+        simp [afterDup, start, EvmYul.EVM.State.replaceStackAndIncrPC,
+          EvmYul.EVM.State.incrPC]
+      _ = pre.pcAfter + EvmYul.UInt256.ofNat 1 := by rw [hPcState]
+      _ = EvmYul.UInt256.ofNat (pre.byteLength + 1) := by
+        rw [Program.pcAfter, UInt256_ofNat_add]
+      _ = (pre ++ [duplicate]).pcAfter := by
+        simp [Program.pcAfter, Program.byteLength_append,
+          Program.byteLength, hDupByte]
+  have hFinalPc :
+      finalState.pc = (pre ++ [duplicate, .prim .pop]).pcAfter := by
+    calc
+      finalState.pc = afterDup.pc + EvmYul.UInt256.ofNat 1 := by
+        simp [finalState, EvmYul.EVM.State.replaceStackAndIncrPC,
+          EvmYul.EVM.State.incrPC]
+      _ = (pre ++ [duplicate]).pcAfter + EvmYul.UInt256.ofNat 1 := by
+        rw [hAfterDupPc]
+      _ =
+          EvmYul.UInt256.ofNat ((pre ++ [duplicate]).byteLength + 1) := by
+        rw [Program.pcAfter, UInt256_ofNat_add]
+      _ = (pre ++ [duplicate, .prim .pop]).pcAfter := by
+        simp [Program.pcAfter, Program.byteLength_append,
+          Program.byteLength, Instr.byteSize, Nat.add_assoc]
+  have hDupSource :
+      Source.stepResult
+          (pre ++ [duplicate] ++ ([Instr.prim .pop] ++ post))
+          start =
+        .ok (.running afterDup) := by
+    exact source_stepResult_local
+      (instr := duplicate) (pre := pre)
+      (post := [Instr.prim .pop] ++ post)
+      (state := start) (final := afterDup)
+      (dupInstr_sourceLocal (by omega) (by omega))
+      (dupInstr_haltKind?_none (by omega) (by omega))
+      (by simpa [guardBuried, duplicate] using hFits.1)
+      (by simpa [start] using hPc) hDupStep
+  have hPopSource :
+      Source.stepResult
+          (pre ++ [duplicate] ++ ([Instr.prim .pop] ++ post))
+          afterDup =
+        .ok (.running finalState) := by
+    simpa [List.append_assoc] using
+      (source_stepResult_local
+        (instr := Instr.prim .pop) (pre := pre ++ [duplicate])
+        (post := post) (state := afterDup) (final := finalState)
+        (by simp [SourceLocalInstr]) rfl
+        (by simpa [guardBuried, duplicate] using hFits.2.1)
+        hAfterDupPc hPopStep)
+  refine ⟨2, .ok (.running finalState), ?_, ?_⟩
+  · unfold Source.runNResult Control.runNResultWith
+    rw [show
+      pre ++ guardBuried front.length ++ post =
+        pre ++ [duplicate] ++ ([.prim .pop] ++ post) by
+      simp [guardBuried, duplicate, List.append_assoc]]
+    change
+      (do
+        let result ←
+          Source.stepResult
+            (pre ++ [duplicate] ++ ([Instr.prim .pop] ++ post))
+            start
+        match result with
+        | .running state' =>
+            Source.runNResult
+              (pre ++ [duplicate] ++ ([Instr.prim .pop] ++ post))
+              1 state'
+        | .halted halt => .ok (.halted halt)) =
+        .ok (.running finalState)
+    rw [hDupSource]
+    simp only [Bind.bind, Except.bind]
+    unfold Control.runNResultWith
+    rw [hPopSource]
+    rfl
+  · refine ⟨?_, ?_, ?_⟩
+    · simp [finalState, afterDup, start,
+        EvmYul.EVM.State.replaceStackAndIncrPC,
+        EvmYul.EVM.State.incrPC]
+    · simp [finalState, afterDup, start, eraseRuntimeControl,
+        EvmYul.EVM.State.replaceStackAndIncrPC,
+        EvmYul.EVM.State.incrPC]
+    · simpa [guardBuried, duplicate] using hFinalPc
+
 theorem dispatchCondition_source_exists {state : EVMState}
     {front suffix : List Word} {token probe : Word}
     {pre post : Program}
@@ -685,6 +812,98 @@ theorem liftBuriedToTop_source_exists {state : EVMState}
               _ = (pre ++ liftBuriedToTop (front ++ [last]).length).pcAfter := by
                 rw [hCodeEq]
                 simp [List.append_assoc]
+
+theorem guardedLiftBuriedToTop_source_exists {state : EVMState}
+    {front suffix : List Word} {token : Word}
+    {pre post : Program}
+    (hFits :
+      Program.PCFitsFrom pre (guardedLiftBuriedToTop front.length))
+    (hPc :
+      ({ state with stack := front ++ token :: suffix }).pc =
+        pre.pcAfter)
+    (hBound : front.length < 16) :
+    Source.Eventually
+      (pre ++ guardedLiftBuriedToTop front.length ++ post)
+      { state with stack := front ++ token :: suffix }
+      (fun outcome =>
+        match outcome with
+        | .ok (.running final) =>
+            final.stack = token :: front ++ suffix ∧
+              eraseRuntimeControl final =
+                eraseRuntimeControl
+                  { state with stack := token :: front ++ suffix } ∧
+              final.pc =
+                (pre ++ guardedLiftBuriedToTop front.length).pcAfter
+        | _ => False) := by
+  simpa [guardedLiftBuriedToTop] using
+    (liftBuriedToTop_source_exists (state := state) (front := front)
+      (suffix := suffix) (token := token) (pre := pre) (post := post)
+      hFits hPc (by omega))
+
+theorem swap_underflow_eventually {n : Nat} {pre post : Program} {state : EVMState}
+    (hn : 1 ≤ n) (hb : n ≤ 16) (hLen : state.stack.length ≤ n)
+    (hFit : pre.PCFits) (hPc : state.pc = pre.pcAfter) :
+    Source.Eventually (pre ++ [swapInstr n] ++ post) state
+      (fun outcome => outcome = .error .StackUnderflow) := by
+  have hStep : Source.stepResult (pre ++ [swapInstr n] ++ post) state =
+      .error .StackUnderflow := by
+    unfold Source.stepResult Source.stepResultWith
+    have hAt : Program.instrAtPc (pre ++ [swapInstr n] ++ post) state.pc.toNat =
+        some (pre.byteLength, swapInstr n) := by
+      unfold Program.instrAtPc
+      rw [hPc, hFit]
+      simpa using Program.instrAtPcFrom_append_boundary_cons pre post (swapInstr n) 0
+    rw [hAt]
+    simp only [Source.stepAtResult, source_stepAt_eq_targetInstr (swapInstr_sourceLocal hn hb),
+      swapInstr_step_eq_swap hn hb]
+    simp [EvmYul.swap, show ¬ n + 1 ≤ state.stack.length by omega]
+  refine ⟨1, .error .StackUnderflow, ?_, rfl⟩
+  have hStep' : Source.stepResult (pre ++ swapInstr n :: post) state = .error .StackUnderflow := by simpa using hStep
+  simp [Source.runNResult, Control.runNResultWith, hStep']
+
+theorem lift_underflow_eventually {depth : Nat} {pre post : Program} {state : EVMState}
+    (hd : 0 < depth) (hb : depth < 16) (hLen : state.stack.length ≤ depth)
+    (hFits : Program.PCFitsFrom pre (liftBuriedToTop depth))
+    (hPc : state.pc = pre.pcAfter) :
+    Source.Eventually (pre ++ liftBuriedToTop depth ++ post) state
+      (fun outcome => outcome = .error .StackUnderflow) := by
+  have hc : state.stack = [] ∨ ∃ front token, state.stack = front ++ [token] := by
+    induction state.stack using List.reverseRecOn with
+    | nil => exact Or.inl rfl
+    | append_singleton front token _ => exact Or.inr ⟨front, token, rfl⟩
+  rcases hc with hs | ⟨front, token, hs⟩
+  · obtain ⟨tail, ht⟩ := lift_prefix_split (n := 0) hd
+    have ht' : liftBuriedToTop depth = swapInstr 1 :: tail := by
+      simpa [liftBuriedToTop] using ht
+    have hf : pre.PCFits := Program.PCFitsFrom.start hFits
+    simpa [ht', List.append_assoc] using
+      (swap_underflow_eventually (n := 1) (pre := pre) (post := tail ++ post)
+        (state := state) (by omega) (by omega) (by simp [hs]) hf hPc)
+  · have hl : front.length < depth := by simp [hs] at hLen; omega
+    obtain ⟨tail, ht⟩ := lift_prefix_split hl
+    have hFits' : Program.PCFitsFrom pre
+        (liftBuriedToTop front.length ++ (swapInstr (front.length + 1) :: tail)) := by
+      simpa [ht] using hFits
+    have hLift := liftBuriedToTop_source_exists
+      (state := state) (front := front) (token := token) (suffix := [])
+      (pre := pre) (post := swapInstr (front.length + 1) :: tail ++ post)
+      (Program.PCFitsFrom.left hFits') hPc (by omega)
+    have hstate : { state with stack := front ++ token :: [] } = state := by
+      rw [← hs]
+    rw [hstate] at hLift
+    refine Source.Eventually.bind_running
+      (middle := fun final => final.stack = token :: front ∧
+        eraseRuntimeControl final = eraseRuntimeControl
+          {state with stack := token :: front} ∧
+        final.pc = (pre ++ liftBuriedToTop front.length).pcAfter) ?_ ?_
+    · simpa [ht, List.append_assoc] using hLift
+    · intro mid hm
+      have hf : (pre ++ liftBuriedToTop front.length).PCFits :=
+        Program.PCFitsFrom.start (Program.PCFitsFrom.right hFits')
+      simpa [ht, List.append_assoc] using
+        (swap_underflow_eventually (n := front.length + 1)
+          (pre := pre ++ liftBuriedToTop front.length) (post := tail ++ post)
+          (state := mid) (by omega) (by omega) (by simp [hm.1]) hf hm.2.2)
 
 theorem pop_cons_step {state : EVMState} {top : Word}
     {suffix : List Word} :

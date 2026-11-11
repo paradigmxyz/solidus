@@ -1,5 +1,6 @@
 import EvmCompiler.Structured.Syntax
 import EvmCompiler.Assembly.Semantics
+import EvmCompiler.Assembly.PushEncoding
 
 namespace EvmCompiler
 namespace Structured
@@ -21,7 +22,10 @@ namespace BasicInstr
 
 def step : BasicInstr → EVMState → Except EVMException EVMState
   | .push value, state =>
-      Assembly.Target.stepInstr (Assembly.TargetInstr.push32 value) state
+      -- Same pc delta as the TypedCfg step: a `push` advances by exactly the
+      -- number of bytes `Assembly.pushCode` emits for it.
+      .ok (state.replaceStackAndIncrPC (state.stack.push value)
+            (Assembly.pushPcDelta value))
   | .op basicOp, state =>
       basicOp.step state
   | .bindLocals _offset _names, state =>

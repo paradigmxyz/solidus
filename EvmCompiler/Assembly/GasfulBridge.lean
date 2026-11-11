@@ -1712,6 +1712,41 @@ theorem raw_push_success_executes_at
     (instr := .push width value) hFits hDecode hPc]
   exact Interaction.Executes.done _
 
+/-- `PUSH0` pushes the zero word and advances one byte. -/
+theorem evmyul_step_push0_eq (state : EVMState) :
+    EvmYul.step (τ := .EVM) EvmYul.Operation.PUSH0 none state =
+      .ok
+        (state.replaceStackAndIncrPC
+          (state.stack.push (EvmYul.UInt256.ofNat 0)) (pcΔ := 1)) := by
+  rfl
+
+theorem evm_step_push0_eq_evmyul (fuel : Nat) (state : EVMState) :
+    EvmYul.EVM.step (fuel + 1) (dynamicGasCostAt state)
+        (some (EvmYul.Operation.PUSH0, none)) (afterMemoryChargeAt state) =
+      EvmYul.step (τ := .EVM) EvmYul.Operation.PUSH0 none
+        (afterEVMInstructionChargeAt state) := by
+  rfl
+
+theorem evm_step_push0_eq_next (fuel : Nat) (state : EVMState) :
+    EvmYul.EVM.step (fuel + 1) (dynamicGasCostAt state)
+        (some (EvmYul.Operation.PUSH0, none)) (afterMemoryChargeAt state) =
+      .ok (gasfulPushNext 0 (EvmYul.UInt256.ofNat 0) state) := by
+  rw [evm_step_push0_eq_evmyul fuel state]
+  simpa [gasfulPushNext] using
+    evmyul_step_push0_eq (afterEVMInstructionChargeAt state)
+
+theorem raw_push0_success_executes_at
+    {bytes : ByteArray} {pc : Nat} {state : EVMState}
+    (hDecode : Compact.decodeAt bytes pc .push0)
+    (hPc : state.pc = EvmYul.UInt256.ofNat pc) :
+    Interaction.Executes
+      (Compact.InteractionSemantics.openRunNResult bytes 1 state)
+      []
+      (.ok (.running (openPushNextAt 0 (EvmYul.UInt256.ofNat 0) state))) := by
+  rw [Compact.InteractionSemantics.openRunNResult_one_eq_instr
+    (instr := .push0) trivial hDecode hPc]
+  exact Interaction.Executes.done _
+
 def gasfulJumpNext (state : EVMState)
     (rest : EvmYul.Stack Word) (dest : Word) : EVMState :=
   { afterEVMInstructionChargeAt state with pc := dest, stack := rest }
@@ -8781,6 +8816,57 @@ theorem runRefinesOpen_push_success_rel
       (openNext := openPushNextAt width value openState)
       (op := op)
       hPrefix hCreateOk hDecodedOp hStepActual hHalt hFirst hCont)
+
+theorem runRefinesOpen_push0_success_rel
+    {fuel : Nat} {validJumps : Array Word}
+    {bytes : ByteArray} {pc : Nat} {gasful openState : EVMState}
+    {tailTranscript : Interaction.Transcript}
+    (hPrefix : XSstoreStipendChecksPass validJumps gasful)
+    (hDecodedPair :
+      ((EvmYul.EVM.decode gasful.executionEnv.code gasful.pc).getD
+        (EvmYul.Operation.STOP, none)) = (EvmYul.Operation.PUSH0, none))
+    (hDecode : Compact.decodeAt bytes pc .push0)
+    (hPc : openState.pc = EvmYul.UInt256.ofNat pc)
+    (hCont :
+      RunRefinesOpen
+        (EvmYul.EVM.X (fuel + 1) validJumps
+          (gasfulPushNext 0 (EvmYul.UInt256.ofNat 0) gasful))
+        (Compact.InteractionSemantics.openRunNResult
+          bytes (fuel + 1)
+          (openPushNextAt 0 (EvmYul.UInt256.ofNat 0) openState))
+        tailTranscript) :
+    RunRefinesOpen
+      (EvmYul.EVM.X (fuel + 1 + 1) validJumps gasful)
+      (Compact.InteractionSemantics.openRunNResult
+        bytes (fuel + 1 + 1) openState)
+      tailTranscript := by
+  have hDecodedOp :
+      decodedOperationAt gasful = EvmYul.Operation.PUSH0 := by
+    simpa [decodedOperationAt, hDecodedPair]
+  have hCreateOk :
+      ¬ (EvmYul.Operation.isCreate (decodedOperationAt gasful) = true ∧
+        (EvmYul.UInt256.ofNat 49152) <
+          gasful.stack[2]?.getD (EvmYul.UInt256.ofNat 0)) := by
+    simp [hDecodedOp, EvmYul.Operation.isCreate]
+  have hStepActual :
+      EvmYul.EVM.step (fuel + 1) (dynamicGasCostAt gasful)
+        (some
+          ((EvmYul.EVM.decode gasful.executionEnv.code gasful.pc).getD
+            (EvmYul.Operation.STOP, none)))
+        (afterMemoryChargeAt gasful) =
+          .ok (gasfulPushNext 0 (EvmYul.UInt256.ofNat 0) gasful) := by
+    simpa [hDecodedPair] using evm_step_push0_eq_next fuel gasful
+  have hFirst := raw_push0_success_executes_at hDecode hPc
+  simpa using
+    (runRefinesOpen_running_step_rel
+      (stepFuel := fuel + 1) (validJumps := validJumps)
+      (bytes := bytes) (gasful := gasful)
+      (gasfulNext := gasfulPushNext 0 (EvmYul.UInt256.ofNat 0) gasful)
+      (openState := openState)
+      (openNext := openPushNextAt 0 (EvmYul.UInt256.ofNat 0) openState)
+      (op := EvmYul.Operation.PUSH0)
+      hPrefix hCreateOk hDecodedOp hStepActual
+      (by simp [haltOutputAt]) hFirst hCont)
 
 theorem runRefinesOpen_jump_success_rel
     {fuel : Nat} {validJumps : Array Word}

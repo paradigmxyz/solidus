@@ -154,7 +154,7 @@ theorem openStep_test
       (value :: value :: realizedTail)
   let afterPush :=
     afterDup.replaceStackAndIncrPC
-      (caseValue :: value :: value :: realizedTail) (pcΔ := 33)
+      (caseValue :: value :: value :: realizedTail) (pcΔ := Assembly.pushPcDelta caseValue)
   let afterEq :=
     afterPush.replaceStackAndIncrPC
       (EvmYul.UInt256.eq caseValue value :: value :: realizedTail)
@@ -338,7 +338,7 @@ related regular outcome.
 -/
 theorem openRun_default_none_under_of_compileDefaultFuel?
     {compilerFuel : Nat}
-    {ctx : TypedCfgCompiler.Context}
+    {ctx : TypedCfgCompiler.Context} {callBase : Nat}
     {supply : LabelSupply} {entry regular : Assembly.Label}
     {valueShape bodyShape : TypedCfg.Shape}
     {result : TypedCfgCompiler.Result}
@@ -351,7 +351,8 @@ theorem openRun_default_none_under_of_compileDefaultFuel?
       InteractionControlPreservation.OpenOutcome.StopPolicy}
     (hCompile :
       TypedCfgCompiler.compileDefaultFuel? (compilerFuel + 1)
-          none ctx supply entry valueShape bodyShape regular =
+          none { ctx with callBase := callBase } supply entry
+          valueShape bodyShape regular =
         some result)
     (hBlocks :
       TypedCfgPreservation.BlocksInProgram result cfg)
@@ -405,7 +406,7 @@ switch's regular continuation.
 -/
 theorem openRun_default_none_of_compileDefaultFuel?
     {compilerFuel : Nat}
-    {ctx : TypedCfgCompiler.Context}
+    {ctx : TypedCfgCompiler.Context} {callBase : Nat}
     {supply : LabelSupply} {entry regular boundaryRegular : Assembly.Label}
     {valueShape bodyShape : TypedCfg.Shape}
     {result boundaryResult : TypedCfgCompiler.Result}
@@ -416,7 +417,8 @@ theorem openRun_default_none_of_compileDefaultFuel?
       InteractionControlPreservation.OpenOutcome.RegularExit}
     (hCompile :
       TypedCfgCompiler.compileDefaultFuel? (compilerFuel + 1)
-          none ctx supply entry valueShape bodyShape regular =
+          none { ctx with callBase := callBase } supply entry
+          valueShape bodyShape regular =
         some result)
     (hBlocks :
       TypedCfgPreservation.BlocksInProgram result cfg)
@@ -477,7 +479,7 @@ body, and then reuses that body's adjacent preservation theorem.
 theorem openRun_default_some_of_compileDefaultFuel?
     {compilerFuel sourceFuel bodyTargetFuel : Nat}
     {body : Structured.Block}
-    {ctx : TypedCfgCompiler.Context}
+    {ctx : TypedCfgCompiler.Context} {callBase : Nat}
     {supply : LabelSupply} {entry regular boundaryRegular : Assembly.Label}
     {valueShape bodyShape : TypedCfg.Shape}
     {result boundaryResult : TypedCfgCompiler.Result}
@@ -487,7 +489,8 @@ theorem openRun_default_some_of_compileDefaultFuel?
     {stack : EvmYul.Stack Word} {value : Word}
     (hCompile :
       TypedCfgCompiler.compileDefaultFuel? (compilerFuel + 1)
-          (some body) ctx supply entry valueShape bodyShape regular =
+          (some body) { ctx with callBase := callBase } supply entry
+          valueShape bodyShape regular =
         some result)
     (hBlocks :
       TypedCfgPreservation.BlocksInProgram result cfg)
@@ -500,7 +503,8 @@ theorem openRun_default_some_of_compileDefaultFuel?
         ctx boundaryRegular supply)
     (hBody :
       ∀ {bodyResult : TypedCfgCompiler.Result},
-        TypedCfgCompiler.compileBlockFuel? compilerFuel body ctx
+        TypedCfgCompiler.compileBlockFuel? compilerFuel body
+            { ctx with callBase := callBase }
             (supply + 1) (.generated supply 2000)
             bodyShape regular =
           some bodyResult →
@@ -573,7 +577,7 @@ entry is private compiler control and is required not to stop that policy.
 theorem openRun_default_some_under_of_compileDefaultFuel?
     {compilerFuel sourceFuel bodyTargetFuel : Nat}
     {body : Structured.Block}
-    {ctx : TypedCfgCompiler.Context}
+    {ctx : TypedCfgCompiler.Context} {callBase : Nat}
     {supply : LabelSupply} {entry regular : Assembly.Label}
     {valueShape bodyShape : TypedCfg.Shape}
     {result enclosingResult : TypedCfgCompiler.Result}
@@ -587,7 +591,8 @@ theorem openRun_default_some_under_of_compileDefaultFuel?
       InteractionControlPreservation.OpenOutcome.StopPolicy}
     (hCompile :
       TypedCfgCompiler.compileDefaultFuel? (compilerFuel + 1)
-          (some body) ctx supply entry valueShape bodyShape regular =
+          (some body) { ctx with callBase := callBase } supply entry
+          valueShape bodyShape regular =
         some result)
     (hBlocks :
       TypedCfgPreservation.BlocksInProgram result cfg)
@@ -605,7 +610,8 @@ theorem openRun_default_some_under_of_compileDefaultFuel?
           policy (.generated supply 2000) targetAfter = false)
     (hBody :
       ∀ {bodyResult : TypedCfgCompiler.Result},
-        TypedCfgCompiler.compileBlockFuel? compilerFuel body ctx
+        TypedCfgCompiler.compileBlockFuel? compilerFuel body
+            { ctx with callBase := callBase }
             (supply + 1) (.generated supply 2000)
             bodyShape regular =
           some bodyResult →
@@ -661,7 +667,7 @@ theorem openRun_default_some_under_of_compileDefaultFuel?
 theorem openRun_default_some_exec_under_of_compileDefaultFuel?
     {compilerFuel sourceFuel : Nat}
     {body : Structured.Block}
-    {ctx : TypedCfgCompiler.Context}
+    {ctx : TypedCfgCompiler.Context} {callBase : Nat}
     {supply : LabelSupply} {entry regular : Assembly.Label}
     {valueShape bodyShape : TypedCfg.Shape}
     {result enclosingResult : TypedCfgCompiler.Result}
@@ -674,7 +680,8 @@ theorem openRun_default_some_exec_under_of_compileDefaultFuel?
       InteractionControlPreservation.OpenOutcome.StopPolicy}
     (hCompile :
       TypedCfgCompiler.compileDefaultFuel? (compilerFuel + 1)
-          (some body) ctx supply entry valueShape bodyShape regular =
+          (some body) { ctx with callBase := callBase } supply entry
+          valueShape bodyShape regular =
         some result)
     (hBlocks :
       TypedCfgPreservation.BlocksInProgram result cfg)
@@ -694,7 +701,8 @@ theorem openRun_default_some_exec_under_of_compileDefaultFuel?
           policy (.generated supply 2000) targetAfter = false)
     (hBody :
       ∀ {bodyResult : TypedCfgCompiler.Result},
-        TypedCfgCompiler.compileBlockFuel? compilerFuel body ctx
+        TypedCfgCompiler.compileBlockFuel? compilerFuel body
+            { ctx with callBase := callBase }
             (supply + 1) (.generated supply 2000)
             bodyShape regular =
           some bodyResult →
@@ -826,7 +834,7 @@ theorem openRun_cases_some_under_of_compileCasesFuel?
     {cases : List (Word × Structured.Block)}
     {defaultBody : Option Structured.Block}
     {selected : Structured.Block}
-    {ctx : TypedCfgCompiler.Context}
+    {ctx : TypedCfgCompiler.Context} {callBase : Nat}
     {base supply idx : Nat}
     {regular : Assembly.Label}
     {valueShape bodyShape : TypedCfg.Shape} {slot : TypedCfg.Slot}
@@ -840,7 +848,8 @@ theorem openRun_cases_some_under_of_compileCasesFuel?
     {policy :
       InteractionControlPreservation.OpenOutcome.StopPolicy}
     (hCompile :
-      TypedCfgCompiler.compileCasesFuel? compilerFuel cases ctx
+      TypedCfgCompiler.compileCasesFuel? compilerFuel cases
+          { ctx with callBase := callBase }
           base supply idx valueShape bodyShape regular =
         some result)
     (hBlocks :
@@ -862,9 +871,10 @@ theorem openRun_cases_some_under_of_compileCasesFuel?
     (hRegular :
       TypedCfgCompilerFacts.RegularAtSupply regular base)
     (hCase :
-      ∀ {bodyCompilerFuel caseSupply caseIdx : Nat}
+      ∀ {bodyCompilerFuel caseSupply caseIdx caseCallBase : Nat}
         {bodyResult : TypedCfgCompiler.Result},
-        TypedCfgCompiler.compileBlockFuel? bodyCompilerFuel selected ctx
+        TypedCfgCompiler.compileBlockFuel? bodyCompilerFuel selected
+            { ctx with callBase := caseCallBase }
             caseSupply (TypedCfgCompiler.switchBodyLabel base caseIdx)
             bodyShape regular =
           some bodyResult →
@@ -897,7 +907,8 @@ theorem openRun_cases_some_under_of_compileCasesFuel?
         sourceProgram sourceFuel selected
         (source.withEVM { source.evm with stack := stack }))
       (bodyTargetFuel + cases.length + 1) policy := by
-  induction cases generalizing compilerFuel supply idx result selected with
+  induction cases generalizing
+      compilerFuel supply idx result selected callBase with
   | nil =>
       cases compilerFuel with
       | zero =>
@@ -1071,7 +1082,7 @@ theorem openRun_cases_some_exec_under_of_compileCasesFuel?
     {cases : List (Word × Structured.Block)}
     {defaultBody : Option Structured.Block}
     {selected : Structured.Block}
-    {ctx : TypedCfgCompiler.Context}
+    {ctx : TypedCfgCompiler.Context} {callBase : Nat}
     {base supply idx : Nat}
     {regular : Assembly.Label}
     {valueShape bodyShape : TypedCfg.Shape} {slot : TypedCfg.Slot}
@@ -1084,7 +1095,8 @@ theorem openRun_cases_some_exec_under_of_compileCasesFuel?
     {policy :
       InteractionControlPreservation.OpenOutcome.StopPolicy}
     (hCompile :
-      TypedCfgCompiler.compileCasesFuel? compilerFuel cases ctx
+      TypedCfgCompiler.compileCasesFuel? compilerFuel cases
+          { ctx with callBase := callBase }
           base supply idx valueShape bodyShape regular =
         some result)
     (hSupply : base + 1 ≤ supply)
@@ -1122,9 +1134,10 @@ theorem openRun_cases_some_exec_under_of_compileCasesFuel?
         TypedCfgPreservation.StateRel source tokens targetAfter →
           policy (LabelSupply.label base 1) targetAfter = false)
     (hCase :
-      ∀ {bodyCompilerFuel caseSupply caseIdx : Nat}
+      ∀ {bodyCompilerFuel caseSupply caseIdx caseCallBase : Nat}
         {bodyResult : TypedCfgCompiler.Result},
-        TypedCfgCompiler.compileBlockFuel? bodyCompilerFuel selected ctx
+        TypedCfgCompiler.compileBlockFuel? bodyCompilerFuel selected
+            { ctx with callBase := caseCallBase }
             caseSupply (TypedCfgCompiler.switchBodyLabel base caseIdx)
             bodyShape regular =
           some bodyResult →
@@ -1158,7 +1171,8 @@ theorem openRun_cases_some_exec_under_of_compileCasesFuel?
         sourceProgram sourceFuel selected
         (source.withEVM { source.evm with stack := stack }))
       policy := by
-  induction cases generalizing compilerFuel supply idx result selected with
+  induction cases generalizing
+      compilerFuel supply idx result selected callBase with
   | nil =>
       cases compilerFuel with
       | zero =>
@@ -1388,7 +1402,7 @@ theorem openRun_cases_none_under_of_compileCasesFuel?
     {compilerFuel : Nat}
     {cases : List (Word × Structured.Block)}
     {defaultBody : Option Structured.Block}
-    {ctx : TypedCfgCompiler.Context}
+    {ctx : TypedCfgCompiler.Context} {callBase : Nat}
     {base supply idx : Nat}
     {regular : Assembly.Label}
     {valueShape bodyShape : TypedCfg.Shape} {slot : TypedCfg.Slot}
@@ -1401,7 +1415,8 @@ theorem openRun_cases_none_under_of_compileCasesFuel?
     {policy :
       InteractionControlPreservation.OpenOutcome.StopPolicy}
     (hCompile :
-      TypedCfgCompiler.compileCasesFuel? compilerFuel cases ctx
+      TypedCfgCompiler.compileCasesFuel? compilerFuel cases
+          { ctx with callBase := callBase }
           base supply idx valueShape bodyShape regular =
         some result)
     (hBlocks :
@@ -1436,7 +1451,7 @@ theorem openRun_cases_none_under_of_compileCasesFuel?
         (Structured.Outcome.regular
           (source.withEVM { source.evm with stack := stack })))
       (cases.length + 1) policy := by
-  induction cases generalizing compilerFuel supply idx result with
+  induction cases generalizing compilerFuel supply idx result callBase with
   | nil =>
       cases compilerFuel with
       | zero =>
@@ -1523,7 +1538,7 @@ theorem openRun_cases_none_exec_under_of_compileCasesFuel?
     {compilerFuel : Nat}
     {cases : List (Word × Structured.Block)}
     {defaultBody : Option Structured.Block}
-    {ctx : TypedCfgCompiler.Context}
+    {ctx : TypedCfgCompiler.Context} {callBase : Nat}
     {base supply idx : Nat}
     {regular : Assembly.Label}
     {valueShape bodyShape : TypedCfg.Shape} {slot : TypedCfg.Slot}
@@ -1534,7 +1549,8 @@ theorem openRun_cases_none_exec_under_of_compileCasesFuel?
     {policy :
       InteractionControlPreservation.OpenOutcome.StopPolicy}
     (hCompile :
-      TypedCfgCompiler.compileCasesFuel? compilerFuel cases ctx
+      TypedCfgCompiler.compileCasesFuel? compilerFuel cases
+          { ctx with callBase := callBase }
           base supply idx valueShape bodyShape regular =
         some result)
     (hBlocks :
@@ -1578,7 +1594,7 @@ theorem openRun_cases_none_exec_under_of_compileCasesFuel?
         (Structured.Outcome.regular
           (source.withEVM { source.evm with stack := stack })))
       policy := by
-  induction cases generalizing compilerFuel supply idx result with
+  induction cases generalizing compilerFuel supply idx result callBase with
   | nil =>
       cases compilerFuel with
       | zero =>
@@ -1684,7 +1700,7 @@ theorem openRun_cases_some_of_compileCasesFuel?
     {cases : List (Word × Structured.Block)}
     {defaultBody : Option Structured.Block}
     {selected : Structured.Block}
-    {ctx : TypedCfgCompiler.Context}
+    {ctx : TypedCfgCompiler.Context} {callBase : Nat}
     {base supply idx : Nat}
     {regular boundaryRegular : Assembly.Label}
     {valueShape bodyShape : TypedCfg.Shape} {slot : TypedCfg.Slot}
@@ -1694,7 +1710,8 @@ theorem openRun_cases_some_of_compileCasesFuel?
     {source : RunState} {tokens : List Word}
     {stack : EvmYul.Stack Word} {value : Word}
     (hCompile :
-      TypedCfgCompiler.compileCasesFuel? compilerFuel cases ctx
+      TypedCfgCompiler.compileCasesFuel? compilerFuel cases
+          { ctx with callBase := callBase }
           base supply idx valueShape bodyShape regular =
         some result)
     (hBlocks :
@@ -1714,9 +1731,10 @@ theorem openRun_cases_some_of_compileCasesFuel?
       TypedCfgCompilerFacts.ContinuationLabelsBeforeSupply
         ctx boundaryRegular base)
     (hCase :
-      ∀ {bodyCompilerFuel caseSupply caseIdx : Nat}
+      ∀ {bodyCompilerFuel caseSupply caseIdx caseCallBase : Nat}
         {bodyResult : TypedCfgCompiler.Result},
-        TypedCfgCompiler.compileBlockFuel? bodyCompilerFuel selected ctx
+        TypedCfgCompiler.compileBlockFuel? bodyCompilerFuel selected
+            { ctx with callBase := caseCallBase }
             caseSupply (TypedCfgCompiler.switchBodyLabel base caseIdx)
             bodyShape regular =
           some bodyResult →
@@ -1748,7 +1766,8 @@ theorem openRun_cases_some_of_compileCasesFuel?
         sourceProgram sourceFuel selected
         (source.withEVM { source.evm with stack := stack }))
       (bodyTargetFuel + cases.length + 1) := by
-  induction cases generalizing compilerFuel supply idx result selected with
+  induction cases generalizing
+      compilerFuel supply idx result selected callBase with
   | nil =>
       cases compilerFuel with
       | zero =>
@@ -1921,7 +1940,7 @@ theorem openRun_cases_none_of_compileCasesFuel?
     {compilerFuel : Nat}
     {cases : List (Word × Structured.Block)}
     {defaultBody : Option Structured.Block}
-    {ctx : TypedCfgCompiler.Context}
+    {ctx : TypedCfgCompiler.Context} {callBase : Nat}
     {base supply idx : Nat}
     {regular boundaryRegular : Assembly.Label}
     {valueShape bodyShape : TypedCfg.Shape} {slot : TypedCfg.Slot}
@@ -1930,7 +1949,8 @@ theorem openRun_cases_none_of_compileCasesFuel?
     {source : RunState} {tokens : List Word}
     {stack : EvmYul.Stack Word} {value : Word}
     (hCompile :
-      TypedCfgCompiler.compileCasesFuel? compilerFuel cases ctx
+      TypedCfgCompiler.compileCasesFuel? compilerFuel cases
+          { ctx with callBase := callBase }
           base supply idx valueShape bodyShape regular =
         some result)
     (hBlocks :
@@ -1964,7 +1984,7 @@ theorem openRun_cases_none_of_compileCasesFuel?
         (Structured.Outcome.regular
           (source.withEVM { source.evm with stack := stack })))
       (cases.length + 1) := by
-  induction cases generalizing compilerFuel supply idx result with
+  induction cases generalizing compilerFuel supply idx result callBase with
   | nil =>
       cases compilerFuel with
       | zero =>
@@ -2088,13 +2108,14 @@ theorem openRun_switch_under_of_compileStmtFuel?
           InteractionControlPreservation.OpenOutcome.TargetStoppedBy
             policy targetOutcome)
     (hBody :
-      ∀ {bodyCompilerFuel bodySupply : Nat}
+      ∀ {bodyCompilerFuel bodySupply bodyCallBase : Nat}
         {bodyEntry : Assembly.Label}
         {bodyInput : TypedCfg.Shape}
         {body : Structured.Block}
         {bodyResult : TypedCfgCompiler.Result}
         {afterPop : RunState},
-        TypedCfgCompiler.compileBlockFuel? bodyCompilerFuel body ctx
+        TypedCfgCompiler.compileBlockFuel? bodyCompilerFuel body
+            { ctx with callBase := bodyCallBase }
             bodySupply bodyEntry bodyInput regular =
           some bodyResult →
         TypedCfgPreservation.BlocksInProgram bodyResult cfg →
@@ -2136,7 +2157,8 @@ theorem openRun_switch_under_of_compileStmtFuel?
         some caseResult := by
     simpa [bodyShape] using hCasesCompileRaw
   have hDefaultCompile :
-      TypedCfgCompiler.compileDefaultFuel? compilerFuel defaultBody ctx
+      TypedCfgCompiler.compileDefaultFuel? compilerFuel defaultBody
+          (ctx.advance caseResult)
           caseResult.next (LabelSupply.label supply 1)
           valueShape bodyShape regular =
         some defaultResult := by
@@ -2292,7 +2314,8 @@ theorem openRun_switch_under_of_compileStmtFuel?
                             1 policy := by
                         have hCompileNone :
                             TypedCfgCompiler.compileDefaultFuel?
-                                (bodyCompilerFuel + 1) none ctx
+                                (bodyCompilerFuel + 1) none
+                                (ctx.advance caseResult)
                                 caseResult.next
                                 (LabelSupply.label supply 1)
                                 valueShape bodyShape regular =
@@ -2300,6 +2323,7 @@ theorem openRun_switch_under_of_compileStmtFuel?
                           simpa [hDefaultNone] using hDefaultCompile
                         have hBase :=
                           Switch.openRun_default_none_under_of_compileDefaultFuel?
+                            (ctx := ctx)
                             (result := defaultResult)
                             (regularExit := regularExit)
                             (source := afterScrutinee)
@@ -2318,6 +2342,7 @@ theorem openRun_switch_under_of_compileStmtFuel?
                             hDefaultRequire hFallthrough hBase
                       have hCasesNone :=
                         Switch.openRun_cases_none_under_of_compileCasesFuel?
+                          (ctx := ctx) (callBase := ctx.callBase)
                           (enclosingResult := result)
                           hCasesCompile hCaseBlocks hValue hPopType hPop
                           hSelect hFresh hRegular hDefaultRoute
@@ -2332,10 +2357,12 @@ theorem openRun_switch_under_of_compileStmtFuel?
                         hRouteRel
                   | some selected =>
                       have hCaseRoute :
-                          ∀ {caseBodyCompilerFuel caseSupply caseIdx : Nat}
+                          ∀ {caseBodyCompilerFuel caseSupply caseIdx
+                              caseCallBase : Nat}
                             {bodyResult : TypedCfgCompiler.Result},
                             TypedCfgCompiler.compileBlockFuel?
-                                caseBodyCompilerFuel selected ctx
+                                caseBodyCompilerFuel selected
+                                { ctx with callBase := caseCallBase }
                                 caseSupply
                                 (TypedCfgCompiler.switchBodyLabel
                                   supply caseIdx)
@@ -2362,6 +2389,7 @@ theorem openRun_switch_under_of_compileStmtFuel?
                                     stack := stack }))
                               bodyTargetFuel policy := by
                         intro caseBodyCompilerFuel caseSupply caseIdx
+                          caseCallBase
                           bodyResult hBodyCompile hBodyBlocks
                           hBodyRequire hResultFallthrough
                         exact
@@ -2382,7 +2410,8 @@ theorem openRun_switch_under_of_compileStmtFuel?
                             (bodyTargetFuel + 1) policy := by
                         have hCompileSome :
                             TypedCfgCompiler.compileDefaultFuel?
-                                (bodyCompilerFuel + 1) (some selected) ctx
+                                (bodyCompilerFuel + 1) (some selected)
+                                (ctx.advance caseResult)
                                 caseResult.next
                                 (LabelSupply.label supply 1)
                                 valueShape bodyShape regular =
@@ -2390,6 +2419,7 @@ theorem openRun_switch_under_of_compileStmtFuel?
                           simpa [hDefaultSelected] using hDefaultCompile
                         exact
                           Switch.openRun_default_some_under_of_compileDefaultFuel?
+                            (ctx := ctx)
                             (enclosingResult := result)
                             (regularExit := regularExit)
                             (policy := policy)
@@ -2406,6 +2436,7 @@ theorem openRun_switch_under_of_compileStmtFuel?
                                 hBodyRequire hResultFallthrough)
                       have hCasesSome :=
                         Switch.openRun_cases_some_under_of_compileCasesFuel?
+                          (ctx := ctx) (callBase := ctx.callBase)
                           (enclosingResult := result)
                           hCasesCompile hCaseBlocks hValue hPopType hPop
                           hSelect hFallthrough hFresh hRegular
@@ -2462,7 +2493,7 @@ theorem openRun_switch_exec_under_of_compileStmtFuel?
           InteractionControlPreservation.OpenOutcome.TargetStoppedBy
             policy targetOutcome)
     (hBody :
-      ∀ {bodyCompilerFuel bodySupply : Nat}
+      ∀ {bodyCompilerFuel bodySupply bodyCallBase : Nat}
         {bodyEntry : Assembly.Label}
         {bodyInput : TypedCfg.Shape}
         {body : Structured.Block}
@@ -2470,7 +2501,8 @@ theorem openRun_switch_exec_under_of_compileStmtFuel?
         {afterPop : RunState} {value : Word},
         Structured.Switch.select value cases defaultBody =
           some body →
-        TypedCfgCompiler.compileBlockFuel? bodyCompilerFuel body ctx
+        TypedCfgCompiler.compileBlockFuel? bodyCompilerFuel body
+            { ctx with callBase := bodyCallBase }
             bodySupply bodyEntry bodyInput regular =
           some bodyResult →
         TypedCfgPreservation.BlocksInProgram bodyResult cfg →
@@ -2516,7 +2548,8 @@ theorem openRun_switch_exec_under_of_compileStmtFuel?
         some caseResult := by
     simpa [bodyShape] using hCasesCompileRaw
   have hDefaultCompile :
-      TypedCfgCompiler.compileDefaultFuel? compilerFuel defaultBody ctx
+      TypedCfgCompiler.compileDefaultFuel? compilerFuel defaultBody
+          (ctx.advance caseResult)
           caseResult.next (LabelSupply.label supply 1)
           valueShape bodyShape regular =
         some defaultResult := by
@@ -2766,7 +2799,8 @@ theorem openRun_switch_exec_under_of_compileStmtFuel?
                           1 policy := by
                       have hCompileNone :
                           TypedCfgCompiler.compileDefaultFuel?
-                              (bodyCompilerFuel + 1) none ctx
+                              (bodyCompilerFuel + 1) none
+                              (ctx.advance caseResult)
                               caseResult.next
                               (LabelSupply.label supply 1)
                               valueShape bodyShape regular =
@@ -2774,6 +2808,7 @@ theorem openRun_switch_exec_under_of_compileStmtFuel?
                         simpa [hDefaultNone] using hDefaultCompile
                       have hBase :=
                         Switch.openRun_default_none_under_of_compileDefaultFuel?
+                          (ctx := ctx)
                           (result := defaultResult)
                           (regularExit := .stop)
                           (source := afterScrutinee)
@@ -2792,6 +2827,7 @@ theorem openRun_switch_exec_under_of_compileStmtFuel?
                           hDefaultRequire hFallthrough hBase
                     have hCasesNone :=
                       Switch.openRun_cases_none_exec_under_of_compileCasesFuel?
+                        (ctx := ctx) (callBase := ctx.callBase)
                         (enclosingResult := result)
                         hCasesCompile hCaseBlocks hValue hPopType hPop
                         hSelect hRegular hAfterBoundary
@@ -2838,10 +2874,12 @@ theorem openRun_switch_exec_under_of_compileStmtFuel?
                         by simpa [hReturnsEq] using hRouteRel⟩
                 | some selected =>
                     have hCaseRoute :
-                        ∀ {caseBodyCompilerFuel caseSupply caseIdx : Nat}
+                        ∀ {caseBodyCompilerFuel caseSupply caseIdx
+                            caseCallBase : Nat}
                           {bodyResult : TypedCfgCompiler.Result},
                           TypedCfgCompiler.compileBlockFuel?
-                              caseBodyCompilerFuel selected ctx
+                              caseBodyCompilerFuel selected
+                              { ctx with callBase := caseCallBase }
                               caseSupply
                               (TypedCfgCompiler.switchBodyLabel
                                 supply caseIdx)
@@ -2871,6 +2909,7 @@ theorem openRun_switch_exec_under_of_compileStmtFuel?
                                   stack := stack }))
                             policy := by
                       intro caseBodyCompilerFuel caseSupply caseIdx
+                        caseCallBase
                         bodyResult hBodyCompile hBodyBlocks hBodyCalls
                         hBodySupply hBodyRequire hResultFallthrough
                       exact
@@ -2893,7 +2932,8 @@ theorem openRun_switch_exec_under_of_compileStmtFuel?
                           policy := by
                       have hCompileSome :
                           TypedCfgCompiler.compileDefaultFuel?
-                              (bodyCompilerFuel + 1) (some selected) ctx
+                              (bodyCompilerFuel + 1) (some selected)
+                              (ctx.advance caseResult)
                               caseResult.next
                               (LabelSupply.label supply 1)
                               valueShape bodyShape regular =
@@ -2901,6 +2941,7 @@ theorem openRun_switch_exec_under_of_compileStmtFuel?
                         simpa [hDefaultSelected] using hDefaultCompile
                       exact
                         Switch.openRun_default_some_exec_under_of_compileDefaultFuel?
+                          (ctx := ctx)
                           (enclosingResult := result)
                           (policy := policy)
                           hCompileSome hDefaultBlocks hDefaultCalls
@@ -2952,6 +2993,7 @@ theorem openRun_switch_exec_under_of_compileStmtFuel?
                               hBodyRequire hResultFallthrough)
                     have hCasesSome :=
                       Switch.openRun_cases_some_exec_under_of_compileCasesFuel?
+                        (ctx := ctx) (callBase := ctx.callBase)
                         (enclosingResult := result)
                         hCasesCompile (Nat.le_refl (supply + 1))
                         hCaseBlocks hCaseCalls
@@ -3027,13 +3069,14 @@ theorem openRun_switch_within_stop_of_compileStmtFuel?
       TypedCfgCompilerFacts.ContinuationLabelsBeforeSupply
         ctx regular supply)
     (hBody :
-      ∀ {bodyCompilerFuel bodySupply : Nat}
+      ∀ {bodyCompilerFuel bodySupply bodyCallBase : Nat}
         {bodyEntry : Assembly.Label}
         {bodyInput : TypedCfg.Shape}
         {body : Structured.Block}
         {bodyResult : TypedCfgCompiler.Result}
         {afterPop : RunState},
-        TypedCfgCompiler.compileBlockFuel? bodyCompilerFuel body ctx
+        TypedCfgCompiler.compileBlockFuel? bodyCompilerFuel body
+            { ctx with callBase := bodyCallBase }
             bodySupply bodyEntry bodyInput regular =
           some bodyResult →
         TypedCfgPreservation.BlocksInProgram bodyResult cfg →
@@ -3074,7 +3117,8 @@ theorem openRun_switch_within_stop_of_compileStmtFuel?
         some caseResult := by
     simpa [bodyShape] using hCasesCompileRaw
   have hDefaultCompile :
-      TypedCfgCompiler.compileDefaultFuel? compilerFuel defaultBody ctx
+      TypedCfgCompiler.compileDefaultFuel? compilerFuel defaultBody
+          (ctx.advance caseResult)
           caseResult.next (LabelSupply.label supply 1)
           valueShape bodyShape regular =
         some defaultResult := by
@@ -3238,7 +3282,8 @@ theorem openRun_switch_within_stop_of_compileStmtFuel?
                               1 := by
                         have hCompileNone :
                             TypedCfgCompiler.compileDefaultFuel?
-                                (bodyCompilerFuel + 1) none ctx
+                                (bodyCompilerFuel + 1) none
+                                (ctx.advance caseResult)
                                 caseResult.next
                                 (LabelSupply.label supply 1)
                                 valueShape bodyShape regular =
@@ -3246,6 +3291,7 @@ theorem openRun_switch_within_stop_of_compileStmtFuel?
                           simpa [hDefaultNone] using hDefaultCompile
                         have hBase :=
                           Switch.openRun_default_none_of_compileDefaultFuel?
+                              (ctx := ctx)
                               (result := defaultResult)
                               (boundaryResult := result)
                               (boundaryRegular := regular)
@@ -3267,6 +3313,7 @@ theorem openRun_switch_within_stop_of_compileStmtFuel?
                               hDefaultRequire hFallthrough hBase
                       have hCasesNone :=
                         Switch.openRun_cases_none_of_compileCasesFuel?
+                          (ctx := ctx) (callBase := ctx.callBase)
                           (enclosingResult := result)
                           hCasesCompile hCaseBlocks hValue hPopType hPop
                           hSelect hBefore hDefaultRoute
@@ -3281,10 +3328,12 @@ theorem openRun_switch_within_stop_of_compileStmtFuel?
                         hRouteRel
                   | some selected =>
                       have hCaseRoute :
-                          ∀ {caseBodyCompilerFuel caseSupply caseIdx : Nat}
+                          ∀ {caseBodyCompilerFuel caseSupply caseIdx
+                              caseCallBase : Nat}
                             {bodyResult : TypedCfgCompiler.Result},
                             TypedCfgCompiler.compileBlockFuel?
-                                caseBodyCompilerFuel selected ctx
+                                caseBodyCompilerFuel selected
+                                { ctx with callBase := caseCallBase }
                                 caseSupply
                                 (TypedCfgCompiler.switchBodyLabel
                                   supply caseIdx)
@@ -3308,6 +3357,7 @@ theorem openRun_switch_within_stop_of_compileStmtFuel?
                                       stack := stack }))
                                 bodyTargetFuel := by
                         intro caseBodyCompilerFuel caseSupply caseIdx
+                          caseCallBase
                           bodyResult hBodyCompile hBodyBlocks
                         exact
                           hBody hBodyCompile hBodyBlocks (by
@@ -3327,7 +3377,8 @@ theorem openRun_switch_within_stop_of_compileStmtFuel?
                               (bodyTargetFuel + 1) := by
                         have hCompileSome :
                             TypedCfgCompiler.compileDefaultFuel?
-                                (bodyCompilerFuel + 1) (some selected) ctx
+                                (bodyCompilerFuel + 1) (some selected)
+                                (ctx.advance caseResult)
                                 caseResult.next
                                 (LabelSupply.label supply 1)
                                 valueShape bodyShape regular =
@@ -3335,6 +3386,7 @@ theorem openRun_switch_within_stop_of_compileStmtFuel?
                           simpa [hDefaultSelected] using hDefaultCompile
                         have hBase :=
                           Switch.openRun_default_some_of_compileDefaultFuel?
+                              (ctx := ctx)
                               hCompileSome hDefaultBlocks hPopType hPop
                               hBeforeDefault
                               (fun hBodyCompile hBodyBlocks =>
@@ -3346,6 +3398,7 @@ theorem openRun_switch_within_stop_of_compileStmtFuel?
                               hDefaultRequire hFallthrough hBase
                       have hCasesSome :=
                         Switch.openRun_cases_some_of_compileCasesFuel?
+                          (ctx := ctx) (callBase := ctx.callBase)
                           (enclosingResult := result)
                           hCasesCompile hCaseBlocks hValue hPopType hPop
                           hSelect hFallthrough hBefore

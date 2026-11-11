@@ -63,11 +63,19 @@ namespace EvmCompiler.TypedCfg.BlockReorder
 open EvmCompiler.TypedCfg
 open List
 
-/-- The unconditional-jump fallthrough candidate of a block: the target label of
-its terminator when that terminator is an unconditional `jump`. -/
+/-- The fallthrough candidate of a block: the label its terminator's *final*
+lowered instruction jumps to.  `fallthrough`/`jump` lower to `[jump t]` and
+`jumpi target next` lowers to `[jumpi target, jump next]`, so in all three cases
+placing that label next lets the frozen serializer elide the trailing
+`jump L; label L` seam. -/
 def succLabel? (b : Block) : Option Label :=
   match b.term with
+  | .fallthrough t => some t
   | .jump t => some t
+  | .jumpi _ next => some next
+  -- `returnDispatch` lowers to test chain ++ case blocks, and the last case
+  -- block ends in `jump (last site).target`.
+  | .returnDispatch _ sites => sites.getLast?.map ReturnSite.target
   | _ => none
 
 /-- List-`find?` block lookup by label (returns an actual member of `blocks`,
@@ -93,11 +101,26 @@ def growLayout (blocks : List Block) :
                 (b :: rest, placed)
             | none => ([b], placed)
 
-/-- Greedy fallthrough-maximising block order: seed chains at the entry then at
-every block label in order, laying each block right after its unconditional-jump
-predecessor whenever possible. -/
+/-- Labels some block wants to fall through to. -/
+def succLabels (blocks : List Block) : List Label :=
+  blocks.filterMap succLabel?
+
+/-- Chain heads: blocks no other block can fall through to.  Seeding a chain at
+a non-head steals the head's seam, so heads go first. -/
+def headLabels (blocks : List Block) : List Label :=
+  let succs := succLabels blocks
+  (blocks.filter (fun b => !succs.contains b.label)).map (·.label)
+
+/-- Chain seeds: the entry, then the chain heads, then every label as a fallback
+(duplicates are skipped by `growLayout`, so this only has to *cover* the labels). -/
+def layoutSeeds (p : Program) : List Label :=
+  p.entry :: (headLabels p.blocks ++ p.blocks.map (·.label))
+
+/-- Greedy fallthrough-maximising block order: seed chains at the entry, then at
+the chain heads, then at every block label in order, laying each block right
+after its fallthrough predecessor whenever possible. -/
 def layoutBlocks (p : Program) : List Block :=
-  let seeds := p.entry :: p.blocks.map (·.label)
+  let seeds := layoutSeeds p
   (seeds.foldl
     (fun (st : List Block × List Label) s =>
       let g := growLayout p.blocks p.blocks.length s st.2
@@ -149,7 +172,7 @@ theorem layoutBlocks_mem (p : Program) {b : Block}
     (hb : b ∈ layoutBlocks p) : b ∈ p.blocks := by
   unfold layoutBlocks at hb
   -- The fold accumulates `st.1 ++ rest`; each `rest ⊆ p.blocks` by `growLayout_mem`.
-  set seeds := p.entry :: p.blocks.map (·.label) with hseeds
+  set seeds := layoutSeeds p with hseeds
   clear hseeds
   suffices H : ∀ (ss : List Label) (acc : List Block × List Label),
       (∀ x ∈ acc.1, x ∈ p.blocks) →
@@ -361,8 +384,9 @@ theorem foldl_seed_mem (blocks : List Block) {n : Nat} (hn : 0 < n) :
 /-- Coverage: every original block is laid out. -/
 theorem layoutBlocks_coverage (p : Program) (h : p.LabelsUnique)
     {b0 : Block} (hb0 : b0 ∈ p.blocks) : b0 ∈ layoutBlocks p := by
-  have hseed : b0.label ∈ (p.entry :: p.blocks.map Block.label) :=
-    List.mem_cons_of_mem _ (List.mem_map.mpr ⟨b0, hb0, rfl⟩)
+  have hseed : b0.label ∈ layoutSeeds p :=
+    List.mem_cons_of_mem _
+      (List.mem_append_right _ (List.mem_map.mpr ⟨b0, hb0, rfl⟩))
   have hlk : lookup? p.blocks b0.label = some b0 := by
     unfold lookup?
     have := Program.findBlock?_eq_some_of_mem h hb0
@@ -370,12 +394,12 @@ theorem layoutBlocks_coverage (p : Program) (h : p.LabelsUnique)
     exact this
   have hpos : 0 < p.blocks.length := List.length_pos_of_mem hb0
   have hin : b0.label ∈
-      ((p.entry :: p.blocks.map Block.label).foldl (fun st x =>
+      ((layoutSeeds p).foldl (fun st x =>
           let g := growLayout p.blocks p.blocks.length x st.2
           (st.1 ++ g.1, g.2)) ([], [])).2 :=
     foldl_seed_mem p.blocks hpos _ ([], []) b0.label hseed hlk
   obtain ⟨hH1, _hND⟩ :=
-    foldLabels_spec p.blocks p.blocks.length (p.entry :: p.blocks.map Block.label)
+    foldLabels_spec p.blocks p.blocks.length (layoutSeeds p)
       ([], []) (by intro l; simp) (by simp)
   have hlab : b0.label ∈ (layoutBlocks p).map Block.label := by
     have := (hH1 b0.label).mp hin
@@ -395,7 +419,7 @@ theorem layoutBlocks_coverage (p : Program) (h : p.LabelsUnique)
 theorem layoutBlocks_labels_nodup (p : Program) :
     ((layoutBlocks p).map Block.label).Nodup := by
   have := (foldLabels_spec p.blocks p.blocks.length
-    (p.entry :: p.blocks.map Block.label) ([], [])
+    (layoutSeeds p) ([], [])
     (by intro l; simp) (by simp)).2
   simpa [layoutBlocks] using this
 

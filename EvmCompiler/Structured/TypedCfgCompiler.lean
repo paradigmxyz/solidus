@@ -32,6 +32,11 @@ structure Context where
   continueShape? : Option Shape := none
   leaveLabel? : Option Assembly.Label := none
   leaveShape? : Option Shape := none
+  /--
+  Index of the next procedure-call return token, dense in call-site order over
+  the whole contract. Independent of `LabelSupply`.
+  -/
+  callBase : Nat := 0
 
 structure DispatchSite where
   procName : Name
@@ -136,6 +141,18 @@ def requireFallthrough? (result : Result) (expected : Shape) : Option Unit :=
       if actual = expected then some () else none
 
 end Result
+
+namespace Context
+
+/-- Advance the dense token counter past a compiled fragment. -/
+def advance (ctx : Context) (result : Result) : Context :=
+  { ctx with callBase := ctx.callBase + result.calls.length }
+
+@[simp] theorem advance_nil {ctx : Context} {result : Result}
+    (h : result.calls = []) : ctx.advance result = ctx := by
+  simp [advance, h]
+
+end Context
 
 namespace Shape
 
@@ -400,8 +417,8 @@ mutual
           | none => some head
           | some nextInput =>
               let tail ←
-                compileStmtListFuel? fuel rest ctx head.next nextEntry
-                  nextInput regular
+                compileStmtListFuel? fuel rest (ctx.advance head) head.next
+                  nextEntry nextInput regular
               some (head.append tail)
 
   def compileStmtFuel? : Nat → Stmt → Context →
@@ -452,8 +469,8 @@ mutual
             compileCasesFuel? fuel cases ctx supply (supply + 1) 0 valueShape
               bodyShape regular
           let defaultResult ←
-            compileDefaultFuel? fuel defaultBody ctx caseResult.next
-              defaultLabel valueShape bodyShape regular
+            compileDefaultFuel? fuel defaultBody (ctx.advance caseResult)
+              caseResult.next defaultLabel valueShape bodyShape regular
           some
             { blocks := head :: caseResult.blocks ++ defaultResult.blocks
               next := defaultResult.next
@@ -489,12 +506,18 @@ mutual
               continueLabel? := some postLabel
               continueShape? := some branchInput }
           let bodyResult ←
-            compileBlockFuel? fuel body bodyCtx initResult.next bodyLabel
-              branchInput postLabel
+            compileBlockFuel? fuel body
+              { bodyCtx with
+                callBase := ctx.callBase + initResult.calls.length }
+              initResult.next bodyLabel branchInput postLabel
           let _ ← bodyResult.requireFallthrough? branchInput
           let postResult ←
-            compileBlockFuel? fuel post outerCtx bodyResult.next postLabel
-              branchInput loopLabel
+            compileBlockFuel? fuel post
+              { outerCtx with
+                callBase :=
+                  ctx.callBase + initResult.calls.length +
+                    bodyResult.calls.length }
+              bodyResult.next postLabel branchInput loopLabel
           let _ ← postResult.requireFallthrough? loopInput
           some
             { blocks :=
@@ -538,7 +561,7 @@ mutual
           let proc ← ProcList.lookup? name ctx.procs
           let _ ← Shape.requireSourceWords? proc.argc input
           let returnShape ← Shape.afterCall input proc.argc proc.retc
-          let token := Stmt.callToken supply
+          let token := Stmt.callToken ctx.callBase
           let body := .returnToken token :: sinkTopUnder proc.argc
           let block ←
             mkBlock? entry input body (.jump (ProcLabel.entry name))
@@ -593,8 +616,8 @@ mutual
               regular
           let _ ← bodyResult.requireFallthrough? bodyShape
           let tail ←
-            compileCasesFuel? fuel rest ctx base bodyResult.next (idx + 1)
-              valueShape bodyShape regular
+            compileCasesFuel? fuel rest (ctx.advance bodyResult) base
+              bodyResult.next (idx + 1) valueShape bodyShape regular
           some
             { blocks :=
                 testBlock :: bodyEntry :: bodyResult.blocks ++ tail.blocks
@@ -649,14 +672,15 @@ end ProcEntryShapes
 
 def lowerProcBodiesWithShapes? (entryShapes : ProcEntryShapes)
     (allProcs : List Proc) :
-    List Proc → LabelSupply →
+    List Proc → LabelSupply → Nat →
       Option (List CfgBlock × LabelSupply × List DispatchSite)
-  | [], supply => some ([], supply, [])
-  | proc :: rest, supply => do
+  | [], supply, _callBase => some ([], supply, [])
+  | proc :: rest, supply, callBase => do
       let ctx : Context :=
         { procs := allProcs
           leaveLabel? := some (ProcLabel.exit proc.name)
-          leaveShape? := some (Shape.procExit proc) }
+          leaveShape? := some (Shape.procExit proc)
+          callBase := callBase }
       let body ← match entryShapes.find? proc.name with
         | none => do
             let compiled ←
@@ -677,12 +701,13 @@ def lowerProcBodiesWithShapes? (entryShapes : ProcEntryShapes)
             some { compiled with blocks := adapter :: compiled.blocks }
       let (tailBlocks, next, tailCalls) ←
         lowerProcBodiesWithShapes? entryShapes allProcs rest body.next
+          (callBase + body.calls.length)
       some (body.blocks ++ tailBlocks, next, body.calls ++ tailCalls)
 
 def compileProcBodies? (allProcs : List Proc) :
     List Proc → LabelSupply →
       Option (List CfgBlock × LabelSupply × List DispatchSite) :=
-  lowerProcBodiesWithShapes? [] allProcs
+  fun procs supply => lowerProcBodiesWithShapes? [] allProcs procs supply 0
 
 def returnSitesFor (name : Name) (calls : List DispatchSite) :
     List TypedCfg.ReturnSite :=
@@ -725,7 +750,7 @@ def generateWithProcEntryShapes? (program : Program)
       ProcLabel.programEnd
   let (procBlocks, _next, procCalls) ←
     lowerProcBodiesWithShapes? entryShapes program.procs program.procs
-      main.next
+      main.next main.calls.length
   let calls := main.calls ++ procCalls
   if DispatchTokenList.unique? (calls.map DispatchSite.token) then
     let endInput := main.fallthrough?.getD mainInput
@@ -783,7 +808,7 @@ theorem generateWithProcEntryShapes?_entry
   | some main =>
       cases hProcs :
           lowerProcBodiesWithShapes? entryShapes program.procs program.procs
-            main.next with
+            main.next main.calls.length with
       | none =>
           simp [hMain, hProcs] at hGenerate
       | some procResult =>

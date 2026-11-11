@@ -75,6 +75,44 @@ structure CtxExitsShaped (cfg : TypedCfg.Program)
   leave : ∀ lbl shp, ctx.leaveLabel? = some lbl → ctx.leaveShape? = some shp →
     LabelShape cfg lbl shp
 
+/-- `CtxExitsShaped` reads only the `break`/`continue`/`leave` exit labels and shapes, so it
+transfers across any context update that leaves those six fields alone.  The workhorse behind
+the `callBase` transports below: the dense call-token counter is a spectator for this bundle. -/
+theorem CtxExitsShaped.of_exits_eq
+    {cfg : TypedCfg.Program} {ctx ctx' : TypedCfgCompiler.Context}
+    (hBreakLabel : ctx'.breakLabel? = ctx.breakLabel?)
+    (hBreakShape : ctx'.breakShape? = ctx.breakShape?)
+    (hContinueLabel : ctx'.continueLabel? = ctx.continueLabel?)
+    (hContinueShape : ctx'.continueShape? = ctx.continueShape?)
+    (hLeaveLabel : ctx'.leaveLabel? = ctx.leaveLabel?)
+    (hLeaveShape : ctx'.leaveShape? = ctx.leaveShape?)
+    (hCtx : CtxExitsShaped cfg ctx) :
+    CtxExitsShaped cfg ctx' :=
+  ⟨fun lbl shp hL hS =>
+     hCtx.brk lbl shp (hBreakLabel.symm.trans hL) (hBreakShape.symm.trans hS),
+   fun lbl shp hL hS =>
+     hCtx.cont lbl shp (hContinueLabel.symm.trans hL)
+       (hContinueShape.symm.trans hS),
+   fun lbl shp hL hS =>
+     hCtx.leave lbl shp (hLeaveLabel.symm.trans hL)
+       (hLeaveShape.symm.trans hS)⟩
+
+/-- Transport across an explicit bump of the dense call-token counter (the `for_` body and post
+legs, which the compiler enters at `ctx.callBase + …`). -/
+theorem CtxExitsShaped.withCallBase
+    {cfg : TypedCfg.Program} {ctx : TypedCfgCompiler.Context} {callBase : Nat}
+    (hCtx : CtxExitsShaped cfg ctx) :
+    CtxExitsShaped cfg { ctx with callBase := callBase } :=
+  CtxExitsShaped.of_exits_eq (ctx := ctx) rfl rfl rfl rfl rfl rfl hCtx
+
+/-- `TypedCfgCompiler.Context.advance` only bumps `callBase`, which `CtxExitsShaped` ignores. -/
+theorem CtxExitsShaped.advance
+    {cfg : TypedCfg.Program} {ctx : TypedCfgCompiler.Context}
+    {result : TypedCfgCompiler.Result}
+    (hCtx : CtxExitsShaped cfg ctx) :
+    CtxExitsShaped cfg (ctx.advance result) :=
+  CtxExitsShaped.of_exits_eq (ctx := ctx) rfl rfl rfl rfl rfl rfl hCtx
+
 /--
 **Callee `procEntry` `LabelShape`/`WF` bundle** (the `callHead` group-(e) thread).  For every
 proc reachable by a `.call` in the current compilation context (`lookup? name ctx.procs`),
@@ -163,7 +201,8 @@ theorem switchHead_regular_labelShape
       TypedCfgCompiler.compileCasesFuel? compilerFuel cases ctx
           supply (supply + 1) 0 valueShape bodyShape regular = some caseResult)
     (hDefault :
-      TypedCfgCompiler.compileDefaultFuel? compilerFuel defaultBody ctx
+      TypedCfgCompiler.compileDefaultFuel? compilerFuel defaultBody
+          (ctx.advance caseResult)
           caseResult.next (LabelSupply.label supply 1) valueShape bodyShape
           regular = some defaultResult)
     (hCaseBlocks : BlocksInProgram caseResult cfg)
@@ -498,7 +537,9 @@ theorem genShapeReg_of_compileStmtListFuel?
                     hTailBlocks)
                   hCtx hProcs hProcsEq hHeadCalls).append
                 (genShapeReg_of_compileStmtListFuel? hTailCompile hTailBlocks
-                  hRegular hCtx hProcs hProcsEq hTailCalls)
+                  hRegular hCtx.advance
+                  (ProcsShaped.of_procs_eq (ctx := ctx) rfl hProcs)
+                  hProcsEq hTailCalls)
 
 theorem genShapeReg_of_compileStmtFuel?
     {fuel : Nat} {stmt : Structured.Stmt}
@@ -598,7 +639,8 @@ theorem genShapeReg_of_compileStmtFuel?
                   hPop hDefault] at hout
                 obtain rfl := Option.some.inj hout
                 exact hRegular _ rfl)
-              hCtx hProcs hProcsEq hDefaultCalls hValueSource
+              hCtx.advance (ProcsShaped.of_procs_eq (ctx := ctx) rfl hProcs)
+              hProcsEq hDefaultCalls hValueSource
           intro block hMem
           simp only [List.mem_cons, List.mem_append] at hMem
           rcases hMem with (rfl | hCaseMem) | hDefaultMem
@@ -696,12 +738,14 @@ theorem genShapeReg_of_compileStmtFuel?
             genShapeReg_of_compileBlockFuel? hBody hBodyBlocks
               (thread_of_target_requireFallthrough
                 (LabelShape.of_compileBlockFuel? hPost hPostBlocks) hBodyRequire)
-              hCtxBody (ProcsShaped.of_procs_eq (ctx := ctx) rfl hProcs)
+              hCtxBody.withCallBase
+              (ProcsShaped.of_procs_eq (ctx := ctx) rfl hProcs)
               hProcsEq hBodyCalls
           have hPostGen :=
             genShapeReg_of_compileBlockFuel? hPost hPostBlocks
               (thread_of_target_requireFallthrough hCondShape hPostRequire)
-              hCtxCleared (ProcsShaped.of_procs_eq (ctx := ctx) rfl hProcs)
+              hCtxCleared.withCallBase
+              (ProcsShaped.of_procs_eq (ctx := ctx) rfl hProcs)
               hProcsEq hPostCalls
           intro block hMem
           have hFind := hBlocks block hMem
@@ -886,7 +930,8 @@ theorem genShapeReg_of_compileCasesFuel?
                   hHead hPop hTailCompile] at hout
                 obtain rfl := Option.some.inj hout
                 exact hRegular _ rfl)
-              hCtx hProcs hProcsEq hTailCalls hValueSource hDefaultShape
+              hCtx.advance (ProcsShaped.of_procs_eq (ctx := ctx) rfl hProcs)
+              hProcsEq hTailCalls hValueSource hDefaultShape
           intro block hMem
           simp only [List.mem_cons, List.mem_append] at hMem
           rcases hMem with (rfl | rfl | hBodyMem) | hTailMem

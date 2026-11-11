@@ -115,6 +115,13 @@ theorem parse_of_decodeAt
                       obtain ⟨hOpEq, -, hWidth⟩ := hDec
                       simp [Instr.byteSize]
                       omega
+            | push0 =>
+                simp [Instr.decoded?] at hDecoded
+                rw [← hDecoded] at hDec
+                by_cases hZero : EvmYul.EVM.argOnNBytesOfInstr op = 0
+                · simp [hZero] at hDec
+                  simp [Instr.byteSize, hZero]
+                · simp [hZero] at hDec
             | jump =>
                 simp [Instr.decoded?] at hDecoded
                 rw [← hDecoded] at hDec

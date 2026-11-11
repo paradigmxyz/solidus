@@ -7,6 +7,44 @@ namespace FunctionsInteractionPreparedArgs
 
 open FunctionsInteractionPrimitive
 
+/-- Change the completed target payload of a forward simulation whose target
+is already a concrete terminal leaf. Source truncation is preserved. -/
+theorem forwardRel_done_right
+    {Error₁ : Type} {Result₁ : Type}
+    {Error₂ : Type} {Result₂ Target₂ : Type}
+    {truncated : Error₁ → Prop}
+    {sourceRel :
+      Except Error₁ Result₁ → Except Error₂ Result₂ → Prop}
+    {targetRel :
+      Except Error₁ Result₁ → Except Error₂ Target₂ → Prop}
+    {left : Simulation.Interaction Error₁ Result₁}
+    {rightDone : Except Error₂ Result₂}
+    {targetDone : Except Error₂ Target₂}
+    (hRel : Simulation.Interaction.ForwardRel truncated sourceRel
+      left (.done rightDone))
+    (hMap :
+      ∀ leftDone, sourceRel leftDone rightDone →
+        targetRel leftDone targetDone) :
+    Simulation.Interaction.ForwardRel truncated targetRel
+      left (.done targetDone) := by
+  cases left with
+  | done leftDone =>
+      cases leftDone with
+      | error error =>
+          cases hRel with
+          | truncated hTruncated =>
+              exact Simulation.Interaction.ForwardRel.truncated hTruncated
+          | done hDone =>
+              exact Simulation.Interaction.ForwardRel.done
+                (hMap _ hDone)
+      | ok value =>
+          cases hRel with
+          | done hDone =>
+              exact Simulation.Interaction.ForwardRel.done
+                (hMap _ hDone)
+  | request query resume =>
+      cases hRel
+
 /-- Recursive argument-lowering result owned by the Yul-to-Functions pass.
 The expression list is already in execution order (`lowerArgs.reverse`). -/
 inductive DoneRel
@@ -331,6 +369,69 @@ theorem deferred
       | Call callee args =>
           simp [Expr.deferredBoundArgSafe?] at hSafe
 
+/-- Arithmetic/bitwise trees over literals and source locals are stable delayed
+values even when effectful siblings force the bounded-argument path. -/
+theorem delayedAlgebraic
+    {profile : SolcValidation.DialectProfile}
+    {contract : AstContract}
+    {fuel targetFuel offset : Nat}
+    {expr : AstExpr} {pre : List Functions.Stmt}
+    {lower : Locals.Expr 1} {before after : Fresh.State}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {program : Functions.Program} {ctx : Functions.Source.Ctx}
+    {layout : List Functions.Name}
+    {source : Yul.InteractionSemantics.State}
+    {target : Functions.InteractionSemantics.State}
+    (hSafe : Expr.delayedAlgebraicArgSafeAt? offset expr = true)
+    (hOk : SolcValidation.ExprOk?
+      profile contract layout 1 expr = true)
+    (hLower : Expr.lower1Unchecked? before expr =
+      some (pre, lower, after))
+    (hRel : FunctionsInteractionRelation.ScopedStateRel
+      layout source target)
+    (hDomain : FunctionsInteractionRelation.TargetDomainWithin
+      before.used target.vars)
+    (hTargetScope :
+      FunctionsInteractionControlRelation.TargetScopeWithin before.used ctx) :
+    Simulation.Interaction.ForwardRel Truncated
+      (DoneRel layout after [lower] target ctx)
+      (Yul.InteractionSemantics.evalValues
+        fuel expr codeOverride source)
+      (Functions.InteractionSemantics.Block.openRun
+        program ctx (targetFuel + 1) { stmts := pre } target) := by
+  obtain ⟨rfl, rfl, hDirect⟩ :=
+    Expr.lower1Unchecked?_delayedAlgebraic_parts hSafe hLower
+  have hTreeSafe : Expr.delayedAlgebraicArgSafe? expr = true :=
+    (Bool.and_eq_true_iff.mp hSafe).1
+  obtain ⟨value, hStable⟩ :=
+    FunctionsInteractionExpression.delayedAlgebraic_toLocals_stable
+      profile contract layout expr hTreeSafe hOk hDirect hRel
+  have hTargetEval :=
+    hStable target
+      (FunctionsInteractionRelation.TargetExtends.refl target.vars)
+  have hDirectRel :=
+    (FunctionsInteractionExpression.compilerScopedDirectAt
+      profile contract codeOverride fuel).evalValues hOk hDirect hRel
+  rw [hTargetEval] at hDirectRel
+  rw [Functions.InteractionSemantics.Block.openRun_nil]
+  apply forwardRel_done_right hDirectRel
+  intro sourceDone hDone
+  cases hDone with
+  | ok hResult =>
+      have hScopedFinal :=
+        FunctionsInteractionExpression.ResultRel.scoped_of_result
+          hResult hRel
+      exact DoneRel.regular
+        (by
+          simpa [hResult.2.1] using
+            (FunctionsInteractionExpression.StableArgs.cons hStable
+              (FunctionsInteractionExpression.StableArgs.nil target)))
+        hScopedFinal hDomain
+        (FunctionsInteractionRelation.TargetExtends.refl target.vars)
+        (Functions.Source.Ctx.ScopeExtends.refl ctx)
+        (Functions.Source.Ctx.SameControl.refl ctx)
+        hTargetScope
+
 /-- Singleton list wrapper for a deferred argument. This isolates the two
 units of list fuel consumed around the expression evaluator. -/
 theorem deferred_arg
@@ -600,6 +701,63 @@ theorem singletonOfValues
   rw [hTargetPure] at hBound
   exact hBound
 
+/-- Singleton argument-list wrapper for a stable delayed algebraic tree. -/
+theorem delayedAlgebraic_arg
+    {profile : SolcValidation.DialectProfile}
+    {contract : AstContract}
+    {fuel targetFuel offset : Nat}
+    {expr : AstExpr} {pre : List Functions.Stmt}
+    {lower : Locals.Expr 1} {before after : Fresh.State}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {program : Functions.Program} {ctx : Functions.Source.Ctx}
+    {layout : List Functions.Name}
+    {source : Yul.InteractionSemantics.State}
+    {target : Functions.InteractionSemantics.State}
+    (hSafe : Expr.delayedAlgebraicArgSafeAt? offset expr = true)
+    (hOk : SolcValidation.ExprOk?
+      profile contract layout 1 expr = true)
+    (hLower : Expr.lower1Unchecked? before expr =
+      some (pre, lower, after))
+    (hRel : FunctionsInteractionRelation.ScopedStateRel
+      layout source target)
+    (hDomain : FunctionsInteractionRelation.TargetDomainWithin
+      before.used target.vars)
+    (hTargetScope :
+      FunctionsInteractionControlRelation.TargetScopeWithin before.used ctx) :
+    Simulation.Interaction.ForwardRel Truncated
+      (DoneRel layout after [lower] target ctx)
+      (Yul.InteractionSemantics.evalArgs
+        fuel [expr] codeOverride source)
+      (Functions.InteractionSemantics.Block.openRun
+        program ctx (targetFuel + 1) { stmts := pre } target) := by
+  cases fuel with
+  | zero =>
+      obtain ⟨rfl, rfl, _hDirect⟩ :=
+        Expr.lower1Unchecked?_delayedAlgebraic_parts hSafe hLower
+      rw [Functions.InteractionSemantics.Block.openRun_nil]
+      have hTruncated :
+          Truncated
+            ({ exception := .OutOfFuel, state := source } :
+              Yul.InteractionSemantics.Failure) := by
+        trivial
+      simpa [Yul.InteractionSemantics.evalArgs,
+        Yul.Source.Canonical.evalArgs,
+        Yul.Source.Effectful.evalArgs,
+        Yul.InteractionSemantics.Primitive.fail,
+        Yul.Source.Effectful.Control.fail] using
+        (Simulation.Interaction.ForwardRel.truncated
+          (doneRel := DoneRel layout after [lower] target ctx)
+          (right := pure
+            (Functions.Source.Effectful.Outcome.regular target, ctx))
+          hTruncated)
+  | succ headFuel =>
+      apply singletonOfValues
+      exact delayedAlgebraic
+        (fuel := headFuel) (targetFuel := targetFuel)
+        (offset := offset) (codeOverride := codeOverride)
+        (program := program) (ctx := ctx)
+        hSafe hOk hLower hRel hDomain hTargetScope
+
 /-- Compose a recursively prepared tail with one compiler-deferred head.
 This is the semantic counterpart of `UncheckedBoundLowering.direct`. -/
 theorem direct
@@ -670,6 +828,118 @@ theorem direct
           (codeOverride := codeOverride) (program := program)
           (ctx := ctxRest)
           hSafe hVisible hHead hScopedRest hDomainRest hTargetScopeRest
+        rw [Functions.InteractionSemantics.Block.openRun_nil] at hHeadRel
+        apply Simulation.Interaction.ForwardRel.bind_custom hHeadRel
+        intro headSourceDone headTargetDone hHeadDone
+        cases hHeadDone with
+        | error hError =>
+            exact Simulation.Interaction.ForwardRel.done (.error hError)
+        | terminal hTerminal =>
+            exact Simulation.Interaction.ForwardRel.done
+              (.terminal hTerminal)
+        | @regular sourceAfter headValues targetAfter ctxAfter
+            hStableHead hScopedHead hDomainHead hExtendsHead
+            hScopeHead hControlHead hTargetScopeHead =>
+            have hStableRest' := hStableRest.mono hExtendsHead
+            have hStableFinal := hStableRest'.append hStableHead
+            have hExtendsFinal :=
+              FunctionsInteractionRelation.TargetExtends.trans
+                hExtendsRest hExtendsHead
+            exact Simulation.Interaction.ForwardRel.done
+              (.regular
+                hStableFinal
+                hScopedHead hDomainHead hExtendsFinal
+                (Functions.Source.Ctx.ScopeExtends.trans
+                  hScopeRest hScopeHead)
+                (Functions.Source.Ctx.SameControl.trans
+                  hControlRest hControlHead)
+                hTargetScopeHead)
+  have hTargetPure :
+      Simulation.Interaction.bind
+          (Functions.InteractionSemantics.Block.openRun
+            program ctx targetFuel { stmts := preRest } target)
+          (fun result => pure result) =
+        Functions.InteractionSemantics.Block.openRun
+          program ctx targetFuel { stmts := preRest } target := by
+    exact Simulation.Interaction.bind_pure _
+  rw [hTargetPure] at hBound
+  exact hBound
+
+/-- Compose a recursively prepared tail with one stable delayed algebraic
+head. This is the widened semantic counterpart of
+`UncheckedBoundLowering.direct`. -/
+theorem directAlgebraic
+    {profile : SolcValidation.DialectProfile}
+    {contract : AstContract}
+    {fuel targetFuel : Nat}
+    {expr : AstExpr} {rest : List AstExpr}
+    {preRest preHead : List Functions.Stmt}
+    {lowerRest : List (Locals.Expr 1)} {lowerHead : Locals.Expr 1}
+    {initial stateRest stateHead : Fresh.State}
+    {entry : Functions.InteractionSemantics.State}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {program : Functions.Program} {ctx : Functions.Source.Ctx}
+    {layout : List Functions.Name}
+    {source : Yul.InteractionSemantics.State}
+    {target : Functions.InteractionSemantics.State}
+    (hSafe :
+      Expr.delayedAlgebraicArgSafeAt? lowerRest.length expr = true)
+    (hOk : SolcValidation.ExprOk?
+      profile contract layout 1 expr = true)
+    (hHead : Expr.lower1Unchecked? stateRest expr =
+      some (preHead, lowerHead, stateHead))
+    (hRest :
+      Simulation.Interaction.ForwardRel Truncated
+        (DoneRel layout stateRest lowerRest.reverse entry ctx)
+        (Yul.InteractionSemantics.evalArgs
+          fuel rest.reverse codeOverride source)
+        (Functions.InteractionSemantics.Block.openRun
+          program ctx targetFuel { stmts := preRest } target)) :
+    Simulation.Interaction.ForwardRel Truncated
+      (DoneRel layout stateHead (lowerHead :: lowerRest).reverse entry ctx)
+      (Yul.InteractionSemantics.evalArgs
+        fuel (expr :: rest).reverse codeOverride source)
+      (Functions.InteractionSemantics.Block.openRun
+        program ctx targetFuel { stmts := preRest ++ preHead } target) := by
+  obtain ⟨rfl, rfl, _hDirect⟩ :=
+    Expr.lower1Unchecked?_delayedAlgebraic_parts hSafe hHead
+  simp only [List.append_nil, List.reverse_cons]
+  rw [Yul.InteractionSemantics.EvalArgs.append]
+  have hBound :
+      Simulation.Interaction.ForwardRel Truncated
+        (DoneRel layout stateHead (lowerRest.reverse ++ [lowerHead]) entry ctx)
+        (Simulation.Interaction.bind
+          (Yul.InteractionSemantics.evalArgs
+            fuel rest.reverse codeOverride source)
+          (fun restResult =>
+            Simulation.Interaction.bind
+              (Yul.InteractionSemantics.evalArgs
+                (fuel - 2 * rest.reverse.length) [expr]
+                codeOverride restResult.1)
+              (fun headResult =>
+                pure
+                  (headResult.1,
+                    restResult.2 ++ headResult.2))))
+        (Simulation.Interaction.bind
+          (Functions.InteractionSemantics.Block.openRun
+            program ctx targetFuel { stmts := preRest } target)
+          pure) := by
+    apply Simulation.Interaction.ForwardRel.bind_custom hRest
+    intro sourceDone targetDone hDone
+    cases hDone with
+    | error hError =>
+        exact Simulation.Interaction.ForwardRel.done (.error hError)
+    | terminal hTerminal =>
+        exact Simulation.Interaction.ForwardRel.done (.terminal hTerminal)
+    | @regular sourceRest restValues targetRest ctxRest
+        hStableRest hScopedRest hDomainRest hExtendsRest
+        hScopeRest hControlRest hTargetScopeRest =>
+        have hHeadRel := delayedAlgebraic_arg
+          (fuel := fuel - 2 * rest.reverse.length)
+          (targetFuel := 0) (offset := lowerRest.length)
+          (codeOverride := codeOverride) (program := program)
+          (ctx := ctxRest)
+          hSafe hOk hHead hScopedRest hDomainRest hTargetScopeRest
         rw [Functions.InteractionSemantics.Block.openRun_nil] at hHeadRel
         apply Simulation.Interaction.ForwardRel.bind_custom hHeadRel
         intro headSourceDone headTargetDone hHeadDone
@@ -1235,7 +1505,7 @@ theorem ofUncheckedLowering
           SolcValidation.ExprsOk? profile sourceProgram.contract layout rest = true := by
         exact hOkParts.2
       obtain ⟨rfl, rfl, _hLower⟩ :=
-        Expr.lower1Unchecked?_deferred_parts hDirect.1 hHead
+        Expr.lower1Unchecked?_delayedAlgebraic_parts hDirect hHead
       have hRestFuel : preRest.length < targetFuel := by
         simpa using hTargetFuel
       have hRestBudget :
@@ -1243,11 +1513,9 @@ theorem ofUncheckedLowering
               preRest.length + 2 ≤ targetFuel := by
         simpa using hProgramBudget
       have hRestForward := ih hRestOk hRestBudget hRestFuel
-      exact direct (initial := initial) hDirect.1
-        (fun name hEq => by
-          subst expr
-          exact SolcValidation.exprOk_var_mem hOkParts.1)
-        hHead hRestForward
+      exact directAlgebraic
+        (profile := profile) (contract := sourceProgram.contract)
+        (initial := initial) hDirect hOkParts.1 hHead hRestForward
   | @bound stateRest stateHead stateFresh expr rest preRest preHead
       lowerRest lowerHead tmp hRest hHead _hDirect hFresh ih =>
       have hOkParts :

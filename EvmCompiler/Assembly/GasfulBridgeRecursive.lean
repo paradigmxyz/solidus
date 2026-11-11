@@ -119,6 +119,10 @@ theorem compact_instr_eq_invalid_of_decoded
       interval_cases width <;>
         simp [Compact.Instr.decoded?, Compact.pushOp?] at hDecoded <;>
         subst decoded <;> simp at hInvalid
+  | push0 =>
+      simp [Compact.Instr.decoded?] at hDecoded
+      subst decoded
+      simp at hInvalid
   | jump =>
       simp [Compact.Instr.decoded?] at hDecoded
       subst decoded
@@ -151,6 +155,10 @@ theorem compact_instr_eq_returndatacopy_of_decoded
       interval_cases width <;>
         simp [Compact.Instr.decoded?, Compact.pushOp?] at hDecoded <;>
         subst decoded <;> simp at hOp
+  | push0 =>
+      simp [Compact.Instr.decoded?] at hDecoded
+      subst decoded
+      simp at hOp
   | jump =>
       simp [Compact.Instr.decoded?] at hDecoded
       subst decoded
@@ -186,6 +194,13 @@ theorem compact_instr_eq_prim_of_decoded
         have h := congrArg PrimOp.ofEVM? hOp <;>
         rw [PrimOp.ofEVM?_toEVM] at h <;>
         change none = some op at h <;> cases h
+  | push0 =>
+      simp [Compact.Instr.decoded?] at hDecoded
+      subst decoded
+      have h := congrArg PrimOp.ofEVM? hOp
+      rw [PrimOp.ofEVM?_toEVM] at h
+      change none = some op at h
+      cases h
   | jump =>
       simp [Compact.Instr.decoded?] at hDecoded
       subst decoded
@@ -528,28 +543,6 @@ def FrameCodeInvariant
     (bytes : ByteArray) (validJumps : Array Word) (initial : EVMState) : Prop :=
   ∀ state, FrameReachable validJumps initial state → FrameCodeAt bytes state
 
-theorem compact_instr_decoded_ne_push0
-    {instr : Compact.Instr}
-    {decoded : EvmYul.Operation .EVM × Option (Word × Nat)}
-    (hValid : instr.Valid)
-    (hDecoded : instr.decoded? = some decoded) :
-    decoded.1 ≠ EvmYul.Operation.PUSH0 := by
-  cases instr with
-  | push width value =>
-      have hPositive : 0 < width := hValid.1
-      have hBound : width ≤ 32 := hValid.2.1
-      interval_cases width <;>
-        simp [Compact.Instr.decoded?, Compact.pushOp?] at hDecoded
-      all_goals (subst decoded; simp)
-  | jump | jumpi | jumpdest =>
-      simp [Compact.Instr.decoded?] at hDecoded
-      subst decoded
-      simp
-  | prim op =>
-      simp [Compact.Instr.decoded?] at hDecoded
-      subst decoded
-      cases op <;> simp [PrimOp.toEVM]
-
 /-- A concrete PC is either a compact instruction boundary or the verified
 end-of-code sentinel immediately before object payload bytes. -/
 def CompactLayoutPoint (program : Compact.Program) (pc : Word) : Prop :=
@@ -587,15 +580,10 @@ theorem frameCodeInvariant_of_layout
         hDecode.decodes located hMem
       have hInstrValid : located.instr.Valid :=
         (List.forall_iff_forall_mem.mp hValid) located hMem
-      refine ⟨hCode, decoded.1, decoded.2, ?_, ?_⟩
-      · simpa [hPc] using hBytesDecoded
-      · exact compact_instr_decoded_ne_push0 hInstrValid hInstrDecoded
+      exact ⟨hCode, decoded.1, decoded.2, by simpa [hPc] using hBytesDecoded⟩
   | inr hPc =>
       obtain ⟨decoded, hInstrDecoded, hBytesDecoded⟩ := hSentinel
-      refine ⟨hCode, decoded.1, decoded.2, ?_, ?_⟩
-      · simpa [hPc] using hBytesDecoded
-      · exact compact_instr_decoded_ne_push0
-          (instr := .prim .invalid) trivial hInstrDecoded
+      exact ⟨hCode, decoded.1, decoded.2, by simpa [hPc] using hBytesDecoded⟩
 
 theorem executionException_beq_outOfFuel_iff
     (err : EvmYul.EVM.ExecutionException) :
@@ -1477,6 +1465,12 @@ theorem CurrentInstruction.open_stack_short_executes
         simp [Compact.Instr.decoded?, Compact.pushOp?] at hDecoded <;>
         rw [← hDecoded] at hOpenShort <;>
         simp [EvmYul.EVM.δ] at hOpenShort
+  | push0 =>
+      have hDecoded := current.instr_decoded
+      rw [hInstr] at hDecoded
+      simp [Compact.Instr.decoded?] at hDecoded
+      rw [← hDecoded] at hOpenShort
+      simp [EvmYul.EVM.δ] at hOpenShort
   | jump =>
       have hDecoded := current.instr_decoded
       rw [hInstr] at hDecoded
@@ -2587,6 +2581,36 @@ theorem positiveStepRefinement_of_positivePrim
       obtain ⟨tail, hTail⟩ := hCont gasfulNext openNext hReachNext hNextRel
       exact ⟨tail, runRefinesOpen_push_success_rel
         hPrefix hFits hOp hDecodedPair hDecode current.open_pc hTail⟩
+  | push0 =>
+      have hPair : current.decoded = (EvmYul.Operation.PUSH0, none) := by
+        have h := current.instr_decoded
+        rw [hInstr] at h
+        simpa [Compact.Instr.decoded?] using h.symm
+      have hDecodedPair := current.decodedPair.trans hPair
+      have hDecodedOp :
+          decodedOperationAt gasful = EvmYul.Operation.PUSH0 := by
+        simp [decodedOperationAt, hDecodedPair]
+      have hDecode : Compact.decodeAt bytes current.pc .push0 := by
+        rw [← hInstr]
+        exact current.decode
+      let gasfulNext := gasfulPushNext 0 (EvmYul.UInt256.ofNat 0) gasful
+      let openNext := openPushNextAt 0 (EvmYul.UInt256.ofNat 0) openState
+      have hStep :
+          EvmYul.EVM.step (stepFuel + 1) (dynamicGasCostAt gasful)
+            (some
+              ((EvmYul.EVM.decode gasful.executionEnv.code gasful.pc).getD
+                (EvmYul.Operation.STOP, none)))
+            (afterMemoryChargeAt gasful) = .ok gasfulNext := by
+        simpa [gasfulNext, hDecodedPair] using
+          evm_step_push0_eq_next stepFuel gasful
+      have hReachNext : FrameReachable validJumps initial gasfulNext :=
+        .next hReach hPrefix hStep
+          (by simpa [hDecodedOp, haltOutputAt] using rfl)
+      have hNextRel : OpenStateRel gasfulNext openNext :=
+        pushNext_openStateRel_rel 0 (EvmYul.UInt256.ofNat 0) hRel
+      obtain ⟨tail, hTail⟩ := hCont gasfulNext openNext hReachNext hNextRel
+      exact ⟨tail, runRefinesOpen_push0_success_rel
+        hPrefix hDecodedPair hDecode current.open_pc hTail⟩
   | jump =>
       have hPair : current.decoded = (EvmYul.Operation.JUMP, none) := by
         have h := current.instr_decoded

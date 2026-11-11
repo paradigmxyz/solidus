@@ -154,8 +154,8 @@ theorem lowerUnchecked?_cost
             | some headResult =>
                 rcases headResult with ⟨preHead, lowerHead, stateAfterHead⟩
                 by_cases hDeferred :
-                    Expr.deferredBoundArgSafe? source = true ∧
-                      lowerRest.length < 4
+                    Expr.delayedAlgebraicArgSafeAt? lowerRest.length source =
+                      true
                 · simp [Expr.List.lowerBound1Unchecked?, hRest, hHead,
                     hDeferred] at hList
                   rw [← hList.1,
@@ -211,8 +211,8 @@ theorem lowerBound1Unchecked?_cost
           | some headResult =>
               rcases headResult with ⟨preHead, lowerHead, stateAfterHead⟩
               by_cases hDeferred :
-                  Expr.deferredBoundArgSafe? source = true ∧
-                    lowerRest.length < 4
+                  Expr.delayedAlgebraicArgSafeAt? lowerRest.length source =
+                    true
               · simp [Expr.List.lowerBound1Unchecked?, hRest, hHead,
                   hDeferred] at hLower
                 rw [← hLower.1,

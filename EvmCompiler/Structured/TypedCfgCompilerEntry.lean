@@ -241,7 +241,7 @@ theorem stmt_hasEntry
             ⟨{ label := entry
                input := input
                body :=
-                 .returnToken (Structured.Stmt.callToken supply) ::
+                 .returnToken (Structured.Stmt.callToken ctx.callBase) ::
                    TypedCfgCompiler.sinkTopUnder proc.argc
                output := output
                term := .jump (ProcLabel.entry name) },

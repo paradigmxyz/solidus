@@ -7,7 +7,7 @@ namespace TypedCfg
 namespace Instr
 
 def lower? : Instr → Option Assembly.Program
-  | .push value => some [.push value]
+  | .push value => some (Assembly.pushCode value)
   | .returnToken value => some [.push value]
   | .prim op => some [.prim op]
   | .pop => some [.prim .pop]
@@ -97,9 +97,119 @@ def returnDispatchCode (depth : Nat) (sites : List ReturnSite) :
     Assembly.Program :=
   returnDispatchTests depth sites ++ returnDispatchCases depth sites
 
+def returnDispatchSharedCode (depth : Nat) (sites : List ReturnSite) :
+    Assembly.Program :=
+  Assembly.StackShuffle.guardedLiftBuriedToTop depth ++
+    returnDispatchCode 0 sites
+
+/--
+Promote the second call site in return dispatchers with at least three entries.
+Profiling shows that generated loop bodies commonly occupy this position, while
+two-site dispatchers have no equally strong signal. Generated programs have
+unique tokens; arbitrary hand-built TypedCfg programs with duplicate tokens
+retain source-order, first-match semantics.
+-/
+def scheduleReturnSites (sites : List ReturnSite) : List ReturnSite :=
+  if (sites.map ReturnSite.token).Nodup then
+    match sites with
+    | first :: second :: third :: rest =>
+        second :: first :: third :: rest
+    | _ => sites
+  else
+    sites
+
+theorem scheduleReturnSites_perm (sites : List ReturnSite) :
+    (scheduleReturnSites sites).Perm sites := by
+  unfold scheduleReturnSites
+  split
+  · cases sites with
+    | nil =>
+        exact List.Perm.refl []
+    | cons first tail =>
+        cases tail with
+        | nil =>
+            exact List.Perm.refl [first]
+        | cons second tail =>
+            cases tail with
+            | nil =>
+                exact List.Perm.refl [first, second]
+            | cons third rest =>
+                exact List.Perm.swap first second (third :: rest)
+  · exact List.Perm.refl sites
+
+@[simp] theorem scheduleReturnSites_length (sites : List ReturnSite) :
+    (scheduleReturnSites sites).length = sites.length :=
+  List.Perm.length_eq (scheduleReturnSites_perm sites)
+
+@[simp] theorem scheduleReturnSites_eq_nil (sites : List ReturnSite) :
+    scheduleReturnSites sites = [] ↔ sites = [] := by
+  constructor
+  · intro h
+    apply List.eq_nil_of_length_eq_zero
+    calc
+      sites.length =
+          (scheduleReturnSites sites).length :=
+        (scheduleReturnSites_length sites).symm
+      _ = [].length := congrArg List.length h
+      _ = 0 := rfl
+  · intro h
+    subst sites
+    rfl
+
+@[simp] theorem mem_scheduleReturnSites_iff
+    {site : ReturnSite} {sites : List ReturnSite} :
+    site ∈ scheduleReturnSites sites ↔ site ∈ sites :=
+  List.Perm.mem_iff (scheduleReturnSites_perm sites)
+
+def returnDispatchLoweredCode (depth : Nat) (sites : List ReturnSite) :
+    Assembly.Program :=
+  let scheduled := scheduleReturnSites sites
+  if 0 < depth * (sites.length - 1) then
+    returnDispatchSharedCode depth scheduled
+  else
+    returnDispatchCode depth scheduled
+
 def returnDispatchCode? (depth : Nat) (sites : List ReturnSite) :
     Option Assembly.Program :=
-  if depth < 16 then some (returnDispatchCode depth sites) else none
+  if depth < 16 then some (returnDispatchLoweredCode depth sites) else none
+
+theorem label_mem_returnDispatchLoweredCode
+    {depth : Nat} {sites : List ReturnSite} {site : ReturnSite}
+    (hSite : site ∈ sites) :
+    Assembly.Instr.label site.caseLabel ∈
+      returnDispatchLoweredCode depth sites := by
+  have hScheduled : site ∈ scheduleReturnSites sites :=
+    mem_scheduleReturnSites_iff.mpr hSite
+  have hCase (caseDepth : Nat) :
+      Assembly.Instr.label site.caseLabel ∈
+        returnDispatchCode caseDepth (scheduleReturnSites sites) := by
+    apply List.mem_append_right
+    exact List.mem_flatMap.mpr
+      ⟨site, hScheduled, by simp [returnDispatchCase]⟩
+  by_cases hShared : 0 < depth * (sites.length - 1)
+  · simp only [returnDispatchLoweredCode, if_pos hShared,
+      returnDispatchSharedCode, List.mem_append]
+    exact Or.inr (hCase 0)
+  · simpa [returnDispatchLoweredCode, hShared] using hCase depth
+
+theorem jump_mem_returnDispatchLoweredCode
+    {depth : Nat} {sites : List ReturnSite} {site : ReturnSite}
+    (hSite : site ∈ sites) :
+    Assembly.Instr.jump site.target ∈
+      returnDispatchLoweredCode depth sites := by
+  have hScheduled : site ∈ scheduleReturnSites sites :=
+    mem_scheduleReturnSites_iff.mpr hSite
+  have hCase (caseDepth : Nat) :
+      Assembly.Instr.jump site.target ∈
+        returnDispatchCode caseDepth (scheduleReturnSites sites) := by
+    apply List.mem_append_right
+    exact List.mem_flatMap.mpr
+      ⟨site, hScheduled, by simp [returnDispatchCase]⟩
+  by_cases hShared : 0 < depth * (sites.length - 1)
+  · simp only [returnDispatchLoweredCode, if_pos hShared,
+      returnDispatchSharedCode, List.mem_append]
+    exact Or.inr (hCase 0)
+  · simpa [returnDispatchLoweredCode, hShared] using hCase depth
 
 def lowerAt? (shape : Shape) : Terminator → Option Assembly.Program
   | .fallthrough next => some [.jump next]
@@ -149,17 +259,7 @@ theorem definedLabel_instr_mem_of_lowerAt?
                 rw [← hCode]
                 simp only [definedLabels, List.mem_map] at hLabel
                 rcases hLabel with ⟨site, hSite, rfl⟩
-                have hCase :
-                    Assembly.Instr.label site.caseLabel ∈
-                      returnDispatchCases depth sites :=
-                  List.mem_flatMap.mpr
-                    ⟨site, hSite, by simp [returnDispatchCase]⟩
-                have hCase' :
-                    Assembly.Instr.label site.caseLabel ∈
-                      returnDispatchCases returnCount sites := by
-                  simpa [hCount] using hCase
-                simp only [returnDispatchCode, List.mem_append]
-                exact Or.inr hCase'
+                exact label_mem_returnDispatchLoweredCode hSite
               · simp [lowerAt?, hDepth, hSites, hCount,
                   returnDispatchCode?, hBound] at hLower
                 exact False.elim (hBound (hCount ▸ hLower.1))
@@ -214,21 +314,9 @@ theorem target_instr_mem_of_lowerAt?
                 rw [← hCode]
                 simp only [targets, List.mem_map] at hTarget
                 rcases hTarget with ⟨site, hSite, rfl⟩
-                have hJump :
-                    Assembly.Instr.jump site.target ∈
-                      returnDispatchCases depth sites :=
-                  List.mem_flatMap.mpr
-                    ⟨site, hSite, by
-                      simp [returnDispatchCase]⟩
-                have hJump' :
-                    Assembly.Instr.jump site.target ∈
-                      returnDispatchCases returnCount sites := by
-                  simpa [hCount] using hJump
                 exact
                   ⟨.jump site.target,
-                    by
-                      simp only [returnDispatchCode, List.mem_append]
-                      exact Or.inr hJump',
+                    jump_mem_returnDispatchLoweredCode hSite,
                     by simp [Assembly.Instr.targets]⟩
               · simp [lowerAt?, hDepth, hSites, hCount,
                   returnDispatchCode?, hBound] at hLower

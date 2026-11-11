@@ -37,11 +37,7 @@ def exitStmts : Option Join → List Locals.Stmt
 value-preserving, while the TypedCfg owner classifies the fresh result as
 `.word` rather than retaining the source `.local` tag across procedure exit. -/
 def returnWord (name : Name) : Expr 1 :=
-  .prim .add
-    (by
-      simpa using
-        Locals.ExprSeq.cons (.var name)
-          (Locals.ExprSeq.cons (.lit Lower.zero) Locals.ExprSeq.nil))
+  .var name
 
 def returnWords : (names : List Name) → Locals.ExprSeq names.length
   | [] => .nil

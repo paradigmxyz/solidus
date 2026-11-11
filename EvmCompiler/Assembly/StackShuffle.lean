@@ -52,6 +52,30 @@ def liftBuriedToTop : Nat → Program
   | 0 => []
   | depth + 1 => liftBuriedToTop depth ++ [swapInstr (depth + 1)]
 
+/--
+Check that an item exists below `depth` visible items without changing the
+stack. The leading `DUP` preserves the return-dispatch underflow behavior; the
+following `POP` removes the temporary copy.
+-/
+def guardBuried (depth : Nat) : Program :=
+  [dupInstr (depth + 1), .prim .pop]
+
+/-- Validate a buried item and then move it to the top of the stack. -/
+def guardedLiftBuriedToTop (depth : Nat) : Program :=
+  liftBuriedToTop depth
+
+theorem lift_prefix_split {depth n : Nat} (h : n < depth) :
+    ∃ tail, liftBuriedToTop depth = liftBuriedToTop n ++ swapInstr (n + 1) :: tail := by
+  induction depth with
+  | zero => omega
+  | succ depth ih =>
+      by_cases heq : n = depth
+      · subst n
+        exact ⟨[], by simp [liftBuriedToTop]⟩
+      · obtain ⟨tail, ht⟩ := ih (by omega)
+        exact ⟨tail ++ [swapInstr (depth + 1)], by simp [liftBuriedToTop, ht]⟩
+
+
 /-- Remove the item below `depth` visible items, preserving their order. -/
 def removeBuriedUnder (depth : Nat) : Program :=
   liftBuriedToTop depth ++ [.prim .pop]

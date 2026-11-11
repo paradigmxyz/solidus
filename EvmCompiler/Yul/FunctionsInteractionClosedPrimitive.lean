@@ -2361,6 +2361,51 @@ theorem forward
 
 end PureTernary
 
+/-- Arithmetic and bitwise primitives whose target semantics are completely
+state-independent once their argument words have been computed. -/
+inductive PureAlgebraic :
+    EvmYul.Operation .Yul → Structured.BasicOp → Type where
+  | unary {prim op f} (hFamily : PureUnary prim op f) :
+      PureAlgebraic prim op
+  | binary {prim op f} (hFamily : PureBinary prim op f) :
+      PureAlgebraic prim op
+  | ternary {prim op f} (hFamily : PureTernary prim op f) :
+      PureAlgebraic prim op
+
+namespace PureAlgebraic
+
+def spec
+    {prim : EvmYul.Operation .Yul} {op : Structured.BasicOp}
+    (hFamily : PureAlgebraic prim op) : PureSpec prim op :=
+  match hFamily with
+  | .unary hUnary => PureUnary.spec hUnary
+  | .binary hBinary => PureBinary.spec hBinary
+  | .ternary hTernary => PureTernary.spec hTernary
+
+theorem inputs
+    {prim : EvmYul.Operation .Yul} {op : Structured.BasicOp}
+    (hFamily : PureAlgebraic prim op) :
+    Expressions.Structured.BasicOp.inputs op =
+      match hFamily with
+      | .unary _ => 1
+      | .binary _ => 2
+      | .ternary _ => 3 := by
+  cases hFamily with
+  | unary hUnary => exact hUnary.inputs
+  | binary hBinary => exact hBinary.inputs
+  | ternary hTernary => exact hTernary.inputs
+
+theorem outputs
+    {prim : EvmYul.Operation .Yul} {op : Structured.BasicOp}
+    (hFamily : PureAlgebraic prim op) :
+    Expressions.Structured.BasicOp.outputs op = 1 := by
+  cases hFamily with
+  | unary hUnary => exact hUnary.outputs
+  | binary hBinary => exact hBinary.outputs
+  | ternary hTernary => exact hTernary.outputs
+
+end PureAlgebraic
+
 inductive MachineBinaryZero :
     EvmYul.Operation .Yul → Structured.BasicOp →
       (EvmYul.MachineState → Word → Word → EvmYul.MachineState) → Prop where

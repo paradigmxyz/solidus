@@ -32,6 +32,41 @@ theorem of_state
     ResultRel source results (source, values) (target, values) :=
   ⟨hRel, rfl, hLength, rfl⟩
 
+/-- Direct expression evaluation preserves the exact source lexical store, so
+an adjacent state relation can retain its scoped domain/definedness facts. -/
+theorem scoped_of_result
+    {layout : List Functions.Name}
+    {entry final : Yul.InteractionSemantics.State}
+    {target : Functions.InteractionSemantics.State}
+    {results : Nat} {sourceValues targetValues : List Word}
+    (hResult :
+      ResultRel entry results (final, sourceValues) (target, targetValues))
+    (hScoped :
+      FunctionsInteractionRelation.ScopedStateRel layout entry target) :
+    FunctionsInteractionRelation.ScopedStateRel layout final target := by
+  rcases hResult with ⟨hFinalState, _hValues, _hLength, hStore⟩
+  change FunctionsInteractionRelation.StateRel final target at hFinalState
+  change final.store = entry.store at hStore
+  rcases hScoped with ⟨hEntryState, hDomain, hDefined⟩
+  rcases hEntryState with
+    ⟨entryShared, entryVars, hEntry, _hEntryShared, _hEntryVars⟩
+  subst entry
+  rcases hFinalState with
+    ⟨finalShared, finalVars, hFinal, hFinalShared, hFinalVars⟩
+  subst final
+  simp only [EvmYul.Yul.State.store, Except.ok.injEq] at hStore
+  subst finalVars
+  refine
+    ⟨⟨finalShared, entryVars, rfl, hFinalShared, hFinalVars⟩, ?_, ?_⟩
+  · intro sourceShared sourceVars hSource
+    simp only [Except.ok.injEq] at hSource
+    rcases hSource with ⟨rfl, rfl⟩
+    exact hDomain entryShared entryVars rfl
+  · intro sourceShared sourceVars hSource
+    simp only [Except.ok.injEq] at hSource
+    rcases hSource with ⟨rfl, rfl⟩
+    exact hDefined entryShared entryVars rfl
+
 end ResultRel
 
 namespace Expr
@@ -650,6 +685,259 @@ theorem exprSeq_openEval
               rfl
 
 end StableArgs
+
+namespace StableValue
+
+/-- A pure arithmetic/bitwise expression built from stable delayed operands is
+itself a stable delayed value. -/
+theorem algebraic
+    {prim : EvmYul.Operation .Yul} {op : Structured.BasicOp}
+    {args : List (Locals.Expr 1)}
+    {seq : Locals.ExprSeq (Expressions.Structured.BasicOp.inputs op)}
+    {base : Functions.InteractionSemantics.State}
+    {values : List Word}
+    (hFamily :
+      FunctionsInteractionClosedPrimitive.PureAlgebraic prim op)
+    (hStable : StableArgs args base values)
+    (hSeq :
+      EvmCompiler.Yul.Expr.List.toSeq? args
+        (Expressions.Structured.BasicOp.inputs op) = some seq) :
+    ∃ value,
+      StableValue
+        (EvmCompiler.Yul.Expr.cast hFamily.outputs (.prim op seq))
+        base value := by
+  let spec := hFamily.spec
+  have hValuesLength :
+      values.reverse.length =
+        Expressions.Structured.BasicOp.inputs op := by
+    rw [List.length_reverse, hStable.length]
+    exact EvmCompiler.Yul.Expr.List.toSeq?_length hSeq
+  have hResultLength :
+      (spec.result values.reverse).length = 1 := by
+    rw [spec.resultLength values.reverse hValuesLength]
+    exact hFamily.outputs
+  obtain ⟨value, hResult⟩ :=
+    List.length_eq_one_iff.mp hResultLength
+  refine ⟨value, ?_⟩
+  intro candidate hExtends
+  have hCast :=
+    expr_openEval_cast hFamily.outputs (.prim op seq) candidate
+  unfold Functions.InteractionSemantics.Expr.openEval at hCast
+  rw [hCast]
+  have hArgsEval := hStable.exprSeq_openEval hSeq hExtends
+  have hPrimEval := spec.target candidate values.reverse hValuesLength
+  simp only [List.reverse_reverse] at hPrimEval
+  change
+    Simulation.Interaction.bind
+        (Locals.InteractionSemantics.ExprSeq.openEval seq candidate)
+        (fun result =>
+          Locals.InteractionSemantics.Primitive.openEval
+            op result.1 result.2) =
+      .done (.ok (candidate, [value]))
+  rw [hArgsEval, Simulation.Interaction.bind_done_ok, hPrimEval]
+  simpa [hResult]
+
+end StableValue
+
+/-- The algebraic source-shape classifier selects exactly the closed unary,
+binary, and ternary primitive families used by delayed-value stability. -/
+def pureAlgebraic_of_delayedShape
+    {prim : EvmYul.Operation .Yul} {args : List AstExpr}
+    {op : Structured.BasicOp}
+    (hShape :
+      EvmCompiler.Yul.Expr.delayedAlgebraicShapeSafe?
+        (.Call (.inl prim) args) = true)
+    (hOp : Prim.toBasicOp? prim = some op) :
+    FunctionsInteractionClosedPrimitive.PureAlgebraic prim op := by
+  cases prim <;> rename_i primitive <;> cases primitive <;>
+    simp [EvmCompiler.Yul.Expr.delayedAlgebraicShapeSafe?,
+      Prim.toBasicOp?] at hShape hOp <;>
+    subst op <;>
+    first
+      | exact .unary (by constructor)
+      | exact .binary (by constructor)
+      | exact .ternary (by constructor)
+
+mutual
+  /-- A source expression admitted by the delayed-algebraic classifier lowers
+  to a target expression whose value survives every later private-local
+  extension. -/
+  theorem delayedAlgebraic_toLocals_stable
+      (profile : SolcValidation.DialectProfile)
+      (contract : AstContract) (layout : List Functions.Name)
+      (expr : AstExpr)
+      {lower : Locals.Expr 1}
+      {source : Yul.InteractionSemantics.State}
+      {target : Functions.InteractionSemantics.State}
+      (hSafe : EvmCompiler.Yul.Expr.delayedAlgebraicArgSafe? expr = true)
+      (hOk :
+        SolcValidation.ExprOk? profile contract layout 1 expr = true)
+      (hLower :
+        EvmCompiler.Yul.Expr.toLocals? 1 expr = some lower)
+      (hRel : FunctionsInteractionRelation.ScopedStateRel
+        layout source target) :
+      ∃ value, StableValue lower target value := by
+    cases expr with
+    | Lit value =>
+        simp [EvmCompiler.Yul.Expr.toLocals?,
+          EvmCompiler.Yul.Expr.cast] at hLower
+        subst lower
+        exact ⟨value, StableValue.lit target value⟩
+    | Var name =>
+        simp [EvmCompiler.Yul.Expr.toLocals?,
+          EvmCompiler.Yul.Expr.cast] at hLower
+        subst lower
+        obtain ⟨value, hSourceLookup⟩ :=
+          hRel.sourceLookup_of_mem
+            (SolcValidation.exprOk_var_mem hOk)
+        have hSourceLookup' :
+            source.lookup? name = some value := by
+          simpa [identName] using hSourceLookup
+        have hTargetLookup := hRel.state.lookup hSourceLookup'
+        exact ⟨value, StableValue.var hTargetLookup⟩
+    | Call callee args =>
+        cases callee with
+        | inr functionName =>
+            simp [EvmCompiler.Yul.Expr.delayedAlgebraicArgSafe?,
+              EvmCompiler.Yul.Expr.pureAliasArgSafe?] at hSafe
+        | inl prim =>
+            have hShape :
+                EvmCompiler.Yul.Expr.delayedAlgebraicShapeSafe?
+                    (.Call (.inl prim) args) = true := by
+              exact (Bool.and_eq_true_iff.mp hSafe).2
+            have hArgsSafe :
+                EvmCompiler.Yul.Expr.List.delayedAlgebraicArgsSafe?
+                    args = true := by
+              have hSafeParts := Bool.and_eq_true_iff.mp hSafe
+              have hPureParts :
+                  EvmCompiler.Yul.Expr.hoistSafePrim? prim = true ∧
+                    EvmCompiler.Yul.Expr.List.pureAliasArgsSafe? args =
+                      true := by
+                simpa [EvmCompiler.Yul.Expr.pureAliasArgSafe?] using
+                  hSafeParts.1
+              cases prim <;> rename_i primitive <;> cases primitive <;>
+                simp [EvmCompiler.Yul.Expr.delayedAlgebraicShapeSafe?]
+                  at hShape
+              all_goals
+                exact Bool.and_eq_true_iff.mpr
+                  ⟨hPureParts.2, hShape⟩
+            have hArgsOk :=
+              SolcValidation.exprsOk_of_exprOk_primitive hOk
+            cases hOp : Prim.toBasicOp? prim with
+            | none =>
+                simp [EvmCompiler.Yul.Expr.toLocals?, hOp] at hLower
+            | some op =>
+                cases hArgsLower :
+                    EvmCompiler.Yul.Expr.List.toLocals1? args with
+                | none =>
+                    simp [EvmCompiler.Yul.Expr.toLocals?, hOp, hArgsLower]
+                      at hLower
+                | some lowerArgs =>
+                    cases hSeq :
+                        EvmCompiler.Yul.Expr.List.toStackSeq? lowerArgs
+                          (Expressions.Structured.BasicOp.inputs op) with
+                    | none =>
+                        simp [EvmCompiler.Yul.Expr.toLocals?, hOp, hArgsLower,
+                          hSeq] at hLower
+                    | some seq =>
+                        by_cases hOutputs :
+                            Expressions.Structured.BasicOp.outputs op = 1
+                        · simp [EvmCompiler.Yul.Expr.toLocals?, hOp,
+                            hArgsLower, hSeq, hOutputs] at hLower
+                          subst lower
+                          obtain ⟨argValues, hStableArgs⟩ :=
+                            List.delayedAlgebraic_toLocals_stable
+                              profile contract layout args hArgsSafe hArgsOk
+                              hArgsLower hRel
+                          have hStableReverse := hStableArgs.reverse
+                          have hDirectSeq :
+                              EvmCompiler.Yul.Expr.List.toSeq?
+                                  lowerArgs.reverse
+                                  (Expressions.Structured.BasicOp.inputs op) =
+                                some seq := by
+                            simpa
+                              [EvmCompiler.Yul.Expr.List.toStackSeq?]
+                              using hSeq
+                          let hFamily :=
+                            pureAlgebraic_of_delayedShape hShape hOp
+                          obtain ⟨value, hStable⟩ :=
+                            StableValue.algebraic hFamily hStableReverse
+                              hDirectSeq
+                          exact ⟨value, by simpa using hStable⟩
+                        · simp [EvmCompiler.Yul.Expr.toLocals?, hOp,
+                            hArgsLower, hSeq, hOutputs] at hLower
+
+  /-- List form of `delayedAlgebraic_toLocals_stable`. -/
+  theorem List.delayedAlgebraic_toLocals_stable
+      (profile : SolcValidation.DialectProfile)
+      (contract : AstContract) (layout : List Functions.Name)
+      (args : List AstExpr)
+      {lower : List (Locals.Expr 1)}
+      {source : Yul.InteractionSemantics.State}
+      {target : Functions.InteractionSemantics.State}
+      (hSafe :
+        EvmCompiler.Yul.Expr.List.delayedAlgebraicArgsSafe? args = true)
+      (hOk :
+        SolcValidation.ExprsOk? profile contract layout args = true)
+      (hLower :
+        EvmCompiler.Yul.Expr.List.toLocals1? args = some lower)
+      (hRel : FunctionsInteractionRelation.ScopedStateRel
+        layout source target) :
+      ∃ values, StableArgs lower target values := by
+    cases args with
+    | nil =>
+        simp [EvmCompiler.Yul.Expr.List.toLocals1?] at hLower
+        subst lower
+        exact ⟨[], StableArgs.nil target⟩
+    | cons head rest =>
+        change
+          ((EvmCompiler.Yul.Expr.pureAliasArgSafe? head &&
+              EvmCompiler.Yul.Expr.List.pureAliasArgsSafe? rest) &&
+            (EvmCompiler.Yul.Expr.delayedAlgebraicShapeSafe? head &&
+              EvmCompiler.Yul.Expr.List.delayedAlgebraicShapesSafe? rest)) =
+            true at hSafe
+        have hSafeParts := Bool.and_eq_true_iff.mp hSafe
+        have hPureParts := Bool.and_eq_true_iff.mp hSafeParts.1
+        have hShapeParts := Bool.and_eq_true_iff.mp hSafeParts.2
+        have hHeadSafe :
+            EvmCompiler.Yul.Expr.delayedAlgebraicArgSafe? head = true :=
+          Bool.and_eq_true_iff.mpr ⟨hPureParts.1, hShapeParts.1⟩
+        have hRestSafe :
+            EvmCompiler.Yul.Expr.List.delayedAlgebraicArgsSafe? rest =
+              true :=
+          Bool.and_eq_true_iff.mpr ⟨hPureParts.2, hShapeParts.2⟩
+        have hOkParts :
+            SolcValidation.ExprOk? profile contract layout 1 head = true ∧
+              SolcValidation.ExprsOk? profile contract layout rest =
+                true := by
+          simpa [SolcValidation.ExprsOk?] using hOk
+        cases hHeadLower :
+            EvmCompiler.Yul.Expr.toLocals? 1 head with
+        | none =>
+            simp [EvmCompiler.Yul.Expr.List.toLocals1?, hHeadLower]
+              at hLower
+        | some lowerHead =>
+            cases hRestLower :
+                EvmCompiler.Yul.Expr.List.toLocals1? rest with
+            | none =>
+                simp [EvmCompiler.Yul.Expr.List.toLocals1?, hHeadLower,
+                  hRestLower] at hLower
+            | some lowerRest =>
+                simp [EvmCompiler.Yul.Expr.List.toLocals1?, hHeadLower,
+                  hRestLower] at hLower
+                subst lower
+                obtain ⟨headValue, hHeadStable⟩ :=
+                  delayedAlgebraic_toLocals_stable
+                    profile contract layout head hHeadSafe hOkParts.1
+                    hHeadLower hRel
+                obtain ⟨restValues, hRestStable⟩ :=
+                  List.delayedAlgebraic_toLocals_stable
+                    profile contract layout rest hRestSafe hOkParts.2
+                    hRestLower hRel
+                exact
+                  ⟨headValue :: restValues,
+                    StableArgs.cons hHeadStable hRestStable⟩
+end
 
 
 /-- Validation-aware direct expression capability carrying the source lexical

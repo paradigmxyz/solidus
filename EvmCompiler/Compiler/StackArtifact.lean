@@ -13,6 +13,8 @@ import EvmCompiler.TypedCfg.PeepholeSeamCancel
 import EvmCompiler.TypedCfg.PeepholeSeamCancelEff
 import EvmCompiler.TypedCfg.ShuffleCanonChain
 import EvmCompiler.TypedCfg.BlockReorderCanon
+import EvmCompiler.TypedCfg.ConstTrueBranch
+import EvmCompiler.TypedCfg.VirtualStackCanon
 import EvmCompiler.Assembly.Bytecode
 
 namespace EvmCompiler
@@ -36,11 +38,92 @@ structure Artifact where
   certified : TypedCfg.Program.CertifiedArtifact
   target : Assembly.TargetProgram
 
+abbrev reorderedProgram (cfg : TypedCfg.Program) : TypedCfg.Program :=
+  TypedCfg.ConstTrueBranch.optimizedProgram
+    (TypedCfg.ShuffleCanon.chainCanonProgram
+      (TypedCfg.Peephole.seamCancelProgramEff
+        (TypedCfg.Peephole.peepholeProgram
+          (TypedCfg.Peephole.normalizeProgram cfg))))
+
+abbrev virtualProgram (cfg : TypedCfg.Program) : TypedCfg.Program :=
+  TypedCfg.VirtualStack.canonProgram (reorderedProgram cfg)
+
+/--
+Fail-open gate for the virtual-stack layer.  The candidate must independently
+type-check and lower, remain program-counter independent, and not increase the
+whole-program execution fuel budget.
+-/
+def virtualCertified? (cfg : TypedCfg.Program) :
+    Option TypedCfg.Program.CertifiedArtifact := do
+  let candidate ← (virtualProgram cfg).compileCertified?
+  if (virtualProgram cfg).programCounterIndependent? then
+    pure ()
+  else
+    none
+  if decide
+      (TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
+          (virtualProgram cfg) ≤
+        TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
+          (reorderedProgram cfg)) then
+    some candidate
+  else
+    none
+
+theorem virtualCertified?_parts
+    {cfg : TypedCfg.Program}
+    {artifact : TypedCfg.Program.CertifiedArtifact}
+    (hChoice : virtualCertified? cfg = some artifact) :
+    (virtualProgram cfg).compileCertified? = some artifact ∧
+      (virtualProgram cfg).ProgramCounterIndependent ∧
+      TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
+          (virtualProgram cfg) ≤
+        TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
+          (reorderedProgram cfg) := by
+  unfold virtualCertified? at hChoice
+  cases hCompile :
+      (virtualProgram cfg).compileCertified? with
+  | none =>
+      simp [hCompile] at hChoice
+  | some candidate =>
+      simp only [hCompile, Option.bind_some] at hChoice
+      by_cases hIndependent :
+          (virtualProgram cfg).programCounterIndependent? = true
+      · simp only [hIndependent, if_true, pure_bind] at hChoice
+        by_cases hFuel :
+            decide
+                (TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
+                    (virtualProgram cfg) ≤
+                  TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
+                    (reorderedProgram cfg)) =
+              true
+        · simp only [hFuel, if_true, Option.some.injEq] at hChoice
+          simp at hChoice
+          subst artifact
+          exact
+            ⟨rfl,
+              TypedCfg.Program.programCounterIndependent_of_check
+                hIndependent,
+              of_decide_eq_true hFuel⟩
+        · have hFuelFalse :
+              decide
+                  (TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
+                      (virtualProgram cfg) ≤
+                    TypedCfg.InteractionSemantics.CompiledProgram.fuelBudget
+                      (reorderedProgram cfg)) =
+                false :=
+            Bool.eq_false_of_not_eq_true hFuel
+          simp [hFuelFalse] at hChoice
+      · have hIndependentFalse :
+            (virtualProgram cfg).programCounterIndependent? = false :=
+          Bool.eq_false_of_not_eq_true hIndependent
+        simp [hIndependentFalse] at hChoice
+
 /-- The certified artifact chosen for a generated CFG under the chain-canon +
 block-reorder splice (design (ii), fail-open on savings): the seam-cancelled
 corrected program `Q` always lowers (its certificate `qc` is retained); the
 chain-canonicalised `chainCanonProgram Q` is taken whenever it *also* lowers
-(certificate `cc`); and the block-reordered `reorderProgram (chainCanonProgram Q)`
+(certificate `cc`); and `optimizedProgram (chainCanonProgram Q)` (constant-true
+branch elimination followed by block reorder)
 is taken on top of `cc` whenever *it* lowers, falling back to `cc` (then to `qc`)
 otherwise.  Each layer can only be entered when the layer beneath it lowered, so
 the chosen certificate can never regress below the shipped seam path. -/
@@ -53,14 +136,11 @@ def CertifiedChoice (cfg : TypedCfg.Program)
       certified =
         ((TypedCfg.ShuffleCanon.chainCanonProgram
           (TypedCfg.Peephole.seamCancelProgramEff
-            (TypedCfg.Peephole.peepholeProgram
-              (TypedCfg.Peephole.normalizeProgram cfg)))).compileCertified?).elim qc
+              (TypedCfg.Peephole.peepholeProgram
+                (TypedCfg.Peephole.normalizeProgram cfg)))).compileCertified?).elim qc
           (fun cc =>
-            ((TypedCfg.BlockReorder.reorderProgram
-              (TypedCfg.ShuffleCanon.chainCanonProgram
-                (TypedCfg.Peephole.seamCancelProgramEff
-                  (TypedCfg.Peephole.peepholeProgram
-                    (TypedCfg.Peephole.normalizeProgram cfg))))).compileCertified?).getD cc)
+            ((reorderedProgram cfg).compileCertified?).elim cc
+              (fun rc => (virtualCertified? cfg).getD rc))
 
 def compile? (source : Functions.Program) : Option Artifact := do
   if Functions.SourceAcceptedCheck.Program.sourceAccepted? source then
@@ -95,14 +175,11 @@ def compile? (source : Functions.Program) : Option Artifact := do
   let certified :=
     ((TypedCfg.ShuffleCanon.chainCanonProgram
       (TypedCfg.Peephole.seamCancelProgramEff
-        (TypedCfg.Peephole.peepholeProgram
-          (TypedCfg.Peephole.normalizeProgram cfg)))).compileCertified?).elim qcertified
+          (TypedCfg.Peephole.peepholeProgram
+            (TypedCfg.Peephole.normalizeProgram cfg)))).compileCertified?).elim qcertified
       (fun cc =>
-        ((TypedCfg.BlockReorder.reorderProgram
-          (TypedCfg.ShuffleCanon.chainCanonProgram
-            (TypedCfg.Peephole.seamCancelProgramEff
-              (TypedCfg.Peephole.peepholeProgram
-                (TypedCfg.Peephole.normalizeProgram cfg))))).compileCertified?).getD cc)
+        ((reorderedProgram cfg).compileCertified?).elim cc
+          (fun rc => (virtualCertified? cfg).getD rc))
   let target ← Assembly.compileExecutable? certified.target
   if Assembly.Bytecode.targetFitsDecodeWindow? target then
     if Functions.OpenSupportCheck.Program.openSupported? source then
@@ -202,12 +279,9 @@ theorem compile?_parts
                               (TypedCfg.Peephole.normalizeProgram
                                 generated.cfg)))).compileCertified?).elim qc
                           (fun cc =>
-                            ((TypedCfg.BlockReorder.reorderProgram
-                              (TypedCfg.ShuffleCanon.chainCanonProgram
-                                (TypedCfg.Peephole.seamCancelProgramEff
-                                  (TypedCfg.Peephole.peepholeProgram
-                                    (TypedCfg.Peephole.normalizeProgram
-                                      generated.cfg))))).compileCertified?).getD cc)
+                            ((reorderedProgram generated.cfg).compileCertified?).elim cc
+                              (fun rc =>
+                                (virtualCertified? generated.cfg).getD rc))
                           with hCertifiedDef
                       cases hTarget :
                           Assembly.compileExecutable? certified.target with

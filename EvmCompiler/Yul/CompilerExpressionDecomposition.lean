@@ -304,8 +304,7 @@ theorem lowerUnchecked?_prelude
                 rcases headResult with
                   ⟨preHead, lowerHead, stateAfterHead⟩
                 by_cases hDeferred :
-                    deferredBoundArgSafe? expr = true ∧
-                      lowerRest.length < 4
+                    delayedAlgebraicArgSafeAt? lowerRest.length expr = true
                 · simp [List.lowerBound1Unchecked?, hRest, hHead,
                     hDeferred] at hList
                   rw [← hList.1]
@@ -379,8 +378,18 @@ theorem lowerBound1Unchecked?_direct_parts
                 rw [hLength]
                 simp only [List.length_cons] at hWindow
                 omega
+              have hExprAlgebraic :
+                  delayedAlgebraicArgSafeAt? lowerRest.length expr = true := by
+                cases expr <;>
+                  simp [deferredBoundArgSafe?,
+                    delayedAlgebraicArgSafeAt?,
+                    delayedAlgebraicArgSafe?,
+                    delayedAlgebraicShapeSafe?,
+                    directPureArgSafeAt?, pureAliasArgSafe?,
+                    pendingStackDepth] at hExprDirect ⊢ <;>
+                  omega
               simp [List.lowerBound1Unchecked?, hRest, hHead,
-                hExprDirect, hRestLength] at hLower
+                hExprAlgebraic] at hLower
               rcases hLower with ⟨hPreEq, hLowerEq, hFinalEq⟩
               refine ⟨hPreEq, hFinalEq.symm, ?_⟩
               rw [← hLowerEq]

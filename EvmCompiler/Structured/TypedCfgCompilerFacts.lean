@@ -975,7 +975,8 @@ theorem components_of_compileCasesFuel?_cons
           supply (TypedCfgCompiler.switchBodyLabel base idx) bodyShape regular =
         some bodyResult ∧
       bodyResult.requireFallthrough? bodyShape = some () ∧
-      TypedCfgCompiler.compileCasesFuel? compilerFuel rest ctx
+      TypedCfgCompiler.compileCasesFuel? compilerFuel rest
+          (ctx.advance bodyResult)
           base bodyResult.next (idx + 1) valueShape bodyShape regular =
         some tail ∧
       result =
@@ -1018,7 +1019,8 @@ theorem components_of_compileCasesFuel?_cons
           cases unit
           simp only [hRequire] at hCompile
           cases hTail :
-              TypedCfgCompiler.compileCasesFuel? compilerFuel rest ctx
+              TypedCfgCompiler.compileCasesFuel? compilerFuel rest
+                (ctx.advance bodyResult)
                 base bodyResult.next (idx + 1)
                 valueShape bodyShape regular with
           | none =>
@@ -1198,7 +1200,7 @@ theorem components_of_compileStmtFuel?_switch
           regular =
         some caseResult ∧
       TypedCfgCompiler.compileDefaultFuel? compilerFuel
-          defaultBody ctx caseResult.next
+          defaultBody (ctx.advance caseResult) caseResult.next
           (LabelSupply.label supply 1) valueShape
           { valueShape with slots := valueShape.slots.tail }
           regular =
@@ -1245,7 +1247,7 @@ theorem components_of_compileStmtFuel?_switch
                   simp only [hCases] at hCompile
                   cases hDefault :
                       TypedCfgCompiler.compileDefaultFuel? compilerFuel
-                        defaultBody ctx caseResult.next
+                        defaultBody (ctx.advance caseResult) caseResult.next
                         (LabelSupply.label supply 1) valueShape
                         { valueShape with slots := valueShape.slots.tail }
                         regular with
@@ -1330,7 +1332,8 @@ theorem components_of_compileStmtFuel?_for
               some { condOutput with slots := condOutput.slots.tail }
             continueLabel? := some (LabelSupply.label supply 2)
             continueShape? :=
-              some { condOutput with slots := condOutput.slots.tail } }
+              some { condOutput with slots := condOutput.slots.tail }
+            callBase := ctx.callBase + initResult.calls.length }
           initResult.next (LabelSupply.label supply 1)
           { condOutput with slots := condOutput.slots.tail }
           (LabelSupply.label supply 2) =
@@ -1343,7 +1346,10 @@ theorem components_of_compileStmtFuel?_for
             breakLabel? := none
             breakShape? := none
             continueLabel? := none
-            continueShape? := none }
+            continueShape? := none
+            callBase :=
+              ctx.callBase + initResult.calls.length +
+                bodyResult.calls.length }
           bodyResult.next (LabelSupply.label supply 2)
           { condOutput with slots := condOutput.slots.tail }
           (LabelSupply.label supply 0) =
@@ -1410,7 +1416,9 @@ theorem components_of_compileStmtFuel?_for
                                 some (LabelSupply.label supply 2)
                               continueShape? :=
                                 some { condOutput with
-                                  slots := condOutput.slots.tail } }
+                                  slots := condOutput.slots.tail }
+                              callBase :=
+                                ctx.callBase + initResult.calls.length }
                             initResult.next (LabelSupply.label supply 1)
                             { condOutput with
                               slots := condOutput.slots.tail }
@@ -1436,7 +1444,11 @@ theorem components_of_compileStmtFuel?_for
                                       breakLabel? := none
                                       breakShape? := none
                                       continueLabel? := none
-                                      continueShape? := none }
+                                      continueShape? := none
+                                      callBase :=
+                                        ctx.callBase +
+                                          initResult.calls.length +
+                                          bodyResult.calls.length }
                                     bodyResult.next
                                     (LabelSupply.label supply 2)
                                     { condOutput with
@@ -1567,7 +1579,7 @@ theorem components_of_compileStmtFuel?_call
       TypedCfgCompiler.Shape.afterCall input proc.argc proc.retc =
           some returnShape ∧
       TypedCfg.Block.bodyType?
-          (.returnToken (Structured.Stmt.callToken supply) ::
+          (.returnToken (Structured.Stmt.callToken ctx.callBase) ::
             TypedCfgCompiler.sinkTopUnder proc.argc) input =
         some output ∧
       result =
@@ -1575,14 +1587,14 @@ theorem components_of_compileStmtFuel?_call
             [{ label := entry
                input := input
                body :=
-                 .returnToken (Structured.Stmt.callToken supply) ::
+                 .returnToken (Structured.Stmt.callToken ctx.callBase) ::
                    TypedCfgCompiler.sinkTopUnder proc.argc
                output := output
                term := .jump (ProcLabel.entry name) }]
           next := supply + 1
           calls :=
             [{ procName := name
-               token := Structured.Stmt.callToken supply
+               token := Structured.Stmt.callToken ctx.callBase
                returnLabel := regular
                caseLabel := .generated supply 10000 }]
           fallthrough? := some returnShape } := by
@@ -1601,7 +1613,7 @@ theorem components_of_compileStmtFuel?_call
       | some returnShape =>
           cases hType :
               TypedCfg.Block.bodyType?
-                (.returnToken (Structured.Stmt.callToken supply) ::
+                (.returnToken (Structured.Stmt.callToken ctx.callBase) ::
                   TypedCfgCompiler.sinkTopUnder proc.argc) input with
           | none =>
               simp [hSource, hReturnShape,

@@ -194,7 +194,7 @@ theorem proc_blockGenShape
     (hMem : block ∈ context.procBlocks) :
     InteractionBlockGenShape.BlockGenShape cfg block := by
   obtain
-      ⟨proc, bsupply, entry, input, bodyResult,
+      ⟨proc, bsupply, bcallBase, entry, input, bodyResult,
         hProcMem, hCompile, hBlocks, hDisj⟩ :=
     context.procBlocks_provenance_inProgram hMem
   rcases hDisj with hBody | hAdapter

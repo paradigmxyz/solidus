@@ -1361,16 +1361,11 @@ theorem openRun_leave_returnCode
     Simulation.Interaction.Rel.done_left hReturnRel
   cases hReturnDone with
   | @ok sourceResult targetAfterReturns hReturnResult =>
-      have hCleanupMany :
-          Locals.Ctx.cleanupManyPreserving? targetCtx.layout.length
-              returnNames.length = some cleanup := by
-        unfold Locals.Ctx.cleanupToPreserving? at hCleanup
-        simpa using hCleanup
       have hValuesLength : values.reverse.length = returnNames.length := by
         simpa using Functions.Source.Store.lookupMany_length hLookup
       have hDiscardedLength :
           (StackRelation.values source targetCtx.layout).length =
-            targetCtx.layout.length := by
+            targetCtx.layout.length - 0 := by
         simp [StackRelation.values]
       have hAfterStack :
           targetAfterReturns.evm.stack =
@@ -1381,8 +1376,8 @@ theorem openRun_leave_returnCode
       obtain
           ⟨targetFinal, hCleanupRun, hFinalStack,
             hCleanupShared, hCleanupReturns⟩ :=
-        Locals.InteractionCleanupPreservation.openRun_cleanupManyPreserving?
-          hCleanupMany hValuesLength hDiscardedLength hAfterStack
+        Locals.InteractionCleanupPreservation.openRun_cleanupToPreserving?
+          hCleanup hValuesLength hDiscardedLength hAfterStack
       have hRestrictedLookup :
           Functions.Source.Store.lookupMany returnNames
               (source.restrictTo scope).vars = some values := by

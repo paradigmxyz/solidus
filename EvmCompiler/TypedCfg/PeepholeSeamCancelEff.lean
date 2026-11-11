@@ -296,7 +296,7 @@ overwritten name range. -/
 theorem type?_bindLocals0 {names : List String} {s t : Shape}
     (h : Instr.type? (.bindLocals 0 names) s = some t) :
     names.length ≤ s.slots.length ∧
-      t.slots = names.map Slot.local ++ s.slots.drop names.length ∧
+      t.slots = names.map Shape.slotOfBinder ++ s.slots.drop names.length ∧
       t.tail = s.tail := by
   simp only [Instr.type?, Shape.bindLocals?, Shape.length] at h
   by_cases hb : names.length ≤ s.slots.length
@@ -312,7 +312,7 @@ theorem type?_bindLocals0 {names : List String} {s t : Shape}
 theorem type?_bindLocals0_of_le {names : List String} {s : Shape}
     (h : names.length ≤ s.slots.length) :
     Instr.type? (.bindLocals 0 names) s
-      = some { s with slots := names.map Slot.local ++ s.slots.drop names.length } := by
+      = some { s with slots := names.map Shape.slotOfBinder ++ s.slots.drop names.length } := by
   simp only [Instr.type?, Shape.bindLocals?, Shape.length]
   rw [if_pos (by simpa using h)]
   simp [List.take_zero]
@@ -353,16 +353,16 @@ theorem bodyType?_conj {d : Nat} {names : List String} {input output : Shape}
     intro s1 s2 h1 h2; cases s1; cases s2; simp_all
   refine shapeExt _ _ ?_ ?_
   · -- slots
-    show (swapPos 0 (d + 1) names).map Slot.local ++ input.slots.drop names.length
+    show (swapPos 0 (d + 1) names).map Shape.slotOfBinder ++ input.slots.drop names.length
         = (remapShape d o).slots
     rw [remapShape]
-    show (swapPos 0 (d + 1) names).map Slot.local ++ input.slots.drop names.length
+    show (swapPos 0 (d + 1) names).map Shape.slotOfBinder ++ input.slots.drop names.length
         = swapPos 0 (d + 1) o.slots
     rw [hOslots, hslots_m]
     -- RHS = swapPos 0 (d+1) (names.map local ++ (swapPos 0 (d+1) input.slots).drop names.length)
-    have h0L : (0 : Nat) < (names.map Slot.local).length := by
+    have h0L : (0 : Nat) < (names.map Shape.slotOfBinder).length := by
       rw [List.length_map]; omega
-    have hdL : d + 1 < (names.map Slot.local).length := by
+    have hdL : d + 1 < (names.map Shape.slotOfBinder).length := by
       rw [List.length_map]; exact hlen
     rw [swapPos_append_left 0 (d + 1) _ _ h0L hdL]
     rw [← swapPos_map]

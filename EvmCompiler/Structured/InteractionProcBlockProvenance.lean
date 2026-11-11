@@ -51,33 +51,41 @@ same induction (adapter / no-adapter × shape-present / absent) but keyed on blo
 membership rather than a name lookup.  `proc ∈ procs` (not a `lookup?` fact) is
 surfaced because a block only pins its generating procedure up to list membership;
 that suffices for both the adapter supplier (`realizedWitness_of_adapter_jump`,
-which is shape-generic) and the body drill (which consumes the compile fact). -/
+which is shape-generic) and the body drill (which consumes the compile fact).
+
+The dense call-token base `callBase` (`TypedCfgCompiler.Context.callBase`) is
+universally quantified: the lowering visits each proc at a different counter
+value (`callBase + body.calls.length` per proc), so the recovered per-proc
+`Context` records its own existentially-bound `bcallBase`.  No conclusion here
+constrains it — the block-provenance disjunction is counter-independent. -/
 theorem mem_procBlocks_provenance
     {entryShapes : TypedCfgCompiler.ProcEntryShapes}
     {allProcs procs : List Structured.Proc}
     {supply next : LabelSupply}
     {procBlocks : List TypedCfg.Block}
     {procCalls : List TypedCfgCompiler.DispatchSite}
+    (callBase : Nat)
     (hLower :
       TypedCfgCompiler.lowerProcBodiesWithShapes? entryShapes allProcs procs
-          supply =
+          supply callBase =
         some (procBlocks, next, procCalls))
     {block : TypedCfg.Block}
     (hMem : block ∈ procBlocks) :
-    ∃ (proc : Structured.Proc) (bsupply : LabelSupply)
+    ∃ (proc : Structured.Proc) (bsupply : LabelSupply) (bcallBase : Nat)
       (entry : Assembly.Label) (input : TypedCfg.Shape)
       (bodyResult : TypedCfgCompiler.Result),
       proc ∈ procs ∧
       TypedCfgCompiler.compileBlock? proc.body
           { procs := allProcs
             leaveLabel? := some (ProcLabel.exit proc.name)
-            leaveShape? := some (TypedCfgCompiler.Shape.procExit proc) }
+            leaveShape? := some (TypedCfgCompiler.Shape.procExit proc)
+            callBase := bcallBase }
           bsupply entry input (ProcLabel.exit proc.name) = some bodyResult ∧
       (block ∈ bodyResult.blocks ∨
         TypedCfgCompiler.mkBlock? (ProcLabel.entry proc.name)
             (TypedCfgCompiler.Shape.procEntry proc) [.relabel input]
             (.jump (ProcLabel.body proc.name)) = some block) := by
-  induction procs generalizing supply next procBlocks procCalls with
+  induction procs generalizing supply next procBlocks procCalls callBase with
   | nil =>
       simp only [TypedCfgCompiler.lowerProcBodiesWithShapes?, Option.some.injEq,
         Prod.mk.injEq] at hLower
@@ -93,7 +101,8 @@ theorem mem_procBlocks_provenance
                 { procs := allProcs
                   leaveLabel? := some (ProcLabel.exit head.name)
                   leaveShape? :=
-                    some (TypedCfgCompiler.Shape.procExit head) }
+                    some (TypedCfgCompiler.Shape.procExit head)
+                  callBase := callBase }
                 supply (ProcLabel.entry head.name)
                 (TypedCfgCompiler.Shape.procEntry head)
                 (ProcLabel.exit head.name) with
@@ -109,7 +118,8 @@ theorem mem_procBlocks_provenance
                   cases unit
                   cases hTail :
                       TypedCfgCompiler.lowerProcBodiesWithShapes?
-                        entryShapes allProcs rest compiled.next with
+                        entryShapes allProcs rest compiled.next
+                        (callBase + compiled.calls.length) with
                   | none =>
                       simp [hShape, hBody, hRequire, hTail] at hLower
                   | some tailResult =>
@@ -119,15 +129,15 @@ theorem mem_procBlocks_provenance
                       simp only [List.mem_append] at hMem
                       rcases hMem with hHere | hThere
                       · exact
-                          ⟨head, supply, ProcLabel.entry head.name,
+                          ⟨head, supply, callBase, ProcLabel.entry head.name,
                             TypedCfgCompiler.Shape.procEntry head, compiled,
                             List.mem_cons_self, hBody, Or.inl hHere⟩
                       · obtain
-                          ⟨proc, bsupply, e, input, bodyResult,
+                          ⟨proc, bsupply, bcallBase, e, input, bodyResult,
                             hProcMem, hCompile, hDisj⟩ :=
-                          ih hTail hThere
+                          ih (callBase + compiled.calls.length) hTail hThere
                         exact
-                          ⟨proc, bsupply, e, input, bodyResult,
+                          ⟨proc, bsupply, bcallBase, e, input, bodyResult,
                             List.mem_cons_of_mem head hProcMem, hCompile, hDisj⟩
       | some bodyInput =>
           cases hFrame :
@@ -151,7 +161,8 @@ theorem mem_procBlocks_provenance
                         { procs := allProcs
                           leaveLabel? := some (ProcLabel.exit head.name)
                           leaveShape? :=
-                            some (TypedCfgCompiler.Shape.procExit head) }
+                            some (TypedCfgCompiler.Shape.procExit head)
+                          callBase := callBase }
                         supply (ProcLabel.body head.name) bodyInput
                         (ProcLabel.exit head.name) with
                   | none =>
@@ -167,7 +178,8 @@ theorem mem_procBlocks_provenance
                           cases unit
                           cases hTail :
                               TypedCfgCompiler.lowerProcBodiesWithShapes?
-                                entryShapes allProcs rest compiled.next with
+                                entryShapes allProcs rest compiled.next
+                                (callBase + compiled.calls.length) with
                           | none =>
                               simp [hShape, hFrame, hAdapter, hBody, hRequire,
                                 hTail] at hLower
@@ -181,20 +193,21 @@ theorem mem_procBlocks_provenance
                                 List.mem_append] at hMem
                               rcases hMem with hEq | hIn | hThere
                               · exact
-                                  ⟨head, supply, ProcLabel.body head.name,
+                                  ⟨head, supply, callBase, ProcLabel.body head.name,
                                     bodyInput, compiled,
                                     List.mem_cons_self, hBody,
                                     Or.inr (by rw [hEq]; exact hAdapter)⟩
                               · exact
-                                  ⟨head, supply, ProcLabel.body head.name,
+                                  ⟨head, supply, callBase, ProcLabel.body head.name,
                                     bodyInput, compiled,
                                     List.mem_cons_self, hBody, Or.inl hIn⟩
                               · obtain
-                                  ⟨proc, bsupply, e, input, bodyResult,
+                                  ⟨proc, bsupply, bcallBase, e, input, bodyResult,
                                     hProcMem, hCompile, hDisj⟩ :=
-                                  ih hTail hThere
+                                  ih (callBase + compiled.calls.length)
+                                    hTail hThere
                                 exact
-                                  ⟨proc, bsupply, e, input, bodyResult,
+                                  ⟨proc, bsupply, bcallBase, e, input, bodyResult,
                                     List.mem_cons_of_mem head hProcMem,
                                     hCompile, hDisj⟩
 
@@ -218,27 +231,29 @@ theorem mem_procBlocks_provenance_subset
     {supply next : LabelSupply}
     {procBlocks : List TypedCfg.Block}
     {procCalls : List TypedCfgCompiler.DispatchSite}
+    (callBase : Nat)
     (hLower :
       TypedCfgCompiler.lowerProcBodiesWithShapes? entryShapes allProcs procs
-          supply =
+          supply callBase =
         some (procBlocks, next, procCalls))
     {block : TypedCfg.Block}
     (hMem : block ∈ procBlocks) :
-    ∃ (proc : Structured.Proc) (bsupply : LabelSupply)
+    ∃ (proc : Structured.Proc) (bsupply : LabelSupply) (bcallBase : Nat)
       (entry : Assembly.Label) (input : TypedCfg.Shape)
       (bodyResult : TypedCfgCompiler.Result),
       proc ∈ procs ∧
       TypedCfgCompiler.compileBlock? proc.body
           { procs := allProcs
             leaveLabel? := some (ProcLabel.exit proc.name)
-            leaveShape? := some (TypedCfgCompiler.Shape.procExit proc) }
+            leaveShape? := some (TypedCfgCompiler.Shape.procExit proc)
+            callBase := bcallBase }
           bsupply entry input (ProcLabel.exit proc.name) = some bodyResult ∧
       (∀ b, b ∈ bodyResult.blocks → b ∈ procBlocks) ∧
       (block ∈ bodyResult.blocks ∨
         TypedCfgCompiler.mkBlock? (ProcLabel.entry proc.name)
             (TypedCfgCompiler.Shape.procEntry proc) [.relabel input]
             (.jump (ProcLabel.body proc.name)) = some block) := by
-  induction procs generalizing supply next procBlocks procCalls with
+  induction procs generalizing supply next procBlocks procCalls callBase with
   | nil =>
       simp only [TypedCfgCompiler.lowerProcBodiesWithShapes?, Option.some.injEq,
         Prod.mk.injEq] at hLower
@@ -254,7 +269,8 @@ theorem mem_procBlocks_provenance_subset
                 { procs := allProcs
                   leaveLabel? := some (ProcLabel.exit head.name)
                   leaveShape? :=
-                    some (TypedCfgCompiler.Shape.procExit head) }
+                    some (TypedCfgCompiler.Shape.procExit head)
+                  callBase := callBase }
                 supply (ProcLabel.entry head.name)
                 (TypedCfgCompiler.Shape.procEntry head)
                 (ProcLabel.exit head.name) with
@@ -270,7 +286,8 @@ theorem mem_procBlocks_provenance_subset
                   cases unit
                   cases hTail :
                       TypedCfgCompiler.lowerProcBodiesWithShapes?
-                        entryShapes allProcs rest compiled.next with
+                        entryShapes allProcs rest compiled.next
+                        (callBase + compiled.calls.length) with
                   | none =>
                       simp [hShape, hBody, hRequire, hTail] at hLower
                   | some tailResult =>
@@ -280,17 +297,17 @@ theorem mem_procBlocks_provenance_subset
                       simp only [List.mem_append] at hMem
                       rcases hMem with hHere | hThere
                       · exact
-                          ⟨head, supply, ProcLabel.entry head.name,
+                          ⟨head, supply, callBase, ProcLabel.entry head.name,
                             TypedCfgCompiler.Shape.procEntry head, compiled,
                             List.mem_cons_self, hBody,
                             (fun b hb => List.mem_append_left _ hb),
                             Or.inl hHere⟩
                       · obtain
-                          ⟨proc, bsupply, e, input, bodyResult,
+                          ⟨proc, bsupply, bcallBase, e, input, bodyResult,
                             hProcMem, hCompile, hSub, hDisj⟩ :=
-                          ih hTail hThere
+                          ih (callBase + compiled.calls.length) hTail hThere
                         exact
-                          ⟨proc, bsupply, e, input, bodyResult,
+                          ⟨proc, bsupply, bcallBase, e, input, bodyResult,
                             List.mem_cons_of_mem head hProcMem, hCompile,
                             (fun b hb => List.mem_append_right _ (hSub b hb)),
                             hDisj⟩
@@ -316,7 +333,8 @@ theorem mem_procBlocks_provenance_subset
                         { procs := allProcs
                           leaveLabel? := some (ProcLabel.exit head.name)
                           leaveShape? :=
-                            some (TypedCfgCompiler.Shape.procExit head) }
+                            some (TypedCfgCompiler.Shape.procExit head)
+                          callBase := callBase }
                         supply (ProcLabel.body head.name) bodyInput
                         (ProcLabel.exit head.name) with
                   | none =>
@@ -332,7 +350,8 @@ theorem mem_procBlocks_provenance_subset
                           cases unit
                           cases hTail :
                               TypedCfgCompiler.lowerProcBodiesWithShapes?
-                                entryShapes allProcs rest compiled.next with
+                                entryShapes allProcs rest compiled.next
+                                (callBase + compiled.calls.length) with
                           | none =>
                               simp [hShape, hFrame, hAdapter, hBody, hRequire,
                                 hTail] at hLower
@@ -346,7 +365,7 @@ theorem mem_procBlocks_provenance_subset
                                 List.mem_append] at hMem
                               rcases hMem with hEq | hIn | hThere
                               · exact
-                                  ⟨head, supply, ProcLabel.body head.name,
+                                  ⟨head, supply, callBase, ProcLabel.body head.name,
                                     bodyInput, compiled,
                                     List.mem_cons_self, hBody,
                                     (fun b hb =>
@@ -354,7 +373,7 @@ theorem mem_procBlocks_provenance_subset
                                         (List.mem_append_left _ hb)),
                                     Or.inr (by rw [hEq]; exact hAdapter)⟩
                               · exact
-                                  ⟨head, supply, ProcLabel.body head.name,
+                                  ⟨head, supply, callBase, ProcLabel.body head.name,
                                     bodyInput, compiled,
                                     List.mem_cons_self, hBody,
                                     (fun b hb =>
@@ -362,11 +381,12 @@ theorem mem_procBlocks_provenance_subset
                                         (List.mem_append_left _ hb)),
                                     Or.inl hIn⟩
                               · obtain
-                                  ⟨proc, bsupply, e, input, bodyResult,
+                                  ⟨proc, bsupply, bcallBase, e, input, bodyResult,
                                     hProcMem, hCompile, hSub, hDisj⟩ :=
-                                  ih hTail hThere
+                                  ih (callBase + compiled.calls.length)
+                                    hTail hThere
                                 exact
-                                  ⟨proc, bsupply, e, input, bodyResult,
+                                  ⟨proc, bsupply, bcallBase, e, input, bodyResult,
                                     List.mem_cons_of_mem head hProcMem,
                                     hCompile,
                                     (fun b hb =>
@@ -393,20 +413,22 @@ theorem mem_procBlocks_provenance_subset_fallthrough
     {supply next : LabelSupply}
     {procBlocks : List TypedCfg.Block}
     {procCalls : List TypedCfgCompiler.DispatchSite}
+    (callBase : Nat)
     (hLower :
       TypedCfgCompiler.lowerProcBodiesWithShapes? entryShapes allProcs procs
-          supply =
+          supply callBase =
         some (procBlocks, next, procCalls))
     {block : TypedCfg.Block}
     (hMem : block ∈ procBlocks) :
-    ∃ (proc : Structured.Proc) (bsupply : LabelSupply)
+    ∃ (proc : Structured.Proc) (bsupply : LabelSupply) (bcallBase : Nat)
       (entry : Assembly.Label) (input : TypedCfg.Shape)
       (bodyResult : TypedCfgCompiler.Result),
       proc ∈ procs ∧
       TypedCfgCompiler.compileBlock? proc.body
           { procs := allProcs
             leaveLabel? := some (ProcLabel.exit proc.name)
-            leaveShape? := some (TypedCfgCompiler.Shape.procExit proc) }
+            leaveShape? := some (TypedCfgCompiler.Shape.procExit proc)
+            callBase := bcallBase }
           bsupply entry input (ProcLabel.exit proc.name) = some bodyResult ∧
       bodyResult.requireFallthrough?
           (TypedCfgCompiler.Shape.procExit proc) = some () ∧
@@ -418,7 +440,7 @@ theorem mem_procBlocks_provenance_subset_fallthrough
           TypedCfgCompiler.mkBlock? (ProcLabel.entry proc.name)
               (TypedCfgCompiler.Shape.procEntry proc) [.relabel input]
               (.jump (ProcLabel.body proc.name)) = some block)) := by
-  induction procs generalizing supply next procBlocks procCalls with
+  induction procs generalizing supply next procBlocks procCalls callBase with
   | nil =>
       simp only [TypedCfgCompiler.lowerProcBodiesWithShapes?, Option.some.injEq,
         Prod.mk.injEq] at hLower
@@ -434,7 +456,8 @@ theorem mem_procBlocks_provenance_subset_fallthrough
                 { procs := allProcs
                   leaveLabel? := some (ProcLabel.exit head.name)
                   leaveShape? :=
-                    some (TypedCfgCompiler.Shape.procExit head) }
+                    some (TypedCfgCompiler.Shape.procExit head)
+                  callBase := callBase }
                 supply (ProcLabel.entry head.name)
                 (TypedCfgCompiler.Shape.procEntry head)
                 (ProcLabel.exit head.name) with
@@ -450,7 +473,8 @@ theorem mem_procBlocks_provenance_subset_fallthrough
                   cases unit
                   cases hTail :
                       TypedCfgCompiler.lowerProcBodiesWithShapes?
-                        entryShapes allProcs rest compiled.next with
+                        entryShapes allProcs rest compiled.next
+                        (callBase + compiled.calls.length) with
                   | none =>
                       simp [hShape, hBody, hRequire, hTail] at hLower
                   | some tailResult =>
@@ -460,18 +484,18 @@ theorem mem_procBlocks_provenance_subset_fallthrough
                       simp only [List.mem_append] at hMem
                       rcases hMem with hHere | hThere
                       · exact
-                          ⟨head, supply, ProcLabel.entry head.name,
+                          ⟨head, supply, callBase, ProcLabel.entry head.name,
                             TypedCfgCompiler.Shape.procEntry head, compiled,
                             List.mem_cons_self, hBody, hRequire,
                             (fun b hb => List.mem_append_left _ hb),
                             (fun s hs => List.mem_append_left _ hs),
                             Or.inl hHere⟩
                       · obtain
-                          ⟨proc, bsupply, e, input, bodyResult,
+                          ⟨proc, bsupply, bcallBase, e, input, bodyResult,
                             hProcMem, hCompile, hReq, hSub, hSubCalls, hDisj⟩ :=
-                          ih hTail hThere
+                          ih (callBase + compiled.calls.length) hTail hThere
                         exact
-                          ⟨proc, bsupply, e, input, bodyResult,
+                          ⟨proc, bsupply, bcallBase, e, input, bodyResult,
                             List.mem_cons_of_mem head hProcMem, hCompile, hReq,
                             (fun b hb => List.mem_append_right _ (hSub b hb)),
                             (fun s hs => List.mem_append_right _ (hSubCalls s hs)),
@@ -498,7 +522,8 @@ theorem mem_procBlocks_provenance_subset_fallthrough
                         { procs := allProcs
                           leaveLabel? := some (ProcLabel.exit head.name)
                           leaveShape? :=
-                            some (TypedCfgCompiler.Shape.procExit head) }
+                            some (TypedCfgCompiler.Shape.procExit head)
+                          callBase := callBase }
                         supply (ProcLabel.body head.name) bodyInput
                         (ProcLabel.exit head.name) with
                   | none =>
@@ -514,7 +539,8 @@ theorem mem_procBlocks_provenance_subset_fallthrough
                           cases unit
                           cases hTail :
                               TypedCfgCompiler.lowerProcBodiesWithShapes?
-                                entryShapes allProcs rest compiled.next with
+                                entryShapes allProcs rest compiled.next
+                                (callBase + compiled.calls.length) with
                           | none =>
                               simp [hShape, hFrame, hAdapter, hBody, hRequire,
                                 hTail] at hLower
@@ -528,7 +554,7 @@ theorem mem_procBlocks_provenance_subset_fallthrough
                                 List.mem_append] at hMem
                               rcases hMem with hEq | hIn | hThere
                               · exact
-                                  ⟨head, supply, ProcLabel.body head.name,
+                                  ⟨head, supply, callBase, ProcLabel.body head.name,
                                     bodyInput, compiled,
                                     List.mem_cons_self, hBody, hRequire,
                                     (fun b hb =>
@@ -541,7 +567,7 @@ theorem mem_procBlocks_provenance_subset_fallthrough
                                          hFrame,
                                        by rw [hEq]; exact hAdapter⟩⟩
                               · exact
-                                  ⟨head, supply, ProcLabel.body head.name,
+                                  ⟨head, supply, callBase, ProcLabel.body head.name,
                                     bodyInput, compiled,
                                     List.mem_cons_self, hBody, hRequire,
                                     (fun b hb =>
@@ -550,12 +576,13 @@ theorem mem_procBlocks_provenance_subset_fallthrough
                                     (fun s hs => List.mem_append_left _ hs),
                                     Or.inl hIn⟩
                               · obtain
-                                  ⟨proc, bsupply, e, input, bodyResult,
+                                  ⟨proc, bsupply, bcallBase, e, input, bodyResult,
                                     hProcMem, hCompile, hReq, hSub, hSubCalls,
                                     hDisj⟩ :=
-                                  ih hTail hThere
+                                  ih (callBase + compiled.calls.length)
+                                    hTail hThere
                                 exact
-                                  ⟨proc, bsupply, e, input, bodyResult,
+                                  ⟨proc, bsupply, bcallBase, e, input, bodyResult,
                                     List.mem_cons_of_mem head hProcMem,
                                     hCompile, hReq,
                                     (fun b hb =>
@@ -581,20 +608,21 @@ theorem procBlocks_provenance
     (context : GeneratedContext source entryShapes cfg)
     {block : TypedCfg.Block}
     (hMem : block ∈ context.procBlocks) :
-    ∃ (proc : Structured.Proc) (bsupply : LabelSupply)
+    ∃ (proc : Structured.Proc) (bsupply : LabelSupply) (bcallBase : Nat)
       (entry : Assembly.Label) (input : TypedCfg.Shape)
       (bodyResult : TypedCfgCompiler.Result),
       proc ∈ source.procs ∧
       TypedCfgCompiler.compileBlock? proc.body
           { procs := source.procs
             leaveLabel? := some (ProcLabel.exit proc.name)
-            leaveShape? := some (TypedCfgCompiler.Shape.procExit proc) }
+            leaveShape? := some (TypedCfgCompiler.Shape.procExit proc)
+            callBase := bcallBase }
           bsupply entry input (ProcLabel.exit proc.name) = some bodyResult ∧
       (block ∈ bodyResult.blocks ∨
         TypedCfgCompiler.mkBlock? (ProcLabel.entry proc.name)
             (TypedCfgCompiler.Shape.procEntry proc) [.relabel input]
             (.jump (ProcLabel.body proc.name)) = some block) :=
-  mem_procBlocks_provenance context.procsCompile hMem
+  mem_procBlocks_provenance _ context.procsCompile hMem
 
 /--
 **Proc-body provenance root, strengthened with `BlocksInProgram bodyResult cfg`.**
@@ -612,23 +640,26 @@ theorem procBlocks_provenance_inProgram
     (context : GeneratedContext source entryShapes cfg)
     {block : TypedCfg.Block}
     (hMem : block ∈ context.procBlocks) :
-    ∃ (proc : Structured.Proc) (bsupply : LabelSupply)
+    ∃ (proc : Structured.Proc) (bsupply : LabelSupply) (bcallBase : Nat)
       (entry : Assembly.Label) (input : TypedCfg.Shape)
       (bodyResult : TypedCfgCompiler.Result),
       proc ∈ source.procs ∧
       TypedCfgCompiler.compileBlock? proc.body
           { procs := source.procs
             leaveLabel? := some (ProcLabel.exit proc.name)
-            leaveShape? := some (TypedCfgCompiler.Shape.procExit proc) }
+            leaveShape? := some (TypedCfgCompiler.Shape.procExit proc)
+            callBase := bcallBase }
           bsupply entry input (ProcLabel.exit proc.name) = some bodyResult ∧
       BlocksInProgram bodyResult cfg ∧
       (block ∈ bodyResult.blocks ∨
         TypedCfgCompiler.mkBlock? (ProcLabel.entry proc.name)
             (TypedCfgCompiler.Shape.procEntry proc) [.relabel input]
             (.jump (ProcLabel.body proc.name)) = some block) := by
-  obtain ⟨proc, bsupply, entry, input, bodyResult, hProcMem, hCompile, hSub, hDisj⟩ :=
-    mem_procBlocks_provenance_subset context.procsCompile hMem
-  refine ⟨proc, bsupply, entry, input, bodyResult, hProcMem, hCompile, ?_, hDisj⟩
+  obtain ⟨proc, bsupply, bcallBase, entry, input, bodyResult,
+      hProcMem, hCompile, hSub, hDisj⟩ :=
+    mem_procBlocks_provenance_subset _ context.procsCompile hMem
+  refine ⟨proc, bsupply, bcallBase, entry, input, bodyResult,
+    hProcMem, hCompile, ?_, hDisj⟩
   intro b hb
   refine TypedCfg.Program.findBlock?_eq_some_of_mem context.wellTyped.1 ?_
   rw [context.cfgEq]
@@ -654,14 +685,15 @@ theorem procBlocks_provenance_inProgram_fallthrough
     (context : GeneratedContext source entryShapes cfg)
     {block : TypedCfg.Block}
     (hMem : block ∈ context.procBlocks) :
-    ∃ (proc : Structured.Proc) (bsupply : LabelSupply)
+    ∃ (proc : Structured.Proc) (bsupply : LabelSupply) (bcallBase : Nat)
       (entry : Assembly.Label) (input : TypedCfg.Shape)
       (bodyResult : TypedCfgCompiler.Result),
       proc ∈ source.procs ∧
       TypedCfgCompiler.compileBlock? proc.body
           { procs := source.procs
             leaveLabel? := some (ProcLabel.exit proc.name)
-            leaveShape? := some (TypedCfgCompiler.Shape.procExit proc) }
+            leaveShape? := some (TypedCfgCompiler.Shape.procExit proc)
+            callBase := bcallBase }
           bsupply entry input (ProcLabel.exit proc.name) = some bodyResult ∧
       bodyResult.requireFallthrough?
           (TypedCfgCompiler.Shape.procExit proc) = some () ∧
@@ -673,11 +705,11 @@ theorem procBlocks_provenance_inProgram_fallthrough
           TypedCfgCompiler.mkBlock? (ProcLabel.entry proc.name)
               (TypedCfgCompiler.Shape.procEntry proc) [.relabel input]
               (.jump (ProcLabel.body proc.name)) = some block)) := by
-  obtain ⟨proc, bsupply, entry, input, bodyResult,
+  obtain ⟨proc, bsupply, bcallBase, entry, input, bodyResult,
       hProcMem, hCompile, hReq, hSub, hSubCalls, hDisj⟩ :=
-    mem_procBlocks_provenance_subset_fallthrough context.procsCompile hMem
-  refine ⟨proc, bsupply, entry, input, bodyResult, hProcMem, hCompile, hReq,
-    ?_, ?_, hDisj⟩
+    mem_procBlocks_provenance_subset_fallthrough _ context.procsCompile hMem
+  refine ⟨proc, bsupply, bcallBase, entry, input, bodyResult,
+    hProcMem, hCompile, hReq, ?_, ?_, hDisj⟩
   · intro b hb
     refine TypedCfg.Program.findBlock?_eq_some_of_mem context.wellTyped.1 ?_
     rw [context.cfgEq]

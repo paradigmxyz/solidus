@@ -225,8 +225,7 @@ theorem exists_compact_instr_of_evm_decode
     {bytes : ByteArray} {pc : Nat}
     {op : EvmYul.Operation .EVM} {arg : Option (Word × Nat)}
     (hDecode :
-      EvmYul.EVM.decode bytes (EvmYul.UInt256.ofNat pc) = some (op, arg))
-    (hNotPush0 : op ≠ EvmYul.Operation.PUSH0) :
+      EvmYul.EVM.decode bytes (EvmYul.UInt256.ofNat pc) = some (op, arg)) :
     ∃ instr : Compact.Instr,
       instr.Valid ∧ Compact.decodeAt bytes pc instr := by
   have hArg := decode_arg_eq hDecode
@@ -281,7 +280,7 @@ theorem exists_compact_instr_of_evm_decode
       cases op <;>
         simp [EvmYul.EVM.argOnNBytesOfInstr] at hArg <;>
         subst arg
-      · exact False.elim (hNotPush0 rfl)
+      · exact ⟨.push0, trivial, ⟨_, rfl, hDecode⟩⟩
       all_goals
         first
         | exact exists_compact_push_of_evm_decode
@@ -381,20 +380,18 @@ theorem exists_compact_instr_of_evm_decode
 Compiler-side reachability only has to rule out decode misses plus opcodes that
 EVMYul decodes but this compact assembly layer does not model natively. -/
 def SupportedDecodeAt (bytes : ByteArray) (pc : Word) : Prop :=
-  ∃ op arg,
-    EvmYul.EVM.decode bytes pc = some (op, arg) ∧
-      op ≠ EvmYul.Operation.PUSH0
+  ∃ op arg, EvmYul.EVM.decode bytes pc = some (op, arg)
 
 theorem compact_decodeAt_of_supported
     {bytes : ByteArray} {pc : Word}
     (hSupported : SupportedDecodeAt bytes pc) :
     ∃ instr : Compact.Instr,
       instr.Valid ∧ Compact.decodeAt bytes pc.toNat instr := by
-  rcases hSupported with ⟨op, arg, hDecode, hNotPush0⟩
+  rcases hSupported with ⟨op, arg, hDecode⟩
   have hDecodeNat :
       EvmYul.EVM.decode bytes (EvmYul.UInt256.ofNat pc.toNat) =
         some (op, arg) := by
     simpa using hDecode
-  exact exists_compact_instr_of_evm_decode hDecodeNat hNotPush0
+  exact exists_compact_instr_of_evm_decode hDecodeNat
 
 end EvmCompiler.Assembly.GasfulBridge

@@ -449,9 +449,12 @@ without the permutation hypothesis, e.g. `t = [0,0]`.) -/
 theorem netStack_starDecompose_of_perm (t : List Nat)
     (hperm : List.Perm t (List.range t.length)) :
     netStack (starDecompose t) t.length = t := by
-  unfold starDecompose
-  rw [netStack_eq_applySwaps, ← sortToId_correct t hperm]
-  exact applySwaps_reverse_cancel (sortToId t) t
+  dsimp only [starDecompose]
+  split
+  · rename_i h
+    exact h.2.1
+  · rw [netStack_eq_applySwaps, ← sortToId_correct t hperm]
+    exact applySwaps_reverse_cancel (sortToId t) t
 
 /-! ## `netStack` outputs are permutations (feeds `starDecompose` at the call site) -/
 
@@ -490,9 +493,12 @@ theorem starDecompose_elem_bounds (t : List Nat)
     (hperm : List.Perm t (List.range t.length)) :
     ∀ e ∈ starDecompose t, 1 ≤ e ∧ e < t.length := by
   intro e he
-  unfold starDecompose at he
-  rw [List.mem_reverse] at he
-  exact sortToId_elem_bounds t hperm e he
+  dsimp only [starDecompose] at he
+  split at he
+  · rename_i h
+    exact h.2.2 e he
+  · rw [List.mem_reverse] at he
+    exact sortToId_elem_bounds t hperm e he
 
 /-! ## Support: `maxDepth` upper-bounds every element -/
 

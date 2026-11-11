@@ -312,12 +312,13 @@ theorem prepend_call_route_follows
 
 theorem body_leave_elim
     {program : Structured.Program} {proc : Structured.Proc}
+    {callBase : Nat}
     {bodyResult : TypedCfgCompiler.Result}
     {returns : List ReturnDest} {tokens : List Word}
     {source : RunState} {target : TypedCfg.Outcome}
     (hRel :
       InteractionControlPreservation.OpenOutcome.Rel
-        bodyResult (procContext program proc)
+        bodyResult (procContext program proc callBase)
         (ProcLabel.exit proc.name) returns tokens
         (.leave source) target) :
     ∃ targetState,
@@ -383,7 +384,7 @@ theorem openRun_call_truncation_bounded_under
         TypedCfgPreservation.StateRel
             ((source.withEVM { source.evm with stack := args }).pushReturn
               callerStack proc.retc)
-            (Structured.Stmt.callToken supply :: tokens) targetState ->
+            (Structured.Stmt.callToken ctx.callBase :: tokens) targetState ->
           policy (ProcLabel.entry proc.name) targetState = false)
     (hFragmentEntryNoStop :
       forall {args callerStack : EvmYul.Stack Word}
@@ -393,7 +394,7 @@ theorem openRun_call_truncation_bounded_under
         TypedCfgPreservation.StateRel
             ((source.withEVM { source.evm with stack := args }).pushReturn
               callerStack proc.retc)
-            (Structured.Stmt.callToken supply :: tokens) targetState ->
+            (Structured.Stmt.callToken ctx.callBase :: tokens) targetState ->
           policy fragment.entry targetState = false)
     (hBodyDone :
       forall {args callerStack : EvmYul.Stack Word},
@@ -401,36 +402,38 @@ theorem openRun_call_truncation_bounded_under
             some (args, callerStack) ->
         InteractionControlPreservation.OpenOutcome.BoundedExecPreservesUnder
           fragment.result cfg fragment.entry
-          (procContext sourceProgram proc) (ProcLabel.exit proc.name)
+          (procContext sourceProgram proc fragment.callBase)
+          (ProcLabel.exit proc.name)
           ((source.withEVM { source.evm with stack := args }).pushReturn
             callerStack proc.retc)
-          (Structured.Stmt.callToken supply :: tokens)
+          (Structured.Stmt.callToken ctx.callBase :: tokens)
           (InteractionSemantics.Block.openRun sourceProgram sourceFuel proc.body
             ((source.withEVM { source.evm with stack := args }).pushReturn
               callerStack proc.retc))
           bodyBudget
-          (bodyStopPolicy fragment.result sourceProgram proc
+          (bodyStopPolicy fragment.result sourceProgram proc fragment.callBase
             (((source.withEVM { source.evm with stack := args }).pushReturn
               callerStack proc.retc).returns)
-            (Structured.Stmt.callToken supply :: tokens) policy))
+            (Structured.Stmt.callToken ctx.callBase :: tokens) policy))
     (hBodyTruncated :
       forall {args callerStack : EvmYul.Stack Word},
         Structured.StackFrame.splitArgs? proc.argc source.evm.stack =
             some (args, callerStack) ->
         InteractionControlPreservation.OpenOutcome.BoundedTruncationExecPreservesUnder
           fragment.result cfg fragment.entry
-          (procContext sourceProgram proc) (ProcLabel.exit proc.name)
+          (procContext sourceProgram proc fragment.callBase)
+          (ProcLabel.exit proc.name)
           ((source.withEVM { source.evm with stack := args }).pushReturn
             callerStack proc.retc)
-          (Structured.Stmt.callToken supply :: tokens)
+          (Structured.Stmt.callToken ctx.callBase :: tokens)
           (InteractionSemantics.Block.openRun sourceProgram sourceFuel proc.body
             ((source.withEVM { source.evm with stack := args }).pushReturn
               callerStack proc.retc))
           bodyBudget
-          (bodyStopPolicy fragment.result sourceProgram proc
+          (bodyStopPolicy fragment.result sourceProgram proc fragment.callBase
             (((source.withEVM { source.evm with stack := args }).pushReturn
               callerStack proc.retc).returns)
-            (Structured.Stmt.callToken supply :: tokens) policy)) :
+            (Structured.Stmt.callToken ctx.callBase :: tokens) policy)) :
     InteractionControlPreservation.OpenOutcome.BoundedTruncationExecPreservesUnder
       result cfg entry ctx regular source tokens
       (InteractionSemantics.Stmt.openRun
@@ -446,7 +449,7 @@ theorem openRun_call_truncation_bounded_under
   subst result
   let site : TypedCfgCompiler.DispatchSite :=
     { procName := name
-      token := Structured.Stmt.callToken supply
+      token := Structured.Stmt.callToken ctx.callBase
       returnLabel := regular
       caseLabel := .generated supply 10000 }
   have hSiteMem : site ∈ generated.calls := by
@@ -481,7 +484,7 @@ theorem openRun_call_truncation_bounded_under
     simpa [hName] using hCallStep
   have hCallStateRel' :
       TypedCfgPreservation.StateRel callSource
-        (Structured.Stmt.callToken supply :: tokens) targetAtEntry := by
+        (Structured.Stmt.callToken ctx.callBase :: tokens) targetAtEntry := by
     simpa [callSource] using hCallStateRel
   simp only [
     InteractionSemantics.Stmt.openRun,
@@ -503,9 +506,9 @@ theorem openRun_call_truncation_bounded_under
       InteractionControlPreservation.OpenOutcome.ExecPreservesUnder.close_refined_follows
         (outer := policy)
         (inner :=
-          bodyStopPolicy fragment.result sourceProgram proc
+          bodyStopPolicy fragment.result sourceProgram proc fragment.callBase
             callSource.returns
-            (Structured.Stmt.callToken supply :: tokens) policy)
+            (Structured.Stmt.callToken ctx.callBase :: tokens) policy)
         (hRefines := by
           intro label state hStop
           simp [bodyStopPolicy,
@@ -525,9 +528,9 @@ theorem openRun_call_truncation_bounded_under
         bodyTranscript bodyOutcome hBodyExec
     have hBodyRel :
         InteractionControlPreservation.OpenOutcome.Rel
-          fragment.result (procContext sourceProgram proc)
+          fragment.result (procContext sourceProgram proc fragment.callBase)
           (ProcLabel.exit proc.name) callSource.returns
-          (Structured.Stmt.callToken supply :: tokens)
+          (Structured.Stmt.callToken ctx.callBase :: tokens)
           bodyOutcome targetBodyOutcome := by
       simpa [callSource] using hBodyRelRaw
     rcases bodyOutcome with ⟨bodyState, bodyMode⟩
@@ -618,7 +621,7 @@ theorem call_succ
         TypedCfgPreservation.StateRel
             ((source.withEVM { source.evm with stack := args }).pushReturn
               callerStack proc.retc)
-            (Structured.Stmt.callToken supply :: tokens) targetState ->
+            (Structured.Stmt.callToken ctx.callBase :: tokens) targetState ->
           policy (ProcLabel.entry proc.name) targetState = false)
     (hFragmentEntryNoStop :
       forall (fragment :
@@ -632,7 +635,7 @@ theorem call_succ
           TypedCfgPreservation.StateRel
               ((source.withEVM { source.evm with stack := args }).pushReturn
                 callerStack proc.retc)
-              (Structured.Stmt.callToken supply :: tokens) targetState ->
+              (Structured.Stmt.callToken ctx.callBase :: tokens) targetState ->
             policy fragment.entry targetState = false)
     (hBodyDone :
       forall (fragment :
@@ -646,19 +649,21 @@ theorem call_succ
               some (args, callerStack) ->
           InteractionControlPreservation.OpenOutcome.BoundedExecPreservesUnder
             fragment.result cfg fragment.entry
-            (procContext sourceProgram proc) (ProcLabel.exit proc.name)
+            (procContext sourceProgram proc fragment.callBase)
+            (ProcLabel.exit proc.name)
             ((source.withEVM { source.evm with stack := args }).pushReturn
               callerStack proc.retc)
-            (Structured.Stmt.callToken supply :: tokens)
+            (Structured.Stmt.callToken ctx.callBase :: tokens)
             (InteractionSemantics.Block.openRun
               sourceProgram sourceFuel proc.body
               ((source.withEVM { source.evm with stack := args }).pushReturn
                 callerStack proc.retc))
             bodyBudget
             (bodyStopPolicy fragment.result sourceProgram proc
+              fragment.callBase
               (((source.withEVM { source.evm with stack := args }).pushReturn
                 callerStack proc.retc).returns)
-              (Structured.Stmt.callToken supply :: tokens) policy))
+              (Structured.Stmt.callToken ctx.callBase :: tokens) policy))
     (hBodyTruncated :
       forall (fragment :
           TypedCfgPreservation.Program.ProcFragment
@@ -671,19 +676,21 @@ theorem call_succ
               some (args, callerStack) ->
           InteractionControlPreservation.OpenOutcome.BoundedTruncationExecPreservesUnder
             fragment.result cfg fragment.entry
-            (procContext sourceProgram proc) (ProcLabel.exit proc.name)
+            (procContext sourceProgram proc fragment.callBase)
+            (ProcLabel.exit proc.name)
             ((source.withEVM { source.evm with stack := args }).pushReturn
               callerStack proc.retc)
-            (Structured.Stmt.callToken supply :: tokens)
+            (Structured.Stmt.callToken ctx.callBase :: tokens)
             (InteractionSemantics.Block.openRun
               sourceProgram sourceFuel proc.body
               ((source.withEVM { source.evm with stack := args }).pushReturn
                 callerStack proc.retc))
             bodyBudget
             (bodyStopPolicy fragment.result sourceProgram proc
+              fragment.callBase
               (((source.withEVM { source.evm with stack := args }).pushReturn
                 callerStack proc.retc).returns)
-              (Structured.Stmt.callToken supply :: tokens) policy)) :
+              (Structured.Stmt.callToken ctx.callBase :: tokens) policy)) :
     InteractionControlPreservation.OpenOutcome.BoundedTruncationExecPreservesUnder
       result cfg entry ctx regular source tokens
       (InteractionSemantics.Stmt.openRun
@@ -1316,7 +1323,7 @@ body. The route itself exposes no source interaction. -/
 theorem default_some
     {compilerFuel sourceFuel bodyBudget : Nat}
     {body : Structured.Block}
-    {ctx : TypedCfgCompiler.Context}
+    {ctx : TypedCfgCompiler.Context} {callBase : Nat}
     {supply : LabelSupply} {entry regular : Assembly.Label}
     {valueShape bodyShape : TypedCfg.Shape}
     {result enclosingResult : TypedCfgCompiler.Result}
@@ -1328,7 +1335,8 @@ theorem default_some
     {policy : StopPolicy}
     (hCompile :
       TypedCfgCompiler.compileDefaultFuel? (compilerFuel + 1)
-          (some body) ctx supply entry valueShape bodyShape regular =
+          (some body) { ctx with callBase := callBase } supply entry
+          valueShape bodyShape regular =
         some result)
     (hBlocks : TypedCfgPreservation.BlocksInProgram result cfg)
     (hResultCalls :
@@ -1345,7 +1353,8 @@ theorem default_some
           policy (.generated supply 2000) targetAfter = false)
     (hBody :
       forall {bodyResult : TypedCfgCompiler.Result},
-        TypedCfgCompiler.compileBlockFuel? compilerFuel body ctx
+        TypedCfgCompiler.compileBlockFuel? compilerFuel body
+            { ctx with callBase := callBase }
             (supply + 1) (.generated supply 2000)
             bodyShape regular = some bodyResult ->
         TypedCfgPreservation.BlocksInProgram bodyResult cfg ->
@@ -1399,7 +1408,7 @@ theorem cases_some
     {cases : List (Word × Structured.Block)}
     {defaultBody : Option Structured.Block}
     {selected : Structured.Block}
-    {ctx : TypedCfgCompiler.Context}
+    {ctx : TypedCfgCompiler.Context} {callBase : Nat}
     {base supply idx : Nat} {regular : Assembly.Label}
     {valueShape bodyShape : TypedCfg.Shape} {slot : TypedCfg.Slot}
     {result enclosingResult : TypedCfgCompiler.Result}
@@ -1409,7 +1418,8 @@ theorem cases_some
     {generatedCalls : List TypedCfgCompiler.DispatchSite}
     {policy : InteractionControlPreservation.OpenOutcome.StopPolicy}
     (hCompile :
-      TypedCfgCompiler.compileCasesFuel? compilerFuel cases ctx
+      TypedCfgCompiler.compileCasesFuel? compilerFuel cases
+          { ctx with callBase := callBase }
           base supply idx valueShape bodyShape regular = some result)
     (hSupply : base + 1 <= supply)
     (hBlocks : TypedCfgPreservation.BlocksInProgram result cfg)
@@ -1440,9 +1450,10 @@ theorem cases_some
         TypedCfgPreservation.StateRel source tokens targetAfter ->
           policy (LabelSupply.label base 1) targetAfter = false)
     (hCase :
-      forall {bodyCompilerFuel caseSupply caseIdx : Nat}
+      forall {bodyCompilerFuel caseSupply caseIdx caseCallBase : Nat}
         {bodyResult : TypedCfgCompiler.Result},
-        TypedCfgCompiler.compileBlockFuel? bodyCompilerFuel selected ctx
+        TypedCfgCompiler.compileBlockFuel? bodyCompilerFuel selected
+            { ctx with callBase := caseCallBase }
             caseSupply (TypedCfgCompiler.switchBodyLabel base caseIdx)
             bodyShape regular = some bodyResult ->
         TypedCfgPreservation.BlocksInProgram bodyResult cfg ->
@@ -1475,7 +1486,8 @@ theorem cases_some
         sourceProgram sourceFuel selected
         (source.withEVM { source.evm with stack := stack }))
       (bodyBudget + cases.length + 1) policy := by
-  induction cases generalizing compilerFuel supply idx result selected with
+  induction cases generalizing
+      compilerFuel supply idx result selected callBase with
   | nil =>
       cases compilerFuel with
       | zero =>
@@ -1726,8 +1738,9 @@ theorem cons_succ
         TypedCfgCompiler.compileStmtFuel? compilerFuel stmt ctx supply
             entry input (TypedCfgCompiler.restLabel supply) = some headResult ->
         headResult.fallthrough? = some tailInput ->
-        TypedCfgCompiler.compileStmtListFuel? compilerFuel rest ctx
-            headResult.next (TypedCfgCompiler.restLabel supply)
+        TypedCfgCompiler.compileStmtListFuel? compilerFuel rest
+            (ctx.advance headResult) headResult.next
+            (TypedCfgCompiler.restLabel supply)
             tailInput regular = some tailResult ->
         TypedCfgPreservation.BlocksInProgram tailResult cfg ->
         InteractionControlPreservation.OpenOutcome.Rel headResult ctx
@@ -1760,8 +1773,9 @@ theorem cons_succ
         TypedCfgPreservation.BlocksInProgram headResult cfg ->
         TypedCfgPreservation.CallsInProgram headResult generatedCalls ->
         headResult.fallthrough? = some tailInput ->
-        TypedCfgCompiler.compileStmtListFuel? compilerFuel rest ctx
-            headResult.next (TypedCfgCompiler.restLabel supply)
+        TypedCfgCompiler.compileStmtListFuel? compilerFuel rest
+            (ctx.advance headResult) headResult.next
+            (TypedCfgCompiler.restLabel supply)
             tailInput regular = some tailResult ->
         TypedCfgPreservation.BlocksInProgram tailResult cfg ->
         result = headResult.append tailResult ->
@@ -1787,8 +1801,9 @@ theorem cons_succ
         TypedCfgCompiler.compileStmtFuel? compilerFuel stmt ctx supply
             entry input (TypedCfgCompiler.restLabel supply) = some headResult ->
         headResult.fallthrough? = some tailInput ->
-        TypedCfgCompiler.compileStmtListFuel? compilerFuel rest ctx
-            headResult.next (TypedCfgCompiler.restLabel supply)
+        TypedCfgCompiler.compileStmtListFuel? compilerFuel rest
+            (ctx.advance headResult) headResult.next
+            (TypedCfgCompiler.restLabel supply)
             tailInput regular = some tailResult ->
         TypedCfgPreservation.BlocksInProgram tailResult cfg ->
         TypedCfgPreservation.CallsInProgram tailResult generatedCalls ->
@@ -2161,13 +2176,14 @@ theorem switch_succ
       InteractionBoundaryPreservation.OpenOutcome.StopPolicy.RecursiveBoundary
         cfg source.returns tokens policy supply regular)
     (hBody :
-      forall {bodyCompilerFuel bodySupply : Nat}
+      forall {bodyCompilerFuel bodySupply bodyCallBase : Nat}
         {bodyEntry : Assembly.Label} {bodyInput : TypedCfg.Shape}
         {body : Structured.Block}
         {bodyResult : TypedCfgCompiler.Result}
         {afterPop : RunState} {value : Word},
         Structured.Switch.select value cases defaultBody = some body ->
-        TypedCfgCompiler.compileBlockFuel? bodyCompilerFuel body ctx
+        TypedCfgCompiler.compileBlockFuel? bodyCompilerFuel body
+            { ctx with callBase := bodyCallBase }
             bodySupply bodyEntry bodyInput regular = some bodyResult ->
         TypedCfgPreservation.BlocksInProgram bodyResult cfg ->
         TypedCfgPreservation.CallsInProgram bodyResult generatedCalls ->
@@ -2213,7 +2229,8 @@ theorem switch_succ
         some caseResult := by
     simpa [bodyShape] using hCasesCompileRaw
   have hDefaultCompile :
-      TypedCfgCompiler.compileDefaultFuel? compilerFuel defaultBody ctx
+      TypedCfgCompiler.compileDefaultFuel? compilerFuel defaultBody
+          (ctx.advance caseResult)
           caseResult.next (LabelSupply.label supply 1)
           valueShape bodyShape regular = some defaultResult := by
     simpa [bodyShape] using hDefaultCompileRaw
@@ -2504,10 +2521,12 @@ theorem switch_succ
                             (cases := cases) (body := default)
                       · exact hSelect
                     have hCaseRoute :
-                        forall {caseBodyCompilerFuel caseSupply caseIdx : Nat}
+                        forall {caseBodyCompilerFuel caseSupply caseIdx
+                            caseCallBase : Nat}
                           {bodyResult : TypedCfgCompiler.Result},
                           TypedCfgCompiler.compileBlockFuel?
-                              caseBodyCompilerFuel selected ctx caseSupply
+                              caseBodyCompilerFuel selected
+                              { ctx with callBase := caseCallBase } caseSupply
                               (TypedCfgCompiler.switchBodyLabel supply caseIdx)
                               bodyShape regular = some bodyResult ->
                           TypedCfgPreservation.BlocksInProgram bodyResult cfg ->
@@ -2530,7 +2549,8 @@ theorem switch_succ
                             (InteractionStaticCost.switchBodyBudget
                               sourceProgram sourceFuel cases defaultBody)
                             policy := by
-                      intro caseBodyCompilerFuel caseSupply caseIdx bodyResult
+                      intro caseBodyCompilerFuel caseSupply caseIdx
+                        caseCallBase bodyResult
                         hBodyCompile hBodyBlocks hBodyCalls hBodySupply
                         hBodyRequire hResultFallthrough
                       apply
@@ -2554,7 +2574,8 @@ theorem switch_succ
                           policy := by
                       have hCompileSome :
                           TypedCfgCompiler.compileDefaultFuel?
-                              (bodyCompilerFuel + 1) (some selected) ctx
+                              (bodyCompilerFuel + 1) (some selected)
+                              (ctx.advance caseResult)
                               caseResult.next (LabelSupply.label supply 1)
                               valueShape bodyShape regular = some defaultResult := by
                         simpa [hDefaultSelected] using hDefaultCompile
@@ -2693,14 +2714,18 @@ theorem for_succ
         {blockFuel : Nat} {bodySource : RunState},
         blockFuel < sourceFuel ->
         TypedCfgCompiler.compileBlockFuel? compilerFuel body
-            (bodyContext ctx regular (LabelSupply.label supply 2)
-              { condOutput with slots := condOutput.slots.tail })
+            { bodyContext ctx regular (LabelSupply.label supply 2)
+                { condOutput with slots := condOutput.slots.tail } with
+              callBase := ctx.callBase + initResult.calls.length }
             initResult.next (LabelSupply.label supply 1)
             { condOutput with slots := condOutput.slots.tail }
             (LabelSupply.label supply 2) = some bodyResult ->
         TypedCfgCompiler.compileBlockFuel? compilerFuel post
-            (outerContext ctx) bodyResult.next
-            (LabelSupply.label supply 2)
+            { outerContext ctx with
+              callBase :=
+                ctx.callBase + initResult.calls.length +
+                  bodyResult.calls.length }
+            bodyResult.next (LabelSupply.label supply 2)
             { condOutput with slots := condOutput.slots.tail }
             (LabelSupply.label supply 0) = some postResult ->
         TypedCfgPreservation.BlocksInProgram bodyResult cfg ->
@@ -2728,14 +2753,18 @@ theorem for_succ
         {blockFuel : Nat} {bodySource : RunState},
         blockFuel < sourceFuel ->
         TypedCfgCompiler.compileBlockFuel? compilerFuel body
-            (bodyContext ctx regular (LabelSupply.label supply 2)
-              { condOutput with slots := condOutput.slots.tail })
+            { bodyContext ctx regular (LabelSupply.label supply 2)
+                { condOutput with slots := condOutput.slots.tail } with
+              callBase := ctx.callBase + initResult.calls.length }
             initResult.next (LabelSupply.label supply 1)
             { condOutput with slots := condOutput.slots.tail }
             (LabelSupply.label supply 2) = some bodyResult ->
         TypedCfgCompiler.compileBlockFuel? compilerFuel post
-            (outerContext ctx) bodyResult.next
-            (LabelSupply.label supply 2)
+            { outerContext ctx with
+              callBase :=
+                ctx.callBase + initResult.calls.length +
+                  bodyResult.calls.length }
+            bodyResult.next (LabelSupply.label supply 2)
             { condOutput with slots := condOutput.slots.tail }
             (LabelSupply.label supply 0) = some postResult ->
         TypedCfgPreservation.BlocksInProgram bodyResult cfg ->
@@ -2763,8 +2792,11 @@ theorem for_succ
         {blockFuel : Nat} {postSource : RunState},
         blockFuel < sourceFuel ->
         TypedCfgCompiler.compileBlockFuel? compilerFuel post
-            (outerContext ctx) bodyResult.next
-            (LabelSupply.label supply 2)
+            { outerContext ctx with
+              callBase :=
+                ctx.callBase + initResult.calls.length +
+                  bodyResult.calls.length }
+            bodyResult.next (LabelSupply.label supply 2)
             { condOutput with slots := condOutput.slots.tail }
             (LabelSupply.label supply 0) = some postResult ->
         TypedCfgPreservation.BlocksInProgram postResult cfg ->
@@ -2789,8 +2821,11 @@ theorem for_succ
         {blockFuel : Nat} {postSource : RunState},
         blockFuel < sourceFuel ->
         TypedCfgCompiler.compileBlockFuel? compilerFuel post
-            (outerContext ctx) bodyResult.next
-            (LabelSupply.label supply 2)
+            { outerContext ctx with
+              callBase :=
+                ctx.callBase + initResult.calls.length +
+                  bodyResult.calls.length }
+            bodyResult.next (LabelSupply.label supply 2)
             { condOutput with slots := condOutput.slots.tail }
             (LabelSupply.label supply 0) = some postResult ->
         TypedCfgPreservation.BlocksInProgram postResult cfg ->
@@ -2827,15 +2862,20 @@ theorem for_succ
     simpa [outerContext] using hInitCompileRaw
   have hBodyCompile :
       TypedCfgCompiler.compileBlockFuel? compilerFuel body
-          (bodyContext ctx regular (LabelSupply.label supply 2)
-            { condOutput with slots := condOutput.slots.tail })
+          { bodyContext ctx regular (LabelSupply.label supply 2)
+              { condOutput with slots := condOutput.slots.tail } with
+            callBase := ctx.callBase + initResult.calls.length }
           initResult.next (LabelSupply.label supply 1)
           { condOutput with slots := condOutput.slots.tail }
           (LabelSupply.label supply 2) = some bodyResult := by
     simpa [bodyContext] using hBodyCompileRaw
   have hPostCompile :
       TypedCfgCompiler.compileBlockFuel? compilerFuel post
-          (outerContext ctx) bodyResult.next (LabelSupply.label supply 2)
+          { outerContext ctx with
+            callBase :=
+              ctx.callBase + initResult.calls.length +
+                bodyResult.calls.length }
+          bodyResult.next (LabelSupply.label supply 2)
           { condOutput with slots := condOutput.slots.tail }
           (LabelSupply.label supply 0) = some postResult := by
     simpa [outerContext] using hPostCompileRaw
@@ -3171,8 +3211,8 @@ theorem switch_truncation_bounded
                 switch_succ
                   hCompile hBlocks hResultCalls contract.fits
                   contract.regularAt contract.activation contract.boundary
-              intro bodyCompilerFuel bodySupply bodyEntry bodyInput
-                body bodyResult afterPop value hSelect hBodyCompile
+              intro bodyCompilerFuel bodySupply bodyCallBase bodyEntry
+                bodyInput body bodyResult afterPop value hSelect hBodyCompile
                 hBodyBlocks hBodyResultCalls hBodySupply hReturns
                 hBodyFits hRequire hFallthrough
               have hSelectedWF :=
@@ -3191,12 +3231,13 @@ theorem switch_truncation_bounded
                 hBlockOwner (Nat.le_refl sourceFuel)
                   hBodyCompile hBodyBlocks hBodyResultCalls
                   hSelectedWF hSelectedFrameSafe hSelectedCalls
-                  hSupports hProcs
+                  (CallBase.contextSupports bodyCallBase hSupports) hProcs
               · intro hCanLeave
                 obtain ⟨frame, rest, hSourceEq⟩ :=
                   hSourceReturns hCanLeave
                 exact ⟨frame, rest, hReturns.trans hSourceEq⟩
-              · exact
+              · refine CallBase.fragmentContract (ctx := ctx) bodyCallBase ?_
+                exact
                   { fits := hBodyFits
                     regularAt := Or.inl hBefore.regular
                     before := hBefore
@@ -3428,15 +3469,24 @@ theorem for_truncation_bounded
                   hBlockOwner (Nat.le_of_lt hFuel)
                     hBodyCompile hBodyBlocks hFacts.bodyCalls
                     hBodyWF hBodySafe hBodyCalls
-                    (TypedCfgPreservation.OutcomeSimulation.ContextSupports.loopBody
-                      hSupports regular (LabelSupply.label supply 2) branchInput)
+                    (CallBase.contextSupports
+                      (ctx.callBase + initResult.calls.length)
+                      (TypedCfgPreservation.OutcomeSimulation.ContextSupports.loopBody
+                        hSupports regular (LabelSupply.label supply 2)
+                        branchInput))
                     (by
                       simpa [InteractionLoopPreservation.Loop.bodyContext]
                         using hProcs)
                 · intro hCanLeave
                   obtain ⟨frame, rest, hSourceEq⟩ := hSourceReturns hCanLeave
                   exact ⟨frame, rest, hReturns.trans hSourceEq⟩
-                · simpa [branchInput,
+                · refine
+                    CallBase.fragmentContract
+                      (ctx :=
+                        InteractionLoopPreservation.Loop.bodyContext ctx regular
+                          (LabelSupply.label supply 2) branchInput)
+                      (ctx.callBase + initResult.calls.length) ?_
+                  simpa [branchInput,
                     InteractionLoopPreservation.Loop.bodyStopPolicy,
                     InteractionLoopPreservation.Loop.postStopPolicy] using
                     (show
@@ -3524,15 +3574,24 @@ theorem for_truncation_bounded
                   hTruncationBlockOwner (Nat.le_of_lt hFuel)
                     hBodyCompile hBodyBlocks hFacts.bodyCalls
                     hBodyWF hBodySafe hBodyCalls
-                    (TypedCfgPreservation.OutcomeSimulation.ContextSupports.loopBody
-                      hSupports regular (LabelSupply.label supply 2) branchInput)
+                    (CallBase.contextSupports
+                      (ctx.callBase + initResult.calls.length)
+                      (TypedCfgPreservation.OutcomeSimulation.ContextSupports.loopBody
+                        hSupports regular (LabelSupply.label supply 2)
+                        branchInput))
                     (by
                       simpa [InteractionLoopPreservation.Loop.bodyContext]
                         using hProcs)
                 · intro hCanLeave
                   obtain ⟨frame, rest, hSourceEq⟩ := hSourceReturns hCanLeave
                   exact ⟨frame, rest, hReturns.trans hSourceEq⟩
-                · simpa [branchInput,
+                · refine
+                    CallBase.fragmentContract
+                      (ctx :=
+                        InteractionLoopPreservation.Loop.bodyContext ctx regular
+                          (LabelSupply.label supply 2) branchInput)
+                      (ctx.callBase + initResult.calls.length) ?_
+                  simpa [branchInput,
                     InteractionLoopPreservation.Loop.bodyStopPolicy,
                     InteractionLoopPreservation.Loop.postStopPolicy] using
                     (show
@@ -3600,15 +3659,23 @@ theorem for_truncation_bounded
                   hBlockOwner (Nat.le_of_lt hFuel)
                     hPostCompile hPostBlocks hFacts.postCalls
                     hPostWF hPostSafe hPostCalls
-                    (TypedCfgPreservation.OutcomeSimulation.ContextSupports.withoutLoop
-                      hSupports)
+                    (CallBase.contextSupports
+                      (ctx.callBase + initResult.calls.length +
+                        bodyResult.calls.length)
+                      (TypedCfgPreservation.OutcomeSimulation.ContextSupports.withoutLoop
+                        hSupports))
                     (by
                       simpa [InteractionLoopPreservation.Loop.outerContext]
                         using hProcs)
                 · intro hCanLeave
                   obtain ⟨frame, rest, hSourceEq⟩ := hSourceReturns hCanLeave
                   exact ⟨frame, rest, hReturns.trans hSourceEq⟩
-                · simpa [branchInput,
+                · refine
+                    CallBase.fragmentContract
+                      (ctx := InteractionLoopPreservation.Loop.outerContext ctx)
+                      (ctx.callBase + initResult.calls.length +
+                        bodyResult.calls.length) ?_
+                  simpa [branchInput,
                     InteractionLoopPreservation.Loop.postStopPolicy] using
                     (show
                       FragmentContract cfg postResult
@@ -3665,15 +3732,23 @@ theorem for_truncation_bounded
                   hTruncationBlockOwner (Nat.le_of_lt hFuel)
                     hPostCompile hPostBlocks hFacts.postCalls
                     hPostWF hPostSafe hPostCalls
-                    (TypedCfgPreservation.OutcomeSimulation.ContextSupports.withoutLoop
-                      hSupports)
+                    (CallBase.contextSupports
+                      (ctx.callBase + initResult.calls.length +
+                        bodyResult.calls.length)
+                      (TypedCfgPreservation.OutcomeSimulation.ContextSupports.withoutLoop
+                        hSupports))
                     (by
                       simpa [InteractionLoopPreservation.Loop.outerContext]
                         using hProcs)
                 · intro hCanLeave
                   obtain ⟨frame, rest, hSourceEq⟩ := hSourceReturns hCanLeave
                   exact ⟨frame, rest, hReturns.trans hSourceEq⟩
-                · simpa [branchInput,
+                · refine
+                    CallBase.fragmentContract
+                      (ctx := InteractionLoopPreservation.Loop.outerContext ctx)
+                      (ctx.callBase + initResult.calls.length +
+                        bodyResult.calls.length) ?_
+                  simpa [branchInput,
                     InteractionLoopPreservation.Loop.postStopPolicy] using
                     (show
                       FragmentContract cfg postResult
@@ -3774,7 +3849,7 @@ theorem call_truncation_bounded
               CallContract.extension
                 (source := source) (tokens := tokens)
                 (args := args) (callerStack := callerStack)
-                (retc := proc.retc) (supply := supply)
+                (retc := proc.retc) (supply := ctx.callBase)
             exact
               contract.boundary.ownership.eq_false_of_stateRel_extension
                 (TypedCfgPreservation.LabelShape.procEntry generated hLookup)
@@ -3788,7 +3863,7 @@ theorem call_truncation_bounded
               CallContract.extension
                 (source := source) (tokens := tokens)
                 (args := args) (callerStack := callerStack)
-                (retc := proc.retc) (supply := supply)
+                (retc := proc.retc) (supply := ctx.callBase)
             have hFragmentShape :
                 TypedCfgPreservation.LabelShape
                   cfg fragment.entry fragment.input :=
@@ -3817,7 +3892,8 @@ theorem call_truncation_bounded
                 TypedCfgCompiler.compileBlockFuel?
                     (TypedCfgCompiler.blockFuel proc.body + 1)
                     proc.body
-                    (InteractionCallPreservation.Call.procContext program proc)
+                    (InteractionCallPreservation.Call.procContext program proc
+                      fragment.callBase)
                     fragment.supply fragment.entry fragment.input
                     (ProcLabel.exit proc.name) = some fragment.result := by
               simpa [TypedCfgCompiler.compileBlock?,
@@ -3826,18 +3902,20 @@ theorem call_truncation_bounded
             have hExtension :
                 TypedCfgPreservation.ActivationExtension
                   source.returns tokens callSource.returns
-                  (Structured.Stmt.callToken supply :: tokens) := by
+                  (Structured.Stmt.callToken ctx.callBase :: tokens) := by
               simpa [callSource] using
                 (CallContract.extension
                   (source := source) (tokens := tokens)
                   (args := args) (callerStack := callerStack)
-                  (retc := proc.retc) (supply := supply))
-            have hShapes := CallContract.shapes generated hLookup fragment
+                  (retc := proc.retc) (supply := ctx.callBase))
+            have hShapes :=
+              CallContract.shapes generated hLookup fragment
+                fragment.callBase
             have hOwned :=
               hBlockOwner (Nat.le_refl sourceFuel)
                 hFragmentCompile hFragmentBlocks hFragmentCalls
                 hProcWF.2.2 hProcFrameSafe hProcCalls
-                (CallContract.supports program proc) rfl
+                (CallContract.supports program proc fragment.callBase) rfl
                 (by
                   intro _hCanLeave
                   exact
@@ -3845,22 +3923,25 @@ theorem call_truncation_bounded
                       source.returns, by simp [callSource]⟩)
                 (show
                   FragmentContract cfg fragment.result
-                    (InteractionCallPreservation.Call.procContext program proc)
+                    (InteractionCallPreservation.Call.procContext program proc
+                      fragment.callBase)
                     fragment.supply fragment.entry (ProcLabel.exit proc.name)
                     fragment.input callSource
-                    (Structured.Stmt.callToken supply :: tokens)
+                    (Structured.Stmt.callToken ctx.callBase :: tokens)
                     (InteractionCallPreservation.Call.bodyStopPolicy
-                      fragment.result program proc callSource.returns
-                      (Structured.Stmt.callToken supply :: tokens) policy) from
+                      fragment.result program proc fragment.callBase
+                      callSource.returns
+                      (Structured.Stmt.callToken ctx.callBase :: tokens)
+                      policy) from
                   { fits := fragment.input_sourceFrameFits_of_splitArgs hSplit
                     regularAt := Or.inl (by trivial)
-                    before := CallContract.before
+                    before := CallContract.before fragment.callBase
                     activation :=
                       TypedCfgPreservation.ActivationInput.active
                         ⟨proc.argc, fragment.input_returnTokenDepth⟩
                     boundary :=
                       contract.boundary.push_child hExtension hShapes
-                        CallContract.before
+                        (CallContract.before fragment.callBase)
                     shapes := hShapes
                     stops := by
                       intro sourceOutcome targetOutcome hRel
@@ -3883,7 +3964,8 @@ theorem call_truncation_bounded
                 TypedCfgCompiler.compileBlockFuel?
                     (TypedCfgCompiler.blockFuel proc.body + 1)
                     proc.body
-                    (InteractionCallPreservation.Call.procContext program proc)
+                    (InteractionCallPreservation.Call.procContext program proc
+                      fragment.callBase)
                     fragment.supply fragment.entry fragment.input
                     (ProcLabel.exit proc.name) = some fragment.result := by
               simpa [TypedCfgCompiler.compileBlock?,
@@ -3892,18 +3974,20 @@ theorem call_truncation_bounded
             have hExtension :
                 TypedCfgPreservation.ActivationExtension
                   source.returns tokens callSource.returns
-                  (Structured.Stmt.callToken supply :: tokens) := by
+                  (Structured.Stmt.callToken ctx.callBase :: tokens) := by
               simpa [callSource] using
                 (CallContract.extension
                   (source := source) (tokens := tokens)
                   (args := args) (callerStack := callerStack)
-                  (retc := proc.retc) (supply := supply))
-            have hShapes := CallContract.shapes generated hLookup fragment
+                  (retc := proc.retc) (supply := ctx.callBase))
+            have hShapes :=
+              CallContract.shapes generated hLookup fragment
+                fragment.callBase
             have hOwned :=
               hTruncationBlockOwner (Nat.le_refl sourceFuel)
                 hFragmentCompile hFragmentBlocks hFragmentCalls
                 hProcWF.2.2 hProcFrameSafe hProcCalls
-                (CallContract.supports program proc) rfl
+                (CallContract.supports program proc fragment.callBase) rfl
                 (by
                   intro _hCanLeave
                   exact
@@ -3911,22 +3995,25 @@ theorem call_truncation_bounded
                       source.returns, by simp [callSource]⟩)
                 (show
                   FragmentContract cfg fragment.result
-                    (InteractionCallPreservation.Call.procContext program proc)
+                    (InteractionCallPreservation.Call.procContext program proc
+                      fragment.callBase)
                     fragment.supply fragment.entry (ProcLabel.exit proc.name)
                     fragment.input callSource
-                    (Structured.Stmt.callToken supply :: tokens)
+                    (Structured.Stmt.callToken ctx.callBase :: tokens)
                     (InteractionCallPreservation.Call.bodyStopPolicy
-                      fragment.result program proc callSource.returns
-                      (Structured.Stmt.callToken supply :: tokens) policy) from
+                      fragment.result program proc fragment.callBase
+                      callSource.returns
+                      (Structured.Stmt.callToken ctx.callBase :: tokens)
+                      policy) from
                   { fits := fragment.input_sourceFrameFits_of_splitArgs hSplit
                     regularAt := Or.inl (by trivial)
-                    before := CallContract.before
+                    before := CallContract.before fragment.callBase
                     activation :=
                       TypedCfgPreservation.ActivationInput.active
                         ⟨proc.argc, fragment.input_returnTokenDepth⟩
                     boundary :=
                       contract.boundary.push_child hExtension hShapes
-                        CallContract.before
+                        (CallContract.before fragment.callBase)
                     shapes := hShapes
                     stops := by
                       intro sourceOutcome targetOutcome hRel
@@ -4389,7 +4476,8 @@ theorem block_owner
                                                     TypedCfgCompiler.compileBlockFuel?
                                                         (Nat.succ
                                                           (stmtCompilerFuel + 1))
-                                                        { stmts := rest } ctx
+                                                        { stmts := rest }
+                                                        (ctx.advance headResult)
                                                         headResult.next
                                                         (TypedCfgCompiler.restLabel supply)
                                                         tailInput regular =
@@ -4404,7 +4492,7 @@ theorem block_owner
                                                       Nat.succ
                                                         (stmtCompilerFuel + 1))
                                                     (block := { stmts := rest })
-                                                    (ctx := ctx)
+                                                    (ctx := ctx.advance headResult)
                                                     (supply := headResult.next)
                                                     (entry :=
                                                       TypedCfgCompiler.restLabel supply)
@@ -4421,7 +4509,11 @@ theorem block_owner
                                                     hTailBlockCompile hTailBlocks
                                                     hTailCalls hRestWF hRestSafe
                                                     (.mk hRestCalls)
-                                                    hSupports hProcs
+                                                    (CallBase.contextSupports
+                                                      (ctx.callBase +
+                                                        headResult.calls.length)
+                                                      hSupports)
+                                                    hProcs
                                                 · intro hCanLeave
                                                   obtain ⟨frame, remaining,
                                                       hSourceEq⟩ :=
@@ -4429,7 +4521,12 @@ theorem block_owner
                                                   exact
                                                     ⟨frame, remaining,
                                                       hReturns.trans hSourceEq⟩
-                                                · exact hTailContract
+                                                · exact
+                                                    CallBase.fragmentContract
+                                                      (ctx := ctx)
+                                                      (ctx.callBase +
+                                                        headResult.calls.length)
+                                                      hTailContract
 
 namespace GeneratedProgram
 

@@ -92,8 +92,9 @@ theorem mem_of_compileStmtListFuel?_cons
       compileStmtFuel? compilerFuel stmt ctx supply entry input
           (restLabel supply) = some headResult ∧
       headResult.fallthrough? = some tailInput ∧
-      compileStmtListFuel? compilerFuel rest ctx headResult.next
-          (restLabel supply) tailInput regular = some tailResult ∧
+      compileStmtListFuel? compilerFuel rest (ctx.advance headResult)
+          headResult.next (restLabel supply) tailInput regular =
+        some tailResult ∧
       block ∈ tailResult.blocks) := by
   rcases Block.components_of_compileStmtListFuel?_cons hCompile with
     ⟨headResult, hHead, hNoTail | hTail⟩
@@ -208,8 +209,8 @@ theorem mem_of_compileStmtFuel?_switch
       compileCasesFuel? compilerFuel cases ctx supply (supply + 1) 0 valueShape
           { valueShape with slots := valueShape.slots.tail } regular =
         some caseResult ∧
-      compileDefaultFuel? compilerFuel defaultBody ctx caseResult.next
-          (LabelSupply.label supply 1) valueShape
+      compileDefaultFuel? compilerFuel defaultBody (ctx.advance caseResult)
+          caseResult.next (LabelSupply.label supply 1) valueShape
           { valueShape with slots := valueShape.slots.tail } regular =
         some defaultResult ∧
       block ∈ defaultResult.blocks) := by
@@ -269,7 +270,8 @@ theorem mem_of_compileStmtFuel?_for
               some { condOutput with slots := condOutput.slots.tail }
             continueLabel? := some (LabelSupply.label supply 2)
             continueShape? :=
-              some { condOutput with slots := condOutput.slots.tail } }
+              some { condOutput with slots := condOutput.slots.tail }
+            callBase := ctx.callBase + initResult.calls.length }
           initResult.next (LabelSupply.label supply 1)
           { condOutput with slots := condOutput.slots.tail }
           (LabelSupply.label supply 2) =
@@ -293,7 +295,8 @@ theorem mem_of_compileStmtFuel?_for
               some { condOutput with slots := condOutput.slots.tail }
             continueLabel? := some (LabelSupply.label supply 2)
             continueShape? :=
-              some { condOutput with slots := condOutput.slots.tail } }
+              some { condOutput with slots := condOutput.slots.tail }
+            callBase := ctx.callBase + initResult.calls.length }
           initResult.next (LabelSupply.label supply 1)
           { condOutput with slots := condOutput.slots.tail }
           (LabelSupply.label supply 2) =
@@ -303,7 +306,10 @@ theorem mem_of_compileStmtFuel?_for
             breakLabel? := none
             breakShape? := none
             continueLabel? := none
-            continueShape? := none }
+            continueShape? := none
+            callBase :=
+              ctx.callBase + initResult.calls.length +
+                bodyResult.calls.length }
           bodyResult.next (LabelSupply.label supply 2)
           { condOutput with slots := condOutput.slots.tail }
           (LabelSupply.label supply 0) =
@@ -397,8 +403,8 @@ theorem mem_of_compileCasesFuel?_cons
     (∃ bodyResult tail,
       compileBlockFuel? compilerFuel body ctx supply
           (switchBodyLabel base idx) bodyShape regular = some bodyResult ∧
-      compileCasesFuel? compilerFuel rest ctx base bodyResult.next (idx + 1)
-          valueShape bodyShape regular = some tail ∧
+      compileCasesFuel? compilerFuel rest (ctx.advance bodyResult) base
+          bodyResult.next (idx + 1) valueShape bodyShape regular = some tail ∧
       block ∈ tail.blocks) := by
   obtain ⟨bodyResult, tail, hBody, _hRequire, hTail, rfl⟩ :=
     TypedCfgCompilerFacts.Switch.components_of_compileCasesFuel?_cons hHead hPopType

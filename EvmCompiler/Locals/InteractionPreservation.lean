@@ -204,7 +204,7 @@ theorem openRun_push (value : Word) (target : Structured.RunState) :
         (.ok
           (target.withEVM
             (target.evm.replaceStackAndIncrPC
-              (value :: target.evm.stack) (pcΔ := 33)))) := by
+              (value :: target.evm.stack) (pcΔ := Assembly.pushPcDelta value)))) := by
   simp [Structured.InteractionSemantics.Code.openRun,
     Structured.EffectSemantics.Control.Code.run,
     Structured.InteractionSemantics.handler,
@@ -1468,7 +1468,7 @@ mutual
               (.ok
                 (target.withEVM
                   (target.evm.replaceStackAndIncrPC
-                    (value :: target.evm.stack) (pcΔ := 33)))))
+                    (value :: target.evm.stack) (pcΔ := Assembly.pushPcDelta value)))))
         apply Simulation.Interaction.Rel.done
         apply Simulation.Interaction.ExceptRel.ok
         constructor
